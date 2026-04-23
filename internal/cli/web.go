@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/spacelions/j/internal/adkapp"
 	"github.com/spacelions/j/internal/config"
+	"github.com/spacelions/j/internal/workflow"
 )
 
 var webCmd = &cobra.Command{
@@ -20,6 +20,6 @@ var webCmd = &cobra.Command{
 		if key == "" {
 			return fmt.Errorf("GOOGLE_API_KEY is not set: set the environment variable, use direnv with .envrc, or pass --google-api-key")
 		}
-		return adkapp.Run(ctx, key, []string{"web", "api", "webui"})
+		return workflow.Run(ctx, key, []string{"web", "api", "webui"})
 	},
 }
