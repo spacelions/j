@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/spacelions/j/internal/adkapp"
 	"github.com/spacelions/j/internal/config"
+	"github.com/spacelions/j/internal/workflow"
 )
 
 var runCmd = &cobra.Command{
@@ -20,6 +20,6 @@ var runCmd = &cobra.Command{
 			return fmt.Errorf("GOOGLE_API_KEY is not set: set the environment variable, use direnv with .envrc, or pass --google-api-key")
 		}
 		// default universal launcher: first sublauncher (console) when no args
-		return adkapp.Run(ctx, key, nil)
+		return workflow.Run(ctx, key, nil)
 	},
 }
