@@ -24,7 +24,7 @@ func TestInit_Succeeds(t *testing.T) {
 	}
 }
 
-func TestGettersDefaults(t *testing.T) {
+func TestGetters_EmptyWhenUnset(t *testing.T) {
 	resetViper(t)
 	t.Setenv("GOOGLE_API_KEY", "")
 	t.Setenv("MODEL", "")
@@ -33,14 +33,44 @@ func TestGettersDefaults(t *testing.T) {
 	if err := Init(); err != nil {
 		t.Fatal(err)
 	}
-	if got := Model(); got != "gemini-2.5-flash" {
-		t.Fatalf("default Model = %q", got)
+	if got := Model(); got != "" {
+		t.Fatalf("Model = %q, want empty", got)
 	}
-	if got := MaxIterations(); got != 3 {
-		t.Fatalf("default MaxIterations = %d", got)
+	if got := MaxIterations(); got != 0 {
+		t.Fatalf("MaxIterations = %d, want 0", got)
 	}
 	if got := GoogleAPIKey(); got != "" {
 		t.Fatalf("expected empty key, got %q", got)
+	}
+}
+
+func TestLoad_MissingModel(t *testing.T) {
+	resetViper(t)
+	t.Setenv("GOOGLE_API_KEY", "k")
+	t.Setenv("MODEL", "")
+	t.Setenv("MAX_ITERATIONS", "3")
+
+	if err := Init(); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load()
+	if !errors.Is(err, ErrMissingModel) {
+		t.Fatalf("Load err = %v, want ErrMissingModel", err)
+	}
+}
+
+func TestLoad_MissingMaxIterations(t *testing.T) {
+	resetViper(t)
+	t.Setenv("GOOGLE_API_KEY", "k")
+	t.Setenv("MODEL", "gemini-2.5-flash")
+	t.Setenv("MAX_ITERATIONS", "0")
+
+	if err := Init(); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load()
+	if !errors.Is(err, ErrMissingMaxIterations) {
+		t.Fatalf("Load err = %v, want ErrMissingMaxIterations", err)
 	}
 }
 
