@@ -1,0 +1,27 @@
+SHELL := /bin/bash
+
+.PHONY: coverage test race
+
+test:
+	go test ./...
+
+race:
+	go test -race ./...
+
+coverage:
+	@set -euo pipefail; \
+	go test -covermode=atomic -coverprofile=cover.out ./internal/...; \
+	total=$$(go tool cover -func=cover.out | awk '/^total:/ {print $$3}'); \
+	echo "total coverage: $$total"; \
+	below=$$(go tool cover -func=cover.out | awk '$$NF != "100.0%" && !/^total:/ {print}'); \
+	below=$$(printf '%s\n' "$$below" | grep -Ev \
+		-e 'internal/config/config\.go:[0-9]+:[[:space:]]+Init[[:space:]]' \
+		-e 'internal/workflow/workflow\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
+		-e 'internal/cli/root\.go:[0-9]+:[[:space:]]+Execute[[:space:]]' \
+		|| true); \
+	below=$$(printf '%s\n' "$$below" | sed '/^$$/d'); \
+	if [ -n "$$below" ]; then \
+		echo "the following non-allowlisted symbols are below 100% coverage:" >&2; \
+		echo "$$below" >&2; \
+		exit 1; \
+	fi
