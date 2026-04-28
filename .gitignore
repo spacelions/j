@@ -2,3 +2,4 @@
 .envrc
 *.log
 cover.out
+/bin/

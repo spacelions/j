@@ -11,8 +11,13 @@ import (
 	"google.golang.org/adk/model"
 )
 
+// Instruction is the embedded instruction.md used as the planner system
+// prompt. It is exported so other coding-agent backends (Cursor, Codex,
+// Claude, ...) can reuse the same planning rules instead of redefining
+// their own copy.
+//
 //go:embed instruction.md
-var instruction string
+var Instruction string
 
 // Name and OutputKey let workflow wiring reference this agent by symbol.
 const (
@@ -26,7 +31,7 @@ func New(m model.LLM) (agent.Agent, error) {
 		Name:        Name,
 		Model:       m,
 		Description: "Breaks the user's request into a concrete, ordered implementation plan.",
-		Instruction: instruction,
+		Instruction: Instruction,
 		OutputKey:   OutputKey,
 	})
 }

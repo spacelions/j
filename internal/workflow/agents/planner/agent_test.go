@@ -11,8 +11,8 @@ func TestConstants(t *testing.T) {
 	if OutputKey != "plan" {
 		t.Fatalf("OutputKey = %q", OutputKey)
 	}
-	if instruction == "" {
-		t.Fatal("instruction is empty")
+	if Instruction == "" {
+		t.Fatal("Instruction is empty")
 	}
 }
 

@@ -6,7 +6,11 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/plan"
+	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/config"
 	"github.com/spacelions/j/internal/workflow"
 )
@@ -24,6 +28,32 @@ func Execute() int {
 			return config.Init()
 		},
 	}
+
+	planCmd := &cobra.Command{
+		Use:   "plan",
+		Short: "Generate a plan.md from a markdown task description using a coding agent",
+		Long: "Reads a markdown task description, asks which coding agent and model to use, " +
+			"runs that agent in plan mode, and writes the resulting plan.md beside the input.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return plan.Run(cmd.Context(), plan.Options{
+				Target: viper.GetString("plan.target"),
+				Stdin:  cmd.InOrStdin(),
+				Stdout: cmd.OutOrStdout(),
+				Stderr: cmd.ErrOrStderr(),
+				Agents: []codingagents.Agent{cursor.New()},
+			})
+		},
+	}
+	planCmd.Flags().StringP("target", "t", "", "Path to a markdown file describing the task")
+	if err := viper.BindPFlag("plan.target", planCmd.Flags().Lookup("target")); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "j: bind plan.target: %v\n", err)
+		return 1
+	}
+	if err := viper.BindEnv("plan.target", "PLAN_TARGET"); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "j: bind PLAN_TARGET: %v\n", err)
+		return 1
+	}
+
 	root.AddCommand(
 		&cobra.Command{
 			Use:   "run",
@@ -48,6 +78,7 @@ func Execute() int {
 				return workflow.Run(context.Background(), cfg, []string{"web", "api", "webui"})
 			},
 		},
+		planCmd,
 	)
 	root.SetArgs(os.Args[1:])
 	if err := root.Execute(); err != nil {

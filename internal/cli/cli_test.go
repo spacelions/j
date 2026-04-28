@@ -83,3 +83,32 @@ func TestExecute_WebMissingKey(t *testing.T) {
 		t.Fatalf("stderr = %q", out)
 	}
 }
+
+func TestExecute_PlanInvalidTarget_FromFlag(t *testing.T) {
+	resetGlobals(t)
+	withArgs(t, "plan", "--target", "/this/path/does/not/exist.md")
+
+	var code int
+	out := captureStderr(t, func() { code = Execute() })
+	if code != 1 {
+		t.Fatalf("Execute = %d, want 1", code)
+	}
+	if !strings.Contains(out, "j:") || !strings.Contains(out, "stat") {
+		t.Fatalf("stderr = %q", out)
+	}
+}
+
+func TestExecute_PlanInvalidTarget_FromEnv(t *testing.T) {
+	resetGlobals(t)
+	t.Setenv("PLAN_TARGET", "/this/path/does/not/exist.md")
+	withArgs(t, "plan")
+
+	var code int
+	out := captureStderr(t, func() { code = Execute() })
+	if code != 1 {
+		t.Fatalf("Execute = %d, want 1", code)
+	}
+	if !strings.Contains(out, "j:") || !strings.Contains(out, "stat") {
+		t.Fatalf("stderr = %q", out)
+	}
+}
