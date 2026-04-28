@@ -15,6 +15,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/agentpick"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/mdfile"
 )
 
@@ -34,6 +35,19 @@ type Options struct {
 
 	Agents []codingagents.Agent
 	UI     UI
+
+	// Store, when non-nil, receives best-effort writes recording the
+	// tool/model/interactive flag last used (the plan source and the
+	// target path are intentionally NOT persisted). The orchestrator
+	// does not own the lifecycle: callers that supply a Store keep
+	// the lifecycle. When nil, withDefaults opens the default
+	// <cwd>/.j/settings DB and closes it after Run returns.
+	Store *store.Store
+
+	// closeStore is set internally by withDefaults when it allocates
+	// the default Store, so Run can close it before returning. Tests
+	// that pass their own Store leave this false.
+	closeStore bool
 }
 
 // Run executes `j plan`. When Options.Target is set it goes straight to
@@ -41,6 +55,9 @@ type Options struct {
 // Otherwise it asks the user which source to use and dispatches.
 func Run(ctx context.Context, opts Options) error {
 	opts = opts.withDefaults()
+	if opts.closeStore && opts.Store != nil {
+		defer func() { _ = opts.Store.Close() }()
+	}
 	if len(opts.Agents) == 0 {
 		return errors.New("plan: no coding agents configured")
 	}
@@ -88,6 +105,8 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		return err
 	}
 
+	persistPlannerSelection(opts, agent.Name(), model)
+
 	out := planOutputPath(target)
 	if err := agent.Plan(ctx, codingagents.PlanRequest{
 		TargetPath:  target,
@@ -116,10 +135,23 @@ func runScratch(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	persistPlannerSelection(opts, agent.Name(), model)
 	return agent.Plan(ctx, codingagents.PlanRequest{
 		Model:       model,
 		Interactive: true,
 	})
+}
+
+// persistPlannerSelection writes the just-confirmed tool/model and
+// the interactive flag to the planner bucket. The plan source
+// (markdown/scratch/linear) and the target path are intentionally
+// NOT persisted: the user must pick those manually each run.
+//
+// Persistence is best-effort: any error is reported to opts.Stderr
+// and otherwise swallowed so plan can keep running. When opts.Store
+// is nil this is a no-op.
+func persistPlannerSelection(opts Options, tool, model string) {
+	store.PersistAgentSelection(opts.Store, opts.Stderr, store.BucketPlanner, tool, model, opts.Interactive)
 }
 
 func (o Options) withDefaults() Options {
@@ -134,6 +166,12 @@ func (o Options) withDefaults() Options {
 	}
 	if o.UI == nil {
 		o.UI = newHuhUI(o.Stdin, o.Stderr)
+	}
+	if o.Store == nil {
+		if s, ok := store.OpenDefault(o.Stderr, store.BucketPlanner); ok {
+			o.Store = s
+			o.closeStore = true
+		}
 	}
 	return o
 }

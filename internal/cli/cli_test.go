@@ -9,6 +9,21 @@ import (
 	"github.com/spf13/viper"
 )
 
+// TestMain chdir's the entire cli-package test binary into an
+// ephemeral directory so plan/work invocations don't write a
+// .j/settings file into the source tree as a side effect.
+func TestMain(m *testing.M) {
+	tmp, err := os.MkdirTemp("", "cli-test-*")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmp)
+	if err := os.Chdir(tmp); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
+
 // resetGlobals resets any global state that tests share (currently only the
 // Viper singleton used by internal/config).
 func resetGlobals(t *testing.T) {

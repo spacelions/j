@@ -11,7 +11,53 @@ import (
 	"testing"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/store"
 )
+
+// TestMain chdir's the entire work-package test binary into an
+// ephemeral directory so any test that calls Run without an explicit
+// Store doesn't pollute the source tree with a `.j/settings` file
+// when withDefaults lazily opens the default DB.
+func TestMain(m *testing.M) {
+	tmp, err := os.MkdirTemp("", "work-test-*")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmp)
+	if err := os.Chdir(tmp); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
+
+// openTestStore returns a fresh *store.Store rooted in t.TempDir() with
+// the coder bucket pre-created.
+func openTestStore(t *testing.T) *store.Store {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := s.EnsureBucket(store.BucketCoder); err != nil {
+		t.Fatalf("EnsureBucket: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
+	t.Helper()
+	v, ok, err := s.Get(store.BucketCoder, key)
+	if err != nil {
+		t.Fatalf("Get %s: %v", key, err)
+	}
+	return v, ok
+}
 
 // scriptedUI returns predetermined answers for each prompt and tracks
 // how many times each prompt was invoked.
@@ -400,5 +446,177 @@ func TestRun_UnknownToolFromUI(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestRun_PersistsCoderSelection drives a successful work run with a
+// real *store.Store and asserts the coder bucket holds tool/model/
+// interactive only — the work source (plan path) must stay
+// unpersisted so the user is prompted for it every run.
+func TestRun_PersistsCoderSelection(t *testing.T) {
+	s := openTestStore(t)
+	plan := writePlan(t, "body")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		Target:      plan,
+		Interactive: true,
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{agent},
+		UI:          &scriptedUI{},
+		Store:       s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	want := map[string]string{
+		"tool":        "cursor",
+		"model":       "sonnet-4",
+		"interactive": "true",
+	}
+	for k, v := range want {
+		got, ok := mustGet(t, s, k)
+		if !ok || got != v {
+			t.Fatalf("coder.%s = %q (ok=%v), want %q", k, got, ok, v)
+		}
+	}
+	for _, forbidden := range []string{"target", "source", "plan"} {
+		if _, ok := mustGet(t, s, forbidden); ok {
+			t.Fatalf("coder.%s should not be persisted", forbidden)
+		}
+	}
+}
+
+// TestRun_LoginFailure_DoesNotPersist confirms the coder bucket is
+// untouched when login fails (we only persist after agentpick.Pick
+// returns successfully).
+func TestRun_LoginFailure_DoesNotPersist(t *testing.T) {
+	s := openTestStore(t)
+	plan := writePlan(t, "body")
+	agent := newScriptedAgent()
+	agent.loginErr = errors.New("not logged in")
+
+	err := Run(context.Background(), Options{
+		Target: plan,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+		Store:  s,
+	})
+	if err == nil {
+		t.Fatal("expected login error")
+	}
+	entries, listErr := s.List(store.BucketCoder)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("coder bucket should be empty: %v", entries)
+	}
+}
+
+// TestRun_SelectionCancelled_DoesNotPersist mirrors the login-failure
+// case for the user-cancel path through agentpick.Pick.
+func TestRun_SelectionCancelled_DoesNotPersist(t *testing.T) {
+	s := openTestStore(t)
+	plan := writePlan(t, "body")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		Target: plan,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{toolErr: ErrCancelled},
+		Store:  s,
+	})
+	if !errors.Is(err, ErrCancelled) {
+		t.Fatalf("err = %v", err)
+	}
+	entries, listErr := s.List(store.BucketCoder)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("coder bucket should be empty: %v", entries)
+	}
+}
+
+// TestRun_StoreWriteError_WarnsAndContinues exercises the persistence
+// best-effort branch: a closed store returns errors from Put, and the
+// agent must still run.
+func TestRun_StoreWriteError_WarnsAndContinues(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	plan := writePlan(t, "body")
+	agent := newScriptedAgent()
+	var stderr bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		Target: plan,
+		Stdout: io.Discard,
+		Stderr: &stderr,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+		Store:  s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "warning: persist") {
+		t.Fatalf("stderr = %q, want warning", stderr.String())
+	}
+	if agent.worked != 1 {
+		t.Fatal("agent.Work should still have been invoked despite persist error")
+	}
+}
+
+// TestRun_StoreLazyDefault confirms a nil opts.Store causes
+// withDefaults to open and close the default DB and write to the
+// coder bucket.
+func TestRun_StoreLazyDefault(t *testing.T) {
+	t.Chdir(t.TempDir())
+	plan := writePlan(t, "body")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		Target: plan,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	got, ok, err := s.Get(store.BucketCoder, "tool")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || got != "cursor" {
+		t.Fatalf("coder.tool = %q (ok=%v)", got, ok)
+	}
+}
+
+// TestPersistCoderSelection_NilStore exercises the early-return branch
+// when no Store is configured.
+func TestPersistCoderSelection_NilStore(t *testing.T) {
+	var stderr bytes.Buffer
+	persistCoderSelection(Options{Stderr: &stderr}, "cursor", "sonnet-4")
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr should stay empty, got %q", stderr.String())
 	}
 }
