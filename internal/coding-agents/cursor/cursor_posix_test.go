@@ -284,6 +284,114 @@ func TestPlan_Scratch_RunnerError(t *testing.T) {
 	}
 }
 
+func TestWork_Interactive(t *testing.T) {
+	dir := t.TempDir()
+	plan := filepath.Join(dir, "spec.plan.md")
+	if err := os.WriteFile(plan, []byte("1. step one\n2. step two"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls := installStub(t, "", 0)
+
+	err := New().Work(context.Background(), codingagents.WorkRequest{
+		PlanPath:    plan,
+		Body:        "1. step one\n2. step two",
+		Model:       "composer-2-fast",
+		Interactive: true,
+	})
+	if err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	argv := readCalls(t, calls)
+	want := []string{"--model", "composer-2-fast", "--workspace", dir}
+	if len(argv) != len(want)+1 {
+		t.Fatalf("argv = %v", argv)
+	}
+	for i, v := range want {
+		if argv[i] != v {
+			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
+		}
+	}
+	prompt := argv[len(argv)-1]
+	if !strings.Contains(prompt, "1. step one") {
+		t.Fatalf("prompt missing plan body: %q", prompt)
+	}
+	if !strings.Contains(prompt, plan) {
+		t.Fatalf("prompt missing plan path %q: %q", plan, prompt)
+	}
+	for _, banned := range []string{"--print", "--mode", "--output-format"} {
+		for _, a := range argv {
+			if a == banned {
+				t.Fatalf("interactive Work should not pass %q: argv = %v", banned, argv)
+			}
+		}
+	}
+}
+
+func TestWork_Headless(t *testing.T) {
+	dir := t.TempDir()
+	plan := filepath.Join(dir, "spec.plan.md")
+	if err := os.WriteFile(plan, []byte("plan body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls := installStub(t, "ok\n", 0)
+
+	err := New().Work(context.Background(), codingagents.WorkRequest{
+		PlanPath:    plan,
+		Body:        "plan body",
+		Model:       "sonnet-4",
+		Interactive: false,
+	})
+	if err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	argv := readCalls(t, calls)
+	want := []string{
+		"--print",
+		"--output-format", "text",
+		"--model", "sonnet-4",
+		"--workspace", dir,
+	}
+	if len(argv) != len(want)+1 {
+		t.Fatalf("argv = %v", argv)
+	}
+	for i, v := range want {
+		if argv[i] != v {
+			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
+		}
+	}
+	for _, a := range argv {
+		if a == "--mode" {
+			t.Fatalf("headless Work should not pass --mode: argv = %v", argv)
+		}
+	}
+}
+
+func TestWork_Interactive_RunnerError(t *testing.T) {
+	installStub(t, "", 1)
+	err := New().Work(context.Background(), codingagents.WorkRequest{
+		PlanPath:    "/tmp/x.plan.md",
+		Body:        "x",
+		Model:       "m",
+		Interactive: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "cursor-agent") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestWork_Headless_RunnerError(t *testing.T) {
+	installStub(t, "", 1)
+	err := New().Work(context.Background(), codingagents.WorkRequest{
+		PlanPath:    "/tmp/x.plan.md",
+		Body:        "x",
+		Model:       "m",
+		Interactive: false,
+	})
+	if err == nil || !strings.Contains(err.Error(), "cursor-agent") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestPlan_Headless_WriteError(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o500); err != nil {

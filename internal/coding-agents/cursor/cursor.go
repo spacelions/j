@@ -12,6 +12,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/util/run"
+	"github.com/spacelions/j/internal/workflow/prompts"
 )
 
 // Binary is the cursor-agent executable name.
@@ -87,7 +88,7 @@ func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
 	}
 
 	workspace := codingagents.DefaultWorkspace(req.TargetPath)
-	base := codingagents.BuildPrompt(req.TargetPath, req.Body)
+	base := prompts.BuildPlanner(req.TargetPath, req.Body)
 
 	if req.Interactive {
 		prompt := fmt.Sprintf(
@@ -121,6 +122,44 @@ func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
 	}
 	if err := os.WriteFile(req.OutputPath, []byte(plan+"\n"), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", req.OutputPath, err)
+	}
+	return nil
+}
+
+// Work runs cursor-agent against a previously generated plan markdown.
+// The agent edits files in the plan's directory directly, so we do not
+// pass --mode plan and we do not capture stdout for a file write. Two
+// flavours are supported:
+//
+//   - Interactive: launch cursor's TUI with the coder prompt as the
+//     initial user message; the user drives the session until cursor
+//     exits.
+//   - Headless: --print --output-format text against the coder prompt,
+//     letting cursor edit files and print a brief summary that we
+//     discard.
+func (*Agent) Work(ctx context.Context, req codingagents.WorkRequest) error {
+	workspace := codingagents.DefaultWorkspace(req.PlanPath)
+	prompt := prompts.BuildCoder(req.PlanPath, req.Body)
+
+	if req.Interactive {
+		if err := run.Run(ctx, Binary,
+			"--model", req.Model,
+			"--workspace", workspace,
+			prompt,
+		); err != nil {
+			return fmt.Errorf("cursor-agent: %w", err)
+		}
+		return nil
+	}
+
+	if _, err := run.Output(ctx, Binary,
+		"--print",
+		"--output-format", "text",
+		"--model", req.Model,
+		"--workspace", workspace,
+		prompt,
+	); err != nil {
+		return fmt.Errorf("cursor-agent: %w", err)
 	}
 	return nil
 }

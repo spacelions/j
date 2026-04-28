@@ -8,10 +8,11 @@ package codingagents
 
 import "context"
 
-// Agent is a planning backend. The plan package orchestrates the flow generically:
-// resolve a markdown target, list the agent's models, check login, run the
-// plan against PlanRequest.OutputPath, and surface whether OutputPath was
-// produced. New backends implement this interface.
+// Agent is a coding-agent backend. The plan and work packages orchestrate
+// the flow generically: resolve a markdown target, list the agent's
+// models, check login, then either Plan (writes <stem>.plan.md) or Work
+// (executes a previously generated plan against the plan's directory).
+// New backends implement this interface.
 type Agent interface {
 	// Name is the short identifier shown in the tool picker (e.g. "cursor").
 	Name() string
@@ -29,6 +30,13 @@ type Agent interface {
 	// the agent's stdout and writing the file directly). The orchestrator
 	// stats OutputPath after this returns and reports the outcome.
 	Plan(ctx context.Context, req PlanRequest) error
+
+	// Work runs the agent against an existing plan markdown file. The
+	// agent edits files in the plan's directory directly; there is no
+	// single output file the orchestrator can stat. Interactive selects
+	// the agent's TUI; otherwise the agent runs headlessly against the
+	// same prompt and exits when done.
+	Work(ctx context.Context, req WorkRequest) error
 }
 
 // PlanRequest is the input to Agent.Plan. The caller pre-reads the
@@ -45,5 +53,18 @@ type PlanRequest struct {
 	Body        string
 	Model       string
 	OutputPath  string
+	Interactive bool
+}
+
+// WorkRequest is the input to Agent.Work. The caller pre-reads the plan
+// markdown body so the agent can choose how to embed or attach it
+// without having to re-stat or re-read the file. Unlike PlanRequest
+// there is no OutputPath: the coder edits files in the plan's
+// directory directly, so the orchestrator does not stat a single
+// output file afterwards.
+type WorkRequest struct {
+	PlanPath    string
+	Body        string
+	Model       string
 	Interactive bool
 }

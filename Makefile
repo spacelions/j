@@ -36,6 +36,12 @@ coverage:
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+SelectModel[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+choose[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
+		-e 'internal/cli/work/target\.go:[0-9]+:[[:space:]]+resolveTarget[[:space:]]' \
+		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+AskTarget[[:space:]]' \
+		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+SelectTool[[:space:]]' \
+		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+SelectModel[[:space:]]' \
+		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+choose[[:space:]]' \
+		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
 		|| true); \
 	below=$$(printf '%s\n' "$$below" | sed '/^$$/d'); \
 	if [ -n "$$below" ]; then \
