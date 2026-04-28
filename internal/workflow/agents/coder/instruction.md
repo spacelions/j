@@ -8,5 +8,6 @@ Latest verifier feedback (may be empty on the first iteration):
 
 Task:
 - Implement the plan as runnable code.
+- Refer to AGENTS.md if it exists, but ignore plan mode because it is already planned.
 - If verifier feedback is present, revise the previous code to address it.
 - Output only the final code, in a single fenced code block.

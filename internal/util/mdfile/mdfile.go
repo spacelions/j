@@ -1,4 +1,10 @@
-package plan
+// Package mdfile provides a tiny helper for validating that a
+// user-supplied path points at an existing markdown file. Both
+// `j plan` (input task description) and `j work` (input plan markdown)
+// share the same rules: trim whitespace, resolve to an absolute path,
+// require a regular file with a .md or .markdown extension. Hosting
+// the rules here keeps the two CLI commands in lock-step.
+package mdfile
 
 import (
 	"errors"
@@ -13,9 +19,11 @@ var markdownExts = map[string]struct{}{
 	".markdown": {},
 }
 
-// resolveTarget validates that path points at an existing markdown file
-// and returns the absolute path.
-func resolveTarget(path string) (string, error) {
+// Resolve validates that path points at an existing markdown file and
+// returns the absolute path. Whitespace around the input is trimmed.
+// The error messages name "markdown file" so the caller does not need
+// to wrap them.
+func Resolve(path string) (string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return "", errors.New("target is empty")
@@ -39,14 +47,4 @@ func resolveTarget(path string) (string, error) {
 		return "", fmt.Errorf("%q is not a markdown file (expected .md or .markdown)", abs)
 	}
 	return abs, nil
-}
-
-// planOutputPath returns the path where the plan should be written. It
-// is derived from the target's basename so multiple inputs in the same
-// directory each get their own output (e.g. "feature.md" -> "feature.plan.md",
-// "1.md" -> "1.plan.md").
-func planOutputPath(target string) string {
-	base := filepath.Base(target)
-	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	return filepath.Join(filepath.Dir(target), stem+".plan.md")
 }

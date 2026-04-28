@@ -12,6 +12,7 @@ import (
 	"github.com/spacelions/j/internal/cli/plan"
 	"github.com/spacelions/j/internal/cli/run"
 	"github.com/spacelions/j/internal/cli/web"
+	"github.com/spacelions/j/internal/cli/work"
 	"github.com/spacelions/j/internal/config"
 )
 
@@ -33,6 +34,7 @@ func Execute() int {
 		run.New(),
 		web.New(),
 		plan.New(),
+		work.New(),
 	)
 	root.SetArgs(os.Args[1:])
 	if err := root.Execute(); err != nil {

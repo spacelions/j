@@ -1,4 +1,4 @@
-package codingagents
+package prompts
 
 import (
 	"strings"
@@ -7,8 +7,8 @@ import (
 	"github.com/spacelions/j/internal/workflow/agents/planner"
 )
 
-func TestBuildPrompt(t *testing.T) {
-	got := BuildPrompt("/tmp/feature.md", "# task\nbody")
+func TestBuildPlanner(t *testing.T) {
+	got := BuildPlanner("/tmp/feature.md", "# task\nbody")
 
 	if !strings.Contains(got, strings.TrimSpace(planner.Instruction)) {
 		t.Fatalf("prompt missing planner.Instruction: %q", got)

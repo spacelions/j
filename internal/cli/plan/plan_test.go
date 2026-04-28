@@ -127,6 +127,12 @@ func (s *scriptedAgent) Plan(_ context.Context, req codingagents.PlanRequest) er
 	return os.WriteFile(req.OutputPath, []byte(s.plan+"\n"), 0o644)
 }
 
+// Work is unused by plan_test but required to satisfy the
+// codingagents.Agent interface, which gained Work alongside Plan.
+func (s *scriptedAgent) Work(context.Context, codingagents.WorkRequest) error {
+	return errors.New("scriptedAgent: Work should not be called from plan tests")
+}
+
 func writeTarget(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()

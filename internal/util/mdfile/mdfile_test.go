@@ -1,4 +1,4 @@
-package plan
+package mdfile
 
 import (
 	"os"
@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestResolveTarget_Markdown(t *testing.T) {
+func TestResolve_Markdown(t *testing.T) {
 	dir := t.TempDir()
 	for _, ext := range []string{".md", ".markdown"} {
 		t.Run(ext, func(t *testing.T) {
@@ -17,9 +17,9 @@ func TestResolveTarget_Markdown(t *testing.T) {
 			if err := os.WriteFile(p, []byte("hi"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			got, err := resolveTarget(p)
+			got, err := Resolve(p)
 			if err != nil {
-				t.Fatalf("resolveTarget: %v", err)
+				t.Fatalf("Resolve: %v", err)
 			}
 			want, err := filepath.Abs(p)
 			if err != nil {
@@ -32,15 +32,15 @@ func TestResolveTarget_Markdown(t *testing.T) {
 	}
 }
 
-func TestResolveTarget_TrimsAndUppercaseExtension(t *testing.T) {
+func TestResolve_TrimsAndUppercaseExtension(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "SPEC.MD")
 	if err := os.WriteFile(p, []byte("hi"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := resolveTarget("  " + p + "  ")
+	got, err := Resolve("  " + p + "  ")
 	if err != nil {
-		t.Fatalf("resolveTarget: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	want, _ := filepath.Abs(p)
 	if got != want {
@@ -48,7 +48,7 @@ func TestResolveTarget_TrimsAndUppercaseExtension(t *testing.T) {
 	}
 }
 
-func TestResolveTarget_Errors(t *testing.T) {
+func TestResolve_Errors(t *testing.T) {
 	dir := t.TempDir()
 	txt := filepath.Join(dir, "spec.txt")
 	if err := os.WriteFile(txt, []byte("hi"), 0o600); err != nil {
@@ -67,7 +67,7 @@ func TestResolveTarget_Errors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := resolveTarget(tc.in)
+			_, err := Resolve(tc.in)
 			if err == nil {
 				t.Fatal("expected error")
 			}
@@ -78,23 +78,7 @@ func TestResolveTarget_Errors(t *testing.T) {
 	}
 }
 
-func TestPlanOutputPath(t *testing.T) {
-	cases := map[string]string{
-		"/tmp/foo/spec.md":      "/tmp/foo/spec.plan.md",
-		"/tmp/foo/1.md":         "/tmp/foo/1.plan.md",
-		"/tmp/foo/feature.MD":   "/tmp/foo/feature.plan.md",
-		"/tmp/foo/idx.markdown": "/tmp/foo/idx.plan.md",
-		"/abs/no-ext":           "/abs/no-ext.plan.md",
-	}
-	for in, want := range cases {
-		got := planOutputPath(filepath.FromSlash(in))
-		if got != filepath.FromSlash(want) {
-			t.Fatalf("planOutputPath(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
-func TestResolveTarget_NotRegularFile(t *testing.T) {
+func TestResolve_NotRegularFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("posix-only fifo test")
 	}
@@ -105,9 +89,8 @@ func TestResolveTarget_NotRegularFile(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Remove(pipe) })
 
-	_, err := resolveTarget(pipe)
+	_, err := Resolve(pipe)
 	if err == nil || !strings.Contains(err.Error(), "not a regular file") {
 		t.Fatalf("err = %v", err)
 	}
 }
-
