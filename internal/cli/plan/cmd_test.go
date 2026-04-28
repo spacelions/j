@@ -7,13 +7,13 @@ import (
 	"github.com/spf13/viper"
 )
 
-func TestNewCommand_Smoke(t *testing.T) {
+func TestNew_Smoke(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 
-	cmd := NewCommand()
+	cmd := New()
 	if cmd == nil {
-		t.Fatal("NewCommand returned nil")
+		t.Fatal("New returned nil")
 	}
 	if cmd.Use != "plan" {
 		t.Fatalf("Use = %q, want %q", cmd.Use, "plan")
@@ -37,16 +37,15 @@ func TestNewCommand_Smoke(t *testing.T) {
 	}
 }
 
-// TestNewCommand_RunE_PropagatesPlanError invokes the RunE closure
-// inside the same package so its body (calling Run with an Options
-// built from viper + cursor.New()) is exercised by plan_test coverage.
-// We use a bogus target so resolveTarget short-circuits before any
-// agent or UI is touched.
-func TestNewCommand_RunE_PropagatesPlanError(t *testing.T) {
+// TestNew_RunE_PropagatesPlanError invokes the RunE closure inside the
+// same package so its body (calling Run with an Options built from viper +
+// cursor.New()) is exercised by plan_test coverage. We use a bogus target
+// so resolveTarget short-circuits before any agent or UI is touched.
+func TestNew_RunE_PropagatesPlanError(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 
-	cmd := NewCommand()
+	cmd := New()
 	if err := cmd.Flags().Set("target", "/this/path/does/not/exist.md"); err != nil {
 		t.Fatalf("Flags().Set: %v", err)
 	}

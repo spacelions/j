@@ -32,7 +32,7 @@ func Execute() int {
 	root.AddCommand(
 		run.New(),
 		web.New(),
-		plan.NewCommand(),
+		plan.New(),
 	)
 	root.SetArgs(os.Args[1:])
 	if err := root.Execute(); err != nil {

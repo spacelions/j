@@ -11,8 +11,12 @@ import (
 	"google.golang.org/adk/model"
 )
 
+// Instruction is the embedded instruction.md used as the verifier system
+// prompt. Exported so other backends can reuse the same review rules
+// without duplicating the file.
+//
 //go:embed instruction.md
-var instruction string
+var Instruction string
 
 const (
 	Name      = "verifier"
@@ -25,7 +29,7 @@ func New(m model.LLM) (agent.Agent, error) {
 		Name:        Name,
 		Model:       m,
 		Description: "Reviews the coder's output against the plan and returns a concise verdict.",
-		Instruction: instruction,
+		Instruction: Instruction,
 		OutputKey:   OutputKey,
 	})
 }

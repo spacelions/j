@@ -67,7 +67,7 @@ func (u *huhUI) SelectTool(ctx context.Context, options []string) (string, error
 }
 
 func (u *huhUI) SelectModel(ctx context.Context, options []string) (string, error) {
-	return u.choose(ctx, "Select Cursor model", options)
+	return u.choose(ctx, "Select model", options)
 }
 
 func (u *huhUI) choose(ctx context.Context, title string, options []string) (string, error) {
