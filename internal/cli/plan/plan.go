@@ -118,7 +118,7 @@ func (o Options) withDefaults() Options {
 		o.Stderr = os.Stderr
 	}
 	if o.UI == nil {
-		o.UI = newBubbleUI(o.Stdin, o.Stderr)
+		o.UI = newHuhUI(o.Stdin, o.Stderr)
 	}
 	return o
 }

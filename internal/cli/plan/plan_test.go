@@ -149,9 +149,9 @@ func TestRun_Success_WithFlag(t *testing.T) {
 		t.Fatalf("body = %q", agent.lastReq.Body)
 	}
 
-	plan, err := os.ReadFile(filepath.Join(filepath.Dir(target), "plan.md"))
+	plan, err := os.ReadFile(filepath.Join(filepath.Dir(target), "spec.plan.md"))
 	if err != nil {
-		t.Fatalf("plan.md: %v", err)
+		t.Fatalf("spec.plan.md: %v", err)
 	}
 	got := strings.TrimSpace(string(plan))
 	if got != "1. step one\n2. step two" {
@@ -386,8 +386,8 @@ func TestRun_AgentPlanError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if _, statErr := os.Stat(filepath.Join(filepath.Dir(target), "plan.md")); statErr == nil {
-		t.Fatal("plan.md should not have been written")
+	if _, statErr := os.Stat(filepath.Join(filepath.Dir(target), "spec.plan.md")); statErr == nil {
+		t.Fatal("spec.plan.md should not have been written")
 	}
 }
 

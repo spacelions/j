@@ -11,7 +11,6 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/util/run"
-	"github.com/spacelions/j/internal/util/strs"
 )
 
 // Binary is the cursor-agent executable name.
@@ -41,10 +40,8 @@ func (a *Agent) ListModels(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list cursor models: %w (run 'cursor-agent login' or check your account)", err)
 	}
-	models, err := strs.ParseList(out, "no models")
-	if err != nil {
-		// strs.ParseList only fails with ErrEmptyList today; surface the
-		// cursor-flavored remediation hint.
+	models := parseModels(out)
+	if len(models) == 0 {
 		return nil, errors.New("cursor-agent returned no models")
 	}
 	return models, nil
@@ -94,4 +91,27 @@ func (a *Agent) Plan(ctx context.Context, req codingagents.PlanRequest) (string,
 		return "", errors.New("cursor-agent returned an empty plan")
 	}
 	return plan, nil
+}
+
+// parseModels extracts cursor-agent model IDs from --list-models output.
+// The CLI prints a header banner ("Available models") followed by lines
+// of the form "<id> - <Display Name>" (sometimes with a "(default)"
+// annotation). Lines without a " - " separator are treated as banner
+// noise and skipped; for matching lines we keep only the id.
+func parseModels(out string) []string {
+	var ids []string
+	for _, raw := range strings.Split(out, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		i := strings.Index(line, " - ")
+		if i <= 0 {
+			continue
+		}
+		if id := strings.TrimSpace(line[:i]); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }

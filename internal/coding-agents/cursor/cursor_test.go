@@ -12,6 +12,14 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 )
 
+const sampleListModels = `Available models
+
+auto - Auto
+composer-2-fast - Composer 2 Fast (default)
+composer-2 - Composer 2
+gpt-5.3-codex-low - Codex 5.3 Low
+`
+
 // fakeRunner dispatches Output by argv. It satisfies run.Runner.
 type fakeRunner struct {
 	handler func(name string, args []string) (string, error)
@@ -33,10 +41,41 @@ func TestAgent_Name(t *testing.T) {
 	}
 }
 
+func TestParseModels(t *testing.T) {
+	got := parseModels(sampleListModels)
+	want := []string{"auto", "composer-2-fast", "composer-2", "gpt-5.3-codex-low"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestParseModels_SkipsHeaderAndBlanks(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{"banner-only", "Available models\n", nil},
+		{"all-blank", "\n\n  \n", nil},
+		{"empty", "", nil},
+		{"separator-without-id", " - Description\n", nil},
+		{"trailing-blanks", "auto - Auto\n\n", []string{"auto"}},
+		{"mixed", "Available models\n\nauto - Auto\nsome banner line\nfoo-bar - Foo Bar\n", []string{"auto", "foo-bar"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseModels(tc.in)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestListModels(t *testing.T) {
 	r := &fakeRunner{handler: func(_ string, args []string) (string, error) {
 		if len(args) == 1 && args[0] == "--list-models" {
-			return "gpt-5\nsonnet-4\n", nil
+			return sampleListModels, nil
 		}
 		return "", errors.New("unexpected")
 	}}
@@ -44,8 +83,9 @@ func TestListModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if !reflect.DeepEqual(got, []string{"gpt-5", "sonnet-4"}) {
-		t.Fatalf("got %v", got)
+	want := []string{"auto", "composer-2-fast", "composer-2", "gpt-5.3-codex-low"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 	if len(r.calls) != 1 || r.calls[0][0] != Binary {
 		t.Fatalf("calls = %v", r.calls)
@@ -61,7 +101,7 @@ func TestListModels_RunnerError(t *testing.T) {
 
 func TestListModels_EmptyList(t *testing.T) {
 	r := &fakeRunner{handler: func(string, []string) (string, error) {
-		return "No models available for this account.\n", nil
+		return "Available models\n\n", nil
 	}}
 	_, err := NewWithRunner(r).ListModels(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "no models") {
@@ -113,7 +153,7 @@ func TestPlan_BuildsArgsAndReturnsPlan(t *testing.T) {
 	got, err := NewWithRunner(r).Plan(context.Background(), codingagents.PlanRequest{
 		TargetPath: target,
 		Body:       "# task\nbody",
-		Model:      "sonnet-4",
+		Model:      "composer-2-fast",
 	})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
@@ -125,7 +165,7 @@ func TestPlan_BuildsArgsAndReturnsPlan(t *testing.T) {
 		"--print",
 		"--output-format", "text",
 		"--mode", "plan",
-		"--model", "sonnet-4",
+		"--model", "composer-2-fast",
 		"--workspace", dir,
 	}
 	if len(captured) != len(want)+1 {
