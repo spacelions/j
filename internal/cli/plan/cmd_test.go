@@ -7,6 +7,49 @@ import (
 	"github.com/spf13/viper"
 )
 
+func TestNew_FromSettingsFlag_DefaultsTrue(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	cmd := New()
+	f := cmd.Flags().Lookup("from-settings")
+	if f == nil {
+		t.Fatal("--from-settings flag was not registered")
+	}
+	if f.DefValue != "true" {
+		t.Fatalf("--from-settings default = %q, want %q", f.DefValue, "true")
+	}
+	if !viper.GetBool("plan.from_settings") {
+		t.Error("plan.from_settings should default to true via BindPFlag")
+	}
+}
+
+func TestNew_FromSettingsFlag_FalseFlowsToViper(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	cmd := New()
+	if err := cmd.Flags().Set("from-settings", "false"); err != nil {
+		t.Fatalf("Flags().Set: %v", err)
+	}
+	if viper.GetBool("plan.from_settings") {
+		t.Error("plan.from_settings should be false after --from-settings=false")
+	}
+}
+
+// TestNew_FromSettingsEnv covers the env-var binding so PLAN_FROM_SETTINGS
+// can be used from CI without a flag.
+func TestNew_FromSettingsEnv(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Setenv("PLAN_FROM_SETTINGS", "false")
+
+	_ = New()
+	if viper.GetBool("plan.from_settings") {
+		t.Error("PLAN_FROM_SETTINGS=false should make plan.from_settings false")
+	}
+}
+
 func TestNew_Smoke(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)

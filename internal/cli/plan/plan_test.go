@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -825,6 +826,269 @@ func TestPersistPlannerSelection_NilStore(t *testing.T) {
 	persistPlannerSelection(Options{Stderr: &stderr}, "cursor", "sonnet-4")
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr should stay empty, got %q", stderr.String())
+	}
+}
+
+// TestRun_FromSettings_PopulatedStore_SkipsPrompts pins the
+// happy-path of --from-settings=true: a populated planner bucket
+// causes Run to look up the agent by stored name, run CheckLogin,
+// and skip the tool/model prompts entirely. The bucket must keep
+// only the original three keys (no "from_settings" key, no rewrite).
+func TestRun_FromSettings_PopulatedStore_SkipsPrompts(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "gpt-5"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "interactive", "true"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	target := writeTarget(t, "body")
+	agent := newScriptedAgent()
+	ui := &scriptedUI{}
+	var stderr bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		Target:       target,
+		Interactive:  true,
+		FromSettings: true,
+		Stdout:       io.Discard,
+		Stderr:       &stderr,
+		Agents:       []codingagents.Agent{agent},
+		UI:           ui,
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.toolCalls != 0 || ui.modelCalls != 0 {
+		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	}
+	if agent.listed != 0 {
+		t.Fatalf("ListModels should not be called when reading from settings (got %d)", agent.listed)
+	}
+	if agent.checked != 1 {
+		t.Fatalf("CheckLogin = %d, want 1", agent.checked)
+	}
+	if agent.lastReq.Model != "gpt-5" {
+		t.Fatalf("model = %q, want gpt-5", agent.lastReq.Model)
+	}
+	entries, err := s.List(store.BucketPlanner)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	got := make([]string, len(entries))
+	for i, kv := range entries {
+		got[i] = kv.Key
+	}
+	want := []string{"interactive", "model", "tool"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("planner keys = %v, want %v", got, want)
+	}
+	if strings.Contains(stderr.String(), "no stored planner selection") {
+		t.Fatalf("stderr should not warn when store is populated: %q", stderr.String())
+	}
+}
+
+// TestRun_FromSettings_EmptyStore_FallsBackToPrompt covers the
+// first-run case: --from-settings=true is the default but an empty
+// bucket forces the interactive Pick flow with a single stderr
+// breadcrumb explaining why.
+func TestRun_FromSettings_EmptyStore_FallsBackToPrompt(t *testing.T) {
+	s := openTestStore(t)
+	target := writeTarget(t, "body")
+	agent := newScriptedAgent()
+	ui := &scriptedUI{}
+	var stderr bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		Target:       target,
+		Interactive:  true,
+		FromSettings: true,
+		Stdout:       io.Discard,
+		Stderr:       &stderr,
+		Agents:       []codingagents.Agent{agent},
+		UI:           ui,
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.toolCalls != 1 || ui.modelCalls != 1 {
+		t.Fatalf("UI should be prompted: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	}
+	if !strings.Contains(stderr.String(), "no stored planner selection; prompting") {
+		t.Fatalf("stderr should warn about fallback: %q", stderr.String())
+	}
+	if v, ok := mustGet(t, s, "tool"); !ok || v != "cursor" {
+		t.Fatalf("planner.tool = %q (ok=%v), want cursor", v, ok)
+	}
+}
+
+// TestRun_FromSettings_False_AlwaysPrompts asserts the explicit
+// opt-out: even when the store is fully populated, FromSettings=false
+// forces the prompt path so users can change their mind.
+func TestRun_FromSettings_False_AlwaysPrompts(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	target := writeTarget(t, "body")
+	agent := newScriptedAgent()
+	ui := &scriptedUI{}
+	var stderr bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		Target:       target,
+		FromSettings: false,
+		Stdout:       io.Discard,
+		Stderr:       &stderr,
+		Agents:       []codingagents.Agent{agent},
+		UI:           ui,
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.toolCalls != 1 || ui.modelCalls != 1 {
+		t.Fatalf("UI should be prompted: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	}
+	if strings.Contains(stderr.String(), "no stored planner selection") {
+		t.Fatalf("stderr should not warn on explicit --from-settings=false: %q", stderr.String())
+	}
+}
+
+// TestRun_FromSettings_LoginFailureSurfaces covers the
+// CheckLogin-error branch on the FromStore path: the error must
+// propagate and the agent must NOT plan.
+func TestRun_FromSettings_LoginFailureSurfaces(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	target := writeTarget(t, "body")
+	agent := newScriptedAgent()
+	agent.loginErr = errors.New("not logged in")
+
+	err := Run(context.Background(), Options{
+		Target:       target,
+		FromSettings: true,
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+		Agents:       []codingagents.Agent{agent},
+		UI:           &scriptedUI{},
+		Store:        s,
+	})
+	if err == nil || !strings.Contains(err.Error(), "not logged in") {
+		t.Fatalf("err = %v", err)
+	}
+	if agent.planned != 0 {
+		t.Fatal("agent.Plan should not run when CheckLogin fails on FromStore path")
+	}
+}
+
+// TestRun_Scratch_FromSettings mirrors the markdown coverage for the
+// scratch path: a populated store skips prompts and routes the model
+// straight into the Plan request.
+func TestRun_Scratch_FromSettings(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "gpt-5"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	agent := newScriptedAgent()
+	agent.skipWrite = true
+	ui := &scriptedUI{source: SourceScratch}
+	var stderr bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		FromSettings: true,
+		Stdout:       io.Discard,
+		Stderr:       &stderr,
+		Agents:       []codingagents.Agent{agent},
+		UI:           ui,
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.toolCalls != 0 || ui.modelCalls != 0 {
+		t.Fatalf("scratch should also skip prompts: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	}
+	if agent.lastReq.Model != "gpt-5" {
+		t.Fatalf("model = %q, want gpt-5", agent.lastReq.Model)
+	}
+}
+
+// TestRun_Scratch_FromSettings_EmptyStore exercises the fallback
+// branch in the scratch path so both runMarkdown and runScratch are
+// covered for the empty-store case.
+func TestRun_Scratch_FromSettings_EmptyStore(t *testing.T) {
+	s := openTestStore(t)
+	agent := newScriptedAgent()
+	agent.skipWrite = true
+	ui := &scriptedUI{source: SourceScratch}
+	var stderr bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		FromSettings: true,
+		Stdout:       io.Discard,
+		Stderr:       &stderr,
+		Agents:       []codingagents.Agent{agent},
+		UI:           ui,
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.toolCalls != 1 || ui.modelCalls != 1 {
+		t.Fatalf("scratch should fall back to prompts: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	}
+	if !strings.Contains(stderr.String(), "no stored planner selection; prompting") {
+		t.Fatalf("stderr should warn about fallback: %q", stderr.String())
+	}
+}
+
+// TestRun_FromSettings_NonSentinelStoreError pins the branch where
+// FromStore returns an error other than ErrNoStoredSelection (an
+// unknown tool name in the bucket): Run propagates it without
+// falling back to Pick, since that's a real misconfiguration.
+func TestRun_FromSettings_NonSentinelStoreError(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketPlanner, "tool", "ghost"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	target := writeTarget(t, "body")
+	agent := newScriptedAgent()
+	ui := &scriptedUI{}
+
+	err := Run(context.Background(), Options{
+		Target:       target,
+		FromSettings: true,
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+		Agents:       []codingagents.Agent{agent},
+		UI:           ui,
+		Store:        s,
+	})
+	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
+		t.Fatalf("err = %v", err)
+	}
+	if ui.toolCalls != 0 {
+		t.Fatal("Pick should not be invoked on non-sentinel error")
 	}
 }
 

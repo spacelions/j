@@ -11,10 +11,18 @@ package agentpick
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/store"
 )
+
+// ErrNoStoredSelection is returned by FromStore when the supplied
+// store is nil or the bucket does not yet hold both a "tool" and a
+// "model" entry. Callers use errors.Is to detect this sentinel and
+// fall back to the interactive Pick flow on first runs.
+var ErrNoStoredSelection = errors.New("agentpick: no stored selection")
 
 // Selector is the slice of UI behavior that Pick needs. Defining it
 // locally avoids importing either command package and keeps the
@@ -55,6 +63,44 @@ func Pick(ctx context.Context, ui Selector, agents []codingagents.Agent) (coding
 		return nil, "", err
 	}
 
+	if err := agent.CheckLogin(ctx); err != nil {
+		return nil, "", err
+	}
+	return agent, model, nil
+}
+
+// FromStore reuses a previously-recorded tool/model selection from
+// the bbolt settings store instead of prompting the user. It reads
+// the "tool" and "model" keys from the supplied bucket, looks the
+// agent up by name, and runs CheckLogin so authentication failures
+// surface here exactly as they do in Pick.
+//
+// The store is treated as read-only: callers that record a
+// selection do so on the prompted path only, so this helper never
+// re-Puts the values it reads. A nil store, a missing tool entry,
+// or a missing model entry all yield ErrNoStoredSelection so the
+// caller can transparently fall back to Pick on a first run.
+func FromStore(ctx context.Context, s *store.Store, bucket string, agents []codingagents.Agent) (codingagents.Agent, string, error) {
+	if s == nil {
+		return nil, "", ErrNoStoredSelection
+	}
+	entries, err := s.List(bucket)
+	if err != nil {
+		return nil, "", fmt.Errorf("agentpick: read %s: %w", bucket, err)
+	}
+	values := make(map[string]string, len(entries))
+	for _, kv := range entries {
+		values[kv.Key] = kv.Value
+	}
+	tool := values["tool"]
+	model := values["model"]
+	if tool == "" || model == "" {
+		return nil, "", ErrNoStoredSelection
+	}
+	agent, ok := lookup(agents, tool)
+	if !ok {
+		return nil, "", fmt.Errorf("unknown tool %q", tool)
+	}
 	if err := agent.CheckLogin(ctx); err != nil {
 		return nil, "", err
 	}

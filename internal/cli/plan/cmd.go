@@ -27,20 +27,24 @@ func New() *cobra.Command {
 			// don't construct one here. Tests inject their own to keep
 			// the on-disk side effects hermetic.
 			return Run(cmd.Context(), Options{
-				Target:      viper.GetString("plan.target"),
-				Interactive: viper.GetBool("plan.interactive"),
-				Stdin:       cmd.InOrStdin(),
-				Stdout:      cmd.OutOrStdout(),
-				Stderr:      cmd.ErrOrStderr(),
-				Agents:      []codingagents.Agent{cursor.New()},
+				Target:       viper.GetString("plan.target"),
+				Interactive:  viper.GetBool("plan.interactive"),
+				FromSettings: viper.GetBool("plan.from_settings"),
+				Stdin:        cmd.InOrStdin(),
+				Stdout:       cmd.OutOrStdout(),
+				Stderr:       cmd.ErrOrStderr(),
+				Agents:       []codingagents.Agent{cursor.New()},
 			})
 		},
 	}
 	cmd.Flags().StringP("target", "t", "", "Path to a markdown file describing the task")
 	cmd.Flags().Bool("interactive", true, "Launch the coding agent in interactive mode (its TUI). Set to false for headless capture.")
+	cmd.Flags().Bool("from-settings", true, "Use the tool/model recorded in <cwd>/.j/settings; pass --from-settings=false to be prompted instead.")
 	_ = viper.BindPFlag("plan.target", cmd.Flags().Lookup("target"))
 	_ = viper.BindPFlag("plan.interactive", cmd.Flags().Lookup("interactive"))
+	_ = viper.BindPFlag("plan.from_settings", cmd.Flags().Lookup("from-settings"))
 	_ = viper.BindEnv("plan.target", "PLAN_TARGET")
 	_ = viper.BindEnv("plan.interactive", "PLAN_INTERACTIVE")
+	_ = viper.BindEnv("plan.from_settings", "PLAN_FROM_SETTINGS")
 	return cmd
 }

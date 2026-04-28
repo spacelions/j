@@ -24,20 +24,24 @@ func New() *cobra.Command {
 			"so it can execute the plan against the plan's directory.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return Run(cmd.Context(), Options{
-				Target:      viper.GetString("work.target"),
-				Interactive: viper.GetBool("work.interactive"),
-				Stdin:       cmd.InOrStdin(),
-				Stdout:      cmd.OutOrStdout(),
-				Stderr:      cmd.ErrOrStderr(),
-				Agents:      []codingagents.Agent{cursor.New()},
+				Target:       viper.GetString("work.target"),
+				Interactive:  viper.GetBool("work.interactive"),
+				FromSettings: viper.GetBool("work.from_settings"),
+				Stdin:        cmd.InOrStdin(),
+				Stdout:       cmd.OutOrStdout(),
+				Stderr:       cmd.ErrOrStderr(),
+				Agents:       []codingagents.Agent{cursor.New()},
 			})
 		},
 	}
 	cmd.Flags().StringP("target", "t", "", "Path to a plan markdown file produced by `j plan`")
 	cmd.Flags().Bool("interactive", true, "Launch the coding agent in interactive mode (its TUI). Set to false for headless capture.")
+	cmd.Flags().Bool("from-settings", true, "Use the tool/model recorded in <cwd>/.j/settings; pass --from-settings=false to be prompted instead.")
 	_ = viper.BindPFlag("work.target", cmd.Flags().Lookup("target"))
 	_ = viper.BindPFlag("work.interactive", cmd.Flags().Lookup("interactive"))
+	_ = viper.BindPFlag("work.from_settings", cmd.Flags().Lookup("from-settings"))
 	_ = viper.BindEnv("work.target", "WORK_TARGET")
 	_ = viper.BindEnv("work.interactive", "WORK_INTERACTIVE")
+	_ = viper.BindEnv("work.from_settings", "WORK_FROM_SETTINGS")
 	return cmd
 }
