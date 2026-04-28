@@ -11,7 +11,55 @@ import (
 	"testing"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/store"
 )
+
+// openTestStore returns a fresh *store.Store rooted in t.TempDir() with
+// the planner bucket pre-created. The DB closes automatically via
+// t.Cleanup so individual tests don't need to track it.
+func openTestStore(t *testing.T) *store.Store {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := s.EnsureBucket(store.BucketPlanner); err != nil {
+		t.Fatalf("EnsureBucket: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
+	t.Helper()
+	v, ok, err := s.Get(store.BucketPlanner, key)
+	if err != nil {
+		t.Fatalf("Get %s: %v", key, err)
+	}
+	return v, ok
+}
+
+// TestMain chdir's the entire plan-package test binary into an
+// ephemeral directory so any test that calls Run without an explicit
+// Store doesn't pollute the source tree with a `.j/settings` file
+// when withDefaults lazily opens the default DB. Tests that need
+// hermetic per-test storage call t.Chdir on top of this.
+func TestMain(m *testing.M) {
+	tmp, err := os.MkdirTemp("", "plan-test-*")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmp)
+	if err := os.Chdir(tmp); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
 
 // scriptedUI returns predetermined answers for each prompt and tracks how
 // many times each prompt was invoked. The zero value picks the markdown
@@ -606,5 +654,215 @@ func TestRun_UnknownToolFromUI(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestRun_Markdown_PersistsPlannerSelection drives a successful
+// markdown run with a real *store.Store and asserts the planner
+// bucket holds tool/model/interactive only — source and target must
+// stay unpersisted so the user is prompted for them every run.
+func TestRun_Markdown_PersistsPlannerSelection(t *testing.T) {
+	s := openTestStore(t)
+	target := writeTarget(t, "body")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		Target:      target,
+		Interactive: true,
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{agent},
+		UI:          &scriptedUI{},
+		Store:       s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	want := map[string]string{
+		"tool":        "cursor",
+		"model":       "sonnet-4",
+		"interactive": "true",
+	}
+	for k, v := range want {
+		got, ok := mustGet(t, s, k)
+		if !ok {
+			t.Fatalf("missing key %q", k)
+		}
+		if got != v {
+			t.Fatalf("planner.%s = %q, want %q", k, got, v)
+		}
+	}
+	for _, forbidden := range []string{"source", "target"} {
+		if _, ok := mustGet(t, s, forbidden); ok {
+			t.Fatalf("planner.%s should not be persisted", forbidden)
+		}
+	}
+}
+
+// TestRun_Scratch_PersistsPlannerSelection asserts the scratch path
+// also records tool/model/interactive but no source/target.
+func TestRun_Scratch_PersistsPlannerSelection(t *testing.T) {
+	s := openTestStore(t)
+	agent := newScriptedAgent()
+	agent.skipWrite = true
+
+	err := Run(context.Background(), Options{
+		Interactive: false,
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{agent},
+		UI:          &scriptedUI{source: SourceScratch},
+		Store:       s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if v, ok := mustGet(t, s, "tool"); !ok || v != "cursor" {
+		t.Fatalf("planner.tool = %q (ok=%v)", v, ok)
+	}
+	if v, ok := mustGet(t, s, "interactive"); !ok || v != "false" {
+		t.Fatalf("planner.interactive = %q (ok=%v)", v, ok)
+	}
+	for _, forbidden := range []string{"source", "target"} {
+		if _, ok := mustGet(t, s, forbidden); ok {
+			t.Fatalf("planner.%s should not be persisted", forbidden)
+		}
+	}
+}
+
+// TestRun_LoginFailure_DoesNotPersist confirms the planner bucket is
+// untouched when login fails (we only persist after pickAgentAndModel
+// returns successfully).
+func TestRun_LoginFailure_DoesNotPersist(t *testing.T) {
+	s := openTestStore(t)
+	target := writeTarget(t, "body")
+	agent := newScriptedAgent()
+	agent.loginErr = errors.New("not logged in")
+
+	err := Run(context.Background(), Options{
+		Target: target,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+		Store:  s,
+	})
+	if err == nil {
+		t.Fatal("expected login error")
+	}
+	entries, listErr := s.List(store.BucketPlanner)
+	if listErr != nil {
+		t.Fatalf("List: %v", listErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("planner bucket should be empty: %v", entries)
+	}
+}
+
+// TestRun_SelectionCancelled_DoesNotPersist mirrors the login-failure
+// case for the user-cancel path through agentpick.Pick.
+func TestRun_SelectionCancelled_DoesNotPersist(t *testing.T) {
+	s := openTestStore(t)
+	target := writeTarget(t, "body")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		Target: target,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{toolErr: ErrCancelled},
+		Store:  s,
+	})
+	if !errors.Is(err, ErrCancelled) {
+		t.Fatalf("err = %v, want ErrCancelled", err)
+	}
+	entries, listErr := s.List(store.BucketPlanner)
+	if listErr != nil {
+		t.Fatalf("List: %v", listErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("planner bucket should be empty after cancel: %v", entries)
+	}
+}
+
+// TestRun_StoreWriteError_WarnsAndContinues exercises the persistence
+// best-effort branch: a closed store returns errors from Put, and the
+// agent must still run.
+func TestRun_StoreWriteError_WarnsAndContinues(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	target := writeTarget(t, "body")
+	agent := newScriptedAgent()
+	var stderr bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		Target: target,
+		Stdout: io.Discard,
+		Stderr: &stderr,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+		Store:  s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "warning: persist") {
+		t.Fatalf("stderr = %q, want warning", stderr.String())
+	}
+	if agent.planned != 1 {
+		t.Fatal("agent.Plan should still have been invoked despite persist error")
+	}
+}
+
+// TestPersistPlannerSelection_NilStore exercises the early-return
+// branch when no Store is configured (e.g. because withDefaults could
+// not open one and the caller did not supply a fallback).
+func TestPersistPlannerSelection_NilStore(t *testing.T) {
+	var stderr bytes.Buffer
+	persistPlannerSelection(Options{Stderr: &stderr}, "cursor", "sonnet-4")
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr should stay empty, got %q", stderr.String())
+	}
+}
+
+// TestRun_StoreLazyDefault confirms that a nil opts.Store causes
+// withDefaults to open and close the default DB. We chdir into a
+// temp dir so the on-disk side effect is hermetic.
+func TestRun_StoreLazyDefault(t *testing.T) {
+	t.Chdir(t.TempDir())
+	target := writeTarget(t, "body")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		Target: target,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("default DB was not created: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	got, ok, err := s.Get(store.BucketPlanner, "tool")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !ok || got != "cursor" {
+		t.Fatalf("planner.tool = %q (ok=%v)", got, ok)
 	}
 }

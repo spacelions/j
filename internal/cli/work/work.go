@@ -15,6 +15,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/agentpick"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/mdfile"
 )
 
@@ -33,12 +34,29 @@ type Options struct {
 
 	Agents []codingagents.Agent
 	UI     UI
+
+	// Store, when non-nil, receives best-effort writes recording the
+	// tool/model/interactive flag last used. The work source (the
+	// plan file path) is intentionally NOT persisted: the user must
+	// supply or be prompted for it every run. The orchestrator does
+	// not own the lifecycle when the caller supplies a Store. When
+	// nil, withDefaults opens the default <cwd>/.j/settings DB and
+	// closes it after Run returns.
+	Store *store.Store
+
+	// closeStore is set internally by withDefaults when it allocates
+	// the default Store, so Run can close it before returning. Tests
+	// that pass their own Store leave this false.
+	closeStore bool
 }
 
 // Run executes `j work`. When Options.Target is set it goes straight to
 // resolution; otherwise it asks the user for the plan path.
 func Run(ctx context.Context, opts Options) error {
 	opts = opts.withDefaults()
+	if opts.closeStore && opts.Store != nil {
+		defer func() { _ = opts.Store.Close() }()
+	}
 	if len(opts.Agents) == 0 {
 		return errors.New("work: no coding agents configured")
 	}
@@ -66,6 +84,8 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 
+	persistCoderSelection(opts, agent.Name(), model)
+
 	if err := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:    plan,
 		Body:        string(body),
@@ -77,6 +97,15 @@ func Run(ctx context.Context, opts Options) error {
 
 	fmt.Fprintf(opts.Stdout, "coding against %s\n", plan)
 	return nil
+}
+
+// persistCoderSelection writes the just-confirmed tool/model and the
+// interactive flag to the coder bucket. The plan path (the work
+// "source") is intentionally NOT persisted so the user picks one per
+// run. Persistence is best-effort: errors warn on opts.Stderr and
+// don't abort the run.
+func persistCoderSelection(opts Options, tool, model string) {
+	store.PersistAgentSelection(opts.Store, opts.Stderr, store.BucketCoder, tool, model, opts.Interactive)
 }
 
 func (o Options) withDefaults() Options {
@@ -91,6 +120,12 @@ func (o Options) withDefaults() Options {
 	}
 	if o.UI == nil {
 		o.UI = newHuhUI(o.Stdin, o.Stderr)
+	}
+	if o.Store == nil {
+		if s, ok := store.OpenDefault(o.Stderr, store.BucketCoder); ok {
+			o.Store = s
+			o.closeStore = true
+		}
 	}
 	return o
 }

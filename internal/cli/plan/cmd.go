@@ -22,6 +22,10 @@ func New() *cobra.Command {
 		Long: "Reads a markdown task description, asks which coding agent and model to use, " +
 			"runs that agent in plan mode, and writes the resulting plan.md beside the input.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Run's withDefaults opens the per-cwd settings DB when
+			// Options.Store is nil and closes it on the way out, so we
+			// don't construct one here. Tests inject their own to keep
+			// the on-disk side effects hermetic.
 			return Run(cmd.Context(), Options{
 				Target:      viper.GetString("plan.target"),
 				Interactive: viper.GetBool("plan.interactive"),
