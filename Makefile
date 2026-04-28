@@ -27,7 +27,8 @@ coverage:
 	below=$$(printf '%s\n' "$$below" | grep -Ev \
 		-e 'internal/config/config\.go:[0-9]+:[[:space:]]+Init[[:space:]]' \
 		-e 'internal/workflow/workflow\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
-		-e 'internal/cli/root\.go:[0-9]+:[[:space:]]+Execute[[:space:]]' \
+		-e 'internal/cli/run/run\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
+		-e 'internal/cli/web/web\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
 		-e 'internal/cli/plan/target\.go:[0-9]+:[[:space:]]+resolveTarget[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+AskTarget[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+SelectSource[[:space:]]' \
