@@ -28,6 +28,15 @@ type Options struct {
 	Target      string
 	Interactive bool
 
+	// FromSettings, when true, makes Run reuse the tool/model
+	// recorded in the coder bucket of <cwd>/.j/settings instead of
+	// prompting. When the bucket is empty (first run) Run falls back
+	// to the interactive Pick flow and emits a single stderr warning.
+	// This field is session-only and is intentionally NOT persisted
+	// to the bbolt store; the cobra layer supplies the default
+	// (true) so the zero value here is fine.
+	FromSettings bool
+
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
@@ -79,12 +88,10 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("read plan: %w", err)
 	}
 
-	agent, model, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
+	agent, model, err := selectCoder(ctx, opts)
 	if err != nil {
 		return err
 	}
-
-	persistCoderSelection(opts, agent.Name(), model)
 
 	if err := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:    plan,
@@ -97,6 +104,32 @@ func Run(ctx context.Context, opts Options) error {
 
 	fmt.Fprintf(opts.Stdout, "coding against %s\n", plan)
 	return nil
+}
+
+// selectCoder is the single chokepoint for choosing the coder
+// tool/model. When FromSettings is true it tries the read-only
+// agentpick.FromStore path first and only falls back to the
+// interactive Pick flow on ErrNoStoredSelection (printing a single
+// stderr line so the user knows why they're being prompted). The
+// just-confirmed selection is persisted only on the prompted path:
+// values that came from the store are already there.
+func selectCoder(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
+	if opts.FromSettings {
+		agent, model, err := agentpick.FromStore(ctx, opts.Store, store.BucketCoder, opts.Agents)
+		if err == nil {
+			return agent, model, nil
+		}
+		if !errors.Is(err, agentpick.ErrNoStoredSelection) {
+			return nil, "", err
+		}
+		fmt.Fprintln(opts.Stderr, "no stored coder selection; prompting")
+	}
+	agent, model, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
+	if err != nil {
+		return nil, "", err
+	}
+	persistCoderSelection(opts, agent.Name(), model)
+	return agent, model, nil
 }
 
 // persistCoderSelection writes the just-confirmed tool/model and the

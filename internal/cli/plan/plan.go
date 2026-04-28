@@ -29,6 +29,15 @@ type Options struct {
 	Target      string
 	Interactive bool
 
+	// FromSettings, when true, makes Run reuse the tool/model
+	// recorded in the planner bucket of <cwd>/.j/settings instead of
+	// prompting. When the bucket is empty (first run) Run falls back
+	// to the interactive Pick flow and emits a single stderr warning.
+	// This field is session-only and is intentionally NOT persisted
+	// to the bbolt store; the cobra layer supplies the default
+	// (true) so the zero value here is fine.
+	FromSettings bool
+
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
@@ -100,12 +109,10 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		return fmt.Errorf("read target: %w", err)
 	}
 
-	agent, model, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
+	agent, model, err := selectPlanner(ctx, opts)
 	if err != nil {
 		return err
 	}
-
-	persistPlannerSelection(opts, agent.Name(), model)
 
 	out := planOutputPath(target)
 	if err := agent.Plan(ctx, codingagents.PlanRequest{
@@ -131,15 +138,40 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 // OutputPath in the request is the contract that signals scratch to
 // the agent.
 func runScratch(ctx context.Context, opts Options) error {
-	agent, model, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
+	agent, model, err := selectPlanner(ctx, opts)
 	if err != nil {
 		return err
 	}
-	persistPlannerSelection(opts, agent.Name(), model)
 	return agent.Plan(ctx, codingagents.PlanRequest{
 		Model:       model,
 		Interactive: true,
 	})
+}
+
+// selectPlanner is the single chokepoint for choosing the planner
+// tool/model. When FromSettings is true it tries the read-only
+// agentpick.FromStore path first and only falls back to the
+// interactive Pick flow on ErrNoStoredSelection (printing a single
+// stderr line so the user knows why they're being prompted). The
+// just-confirmed selection is persisted only on the prompted path:
+// values that came from the store are already there.
+func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
+	if opts.FromSettings {
+		agent, model, err := agentpick.FromStore(ctx, opts.Store, store.BucketPlanner, opts.Agents)
+		if err == nil {
+			return agent, model, nil
+		}
+		if !errors.Is(err, agentpick.ErrNoStoredSelection) {
+			return nil, "", err
+		}
+		fmt.Fprintln(opts.Stderr, "no stored planner selection; prompting")
+	}
+	agent, model, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
+	if err != nil {
+		return nil, "", err
+	}
+	persistPlannerSelection(opts, agent.Name(), model)
+	return agent, model, nil
 }
 
 // persistPlannerSelection writes the just-confirmed tool/model and

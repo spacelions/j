@@ -3,12 +3,30 @@ package agentpick
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/store"
 )
+
+// openTestStore returns a fresh *store.Store with the named bucket
+// pre-created, rooted at t.TempDir() so tests don't share state.
+func openTestStore(t *testing.T, bucket string) *store.Store {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "settings")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := s.EnsureBucket(bucket); err != nil {
+		t.Fatalf("EnsureBucket: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
 
 // scriptedUI is the in-package fake for Selector. Every field is
 // optional; the zero value picks the first option for both prompts.
@@ -185,6 +203,199 @@ func TestPick_CheckLoginError(t *testing.T) {
 	}
 	if cursor.checked != 1 {
 		t.Fatalf("CheckLogin called %d times, want 1", cursor.checked)
+	}
+}
+
+func TestFromStore_NilStore(t *testing.T) {
+	cursor := newStubAgent("cursor", "sonnet-4")
+	_, _, err := FromStore(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor})
+	if !errors.Is(err, ErrNoStoredSelection) {
+		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
+	}
+	if cursor.checked != 0 {
+		t.Fatal("CheckLogin should not run when store is nil")
+	}
+}
+
+func TestFromStore_MissingTool(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+
+	_, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	if !errors.Is(err, ErrNoStoredSelection) {
+		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
+	}
+}
+
+func TestFromStore_MissingModel(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+
+	_, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	if !errors.Is(err, ErrNoStoredSelection) {
+		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
+	}
+}
+
+// TestFromStore_EmptyToolValue covers the rare case where the
+// recorded value is an empty string. We treat it as "no selection"
+// so first-run and corruption-recovery look identical to the caller.
+func TestFromStore_EmptyToolValue(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Put(store.BucketPlanner, "tool", ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+
+	_, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	if !errors.Is(err, ErrNoStoredSelection) {
+		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
+	}
+}
+
+func TestFromStore_EmptyModelValue(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+
+	_, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	if !errors.Is(err, ErrNoStoredSelection) {
+		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
+	}
+}
+
+func TestFromStore_UnknownTool(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Put(store.BucketPlanner, "tool", "ghost"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+
+	_, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
+		t.Fatalf("err = %v", err)
+	}
+	if errors.Is(err, ErrNoStoredSelection) {
+		t.Fatal("unknown-tool must not collapse into ErrNoStoredSelection")
+	}
+	if cursor.checked != 0 {
+		t.Fatal("CheckLogin should not run when lookup fails")
+	}
+}
+
+func TestFromStore_CheckLoginError(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+	cursor.loginErr = errors.New("not logged in")
+
+	_, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	if err == nil || !strings.Contains(err.Error(), "not logged in") {
+		t.Fatalf("err = %v", err)
+	}
+	if cursor.checked != 1 {
+		t.Fatalf("CheckLogin called %d times, want 1", cursor.checked)
+	}
+}
+
+// TestFromStore_StoreReadError covers the wrap path when the
+// underlying store returns an error: a closed bbolt DB rejects every
+// View call, so List surfaces that failure and FromStore wraps it.
+func TestFromStore_StoreReadError(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+
+	_, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	if err == nil || !strings.Contains(err.Error(), "agentpick: read planner") {
+		t.Fatalf("err = %v, want wrapped read error", err)
+	}
+	if errors.Is(err, ErrNoStoredSelection) {
+		t.Fatal("read errors must not collapse into ErrNoStoredSelection")
+	}
+}
+
+func TestFromStore_HappyPath(t *testing.T) {
+	s := openTestStore(t, store.BucketCoder)
+	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketCoder, "model", "gpt-5"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4", "gpt-5")
+	codex := newStubAgent("codex", "o4")
+
+	agent, model, err := FromStore(context.Background(), s, store.BucketCoder, []codingagents.Agent{codex, cursor})
+	if err != nil {
+		t.Fatalf("FromStore: %v", err)
+	}
+	if agent != cursor {
+		t.Fatalf("agent = %v, want cursor", agent.Name())
+	}
+	if model != "gpt-5" {
+		t.Fatalf("model = %q, want gpt-5", model)
+	}
+	if cursor.checked != 1 {
+		t.Fatalf("CheckLogin called %d times, want 1", cursor.checked)
+	}
+	// FromStore must not list models — that's prompt-time work.
+	if cursor.listed != 0 {
+		t.Fatalf("ListModels called %d times, want 0", cursor.listed)
+	}
+}
+
+// TestFromStore_DoesNotPersist confirms FromStore never re-Puts the
+// values it reads, so the contract "from-settings is read-only" is
+// observable from the bucket contents.
+func TestFromStore_DoesNotPersist(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+
+	if _, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}); err != nil {
+		t.Fatalf("FromStore: %v", err)
+	}
+	entries, err := s.List(store.BucketPlanner)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	keys := make([]string, len(entries))
+	for i, kv := range entries {
+		keys[i] = kv.Key
+	}
+	want := []string{"model", "tool"}
+	if !reflect.DeepEqual(keys, want) {
+		t.Fatalf("planner keys = %v, want %v (FromStore must not Put)", keys, want)
 	}
 }
 
