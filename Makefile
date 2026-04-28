@@ -30,6 +30,7 @@ coverage:
 		-e 'internal/cli/root\.go:[0-9]+:[[:space:]]+Execute[[:space:]]' \
 		-e 'internal/cli/plan/target\.go:[0-9]+:[[:space:]]+resolveTarget[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+AskTarget[[:space:]]' \
+		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+SelectSource[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+SelectTool[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+SelectModel[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+choose[[:space:]]' \

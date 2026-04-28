@@ -14,18 +14,31 @@ import (
 )
 
 // scriptedUI returns predetermined answers for each prompt and tracks how
-// many times each prompt was invoked.
+// many times each prompt was invoked. The zero value picks the markdown
+// source (SourceMarkdown == 0) so existing tests that exercise the
+// markdown flow keep working without explicit setup.
 type scriptedUI struct {
-	target   string
-	tool     string
-	model    string
-	askErr   error
-	toolErr  error
-	modelErr error
+	source    PlanSource
+	target    string
+	tool      string
+	model     string
+	sourceErr error
+	askErr    error
+	toolErr   error
+	modelErr  error
 
-	askCalls   int
-	toolCalls  int
-	modelCalls int
+	sourceCalls int
+	askCalls    int
+	toolCalls   int
+	modelCalls  int
+}
+
+func (s *scriptedUI) SelectSource(context.Context) (PlanSource, error) {
+	s.sourceCalls++
+	if s.sourceErr != nil {
+		return 0, s.sourceErr
+	}
+	return s.source, nil
 }
 
 func (s *scriptedUI) AskTarget(context.Context) (string, error) {
@@ -221,7 +234,7 @@ func TestRun_AgentDidNotWriteFile(t *testing.T) {
 func TestRun_PromptsForTarget_WhenFlagMissing(t *testing.T) {
 	target := writeTarget(t, "body")
 	agent := newScriptedAgent()
-	ui := &scriptedUI{target: target}
+	ui := &scriptedUI{source: SourceMarkdown, target: target}
 
 	err := Run(context.Background(), Options{
 		Stdin:  strings.NewReader(""),
@@ -233,8 +246,154 @@ func TestRun_PromptsForTarget_WhenFlagMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
+	if ui.sourceCalls != 1 {
+		t.Fatalf("SelectSource called %d times, want 1", ui.sourceCalls)
+	}
 	if ui.askCalls != 1 {
 		t.Fatalf("AskTarget called %d times, want 1", ui.askCalls)
+	}
+}
+
+// TestRun_TargetFlag_BypassesSourceSelector pins the rule that an
+// explicit -t / PLAN_TARGET takes the markdown path without prompting
+// the user for a source.
+func TestRun_TargetFlag_BypassesSourceSelector(t *testing.T) {
+	target := writeTarget(t, "body")
+	agent := newScriptedAgent()
+	ui := &scriptedUI{}
+	err := Run(context.Background(), Options{
+		Target: target,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.sourceCalls != 0 {
+		t.Fatalf("SelectSource called %d times, want 0", ui.sourceCalls)
+	}
+}
+
+func TestRun_Scratch(t *testing.T) {
+	agent := newScriptedAgent()
+	agent.skipWrite = true // scratch never writes a file
+	ui := &scriptedUI{source: SourceScratch}
+	var stdout bytes.Buffer
+	err := Run(context.Background(), Options{
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.askCalls != 0 {
+		t.Fatalf("AskTarget called %d times, want 0", ui.askCalls)
+	}
+	if agent.planned != 1 {
+		t.Fatalf("agent.Plan called %d times, want 1", agent.planned)
+	}
+	if agent.lastReq.TargetPath != "" || agent.lastReq.Body != "" || agent.lastReq.OutputPath != "" {
+		t.Fatalf("scratch req should be empty: %+v", agent.lastReq)
+	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("scratch should always be interactive: %+v", agent.lastReq)
+	}
+	if strings.Contains(stdout.String(), "wrote ") {
+		t.Fatalf("scratch should not announce a file: %q", stdout.String())
+	}
+}
+
+func TestRun_Scratch_AgentError(t *testing.T) {
+	agent := newScriptedAgent()
+	agent.planErr = errors.New("scratch boom")
+	ui := &scriptedUI{source: SourceScratch}
+	err := Run(context.Background(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err == nil || !strings.Contains(err.Error(), "scratch boom") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestRun_Scratch_LoginFails covers the pickAgentAndModel error branch
+// in runScratch (via CheckLogin returning an error), which the happy
+// path and Plan-error tests do not exercise.
+func TestRun_Scratch_LoginFails(t *testing.T) {
+	agent := newScriptedAgent()
+	agent.loginErr = errors.New("not logged in")
+	ui := &scriptedUI{source: SourceScratch}
+	err := Run(context.Background(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err == nil || !strings.Contains(err.Error(), "not logged in") {
+		t.Fatalf("err = %v", err)
+	}
+	if agent.planned != 0 {
+		t.Fatal("agent.Plan should not have been invoked")
+	}
+}
+
+func TestRun_Linear_NoOp(t *testing.T) {
+	agent := newScriptedAgent()
+	ui := &scriptedUI{source: SourceLinear}
+	var stdout bytes.Buffer
+	err := Run(context.Background(), Options{
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if agent.listed != 0 || agent.checked != 0 || agent.planned != 0 {
+		t.Fatalf("linear should not touch the agent: listed=%d checked=%d planned=%d", agent.listed, agent.checked, agent.planned)
+	}
+	if !strings.Contains(stdout.String(), "linear") {
+		t.Fatalf("stdout should mention linear: %q", stdout.String())
+	}
+}
+
+func TestRun_SelectSourceError(t *testing.T) {
+	agent := newScriptedAgent()
+	ui := &scriptedUI{sourceErr: errors.New("source boom")}
+	err := Run(context.Background(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err == nil || !strings.Contains(err.Error(), "source boom") {
+		t.Fatalf("err = %v", err)
+	}
+	if ui.askCalls != 0 || agent.listed != 0 {
+		t.Fatal("nothing past SelectSource should have been touched")
+	}
+}
+
+// TestRun_UnsupportedSource pins the default branch in Run so adding a
+// new PlanSource constant without a switch arm fails loudly in tests.
+func TestRun_UnsupportedSource(t *testing.T) {
+	agent := newScriptedAgent()
+	ui := &scriptedUI{source: PlanSource(99)}
+	err := Run(context.Background(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported source") {
+		t.Fatalf("err = %v", err)
 	}
 }
 

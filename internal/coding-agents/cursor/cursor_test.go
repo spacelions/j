@@ -287,6 +287,39 @@ func TestPlan_Headless_RunnerError(t *testing.T) {
 	}
 }
 
+func TestPlan_Scratch(t *testing.T) {
+	var captured []string
+	r := &fakeRunner{run: func(_ string, args []string) error {
+		captured = args
+		return nil
+	}}
+	err := NewWithRunner(r).Plan(context.Background(), codingagents.PlanRequest{
+		Model:       "composer-2-fast",
+		Interactive: true,
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	want := []string{"--mode", "plan", "--model", "composer-2-fast"}
+	if !reflect.DeepEqual(captured, want) {
+		t.Fatalf("args = %v, want %v", captured, want)
+	}
+	if len(r.calls) != 1 {
+		t.Fatalf("calls = %v", r.calls)
+	}
+}
+
+func TestPlan_Scratch_RunnerError(t *testing.T) {
+	r := &fakeRunner{run: func(string, []string) error { return errors.New("scratch boom") }}
+	err := NewWithRunner(r).Plan(context.Background(), codingagents.PlanRequest{
+		Model:       "m",
+		Interactive: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "cursor-agent") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestPlan_Headless_WriteError(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0o500); err != nil {

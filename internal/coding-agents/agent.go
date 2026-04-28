@@ -34,6 +34,12 @@ type Agent interface {
 // PlanRequest is the input to Agent.Plan. The caller pre-reads the
 // markdown body so the agent can choose how to embed or attach it
 // without having to re-stat or re-read the file.
+//
+// An empty TargetPath signals a "scratch" session: no markdown body,
+// no expected output file, OutputPath is also empty, and the agent
+// should hand its plan-mode TUI to the user as-is. A non-empty
+// TargetPath always pairs with a non-empty OutputPath and the agent
+// is expected to leave OutputPath behind on success.
 type PlanRequest struct {
 	TargetPath  string
 	Body        string
