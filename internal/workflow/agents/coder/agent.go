@@ -11,8 +11,12 @@ import (
 	"google.golang.org/adk/model"
 )
 
+// Instruction is the embedded instruction.md used as the coder system
+// prompt. Exported so other backends can reuse the same coding rules
+// without duplicating the file.
+//
 //go:embed instruction.md
-var instruction string
+var Instruction string
 
 const (
 	Name      = "coder"
@@ -25,7 +29,7 @@ func New(m model.LLM) (agent.Agent, error) {
 		Name:        Name,
 		Model:       m,
 		Description: "Produces code from the plan, revising when verifier feedback is available.",
-		Instruction: instruction,
+		Instruction: Instruction,
 		OutputKey:   OutputKey,
 	})
 }

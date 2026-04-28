@@ -1,8 +1,11 @@
-// Package run provides a small abstraction over os/exec for running
+// Package run provides two thin helpers around os/exec for running
 // short-lived external commands. Output captures stdout (headless use);
 // Run inherits the parent's stdin/stdout/stderr (interactive TUIs).
-// A single fake implementation in tests is enough to exercise every
-// caller.
+//
+// The package intentionally exposes plain functions rather than an
+// interface: per AGENTS.md, callers shell out to real binaries and tests
+// drive them via PATH-resolvable stub executables instead of an
+// injection seam.
 package run
 
 import (
@@ -14,24 +17,10 @@ import (
 	"strings"
 )
 
-// Runner runs short-lived external commands. The default implementation
-// shells out via os/exec; tests substitute a scripted fake.
-type Runner interface {
-	// Output runs the command and returns its captured stdout. Use this
-	// for headless calls that need to parse the result.
-	Output(ctx context.Context, name string, args ...string) (string, error)
-	// Run executes the command with stdin/stdout/stderr wired to the
-	// parent process so an interactive TUI can render. It blocks until
-	// the child exits.
-	Run(ctx context.Context, name string, args ...string) error
-}
-
-// NewExec returns a Runner that shells out to real binaries.
-func NewExec() Runner { return execRunner{} }
-
-type execRunner struct{}
-
-func (execRunner) Output(ctx context.Context, name string, args ...string) (string, error) {
+// Output runs name with args and returns its captured stdout. The wrapped
+// error includes name plus stderr (or stdout if stderr is empty) so the
+// caller can surface a useful message without re-reading the streams.
+func Output(ctx context.Context, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -49,7 +38,10 @@ func (execRunner) Output(ctx context.Context, name string, args ...string) (stri
 	return stdout.String(), nil
 }
 
-func (execRunner) Run(ctx context.Context, name string, args ...string) error {
+// Run executes name with args, wiring stdin/stdout/stderr to the parent
+// process so an interactive TUI can render. It blocks until the child
+// exits and wraps the exit error with name for context.
+func Run(ctx context.Context, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

@@ -17,27 +17,21 @@ import (
 // Binary is the cursor-agent executable name.
 const Binary = "cursor-agent"
 
-// Agent is a Cursor-backed planner.
-type Agent struct {
-	runner run.Runner
-}
+// Agent is a Cursor-backed planner. It is stateless: every method shells
+// out to the real cursor-agent binary on PATH via the run package's
+// package-level helpers. Tests drive it with a stub binary on PATH
+// rather than an injected runner (see AGENTS.md "no test seams" rule).
+type Agent struct{}
 
 // New returns a Cursor agent that shells out to the cursor-agent CLI.
-func New() *Agent {
-	return &Agent{runner: run.NewExec()}
-}
-
-// NewWithRunner lets tests inject a scripted runner.
-func NewWithRunner(r run.Runner) *Agent {
-	return &Agent{runner: r}
-}
+func New() *Agent { return &Agent{} }
 
 // Name implements codingagents.Agent.
 func (*Agent) Name() string { return "cursor" }
 
 // ListModels asks cursor-agent for the available model identifiers.
-func (a *Agent) ListModels(ctx context.Context) ([]string, error) {
-	out, err := a.runner.Output(ctx, Binary, "--list-models")
+func (*Agent) ListModels(ctx context.Context) ([]string, error) {
+	out, err := run.Output(ctx, Binary, "--list-models")
 	if err != nil {
 		return nil, fmt.Errorf("list cursor models: %w (run 'cursor-agent login' or check your account)", err)
 	}
@@ -52,8 +46,8 @@ func (a *Agent) ListModels(ctx context.Context) ([]string, error) {
 // prints a "Logged in" line on success; phrases like "Not logged in" or
 // "logged out" are treated as a logged-out state and surface a remediation
 // hint pointing at `cursor-agent login`.
-func (a *Agent) CheckLogin(ctx context.Context) error {
-	out, err := a.runner.Output(ctx, Binary, "status")
+func (*Agent) CheckLogin(ctx context.Context) error {
+	out, err := run.Output(ctx, Binary, "status")
 	if err != nil {
 		return fmt.Errorf("cursor-agent status failed: %w (run 'cursor-agent login')", err)
 	}
@@ -81,9 +75,9 @@ func (a *Agent) CheckLogin(ctx context.Context) error {
 //     save req.OutputPath before exiting via a suffix on the prompt.
 //   - Markdown headless: --print --output-format text --mode plan,
 //     capture stdout, write the file from Go.
-func (a *Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
+func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
 	if req.TargetPath == "" {
-		if err := a.runner.Run(ctx, Binary,
+		if err := run.Run(ctx, Binary,
 			"--mode", "plan",
 			"--model", req.Model,
 		); err != nil {
@@ -100,7 +94,7 @@ func (a *Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
 			"%s\n\nWhen the plan is final, save it to %q (overwrite if it exists), then exit.",
 			base, req.OutputPath,
 		)
-		if err := a.runner.Run(ctx, Binary,
+		if err := run.Run(ctx, Binary,
 			"--model", req.Model,
 			"--workspace", workspace,
 			prompt,
@@ -110,7 +104,7 @@ func (a *Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
 		return nil
 	}
 
-	out, err := a.runner.Output(ctx, Binary,
+	out, err := run.Output(ctx, Binary,
 		"--print",
 		"--output-format", "text",
 		"--mode", "plan",

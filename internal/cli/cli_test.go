@@ -46,6 +46,23 @@ func withArgs(t *testing.T, args ...string) {
 	t.Cleanup(func() { os.Args = orig })
 }
 
+// assertExecuteFails runs Execute and asserts it exits with code 1 and
+// stderr contains every substring in wants. Pass both substrings (e.g.
+// "j:" and "GOOGLE_API_KEY") to keep the existing assertions intact.
+func assertExecuteFails(t *testing.T, wants ...string) {
+	t.Helper()
+	var code int
+	out := captureStderr(t, func() { code = Execute() })
+	if code != 1 {
+		t.Fatalf("Execute = %d, want 1; stderr = %q", code, out)
+	}
+	for _, w := range wants {
+		if !strings.Contains(out, w) {
+			t.Fatalf("stderr = %q, missing %q", out, w)
+		}
+	}
+}
+
 func TestExecute_Help(t *testing.T) {
 	resetGlobals(t)
 	withArgs(t, "--help")
@@ -58,59 +75,27 @@ func TestExecute_RunMissingKey(t *testing.T) {
 	resetGlobals(t)
 	t.Setenv("GOOGLE_API_KEY", "")
 	withArgs(t, "run")
-
-	var code int
-	out := captureStderr(t, func() { code = Execute() })
-	if code != 1 {
-		t.Fatalf("Execute = %d, want 1", code)
-	}
-	if !strings.Contains(out, "j:") || !strings.Contains(out, "GOOGLE_API_KEY") {
-		t.Fatalf("stderr = %q", out)
-	}
+	assertExecuteFails(t, "j:", "GOOGLE_API_KEY")
 }
 
 func TestExecute_WebMissingKey(t *testing.T) {
 	resetGlobals(t)
 	t.Setenv("GOOGLE_API_KEY", "")
 	withArgs(t, "web")
-
-	var code int
-	out := captureStderr(t, func() { code = Execute() })
-	if code != 1 {
-		t.Fatalf("Execute = %d, want 1", code)
-	}
-	if !strings.Contains(out, "GOOGLE_API_KEY") {
-		t.Fatalf("stderr = %q", out)
-	}
+	assertExecuteFails(t, "GOOGLE_API_KEY")
 }
 
 func TestExecute_PlanInvalidTarget_FromFlag(t *testing.T) {
 	resetGlobals(t)
 	withArgs(t, "plan", "--target", "/this/path/does/not/exist.md")
-
-	var code int
-	out := captureStderr(t, func() { code = Execute() })
-	if code != 1 {
-		t.Fatalf("Execute = %d, want 1", code)
-	}
-	if !strings.Contains(out, "j:") || !strings.Contains(out, "stat") {
-		t.Fatalf("stderr = %q", out)
-	}
+	assertExecuteFails(t, "j:", "stat")
 }
 
 func TestExecute_PlanInvalidTarget_FromEnv(t *testing.T) {
 	resetGlobals(t)
 	t.Setenv("PLAN_TARGET", "/this/path/does/not/exist.md")
 	withArgs(t, "plan")
-
-	var code int
-	out := captureStderr(t, func() { code = Execute() })
-	if code != 1 {
-		t.Fatalf("Execute = %d, want 1", code)
-	}
-	if !strings.Contains(out, "j:") || !strings.Contains(out, "stat") {
-		t.Fatalf("stderr = %q", out)
-	}
+	assertExecuteFails(t, "j:", "stat")
 }
 
 // TestExecute_PlanInteractiveFlag_FromFlag confirms --interactive is
@@ -121,15 +106,7 @@ func TestExecute_PlanInvalidTarget_FromEnv(t *testing.T) {
 func TestExecute_PlanInteractiveFlag_FromFlag(t *testing.T) {
 	resetGlobals(t)
 	withArgs(t, "plan", "--interactive=false", "--target", "/this/path/does/not/exist.md")
-
-	var code int
-	out := captureStderr(t, func() { code = Execute() })
-	if code != 1 {
-		t.Fatalf("Execute = %d, want 1", code)
-	}
-	if !strings.Contains(out, "stat") {
-		t.Fatalf("stderr = %q", out)
-	}
+	assertExecuteFails(t, "stat")
 	if viper.GetBool("plan.interactive") {
 		t.Fatalf("plan.interactive should be false after --interactive=false")
 	}
@@ -140,15 +117,7 @@ func TestExecute_PlanInteractiveFlag_FromEnv(t *testing.T) {
 	t.Setenv("PLAN_INTERACTIVE", "false")
 	t.Setenv("PLAN_TARGET", "/this/path/does/not/exist.md")
 	withArgs(t, "plan")
-
-	var code int
-	out := captureStderr(t, func() { code = Execute() })
-	if code != 1 {
-		t.Fatalf("Execute = %d, want 1", code)
-	}
-	if !strings.Contains(out, "stat") {
-		t.Fatalf("stderr = %q", out)
-	}
+	assertExecuteFails(t, "stat")
 	if viper.GetBool("plan.interactive") {
 		t.Fatalf("plan.interactive should be false from PLAN_INTERACTIVE=false")
 	}

@@ -15,7 +15,7 @@ func TestNewHuhUI(t *testing.T) {
 
 func TestHuhUI_Choose_EmptyOptions(t *testing.T) {
 	u := newHuhUI(strings.NewReader(""), io.Discard)
-	_, err := u.choose(context.Background(), "Select Cursor model", nil)
+	_, err := u.choose(context.Background(), "Select model", nil)
 	if err == nil || !strings.Contains(err.Error(), "no options") {
 		t.Fatalf("err = %v, want 'no options' error", err)
 	}

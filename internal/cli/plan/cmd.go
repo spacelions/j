@@ -8,14 +8,14 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 )
 
-// NewCommand returns the `j plan` cobra subcommand. It owns its own
-// flag and viper bindings so callers (cli.Execute) only need to register
-// it on the root command.
+// New returns the `j plan` cobra subcommand. It owns its own flag and
+// viper bindings so callers (cli.Execute) only need to register it on
+// the root command.
 //
 // viper.BindPFlag and viper.BindEnv only fail when their input is nil
 // or empty — programmer errors that this function does not produce —
 // so their returned errors are intentionally discarded.
-func NewCommand() *cobra.Command {
+func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plan",
 		Short: "Generate a plan.md from a markdown task description using a coding agent",
