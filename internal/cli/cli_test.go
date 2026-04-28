@@ -112,3 +112,44 @@ func TestExecute_PlanInvalidTarget_FromEnv(t *testing.T) {
 		t.Fatalf("stderr = %q", out)
 	}
 }
+
+// TestExecute_PlanInteractiveFlag_FromFlag confirms --interactive is
+// parsed by cobra and surfaces on the viper singleton via BindPFlag.
+// We piggy-back on the invalid-target failure path so the test stays
+// hermetic (no agent invocation), and read viper after Execute to
+// observe the bound value.
+func TestExecute_PlanInteractiveFlag_FromFlag(t *testing.T) {
+	resetGlobals(t)
+	withArgs(t, "plan", "--interactive=false", "--target", "/this/path/does/not/exist.md")
+
+	var code int
+	out := captureStderr(t, func() { code = Execute() })
+	if code != 1 {
+		t.Fatalf("Execute = %d, want 1", code)
+	}
+	if !strings.Contains(out, "stat") {
+		t.Fatalf("stderr = %q", out)
+	}
+	if viper.GetBool("plan.interactive") {
+		t.Fatalf("plan.interactive should be false after --interactive=false")
+	}
+}
+
+func TestExecute_PlanInteractiveFlag_FromEnv(t *testing.T) {
+	resetGlobals(t)
+	t.Setenv("PLAN_INTERACTIVE", "false")
+	t.Setenv("PLAN_TARGET", "/this/path/does/not/exist.md")
+	withArgs(t, "plan")
+
+	var code int
+	out := captureStderr(t, func() { code = Execute() })
+	if code != 1 {
+		t.Fatalf("Execute = %d, want 1", code)
+	}
+	if !strings.Contains(out, "stat") {
+		t.Fatalf("stderr = %q", out)
+	}
+	if viper.GetBool("plan.interactive") {
+		t.Fatalf("plan.interactive should be false from PLAN_INTERACTIVE=false")
+	}
+}

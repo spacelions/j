@@ -10,8 +10,8 @@ import "context"
 
 // Agent is a planning backend. The plan package orchestrates the flow generically:
 // resolve a markdown target, list the agent's models, check login, run the
-// plan, and write plan.md beside the target. New backends implement this
-// interface.
+// plan against PlanRequest.OutputPath, and surface whether OutputPath was
+// produced. New backends implement this interface.
 type Agent interface {
 	// Name is the short identifier shown in the tool picker (e.g. "cursor").
 	Name() string
@@ -23,17 +23,21 @@ type Agent interface {
 	// CheckLogin verifies the user is signed in to the agent's CLI.
 	CheckLogin(ctx context.Context) error
 
-	// Plan asks the agent to produce an ordered implementation plan for
-	// the markdown task. The returned string is written to plan.md by the
-	// caller; the agent should not attempt to write files itself.
-	Plan(ctx context.Context, req PlanRequest) (string, error)
+	// Plan runs the agent for req. The agent is responsible for ensuring
+	// req.OutputPath is written: interactively (TUI session driven by the
+	// embedded save instruction in the prompt) or headlessly (capturing
+	// the agent's stdout and writing the file directly). The orchestrator
+	// stats OutputPath after this returns and reports the outcome.
+	Plan(ctx context.Context, req PlanRequest) error
 }
 
 // PlanRequest is the input to Agent.Plan. The caller pre-reads the
-// markdown body so the agent can choose how to embed or attach it without
-// having to re-stat or re-read the file.
+// markdown body so the agent can choose how to embed or attach it
+// without having to re-stat or re-read the file.
 type PlanRequest struct {
-	TargetPath string
-	Body       string
-	Model      string
+	TargetPath  string
+	Body        string
+	Model       string
+	OutputPath  string
+	Interactive bool
 }

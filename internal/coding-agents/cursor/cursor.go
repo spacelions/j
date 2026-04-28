@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
@@ -70,27 +71,49 @@ func (a *Agent) CheckLogin(ctx context.Context) error {
 	return nil
 }
 
-// Plan invokes cursor-agent in plan mode against the given target and
-// model and returns the captured plan text.
-func (a *Agent) Plan(ctx context.Context, req codingagents.PlanRequest) (string, error) {
-	prompt := codingagents.BuildPrompt(req.TargetPath, req.Body)
+// Plan runs cursor-agent against req. Interactive mode launches cursor's
+// full TUI (no --print, no --mode) and the prompt instructs cursor to
+// save req.OutputPath itself before exiting. Headless mode keeps today's
+// behaviour: --print --output-format text --mode plan, capture stdout,
+// write the file from Go.
+func (a *Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
 	workspace := codingagents.DefaultWorkspace(req.TargetPath)
+	base := codingagents.BuildPrompt(req.TargetPath, req.Body)
+
+	if req.Interactive {
+		prompt := fmt.Sprintf(
+			"%s\n\nWhen the plan is final, save it to %q (overwrite if it exists), then exit.",
+			base, req.OutputPath,
+		)
+		if err := a.runner.Run(ctx, Binary,
+			"--model", req.Model,
+			"--workspace", workspace,
+			prompt,
+		); err != nil {
+			return fmt.Errorf("cursor-agent: %w", err)
+		}
+		return nil
+	}
+
 	out, err := a.runner.Output(ctx, Binary,
 		"--print",
 		"--output-format", "text",
 		"--mode", "plan",
 		"--model", req.Model,
 		"--workspace", workspace,
-		prompt,
+		base,
 	)
 	if err != nil {
-		return "", fmt.Errorf("cursor-agent: %w", err)
+		return fmt.Errorf("cursor-agent: %w", err)
 	}
 	plan := strings.TrimSpace(out)
 	if plan == "" {
-		return "", errors.New("cursor-agent returned an empty plan")
+		return errors.New("cursor-agent returned an empty plan")
 	}
-	return plan, nil
+	if err := os.WriteFile(req.OutputPath, []byte(plan+"\n"), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", req.OutputPath, err)
+	}
+	return nil
 }
 
 // parseModels extracts cursor-agent model IDs from --list-models output.
