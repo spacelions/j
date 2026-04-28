@@ -1,6 +1,16 @@
 SHELL := /bin/bash
 
-.PHONY: coverage test race
+BIN_DIR := bin
+BIN     := $(BIN_DIR)/j
+
+.PHONY: build clean coverage test race
+
+build:
+	@mkdir -p $(BIN_DIR)
+	go build -o $(BIN) ./cmd/j
+
+clean:
+	rm -rf $(BIN_DIR) cover.out
 
 test:
 	go test ./...
@@ -18,6 +28,12 @@ coverage:
 		-e 'internal/config/config\.go:[0-9]+:[[:space:]]+Init[[:space:]]' \
 		-e 'internal/workflow/workflow\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
 		-e 'internal/cli/root\.go:[0-9]+:[[:space:]]+Execute[[:space:]]' \
+		-e 'internal/cli/plan/target\.go:[0-9]+:[[:space:]]+resolveTarget[[:space:]]' \
+		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+AskTarget[[:space:]]' \
+		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+SelectTool[[:space:]]' \
+		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+SelectModel[[:space:]]' \
+		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+choose[[:space:]]' \
+		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
 		|| true); \
 	below=$$(printf '%s\n' "$$below" | sed '/^$$/d'); \
 	if [ -n "$$below" ]; then \
