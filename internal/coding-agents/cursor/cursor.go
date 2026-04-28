@@ -71,12 +71,27 @@ func (a *Agent) CheckLogin(ctx context.Context) error {
 	return nil
 }
 
-// Plan runs cursor-agent against req. Interactive mode launches cursor's
-// full TUI (no --print, no --mode) and the prompt instructs cursor to
-// save req.OutputPath itself before exiting. Headless mode keeps today's
-// behaviour: --print --output-format text --mode plan, capture stdout,
-// write the file from Go.
+// Plan runs cursor-agent against req. Three flavours are supported:
+//
+//   - Scratch (req.TargetPath == ""): launch cursor-agent in plan mode
+//     with no prompt and no workspace. The user drives the session
+//     freely; nothing is written to disk by us.
+//   - Markdown interactive (req.Interactive, non-empty TargetPath):
+//     launch cursor's TUI (no --print, no --mode) and ask cursor to
+//     save req.OutputPath before exiting via a suffix on the prompt.
+//   - Markdown headless: --print --output-format text --mode plan,
+//     capture stdout, write the file from Go.
 func (a *Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
+	if req.TargetPath == "" {
+		if err := a.runner.Run(ctx, Binary,
+			"--mode", "plan",
+			"--model", req.Model,
+		); err != nil {
+			return fmt.Errorf("cursor-agent: %w", err)
+		}
+		return nil
+	}
+
 	workspace := codingagents.DefaultWorkspace(req.TargetPath)
 	base := codingagents.BuildPrompt(req.TargetPath, req.Body)
 

@@ -14,6 +14,10 @@ import (
 // renders huh prompts on the terminal; tests substitute a scripted fake
 // to avoid touching stdin.
 type UI interface {
+	// SelectSource asks the user which planning source to use. It is
+	// only invoked when no markdown target was supplied via --target or
+	// PLAN_TARGET.
+	SelectSource(ctx context.Context) (PlanSource, error)
 	AskTarget(ctx context.Context) (string, error)
 	SelectTool(ctx context.Context, options []string) (string, error)
 	SelectModel(ctx context.Context, options []string) (string, error)
@@ -33,6 +37,14 @@ type huhUI struct {
 
 func newHuhUI(in io.Reader, out io.Writer) *huhUI {
 	return &huhUI{in: in, out: out}
+}
+
+func (u *huhUI) SelectSource(ctx context.Context) (PlanSource, error) {
+	label, err := u.choose(ctx, "Select plan source", SourceLabels)
+	if err != nil {
+		return 0, err
+	}
+	return ParseSource(label)
 }
 
 func (u *huhUI) AskTarget(ctx context.Context) (string, error) {
