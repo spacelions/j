@@ -36,21 +36,31 @@ func Execute() int {
 			"runs that agent in plan mode, and writes the resulting plan.md beside the input.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return plan.Run(cmd.Context(), plan.Options{
-				Target: viper.GetString("plan.target"),
-				Stdin:  cmd.InOrStdin(),
-				Stdout: cmd.OutOrStdout(),
-				Stderr: cmd.ErrOrStderr(),
-				Agents: []codingagents.Agent{cursor.New()},
+				Target:      viper.GetString("plan.target"),
+				Interactive: viper.GetBool("plan.interactive"),
+				Stdin:       cmd.InOrStdin(),
+				Stdout:      cmd.OutOrStdout(),
+				Stderr:      cmd.ErrOrStderr(),
+				Agents:      []codingagents.Agent{cursor.New()},
 			})
 		},
 	}
 	planCmd.Flags().StringP("target", "t", "", "Path to a markdown file describing the task")
+	planCmd.Flags().Bool("interactive", true, "Launch the coding agent in interactive mode (its TUI). Set to false for headless capture.")
 	if err := viper.BindPFlag("plan.target", planCmd.Flags().Lookup("target")); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "j: bind plan.target: %v\n", err)
 		return 1
 	}
+	if err := viper.BindPFlag("plan.interactive", planCmd.Flags().Lookup("interactive")); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "j: bind plan.interactive: %v\n", err)
+		return 1
+	}
 	if err := viper.BindEnv("plan.target", "PLAN_TARGET"); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "j: bind PLAN_TARGET: %v\n", err)
+		return 1
+	}
+	if err := viper.BindEnv("plan.interactive", "PLAN_INTERACTIVE"); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "j: bind PLAN_INTERACTIVE: %v\n", err)
 		return 1
 	}
 

@@ -66,6 +66,7 @@ type scriptedAgent struct {
 	loginErr  error
 	plan      string
 	planErr   error
+	skipWrite bool
 
 	listed  int
 	checked int
@@ -96,13 +97,21 @@ func (s *scriptedAgent) CheckLogin(context.Context) error {
 	return s.loginErr
 }
 
-func (s *scriptedAgent) Plan(_ context.Context, req codingagents.PlanRequest) (string, error) {
+// Plan simulates a real backend: on success it writes req.OutputPath
+// itself (this is the agent's responsibility under the new contract,
+// since cursor.Plan does so in both interactive and headless paths).
+// Tests can opt out of the file-write side effect by setting skipWrite
+// in order to exercise the orchestrator's "was not written" warning.
+func (s *scriptedAgent) Plan(_ context.Context, req codingagents.PlanRequest) error {
 	s.planned++
 	s.lastReq = req
 	if s.planErr != nil {
-		return "", s.planErr
+		return s.planErr
 	}
-	return s.plan, nil
+	if s.skipWrite {
+		return nil
+	}
+	return os.WriteFile(req.OutputPath, []byte(s.plan+"\n"), 0o644)
 }
 
 func writeTarget(t *testing.T, body string) string {
@@ -122,12 +131,13 @@ func TestRun_Success_WithFlag(t *testing.T) {
 	var stdout bytes.Buffer
 
 	err := Run(context.Background(), Options{
-		Target: target,
-		Stdin:  strings.NewReader(""),
-		Stdout: &stdout,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     ui,
+		Target:      target,
+		Interactive: true,
+		Stdin:       strings.NewReader(""),
+		Stdout:      &stdout,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{agent},
+		UI:          ui,
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -145,11 +155,18 @@ func TestRun_Success_WithFlag(t *testing.T) {
 	if agent.lastReq.TargetPath != target || agent.lastReq.Model != "sonnet-4" {
 		t.Fatalf("PlanRequest = %+v", agent.lastReq)
 	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("Interactive flag was not propagated: %+v", agent.lastReq)
+	}
+	wantOut := filepath.Join(filepath.Dir(target), "spec.plan.md")
+	if agent.lastReq.OutputPath != wantOut {
+		t.Fatalf("OutputPath = %q, want %q", agent.lastReq.OutputPath, wantOut)
+	}
 	if !strings.Contains(agent.lastReq.Body, "# task") {
 		t.Fatalf("body = %q", agent.lastReq.Body)
 	}
 
-	plan, err := os.ReadFile(filepath.Join(filepath.Dir(target), "spec.plan.md"))
+	plan, err := os.ReadFile(wantOut)
 	if err != nil {
 		t.Fatalf("spec.plan.md: %v", err)
 	}
@@ -159,6 +176,45 @@ func TestRun_Success_WithFlag(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "wrote ") {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRun_Headless_PropagatesFlag(t *testing.T) {
+	target := writeTarget(t, "x")
+	agent := newScriptedAgent()
+	err := Run(context.Background(), Options{
+		Target:      target,
+		Interactive: false,
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{agent},
+		UI:          &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if agent.lastReq.Interactive {
+		t.Fatalf("Interactive should be false: %+v", agent.lastReq)
+	}
+}
+
+func TestRun_AgentDidNotWriteFile(t *testing.T) {
+	target := writeTarget(t, "x")
+	agent := newScriptedAgent()
+	agent.skipWrite = true
+	var stderr bytes.Buffer
+	err := Run(context.Background(), Options{
+		Target: target,
+		Stdout: io.Discard,
+		Stderr: &stderr,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "was not written") {
+		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
 
@@ -281,26 +337,6 @@ func TestRun_TargetReadError(t *testing.T) {
 		UI:     &scriptedUI{},
 	})
 	if err == nil || !strings.Contains(err.Error(), "read target") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestRun_WriteError(t *testing.T) {
-	target := writeTarget(t, "x")
-	dir := filepath.Dir(target)
-	if err := os.Chmod(dir, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-
-	err := Run(context.Background(), Options{
-		Target: target,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{newScriptedAgent()},
-		UI:     &scriptedUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "write") {
 		t.Fatalf("err = %v", err)
 	}
 }

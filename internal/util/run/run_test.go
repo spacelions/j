@@ -64,3 +64,28 @@ func TestExec_OutputFailure_NoStderr(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestExec_Run_Success(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix-only smoke test")
+	}
+	// `true` inherits stdin/stdout/stderr (so nothing is written) and
+	// exits zero; exercises the success path of execRunner.Run.
+	if err := NewExec().Run(context.Background(), "true"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestExec_Run_Failure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix-only smoke test")
+	}
+	// `false` exits non-zero with no output; exercises Run's error wrap.
+	err := NewExec().Run(context.Background(), "false")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "false") {
+		t.Fatalf("err = %v", err)
+	}
+}
