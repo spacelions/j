@@ -3,3 +3,4 @@
 *.log
 cover.out
 /bin/
+.j
