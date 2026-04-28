@@ -233,7 +233,7 @@ func TestRun_TargetValidationErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
-	if !strings.Contains(err.Error(), "not a plan markdown") {
+	if !strings.Contains(err.Error(), "not a markdown") {
 		t.Fatalf("err = %v", err)
 	}
 	if agent.worked != 0 {

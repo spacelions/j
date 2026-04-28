@@ -13,7 +13,9 @@ import (
 	"io"
 	"os"
 
+	"github.com/spacelions/j/internal/cli/agentpick"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/util/mdfile"
 )
 
 // Options configures Run. Stdin/Stdout/Stderr default to the process
@@ -50,7 +52,7 @@ func Run(ctx context.Context, opts Options) error {
 		raw = v
 	}
 
-	plan, err := resolveTarget(raw)
+	plan, err := mdfile.Resolve(raw)
 	if err != nil {
 		return err
 	}
@@ -59,7 +61,7 @@ func Run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("read plan: %w", err)
 	}
 
-	agent, model, err := pickAgentAndModel(ctx, opts)
+	agent, model, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
 	if err != nil {
 		return err
 	}
@@ -75,48 +77,6 @@ func Run(ctx context.Context, opts Options) error {
 
 	fmt.Fprintf(opts.Stdout, "coding against %s\n", plan)
 	return nil
-}
-
-// pickAgentAndModel walks the shared tool/model/login prompts. Same
-// shape as the plan package's helper of the same name; lifting it into
-// its own private function keeps Run small and mirrors the plan flow
-// for readers who already know that codepath.
-func pickAgentAndModel(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
-	names := make([]string, len(opts.Agents))
-	for i, a := range opts.Agents {
-		names[i] = a.Name()
-	}
-	chosen, err := opts.UI.SelectTool(ctx, names)
-	if err != nil {
-		return nil, "", err
-	}
-	agent, ok := lookupAgent(opts.Agents, chosen)
-	if !ok {
-		return nil, "", fmt.Errorf("unknown tool %q", chosen)
-	}
-
-	models, err := agent.ListModels(ctx)
-	if err != nil {
-		return nil, "", err
-	}
-	model, err := opts.UI.SelectModel(ctx, models)
-	if err != nil {
-		return nil, "", err
-	}
-
-	if err := agent.CheckLogin(ctx); err != nil {
-		return nil, "", err
-	}
-	return agent, model, nil
-}
-
-func lookupAgent(agents []codingagents.Agent, name string) (codingagents.Agent, bool) {
-	for _, a := range agents {
-		if a.Name() == name {
-			return a, true
-		}
-	}
-	return nil, false
 }
 
 func (o Options) withDefaults() Options {

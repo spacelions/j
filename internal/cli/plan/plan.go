@@ -13,7 +13,9 @@ import (
 	"io"
 	"os"
 
+	"github.com/spacelions/j/internal/cli/agentpick"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/util/mdfile"
 )
 
 // Options configures Run. Stdin/Stdout/Stderr default to the process
@@ -72,7 +74,7 @@ func Run(ctx context.Context, opts Options) error {
 // <stem>.plan.md. The agent owns the file write; we just stat it after
 // to surface success or a "was not written" warning.
 func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
-	target, err := resolveTarget(rawTarget)
+	target, err := mdfile.Resolve(rawTarget)
 	if err != nil {
 		return err
 	}
@@ -81,7 +83,7 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		return fmt.Errorf("read target: %w", err)
 	}
 
-	agent, model, err := pickAgentAndModel(ctx, opts)
+	agent, model, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
 	if err != nil {
 		return err
 	}
@@ -110,7 +112,7 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 // OutputPath in the request is the contract that signals scratch to
 // the agent.
 func runScratch(ctx context.Context, opts Options) error {
-	agent, model, err := pickAgentAndModel(ctx, opts)
+	agent, model, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
 	if err != nil {
 		return err
 	}
@@ -118,47 +120,6 @@ func runScratch(ctx context.Context, opts Options) error {
 		Model:       model,
 		Interactive: true,
 	})
-}
-
-// pickAgentAndModel walks the shared tool/model/login prompts. Both
-// markdown and scratch flows need the same three steps; lifting them
-// keeps Run small and prevents the two flows from drifting apart.
-func pickAgentAndModel(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
-	names := make([]string, len(opts.Agents))
-	for i, a := range opts.Agents {
-		names[i] = a.Name()
-	}
-	chosen, err := opts.UI.SelectTool(ctx, names)
-	if err != nil {
-		return nil, "", err
-	}
-	agent, ok := lookupAgent(opts.Agents, chosen)
-	if !ok {
-		return nil, "", fmt.Errorf("unknown tool %q", chosen)
-	}
-
-	models, err := agent.ListModels(ctx)
-	if err != nil {
-		return nil, "", err
-	}
-	model, err := opts.UI.SelectModel(ctx, models)
-	if err != nil {
-		return nil, "", err
-	}
-
-	if err := agent.CheckLogin(ctx); err != nil {
-		return nil, "", err
-	}
-	return agent, model, nil
-}
-
-func lookupAgent(agents []codingagents.Agent, name string) (codingagents.Agent, bool) {
-	for _, a := range agents {
-		if a.Name() == name {
-			return a, true
-		}
-	}
-	return nil, false
 }
 
 func (o Options) withDefaults() Options {
