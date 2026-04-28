@@ -319,6 +319,213 @@ func TestListBuckets_EmptyDB(t *testing.T) {
 	}
 }
 
+func TestOpen_AppendsToExistingGitignore(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	gi := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(gi, []byte("node_modules/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	got, err := os.ReadFile(gi)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	want := "node_modules/\n.j\n"
+	if string(got) != want {
+		t.Fatalf("gitignore = %q, want %q", string(got), want)
+	}
+}
+
+func TestOpen_GitignoreWithoutTrailingNewline(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	gi := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(gi, []byte("node_modules/"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	got, err := os.ReadFile(gi)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	want := "node_modules/\n.j\n"
+	if string(got) != want {
+		t.Fatalf("gitignore = %q, want %q", string(got), want)
+	}
+}
+
+func TestOpen_GitignoreAlreadyHasJEntry(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	gi := filepath.Join(dir, ".gitignore")
+	original := "node_modules/\n.j\nbuild/\n"
+	if err := os.WriteFile(gi, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	got, err := os.ReadFile(gi)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != original {
+		t.Fatalf("gitignore changed: got %q, want %q", string(got), original)
+	}
+}
+
+func TestOpen_GitignoreAlreadyHasJSlashEntry(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	gi := filepath.Join(dir, ".gitignore")
+	original := "  .j/  \nbuild/\n"
+	if err := os.WriteFile(gi, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	got, err := os.ReadFile(gi)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != original {
+		t.Fatalf("gitignore changed: got %q, want %q", string(got), original)
+	}
+}
+
+func TestOpen_NoGitignoreLeavesNothingBehind(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	path, err := DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
+		t.Fatalf(".gitignore should not have been created: err=%v", err)
+	}
+}
+
+// TestOpen_NonDotJCustomPathDoesNotTouchGitignore confirms the helper
+// is scoped to the default `.j` directory: a custom path whose parent
+// is not named `.j` must leave any neighbouring `.gitignore` alone.
+func TestOpen_NonDotJCustomPathDoesNotTouchGitignore(t *testing.T) {
+	dir := t.TempDir()
+	gi := filepath.Join(dir, ".gitignore")
+	original := "node_modules/\n"
+	if err := os.WriteFile(gi, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "custom", "settings")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	got, err := os.ReadFile(gi)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != original {
+		t.Fatalf("gitignore changed: got %q, want %q", string(got), original)
+	}
+}
+
+// TestOpen_GitignoreReadFails turns the .gitignore path into a
+// directory so os.ReadFile returns a non-NotExist error, exercising
+// the read-error branch in ensureGitignoreEntry.
+func TestOpen_GitignoreReadFails(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.Mkdir(filepath.Join(dir, ".gitignore"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	if _, err := Open(path); err == nil {
+		t.Fatal("expected error when .gitignore is a directory")
+	} else if !strings.Contains(err.Error(), "read") {
+		t.Fatalf("err = %v, want read failure", err)
+	}
+}
+
+// TestOpen_GitignoreAppendFails marks the existing .gitignore
+// read-only so OpenFile with O_APPEND|O_WRONLY returns EACCES,
+// exercising the append-error branch.
+func TestOpen_GitignoreAppendFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file-mode semantics required")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	gi := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(gi, []byte("foo\n"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(gi, 0o600) })
+
+	path, err := DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	if _, err := Open(path); err == nil {
+		t.Fatal("expected error writing to read-only .gitignore")
+	} else if !strings.Contains(err.Error(), "write") {
+		t.Fatalf("err = %v, want write failure", err)
+	}
+}
+
 // TestStore_OperationsAfterClose drives the error paths in Put/Get/List/
 // EnsureBucket/ListBuckets by invoking them on a closed DB.
 func TestStore_OperationsAfterClose(t *testing.T) {

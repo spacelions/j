@@ -8,9 +8,11 @@ package store
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
@@ -84,11 +86,52 @@ func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("store: mkdir %q: %w", filepath.Dir(path), err)
 	}
+	if err := ensureGitignoreEntry(filepath.Dir(path)); err != nil {
+		return nil, err
+	}
 	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: openTimeout})
 	if err != nil {
 		return nil, fmt.Errorf("store: open %q: %w", path, err)
 	}
 	return &Store{db: db}, nil
+}
+
+// ensureGitignoreEntry appends ".j" to an existing <parent>/.gitignore
+// when the just-created directory is the per-project ".j" folder. The
+// helper is intentionally narrow: it does nothing if jDir is not named
+// ".j" (so arbitrary custom store paths are left untouched), it does
+// nothing if .gitignore is absent (we don't manufacture one for users
+// who haven't opted into git), and it returns a wrapped error only
+// when an existing .gitignore cannot be read or appended to.
+func ensureGitignoreEntry(jDir string) error {
+	if filepath.Base(jDir) != dirName {
+		return nil
+	}
+	gitignorePath := filepath.Join(filepath.Dir(jDir), ".gitignore")
+	data, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("store: read %q: %w", gitignorePath, err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == dirName || trimmed == dirName+"/" {
+			return nil
+		}
+	}
+	var prefix string
+	if len(data) > 0 && data[len(data)-1] != '\n' {
+		prefix = "\n"
+	}
+	updated := append(data, []byte(prefix+dirName+"\n")...)
+	// os.WriteFile preserves the existing file's mode (perm is only
+	// applied on create), so we keep whatever permissions the user had.
+	if err := os.WriteFile(gitignorePath, updated, 0o600); err != nil {
+		return fmt.Errorf("store: write %q: %w", gitignorePath, err)
+	}
+	return nil
 }
 
 // Close releases the underlying bolt DB.
