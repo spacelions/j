@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
+
+	"github.com/spacelions/j/internal/cli/settings"
 )
 
 // TestMain chdir's the entire cli-package test binary into an
@@ -85,6 +87,23 @@ func TestExecute_Help(t *testing.T) {
 		t.Fatalf("Execute = %d", got)
 	}
 }
+
+func TestSettingsCommand_Children(t *testing.T) {
+	cmd := settings.New()
+	var setSub, resetSub bool
+	for _, sub := range cmd.Commands() {
+		if strings.HasPrefix(sub.Use, "set ") {
+			setSub = true
+		}
+		if strings.HasPrefix(sub.Use, "reset ") {
+			resetSub = true
+		}
+	}
+	if !setSub || !resetSub {
+		t.Fatalf("settings should expose set and reset; got set=%v reset=%v", setSub, resetSub)
+	}
+}
+
 
 func TestExecute_RunMissingKey(t *testing.T) {
 	resetGlobals(t)

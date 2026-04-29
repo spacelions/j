@@ -557,4 +557,86 @@ func TestStore_OperationsAfterClose(t *testing.T) {
 	if _, err := s.ListBuckets(); err == nil {
 		t.Fatal("ListBuckets on closed db should error")
 	}
+	if err := s.Delete(BucketPlanner, "k"); err == nil {
+		t.Fatal("Delete on closed db should error")
+	}
+	if _, err := s.IsEmpty(); err == nil {
+		t.Fatal("IsEmpty on closed db should error")
+	}
+}
+
+func TestDelete_MissingBucket(t *testing.T) {
+	s := openInTemp(t)
+	if err := s.Delete("nope", "k"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+}
+
+func TestDelete_MissingKey(t *testing.T) {
+	s := openInTemp(t)
+	if err := s.EnsureBucket(BucketPlanner); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(BucketPlanner, "absent"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+}
+
+func TestDelete_RemovesKey(t *testing.T) {
+	s := openInTemp(t)
+	if err := s.Put(BucketPlanner, "k", "v"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(BucketPlanner, "k"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	_, ok, err := s.Get(BucketPlanner, "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("key should be gone")
+	}
+}
+
+func TestIsEmpty_NoBuckets(t *testing.T) {
+	s := openInTemp(t)
+	empty, err := s.IsEmpty()
+	if err != nil {
+		t.Fatalf("IsEmpty: %v", err)
+	}
+	if !empty {
+		t.Fatal("want empty")
+	}
+}
+
+func TestIsEmpty_OnlyEmptyBuckets(t *testing.T) {
+	s := openInTemp(t)
+	if err := s.EnsureBucket("a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureBucket("b"); err != nil {
+		t.Fatal(err)
+	}
+	empty, err := s.IsEmpty()
+	if err != nil {
+		t.Fatalf("IsEmpty: %v", err)
+	}
+	if !empty {
+		t.Fatal("want empty when all buckets have no keys")
+	}
+}
+
+func TestIsEmpty_NonEmpty(t *testing.T) {
+	s := openInTemp(t)
+	if err := s.Put(BucketPlanner, "k", "v"); err != nil {
+		t.Fatal(err)
+	}
+	empty, err := s.IsEmpty()
+	if err != nil {
+		t.Fatalf("IsEmpty: %v", err)
+	}
+	if empty {
+		t.Fatal("want non-empty")
+	}
 }
