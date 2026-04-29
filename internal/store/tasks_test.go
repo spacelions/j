@@ -5,11 +5,19 @@ import (
 	"errors"
 	"io/fs"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
 )
+
+// crockfordBase32 is the Crockford base32 alphabet used by ULID
+// (uppercase, with I/L/O/U excluded). It is duplicated here on
+// purpose: the test asserts the observable contract of NewTaskID
+// without importing the ULID package, so a regression that swaps in
+// a different alphabet still fails.
+const crockfordBase32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 // ptr returns &v; used inline to assemble Task pointer-typed fields in
 // fixtures so the call sites stay readable.
@@ -44,18 +52,73 @@ func TestNewTaskID_FormatAndUnique(t *testing.T) {
 		t.Fatalf("NewTaskID returned identical IDs: %q", a)
 	}
 	for _, id := range []string{a, b} {
-		// 16 hex + "-" + 8 hex = 25 chars total.
-		if len(id) != 25 {
-			t.Fatalf("len(%q) = %d, want 25", id, len(id))
+		if len(id) != 26 {
+			t.Fatalf("len(%q) = %d, want 26", id, len(id))
 		}
-		if id[16] != '-' {
-			t.Fatalf("separator missing in %q", id)
+		for i, r := range id {
+			if !strings.ContainsRune(crockfordBase32, r) {
+				t.Fatalf("non-Crockford-base32 rune %q at %q[%d]", r, id, i)
+			}
 		}
 	}
-	// Counter advances monotonically inside the same nanosecond
-	// budget, so `b` is never <= `a` lexicographically.
+	// Monotonic entropy guarantees strict lexicographic ordering
+	// even when both calls land in the same millisecond.
 	if a >= b {
 		t.Fatalf("expected %q < %q (sortable IDs)", a, b)
+	}
+}
+
+// TestNewTaskID_MonotonicWithinMillisecond exercises the monotonic
+// entropy branch deterministically: even when wall-clock time does
+// not advance between calls, every minted ID must be strictly
+// greater than the previous one.
+func TestNewTaskID_MonotonicWithinMillisecond(t *testing.T) {
+	const n = 1000
+	prev := NewTaskID()
+	for i := 1; i < n; i++ {
+		id := NewTaskID()
+		if id <= prev {
+			t.Fatalf("non-monotonic at %d: %q !> %q", i, id, prev)
+		}
+		prev = id
+	}
+}
+
+// TestNewTaskID_ConcurrentUnique fires many goroutines through
+// NewTaskID at once, asserting both that the sync.Mutex guard around
+// the (concurrency-unsafe) monotonic entropy source actually
+// serialises callers and that the result set has no duplicates.
+func TestNewTaskID_ConcurrentUnique(t *testing.T) {
+	const (
+		workers = 16
+		perCall = 256
+	)
+	var (
+		wg  sync.WaitGroup
+		mu  sync.Mutex
+		ids = make(map[string]struct{}, workers*perCall)
+	)
+	wg.Add(workers)
+	for w := 0; w < workers; w++ {
+		go func() {
+			defer wg.Done()
+			local := make([]string, perCall)
+			for i := 0; i < perCall; i++ {
+				local[i] = NewTaskID()
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			for _, id := range local {
+				if _, dup := ids[id]; dup {
+					t.Errorf("duplicate id %q", id)
+				}
+				ids[id] = struct{}{}
+			}
+		}()
+	}
+	wg.Wait()
+	if got, want := len(ids), workers*perCall; got != want {
+		t.Fatalf("unique id count = %d, want %d", got, want)
 	}
 }
 

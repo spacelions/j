@@ -4,8 +4,10 @@ go 1.26.2
 
 require (
 	github.com/charmbracelet/huh v1.0.0
+	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
+	go.etcd.io/bbolt v1.4.3
 	google.golang.org/adk v1.1.0
 	google.golang.org/genai v1.40.0
 )
@@ -69,7 +71,6 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	go.etcd.io/bbolt v1.4.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.41.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.66.0 // indirect
