@@ -18,16 +18,19 @@ import (
 func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plan",
-		Short: "Generate a plan.md from a markdown task description using a coding agent",
-		Long: "Reads a markdown task description, asks which coding agent and model to use, " +
-			"runs that agent in plan mode, and writes the resulting plan.md beside the input.",
+		Short: "Plan a task from a markdown description and store it under .j/tasks/<id>/",
+		Long: "Reads a markdown task description (via --from-file/-f or PLAN_FROM_FILE), asks " +
+			"which coding agent and model to use, runs that agent in plan mode, and stores the " +
+			"refined requirements.md and the produced plan.md inside <cwd>/.j/tasks/<id>/. " +
+			"No file is written to the workspace; use `j tasks` to list runs and `j work --task <id>` " +
+			"to execute the plan.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Run's withDefaults opens the per-cwd settings DB when
 			// Options.Store is nil and closes it on the way out, so we
 			// don't construct one here. Tests inject their own to keep
 			// the on-disk side effects hermetic.
 			return Run(cmd.Context(), Options{
-				Target:       viper.GetString("plan.target"),
+				FromFile:     viper.GetString("plan.from_file"),
 				Interactive:  viper.GetBool("plan.interactive"),
 				FromSettings: viper.GetBool("plan.from_settings"),
 				Stdin:        cmd.InOrStdin(),
@@ -37,13 +40,13 @@ func New() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringP("target", "t", "", "Path to a markdown file describing the task")
+	cmd.Flags().StringP("from-file", "f", "", "Path to a markdown file describing the task")
 	cmd.Flags().Bool("interactive", true, "Launch the coding agent in interactive mode (its TUI). Set to false for headless capture.")
 	cmd.Flags().Bool("from-settings", true, "Use the tool/model recorded in <cwd>/.j/settings; pass --from-settings=false to be prompted instead.")
-	_ = viper.BindPFlag("plan.target", cmd.Flags().Lookup("target"))
+	_ = viper.BindPFlag("plan.from_file", cmd.Flags().Lookup("from-file"))
 	_ = viper.BindPFlag("plan.interactive", cmd.Flags().Lookup("interactive"))
 	_ = viper.BindPFlag("plan.from_settings", cmd.Flags().Lookup("from-settings"))
-	_ = viper.BindEnv("plan.target", "PLAN_TARGET")
+	_ = viper.BindEnv("plan.from_file", "PLAN_FROM_FILE")
 	_ = viper.BindEnv("plan.interactive", "PLAN_INTERACTIVE")
 	_ = viper.BindEnv("plan.from_settings", "PLAN_FROM_SETTINGS")
 	return cmd

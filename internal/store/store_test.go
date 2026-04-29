@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -638,5 +639,185 @@ func TestIsEmpty_NonEmpty(t *testing.T) {
 	}
 	if empty {
 		t.Fatal("want non-empty")
+	}
+}
+
+// TestDefaultTasksDir_RootedInCwd pins the new tasks-folder layout:
+// <cwd>/.j/tasks/ with the bbolt file at index.db inside it.
+func TestDefaultTasksDir_RootedInCwd(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	gotDir, err := DefaultTasksDir()
+	if err != nil {
+		t.Fatalf("DefaultTasksDir: %v", err)
+	}
+	if filepath.Base(gotDir) != TasksDirName {
+		t.Fatalf("DefaultTasksDir base = %q, want %q", filepath.Base(gotDir), TasksDirName)
+	}
+	if filepath.Base(filepath.Dir(gotDir)) != ".j" {
+		t.Fatalf("DefaultTasksDir parent = %q, want .j", filepath.Base(filepath.Dir(gotDir)))
+	}
+	gotDB, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatalf("DefaultTasksDBPath: %v", err)
+	}
+	if filepath.Base(gotDB) != TasksDBName {
+		t.Fatalf("DefaultTasksDBPath base = %q, want %q", filepath.Base(gotDB), TasksDBName)
+	}
+	if filepath.Dir(gotDB) != gotDir {
+		t.Fatalf("DefaultTasksDBPath dir = %q, want %q", filepath.Dir(gotDB), gotDir)
+	}
+}
+
+func TestDefaultTasksDir_PropagatesCwdError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("cwd cannot be removed while in use on windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root may bypass relevant FS errors")
+	}
+	parent := t.TempDir()
+	gone := filepath.Join(parent, "gone")
+	if err := os.Mkdir(gone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(gone)
+	t.Setenv("PWD", "")
+	if err := os.Remove(gone); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if _, err := DefaultDir(); err == nil {
+		t.Skip("os.Getwd unexpectedly succeeded")
+	}
+	if _, err := DefaultTasksDir(); err == nil {
+		t.Fatal("DefaultTasksDir should propagate DefaultDir error")
+	}
+	if _, err := DefaultTasksDBPath(); err == nil {
+		t.Fatal("DefaultTasksDBPath should propagate DefaultDir error")
+	}
+}
+
+// TestEnsureTaskDir_CreatesNested verifies the per-task directory is
+// created with mkdir -p semantics inside .j/tasks/, that the parent
+// .j/ exists, and that calling it again is a no-op.
+func TestEnsureTaskDir_CreatesNested(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	taskDir, err := EnsureTaskDir("abc")
+	if err != nil {
+		t.Fatalf("EnsureTaskDir: %v", err)
+	}
+	if filepath.Base(taskDir) != "abc" {
+		t.Fatalf("EnsureTaskDir base = %q", filepath.Base(taskDir))
+	}
+	info, err := os.Stat(taskDir)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("EnsureTaskDir did not create a directory")
+	}
+	jdir := filepath.Join(dir, ".j")
+	if info, err := os.Stat(jdir); err != nil || !info.IsDir() {
+		t.Fatalf(".j parent should exist, got err=%v", err)
+	}
+	tasksDir := filepath.Join(jdir, TasksDirName)
+	if info, err := os.Stat(tasksDir); err != nil || !info.IsDir() {
+		t.Fatalf(".j/tasks should exist, got err=%v", err)
+	}
+	// Idempotent.
+	if _, err := EnsureTaskDir("abc"); err != nil {
+		t.Fatalf("second EnsureTaskDir: %v", err)
+	}
+}
+
+// TestEnsureTaskDir_AppendsGitignoreEntry pins that EnsureTaskDir
+// invokes the .gitignore allowlist when one already exists in the
+// repo root.
+func TestEnsureTaskDir_AppendsGitignoreEntry(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	gi := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(gi, []byte("node_modules/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EnsureTaskDir("abc"); err != nil {
+		t.Fatalf("EnsureTaskDir: %v", err)
+	}
+	got, err := os.ReadFile(gi)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(got), ".j") {
+		t.Fatalf("gitignore = %q, want .j entry", string(got))
+	}
+}
+
+func TestEnsureTaskDir_RejectsEmptyID(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if _, err := EnsureTaskDir(""); err == nil {
+		t.Fatal("expected error for empty id")
+	}
+}
+
+// TestEnsureTaskDir_ParentMkdirReadOnly covers the os.MkdirAll error
+// for the per-task subdirectory when its parent (.j/tasks) is
+// read-only. The helper must surface a wrapped mkdir error.
+func TestEnsureTaskDir_ParentMkdirReadOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file-mode semantics required")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if _, err := EnsureTaskDir("seed"); err != nil {
+		t.Fatalf("seed EnsureTaskDir: %v", err)
+	}
+	tasksDir := filepath.Join(dir, ".j", TasksDirName)
+	if err := os.Chmod(tasksDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tasksDir, 0o755) })
+
+	if _, err := EnsureTaskDir("locked"); err == nil {
+		t.Fatal("expected mkdir error inside read-only parent")
+	} else if !strings.Contains(err.Error(), "mkdir") {
+		t.Fatalf("err = %v, want wrapped mkdir error", err)
+	}
+}
+
+// TestEnsureTaskDir_TasksDirIsFile covers the ensureTasksDir branch
+// where the *sibling* path is a regular file (legacy schema). It
+// reuses the LegacyTasksFile assertion so the same fixture exercises
+// both the public helper and the package-private branch.
+func TestEnsureTaskDir_LegacyTasksFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jdir := filepath.Join(dir, ".j")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(jdir, "tasks")
+	if err := os.WriteFile(legacy, []byte("legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := EnsureTaskDir("abc")
+	if !errors.Is(err, ErrLegacyTasksFile) {
+		t.Fatalf("err = %v, want ErrLegacyTasksFile", err)
+	}
+}
+
+// TestTaskFileNameConstants pins the package-level filename constants
+// that callers use with filepath.Join(DefaultTasksDir(), id, name) to
+// build per-task body paths. The values are part of the on-disk
+// layout contract, so changing them requires a migration.
+func TestTaskFileNameConstants(t *testing.T) {
+	if PlanFileName != "plan.md" {
+		t.Fatalf("PlanFileName = %q, want %q", PlanFileName, "plan.md")
+	}
+	if RequirementsFileName != "requirements.md" {
+		t.Fatalf("RequirementsFileName = %q, want %q", RequirementsFileName, "requirements.md")
 	}
 }

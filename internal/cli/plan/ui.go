@@ -15,10 +15,12 @@ import (
 // to avoid touching stdin.
 type UI interface {
 	// SelectSource asks the user which planning source to use. It is
-	// only invoked when no markdown target was supplied via --target or
-	// PLAN_TARGET.
+	// only invoked when no markdown source was supplied via
+	// --from-file or PLAN_FROM_FILE.
 	SelectSource(ctx context.Context) (PlanSource, error)
-	AskTarget(ctx context.Context) (string, error)
+	// AskFromFile prompts the user for the markdown source path. It is
+	// invoked after SelectSource returns SourceMarkdown.
+	AskFromFile(ctx context.Context) (string, error)
 	SelectTool(ctx context.Context, options []string) (string, error)
 	SelectModel(ctx context.Context, options []string) (string, error)
 }
@@ -47,7 +49,7 @@ func (u *huhUI) SelectSource(ctx context.Context) (PlanSource, error) {
 	return ParseSource(label)
 }
 
-func (u *huhUI) AskTarget(ctx context.Context) (string, error) {
+func (u *huhUI) AskFromFile(ctx context.Context) (string, error) {
 	var v string
 	if err := u.run(ctx, huh.NewInput().
 		Title("Markdown file location").

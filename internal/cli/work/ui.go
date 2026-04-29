@@ -8,13 +8,24 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+
+	"github.com/spacelions/j/internal/store"
 )
 
 // UI lets the work orchestrator ask the user questions. The default
 // implementation renders huh prompts on the terminal; tests substitute
 // a scripted fake to avoid touching stdin.
 type UI interface {
-	AskTarget(ctx context.Context) (string, error)
+	// AskFromFile prompts the user for a legacy plan markdown path.
+	// Used only when --from-file/-f / WORK_FROM_FILE is empty AND no
+	// `plan-done` task is available in bbolt; the resolution helper
+	// in work.go calls it as the last fallback before erroring out.
+	AskFromFile(ctx context.Context) (string, error)
+	// PickPlanTask asks the user to choose one of the supplied tasks
+	// (rendered with their summary and id) and returns the chosen
+	// task's id. The slice is expected to be non-empty and sorted by
+	// the caller (most-recent plan-done first).
+	PickPlanTask(ctx context.Context, tasks []store.Task) (string, error)
 	SelectTool(ctx context.Context, options []string) (string, error)
 	SelectModel(ctx context.Context, options []string) (string, error)
 }
@@ -35,7 +46,7 @@ func newHuhUI(in io.Reader, out io.Writer) *huhUI {
 	return &huhUI{in: in, out: out}
 }
 
-func (u *huhUI) AskTarget(ctx context.Context) (string, error) {
+func (u *huhUI) AskFromFile(ctx context.Context) (string, error) {
 	var v string
 	if err := u.run(ctx, huh.NewInput().
 		Title("Plan markdown file location").
@@ -48,6 +59,32 @@ func (u *huhUI) AskTarget(ctx context.Context) (string, error) {
 		return "", errors.New("work: no plan markdown file location provided")
 	}
 	return v, nil
+}
+
+func (u *huhUI) PickPlanTask(ctx context.Context, tasks []store.Task) (string, error) {
+	if len(tasks) == 0 {
+		return "", errors.New("pick plan task: no plan-done tasks available")
+	}
+	labels := make([]string, 0, len(tasks))
+	byLabel := make(map[string]string, len(tasks))
+	for _, t := range tasks {
+		summary := strings.TrimSpace(t.Summary)
+		if summary == "" {
+			summary = "(no summary)"
+		}
+		label := fmt.Sprintf("%s — %s", t.ID, summary)
+		labels = append(labels, label)
+		byLabel[label] = t.ID
+	}
+	chosen, err := u.choose(ctx, "Select a plan-done task", labels)
+	if err != nil {
+		return "", err
+	}
+	id, ok := byLabel[chosen]
+	if !ok {
+		return "", fmt.Errorf("pick plan task: unknown selection %q", chosen)
+	}
+	return id, nil
 }
 
 func (u *huhUI) SelectTool(ctx context.Context, options []string) (string, error) {
