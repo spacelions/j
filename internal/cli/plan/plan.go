@@ -1,9 +1,9 @@
 // Package plan implements the `j plan` subcommand. It collects a planning
-// source, asks for a model and a coding-agent backend (Cursor today,
-// Codex/Claude later), verifies that backend is signed in, and runs it.
-// For markdown sources it writes <stem>.plan.md beside the input; for
-// from-scratch sources it just hands the agent's plan-mode TUI to the
-// user; the linear source is a stub today.
+// source (markdown today, linear later), asks for a model and a coding
+// agent backend, verifies that backend is signed in, and runs it to
+// produce a refined requirements summary and a plan stored under
+// <cwd>/.j/tasks/<id>/. No file is written to the workspace; `j tasks`
+// lists the runs and `j work --task <id>` executes the plan.
 package plan
 
 import (
@@ -12,10 +12,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/spacelions/j/internal/cli/agentpick"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/mdfile"
 )
@@ -24,10 +24,12 @@ import (
 // streams. UI defaults to the huh implementation. Agents must be
 // supplied by the caller (the CLI wires the Cursor agent; tests inject
 // scripted ones). Interactive selects the agent's TUI when true and the
-// headless capture path when false; it only affects the markdown source
-// because scratch is always a TUI session and linear runs no agent.
+// headless capture path when false.
 type Options struct {
-	Target      string
+	// FromFile is the markdown task description path (from --from-file
+	// or PLAN_FROM_FILE). When empty the orchestrator prompts via the
+	// UI.
+	FromFile    string
 	Interactive bool
 
 	// FromSettings, when true, makes Run reuse the tool/model
@@ -48,10 +50,10 @@ type Options struct {
 
 	// Store, when non-nil, receives best-effort writes recording the
 	// tool/model/interactive flag last used (the plan source and the
-	// target path are intentionally NOT persisted). The orchestrator
-	// does not own the lifecycle: callers that supply a Store keep
-	// the lifecycle. When nil, withDefaults opens the default
-	// <cwd>/.j/settings DB and closes it after Run returns.
+	// markdown source path are intentionally NOT persisted). The
+	// orchestrator does not own the lifecycle: callers that supply a
+	// Store keep the lifecycle. When nil, withDefaults opens the
+	// default <cwd>/.j/settings DB and closes it after Run returns.
 	Store *store.Store
 
 	// closeStore is set internally by withDefaults when it allocates
@@ -60,9 +62,10 @@ type Options struct {
 	closeStore bool
 }
 
-// Run executes `j plan`. When Options.Target is set it goes straight to
-// the markdown source (preserving --target/PLAN_TARGET semantics).
-// Otherwise it asks the user which source to use and dispatches.
+// Run executes `j plan`. When Options.FromFile is set it goes straight
+// to the markdown source (preserving --from-file/PLAN_FROM_FILE
+// semantics). Otherwise it asks the user which source to use and
+// dispatches.
 func Run(ctx context.Context, opts Options) error {
 	opts = opts.withDefaults()
 	if opts.closeStore && opts.Store != nil {
@@ -72,8 +75,8 @@ func Run(ctx context.Context, opts Options) error {
 		return errors.New("plan: no coding agents configured")
 	}
 
-	if opts.Target != "" {
-		return runMarkdown(ctx, opts, opts.Target)
+	if opts.FromFile != "" {
+		return runMarkdown(ctx, opts, opts.FromFile)
 	}
 
 	src, err := opts.UI.SelectSource(ctx)
@@ -82,13 +85,11 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	switch src {
 	case SourceMarkdown:
-		raw, err := opts.UI.AskTarget(ctx)
+		raw, err := opts.UI.AskFromFile(ctx)
 		if err != nil {
 			return err
 		}
 		return runMarkdown(ctx, opts, raw)
-	case SourceScratch:
-		return runScratch(ctx, opts)
 	case SourceLinear:
 		fmt.Fprintln(opts.Stdout, "plan: linear source is not yet wired up; nothing to do")
 		return nil
@@ -96,12 +97,14 @@ func Run(ctx context.Context, opts Options) error {
 	return fmt.Errorf("plan: unsupported source %s", src)
 }
 
-// runMarkdown is the original markdown-file flow: resolve and read the
-// target, pick a tool/model, verify login, and ask the agent to produce
-// <stem>.plan.md. The agent owns the file write; we just stat it after
-// to surface success or a "was not written" warning. A `planning` task
-// is logged before agent.Plan and updated to `planned` (with the
-// produced plan body attached) on success or `help` on failure.
+// runMarkdown is the markdown-file flow: resolve and read the source,
+// pick a tool/model, mint a task ID, ensure `<cwd>/.j/tasks/<id>/`
+// exists, and ask the agent to save both the (possibly refined)
+// requirements.md and the produced plan.md inside that directory. The
+// orchestrator reads both files after agent.Plan returns and updates
+// the task summary accordingly. A `planning` task is logged before
+// agent.Plan and updated to `plan-done` on success or `help` on
+// failure.
 func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 	target, err := mdfile.Resolve(rawTarget)
 	if err != nil {
@@ -109,7 +112,7 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 	}
 	body, err := os.ReadFile(target)
 	if err != nil {
-		return fmt.Errorf("read target: %w", err)
+		return fmt.Errorf("read source: %w", err)
 	}
 
 	agent, model, err := selectPlanner(ctx, opts)
@@ -117,55 +120,49 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		return err
 	}
 
-	out := planOutputPath(target)
-	resumeID := cursorResumeChatID(ctx, opts, agent)
-	lc := beginPlanTask(opts, agent, model, target, string(body), resumeID)
+	taskID := store.NewTaskID()
+	taskDir, err := store.EnsureTaskDir(taskID)
+	if err != nil {
+		return fmt.Errorf("plan: ensure task dir: %w", err)
+	}
+	requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
+	planPath := filepath.Join(taskDir, store.PlanFileName)
+
+	resumeID, err := agent.NewResumeID(ctx)
+	if err != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
+	}
+	lc := beginPlanTask(opts, agent, model, taskID, target, string(body), resumeID)
 	planErr := agent.Plan(ctx, codingagents.PlanRequest{
-		TargetPath:   target,
-		Body:         string(body),
-		Model:        model,
-		OutputPath:   out,
-		Interactive:  opts.Interactive,
-		ResumeChatID: resumeID,
+		FromFilePath:           target,
+		Body:                   string(body),
+		Model:                  model,
+		RequirementsOutputPath: requirementsPath,
+		PlanOutputPath:         planPath,
+		Interactive:            opts.Interactive,
+		ResumeChatID:           resumeID,
 	})
-	var planMD string
+
+	var refinedReq, planMD string
 	if planErr == nil {
-		if data, readErr := os.ReadFile(out); readErr == nil {
+		if data, readErr := os.ReadFile(requirementsPath); readErr == nil {
+			refinedReq = string(data)
+		} else {
+			fmt.Fprintf(opts.Stderr, "warning: read %s: %v\n", requirementsPath, readErr)
+		}
+		if data, readErr := os.ReadFile(planPath); readErr == nil {
 			planMD = string(data)
+		} else {
+			fmt.Fprintf(opts.Stderr, "warning: read %s: %v\n", planPath, readErr)
 		}
 	}
-	lc.finishPlan(planErr, planMD)
+	lc.finishPlan(planErr, refinedReq, planMD, target)
 	if planErr != nil {
 		return planErr
 	}
 
-	if _, err := os.Stat(out); err == nil {
-		fmt.Fprintf(opts.Stdout, "wrote %s\n", out)
-	} else {
-		fmt.Fprintf(opts.Stderr, "warning: %s was not written\n", out)
-	}
+	fmt.Fprintf(opts.Stdout, "plan recorded as task %s\n", taskID)
 	return nil
-}
-
-// runScratch hands the agent's plan-mode TUI to the user with no
-// markdown body and no expected output file. The empty TargetPath +
-// OutputPath in the request is the contract that signals scratch to
-// the agent. A `planning` task is still logged so `j tasks` reflects
-// every real plan run.
-func runScratch(ctx context.Context, opts Options) error {
-	agent, model, err := selectPlanner(ctx, opts)
-	if err != nil {
-		return err
-	}
-	resumeID := cursorResumeChatID(ctx, opts, agent)
-	lc := beginPlanTask(opts, agent, model, "", "", resumeID)
-	planErr := agent.Plan(ctx, codingagents.PlanRequest{
-		Model:        model,
-		Interactive:  true,
-		ResumeChatID: resumeID,
-	})
-	lc.finishPlan(planErr, "")
-	return planErr
 }
 
 // selectPlanner is the single chokepoint for choosing the planner
@@ -195,9 +192,9 @@ func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, strin
 }
 
 // persistPlannerSelection writes the just-confirmed tool/model and
-// the interactive flag to the planner bucket. The plan source
-// (markdown/scratch/linear) and the target path are intentionally
-// NOT persisted: the user must pick those manually each run.
+// the interactive flag to the planner bucket. The plan source and the
+// markdown source path are intentionally NOT persisted: the user must
+// pick those manually each run.
 //
 // Persistence is best-effort: any error is reported to opts.Stderr
 // and otherwise swallowed so plan can keep running. When opts.Store
@@ -226,19 +223,4 @@ func (o Options) withDefaults() Options {
 		}
 	}
 	return o
-}
-
-// cursorResumeChatID returns a new Cursor agent chat id for
-// `cursor-agent --resume`, or "" when the planner is not Cursor or
-// `cursor-agent create-chat` fails.
-func cursorResumeChatID(ctx context.Context, opts Options, agent codingagents.Agent) string {
-	if agent.Name() != "cursor" {
-		return ""
-	}
-	id, err := cursor.CreateChatID(ctx)
-	if err != nil {
-		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
-		return ""
-	}
-	return id
 }

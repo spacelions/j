@@ -64,8 +64,11 @@ func TestNew_Smoke(t *testing.T) {
 	if cmd.RunE == nil {
 		t.Fatal("RunE is nil")
 	}
-	if f := cmd.Flags().Lookup("target"); f == nil {
-		t.Error("--target flag was not registered")
+	if f := cmd.Flags().Lookup("from-file"); f == nil {
+		t.Error("--from-file flag was not registered")
+	}
+	if cmd.Flags().Lookup("target") != nil {
+		t.Error("--target flag should have been removed")
 	}
 	if f := cmd.Flags().Lookup("interactive"); f == nil {
 		t.Error("--interactive flag was not registered")
@@ -82,20 +85,21 @@ func TestNew_Smoke(t *testing.T) {
 
 // TestNew_RunE_PropagatesPlanError invokes the RunE closure inside the
 // same package so its body (calling Run with an Options built from viper +
-// cursor.New()) is exercised by plan_test coverage. We use a bogus target
-// so resolveTarget short-circuits before any agent or UI is touched.
+// cursor.New()) is exercised by plan_test coverage. We use a bogus
+// from-file path so mdfile.Resolve short-circuits before any agent or
+// UI is touched.
 func TestNew_RunE_PropagatesPlanError(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 
 	cmd := New()
-	if err := cmd.Flags().Set("target", "/this/path/does/not/exist.md"); err != nil {
+	if err := cmd.Flags().Set("from-file", "/this/path/does/not/exist.md"); err != nil {
 		t.Fatalf("Flags().Set: %v", err)
 	}
 	cmd.SetContext(context.Background())
 
 	err := cmd.RunE(cmd, nil)
 	if err == nil {
-		t.Fatal("expected error from bogus target")
+		t.Fatal("expected error from bogus from-file")
 	}
 }

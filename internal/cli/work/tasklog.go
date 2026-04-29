@@ -15,9 +15,12 @@ import (
 // workLifecycle owns the begin/end task-log writes around a single
 // agent.Work invocation. A nil store means OpenTaskLog failed (already
 // warned by the store helper) and the per-event updates become silent
-// no-ops; the lifecycle is still safe to call. Construction goes
-// through beginWorkTask; finishWork stamps work_end_at, decides the
-// terminal status, and closes the store idempotently.
+// no-ops; the lifecycle is still safe to call.
+//
+// The struct is constructed with one of beginWorkTaskNew or
+// beginWorkTaskReuse depending on whether the run is a legacy file
+// import (creates a new bbolt row) or a bbolt-sourced run (mutates an
+// existing row in place). finishWork is shared.
 type workLifecycle struct {
 	stderr io.Writer
 	store  *store.Store
@@ -25,29 +28,46 @@ type workLifecycle struct {
 	closed bool
 }
 
-// beginWorkTask records the "working" entry. The plan body the agent
-// will execute is the canonical PlanMarkdown. The original requirement
-// markdown is recovered from the sidecar `<stem>.md` next to the plan
-// when present (the standard `j plan` output convention); otherwise it
-// stays empty. The summary mirrors the same precedence used by `j plan`
-// so a task started by `j work` looks consistent with one started by
-// `j plan`. resumeChatID is the Cursor `create-chat` id when the coder
-// is Cursor; otherwise empty.
-func beginWorkTask(opts Options, agent codingagents.Agent, model, planPath, planBody, resumeChatID string) *workLifecycle {
+// beginWorkTaskNew records the "working" entry for a legacy
+// `--from-file` import. The caller has already minted the task id and
+// staged the plan markdown into <cwd>/.j/tasks/<id>/plan.md (and
+// optionally requirements.md). This helper just stamps the bbolt row.
+func beginWorkTaskNew(opts Options, agent codingagents.Agent, model, taskID, planPath, requirement, planBody, workResumeChatID string) *workLifecycle {
 	begin := time.Now().UTC()
-	requirement := readRequirementSidecar(planPath)
-	planMD := planBody
 	task := store.Task{
-		ID:                  store.NewTaskID(),
-		RequirementMarkdown: requirement,
-		PlanMarkdown:        &planMD,
-		Status:              store.StatusWorking,
-		InvokedTool:         agent.Name(),
-		InvokedModel:        model,
-		ResumeCursor:        resumeChatID,
-		Summary:             workSummary(requirement, planBody, planPath),
-		WorkBeginAt:         &begin,
+		ID:               taskID,
+		Status:           store.StatusWorking,
+		InvokedTool:      agent.Name(),
+		InvokedModel:     model,
+		WorkResumeCursor: workResumeChatID,
+		Summary:          workSummary(requirement, planBody, planPath),
+		WorkBeginAt:      &begin,
 	}
+	return openLifecycle(opts, task)
+}
+
+// beginWorkTaskReuse mutates a copy of `existing` to flip status to
+// `working`, stamp work_begin_at, clear stale work_end_at / done_at
+// from a previous failed run, and record the latest tool/model and
+// resume cursor for the work phase. Plan-phase fields are preserved.
+func beginWorkTaskReuse(opts Options, agent codingagents.Agent, model string, existing store.Task, workResumeChatID string) *workLifecycle {
+	begin := time.Now().UTC()
+	task := existing
+	task.Status = store.StatusWorking
+	task.InvokedTool = agent.Name()
+	task.InvokedModel = model
+	task.WorkResumeCursor = workResumeChatID
+	task.WorkBeginAt = &begin
+	task.WorkEndAt = nil
+	task.DoneAt = nil
+	return openLifecycle(opts, task)
+}
+
+// openLifecycle is the shared helper that opens the task log,
+// best-effort writes the initial row, and returns a workLifecycle
+// suitable for finishWork. Open / put failures warn once and then
+// degrade to a nil-store lifecycle so the orchestrator can still run.
+func openLifecycle(opts Options, task store.Task) *workLifecycle {
 	lc := &workLifecycle{stderr: opts.Stderr, task: task}
 	s, ok := store.OpenTaskLog(opts.Stderr, store.BucketTasks)
 	if !ok {
@@ -61,10 +81,11 @@ func beginWorkTask(opts Options, agent codingagents.Agent, model, planPath, plan
 }
 
 // finishWork stamps work_end_at, picks the terminal status from runErr
-// (done on success, help on error), sets done_at on success, and
-// rewrites the task. Closing the store is idempotent so callers can
-// safely defer this even when finishWork already ran on the happy
-// path.
+// (work-done on success, help on error), and rewrites the task. The
+// `completed` status (and DoneAt) is reserved for a future `j verify`
+// command; `j work` no longer terminates the lifecycle here. Closing
+// the store is idempotent so callers can safely defer this even when
+// finishWork already ran on the happy path.
 func (lc *workLifecycle) finishWork(runErr error) {
 	if lc.closed {
 		return
@@ -75,8 +96,7 @@ func (lc *workLifecycle) finishWork(runErr error) {
 	if runErr != nil {
 		lc.task.Status = store.StatusHelp
 	} else {
-		lc.task.Status = store.StatusDone
-		lc.task.DoneAt = &end
+		lc.task.Status = store.StatusWorkDone
 	}
 	if lc.store == nil {
 		return
@@ -88,12 +108,12 @@ func (lc *workLifecycle) finishWork(runErr error) {
 }
 
 // readRequirementSidecar derives the path to the original requirement
-// markdown from a plan path produced by `j plan` and returns its
-// contents when readable. The convention is `<dir>/<stem>.plan.md` for
-// the plan and `<dir>/<stem>.md` for the requirement. When the plan
-// path does not follow this convention, or the sidecar file does not
-// exist / cannot be read, an empty string is returned and Task.
-// RequirementMarkdown is left empty.
+// markdown from a plan path produced by `j plan`'s legacy
+// `<dir>/<stem>.plan.md` convention and returns its contents when
+// readable. When the plan path does not follow this convention, or
+// the sidecar file does not exist / cannot be read, an empty string
+// is returned so the caller falls back to the plan body for the
+// summary.
 func readRequirementSidecar(planPath string) string {
 	if planPath == "" {
 		return ""
@@ -117,9 +137,7 @@ func readRequirementSidecar(planPath string) string {
 
 // workSummary mirrors planSummary's precedence so the column lines up
 // across plan- and work-initiated tasks: requirement first, plan body
-// second, file basename last. The constant fallback ("work session")
-// keeps the row searchable even when the agent was invoked against a
-// completely empty plan.
+// second, file basename last.
 func workSummary(requirement, planBody, planPath string) string {
 	if s := store.SummarizeMarkdown(requirement); s != "" {
 		return s
@@ -130,5 +148,5 @@ func workSummary(requirement, planBody, planPath string) string {
 	if planPath != "" {
 		return filepath.Base(planPath)
 	}
-	return "work session"
+	return ""
 }

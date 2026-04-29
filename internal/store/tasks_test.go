@@ -2,6 +2,8 @@ package store
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"strings"
 	"testing"
 	"time"
@@ -15,8 +17,8 @@ func ptr[T any](v T) *T { return &v }
 
 func TestTaskStatus_Valid_AllAllowlist(t *testing.T) {
 	for _, s := range []TaskStatus{
-		StatusPlanning, StatusPlanned, StatusWorking,
-		StatusVerifying, StatusDone, StatusHelp,
+		StatusPlanning, StatusPlanDone, StatusWorking, StatusWorkDone,
+		StatusVerifying, StatusVerifyDone, StatusCompleted, StatusHelp,
 	} {
 		if !s.Valid() {
 			t.Fatalf("Valid(%q) = false, want true", s)
@@ -25,7 +27,10 @@ func TestTaskStatus_Valid_AllAllowlist(t *testing.T) {
 }
 
 func TestTaskStatus_Valid_RejectsUnknown(t *testing.T) {
-	for _, s := range []TaskStatus{"", "PLANNING", "in-progress", "blocked"} {
+	for _, s := range []TaskStatus{
+		"", "PLANNING", "in-progress", "blocked",
+		"planned", "done", // explicitly removed by the new schema
+	} {
 		if s.Valid() {
 			t.Fatalf("Valid(%q) = true, want false", s)
 		}
@@ -56,30 +61,40 @@ func TestNewTaskID_FormatAndUnique(t *testing.T) {
 
 func TestTask_JSONRoundTrip(t *testing.T) {
 	now := time.Date(2026, 4, 29, 12, 0, 0, 0, time.UTC)
-	plan := "## plan body"
 	in := Task{
-		ID:                  "abc",
-		RequirementMarkdown: "# task\nbody",
-		PlanMarkdown:        &plan,
-		Status:              StatusPlanned,
-		InvokedTool:         "cursor",
-		InvokedModel:        "sonnet-4",
-		ResumeCursor:        "/work/dir",
-		Summary:             "task",
-		PlanBeginAt:         &now,
-		PlanEndAt:           ptr(now.Add(time.Minute)),
-		WorkBeginAt:         ptr(now.Add(2 * time.Minute)),
-		WorkEndAt:           ptr(now.Add(3 * time.Minute)),
-		VerifyBeginAt:       ptr(now.Add(4 * time.Minute)),
-		VerifyEndAt:         ptr(now.Add(5 * time.Minute)),
-		DoneAt:              ptr(now.Add(6 * time.Minute)),
+		ID:                 "abc",
+		Status:             StatusPlanDone,
+		InvokedTool:        "cursor",
+		InvokedModel:       "sonnet-4",
+		Summary:            "task",
+		PlanResumeCursor:   "plan-uuid",
+		WorkResumeCursor:   "work-uuid",
+		VerifyResumeCursor: "verify-uuid",
+		PlanBeginAt:        &now,
+		PlanEndAt:          ptr(now.Add(time.Minute)),
+		WorkBeginAt:        ptr(now.Add(2 * time.Minute)),
+		WorkEndAt:          ptr(now.Add(3 * time.Minute)),
+		VerifyBeginAt:      ptr(now.Add(4 * time.Minute)),
+		VerifyEndAt:        ptr(now.Add(5 * time.Minute)),
+		DoneAt:             ptr(now.Add(6 * time.Minute)),
 	}
 	data, err := json.Marshal(in)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-	if !strings.Contains(string(data), `"plan_markdown":"## plan body"`) {
-		t.Fatalf("expected plan_markdown to round-trip non-null, got %s", data)
+	for _, want := range []string{
+		`"plan_resume_cursor":"plan-uuid"`,
+		`"work_resume_cursor":"work-uuid"`,
+		`"verify_resume_cursor":"verify-uuid"`,
+		`"status":"plan-done"`,
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("expected %s in %s", want, data)
+		}
+	}
+	if strings.Contains(string(data), `requirement_markdown`) ||
+		strings.Contains(string(data), `plan_markdown`) {
+		t.Fatalf("expected body fields removed from JSON, got %s", data)
 	}
 	var out Task
 	if err := json.Unmarshal(data, &out); err != nil {
@@ -88,37 +103,36 @@ func TestTask_JSONRoundTrip(t *testing.T) {
 	if out.ID != in.ID || out.Status != in.Status {
 		t.Fatalf("round-trip mismatch: %+v", out)
 	}
-	if out.PlanMarkdown == nil || *out.PlanMarkdown != plan {
-		t.Fatalf("PlanMarkdown round-trip = %v", out.PlanMarkdown)
+	if out.PlanResumeCursor != "plan-uuid" || out.WorkResumeCursor != "work-uuid" || out.VerifyResumeCursor != "verify-uuid" {
+		t.Fatalf("resume cursors round-trip = %+v", out)
 	}
 	if !out.PlanBeginAt.Equal(now) {
 		t.Fatalf("PlanBeginAt = %v, want %v", out.PlanBeginAt, now)
 	}
 }
 
-// TestTask_JSON_NullablePlanMarkdown pins that an unset PlanMarkdown
-// serializes as JSON null (per plan: "JSON-null when unknown") and a
-// missing optional timestamp is omitted entirely.
-func TestTask_JSON_NullablePlanMarkdown(t *testing.T) {
+// TestTask_JSON_OmitsNilTimestamps pins the omitempty contract on
+// pointer-typed time fields (a partially-completed task should not
+// serialize fake timestamps).
+func TestTask_JSON_OmitsNilTimestamps(t *testing.T) {
 	data, err := json.Marshal(Task{ID: "x", Status: StatusPlanning})
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
 	got := string(data)
-	if !strings.Contains(got, `"plan_markdown":null`) {
-		t.Fatalf("expected plan_markdown null, got %s", got)
-	}
-	if strings.Contains(got, "plan_begin_at") {
-		t.Fatalf("nil timestamps should be omitted, got %s", got)
+	for _, banned := range []string{"plan_begin_at", "plan_end_at", "work_begin_at", "work_end_at", "verify_begin_at", "verify_end_at", "done_at"} {
+		if strings.Contains(got, banned) {
+			t.Fatalf("nil timestamp %q should be omitted, got %s", banned, got)
+		}
 	}
 }
 
 func openTaskStore(t *testing.T) *Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
-	path, err := DefaultTasksPath()
+	path, err := DefaultTasksDBPath()
 	if err != nil {
-		t.Fatalf("DefaultTasksPath: %v", err)
+		t.Fatalf("DefaultTasksDBPath: %v", err)
 	}
 	s, err := Open(path)
 	if err != nil {
@@ -130,14 +144,13 @@ func openTaskStore(t *testing.T) *Store {
 
 func TestPutTask_RoundTrip(t *testing.T) {
 	s := openTaskStore(t)
-	plan := "plan"
 	task := Task{
-		ID:           "id-1",
-		Status:       StatusPlanned,
-		Summary:      "hello",
-		InvokedTool:  "cursor",
-		InvokedModel: "sonnet-4",
-		PlanMarkdown: &plan,
+		ID:               "id-1",
+		Status:           StatusPlanDone,
+		Summary:          "hello",
+		InvokedTool:      "cursor",
+		InvokedModel:     "sonnet-4",
+		PlanResumeCursor: "plan-1",
 	}
 	if err := s.PutTask(task); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -146,17 +159,17 @@ func TestPutTask_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
-	if len(got) != 1 || got[0].ID != "id-1" || got[0].Status != StatusPlanned {
+	if len(got) != 1 || got[0].ID != "id-1" || got[0].Status != StatusPlanDone {
 		t.Fatalf("ListTasks = %+v", got)
 	}
-	if got[0].PlanMarkdown == nil || *got[0].PlanMarkdown != plan {
-		t.Fatalf("PlanMarkdown lost: %+v", got[0].PlanMarkdown)
+	if got[0].PlanResumeCursor != "plan-1" {
+		t.Fatalf("PlanResumeCursor lost: %+v", got[0])
 	}
 }
 
 func TestPutTask_RejectsEmptyID(t *testing.T) {
 	s := openTaskStore(t)
-	err := s.PutTask(Task{Status: StatusPlanned})
+	err := s.PutTask(Task{Status: StatusPlanDone})
 	if err == nil || !strings.Contains(err.Error(), "task id required") {
 		t.Fatalf("err = %v", err)
 	}
@@ -178,8 +191,74 @@ func TestPutTask_BoltError(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if err := s.PutTask(Task{ID: "x", Status: StatusPlanned}); err == nil {
+	if err := s.PutTask(Task{ID: "x", Status: StatusPlanDone}); err == nil {
 		t.Fatal("PutTask on closed db should error")
+	}
+}
+
+func TestGetTask_RoundTrip(t *testing.T) {
+	s := openTaskStore(t)
+	in := Task{
+		ID:               "id-get",
+		Status:           StatusPlanDone,
+		Summary:          "hello",
+		InvokedTool:      "cursor",
+		PlanResumeCursor: "plan-1",
+	}
+	if err := s.PutTask(in); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	got, err := s.GetTask("id-get")
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.ID != in.ID || got.Status != in.Status || got.PlanResumeCursor != in.PlanResumeCursor {
+		t.Fatalf("GetTask = %+v, want %+v", got, in)
+	}
+}
+
+func TestGetTask_MissingBucket(t *testing.T) {
+	s := openTaskStore(t)
+	_, err := s.GetTask("nope")
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want fs.ErrNotExist", err)
+	}
+}
+
+func TestGetTask_MissingKey(t *testing.T) {
+	s := openTaskStore(t)
+	if err := s.PutTask(Task{ID: "id-1", Status: StatusPlanDone}); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	_, err := s.GetTask("absent")
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want fs.ErrNotExist", err)
+	}
+}
+
+func TestGetTask_BoltError(t *testing.T) {
+	s := openTaskStore(t)
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := s.GetTask("x"); err == nil {
+		t.Fatal("GetTask on closed db should error")
+	}
+}
+
+func TestGetTask_DecodeError(t *testing.T) {
+	s := openTaskStore(t)
+	if err := s.db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte(BucketTasks))
+		if err != nil {
+			return err
+		}
+		return b.Put([]byte("bad"), []byte("not-json"))
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := s.GetTask("bad"); err == nil || !strings.Contains(err.Error(), `decode task "bad"`) {
+		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -230,9 +309,9 @@ func TestSortTasks_ActiveFirstThenByDoneAtDesc(t *testing.T) {
 	t3 := t2.Add(time.Hour)
 
 	tasks := []Task{
-		{ID: "z-done-old", Status: StatusDone, DoneAt: ptr(t1)},
-		{ID: "a-done-new", Status: StatusDone, DoneAt: ptr(t3)},
-		{ID: "m-planned", Status: StatusPlanned, DoneAt: ptr(t2)},
+		{ID: "z-done-old", Status: StatusCompleted, DoneAt: ptr(t1)},
+		{ID: "a-done-new", Status: StatusCompleted, DoneAt: ptr(t3)},
+		{ID: "m-plandone", Status: StatusPlanDone, DoneAt: ptr(t2)},
 		{ID: "active-2", Status: StatusWorking},
 		{ID: "active-1", Status: StatusPlanning},
 		{ID: "active-3", Status: StatusVerifying},
@@ -242,7 +321,7 @@ func TestSortTasks_ActiveFirstThenByDoneAtDesc(t *testing.T) {
 
 	wantIDs := []string{
 		"active-1", "active-2", "active-3", "active-4",
-		"a-done-new", "m-planned", "z-done-old",
+		"a-done-new", "m-plandone", "z-done-old",
 	}
 	for i, id := range wantIDs {
 		if tasks[i].ID != id {
@@ -251,20 +330,22 @@ func TestSortTasks_ActiveFirstThenByDoneAtDesc(t *testing.T) {
 	}
 }
 
-// TestSortTasks_FallbackTimes drives the work_end_at and plan_end_at
-// branches in taskFallbackTime by leaving DoneAt nil.
+// TestSortTasks_FallbackTimes drives every branch in taskFallbackTime
+// (DoneAt, VerifyEndAt, WorkEndAt, PlanEndAt, zero).
 func TestSortTasks_FallbackTimes(t *testing.T) {
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	t2 := t1.Add(time.Hour)
 	t3 := t2.Add(time.Hour)
+	t4 := t3.Add(time.Hour)
 	tasks := []Task{
-		{ID: "plan-only", Status: StatusPlanned, PlanEndAt: ptr(t1)},
-		{ID: "work-end", Status: StatusPlanned, WorkEndAt: ptr(t3)},
-		{ID: "no-time", Status: StatusPlanned},
-		{ID: "done", Status: StatusDone, DoneAt: ptr(t2)},
+		{ID: "plan-only", Status: StatusPlanDone, PlanEndAt: ptr(t1)},
+		{ID: "work-end", Status: StatusWorkDone, WorkEndAt: ptr(t3)},
+		{ID: "verify-end", Status: StatusVerifyDone, VerifyEndAt: ptr(t4)},
+		{ID: "no-time", Status: StatusPlanDone},
+		{ID: "done", Status: StatusCompleted, DoneAt: ptr(t2)},
 	}
 	SortTasks(tasks)
-	want := []string{"work-end", "done", "plan-only", "no-time"}
+	want := []string{"verify-end", "work-end", "done", "plan-only", "no-time"}
 	if got := idsOf(tasks); !equal(got, want) {
 		t.Fatalf("order = %v, want %v", got, want)
 	}
@@ -275,8 +356,8 @@ func TestSortTasks_FallbackTimes(t *testing.T) {
 func TestSortTasks_TieBreakers(t *testing.T) {
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	tasks := []Task{
-		{ID: "inactive-a", Status: StatusDone, DoneAt: &at},
-		{ID: "inactive-b", Status: StatusDone, DoneAt: &at},
+		{ID: "inactive-a", Status: StatusCompleted, DoneAt: &at},
+		{ID: "inactive-b", Status: StatusCompleted, DoneAt: &at},
 		{ID: "active-b", Status: StatusWorking},
 		{ID: "active-a", Status: StatusPlanning},
 	}

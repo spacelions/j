@@ -2,7 +2,6 @@ package work
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"io"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -18,9 +16,9 @@ import (
 // after Run to assert the lifecycle wrote what we expect.
 func readTasks(t *testing.T) []store.Task {
 	t.Helper()
-	path, err := store.DefaultTasksPath()
+	path, err := store.DefaultTasksDBPath()
 	if err != nil {
-		t.Fatalf("DefaultTasksPath: %v", err)
+		t.Fatalf("DefaultTasksDBPath: %v", err)
 	}
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -37,100 +35,109 @@ func readTasks(t *testing.T) []store.Task {
 	return got
 }
 
-func TestRun_LogsDoneTask_WithSidecar(t *testing.T) {
+// TestBeginWorkTaskNew_RecordsRow pins the legacy import bbolt write:
+// a fresh task row is created with status=working, the requested
+// work-phase fields populated, and no plan-phase fields populated
+// (since the legacy importer never had a plan phase).
+func TestBeginWorkTaskNew_RecordsRow(t *testing.T) {
 	t.Chdir(t.TempDir())
-	dir := t.TempDir()
-	plan := filepath.Join(dir, "spec.plan.md")
-	if err := os.WriteFile(plan, []byte("plan body content"), 0o600); err != nil {
+	if _, err := store.EnsureTaskDir("seed"); err != nil {
 		t.Fatal(err)
 	}
-	requirement := filepath.Join(dir, "spec.md")
-	if err := os.WriteFile(requirement, []byte("# original heading\noriginal body"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
-		Target: plan,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
+	taskID := store.NewTaskID()
+	lc := beginWorkTaskNew(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", taskID, "/tmp/spec.plan.md", "# req", "plan body", "work-cursor")
+	lc.finishWork(nil)
 	tasks := readTasks(t)
-	if len(tasks) != 1 {
-		t.Fatalf("len(tasks) = %d", len(tasks))
+	if len(tasks) != 1 || tasks[0].ID != taskID {
+		t.Fatalf("tasks = %+v", tasks)
 	}
 	got := tasks[0]
-	if got.Status != store.StatusDone {
-		t.Fatalf("Status = %q, want done", got.Status)
+	if got.Status != store.StatusWorkDone {
+		t.Fatalf("Status = %q, want work-done", got.Status)
 	}
-	if got.RequirementMarkdown == "" || !strings.Contains(got.RequirementMarkdown, "original heading") {
-		t.Fatalf("RequirementMarkdown = %q", got.RequirementMarkdown)
+	if got.WorkResumeCursor != "work-cursor" {
+		t.Fatalf("WorkResumeCursor = %q", got.WorkResumeCursor)
 	}
-	if got.PlanMarkdown == nil || *got.PlanMarkdown != "plan body content" {
-		t.Fatalf("PlanMarkdown = %v", got.PlanMarkdown)
+	if got.PlanResumeCursor != "" {
+		t.Fatalf("PlanResumeCursor should stay empty for legacy import: %q", got.PlanResumeCursor)
 	}
-	if got.Summary != "original heading" {
-		t.Fatalf("Summary = %q, want first heading", got.Summary)
+	if got.WorkBeginAt == nil || got.WorkEndAt == nil {
+		t.Fatalf("work timestamps missing: %+v", got)
 	}
-	if got.WorkBeginAt == nil || got.WorkEndAt == nil || got.DoneAt == nil {
-		t.Fatalf("timestamps incomplete: %+v", got)
-	}
-	if got.ResumeCursor != testCursorChatID {
-		t.Fatalf("ResumeCursor = %q, want %q", got.ResumeCursor, testCursorChatID)
+	if got.DoneAt != nil {
+		t.Fatalf("DoneAt should not be set for work-done: %v", got.DoneAt)
 	}
 }
 
-func TestRun_NoSidecar_LogsTaskWithEmptyRequirement(t *testing.T) {
+// TestBeginWorkTaskReuse_PreservesPlanPhase pins the bbolt-sourced
+// reuse path: the existing plan-phase fields stay intact, only the
+// work-phase fields and tool/model/resume-cursor are overwritten.
+func TestBeginWorkTaskReuse_PreservesPlanPhase(t *testing.T) {
 	t.Chdir(t.TempDir())
-	plan := writePlan(t, "plan only")
-	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
-		Target: plan,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	})
+	id := seedPlanDoneTask(t, "seeded", "plan body", "req body")
+	dbPath, err := store.DefaultTasksDBPath()
 	if err != nil {
-		t.Fatalf("Run: %v", err)
+		t.Fatal(err)
 	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	prePlanBegin := existing.PlanBeginAt
+	prePlanEnd := existing.PlanEndAt
+	preCursor := existing.PlanResumeCursor
+
+	lc := beginWorkTaskReuse(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "gpt-5", existing, "fresh-work-cursor")
+	lc.finishWork(nil)
+
 	tasks := readTasks(t)
-	if len(tasks) != 1 {
-		t.Fatalf("len(tasks) = %d", len(tasks))
+	if len(tasks) != 1 || tasks[0].ID != id {
+		t.Fatalf("expected one row: %+v", tasks)
 	}
-	if tasks[0].RequirementMarkdown != "" {
-		t.Fatalf("RequirementMarkdown should be empty when sidecar missing: %q", tasks[0].RequirementMarkdown)
+	got := tasks[0]
+	if got.Status != store.StatusWorkDone {
+		t.Fatalf("Status = %q", got.Status)
 	}
-	if tasks[0].Summary != "plan only" {
-		t.Fatalf("Summary = %q, want plan-body fallback", tasks[0].Summary)
+	if got.PlanResumeCursor != preCursor {
+		t.Fatalf("PlanResumeCursor changed: got %q, want %q", got.PlanResumeCursor, preCursor)
+	}
+	if got.WorkResumeCursor != "fresh-work-cursor" {
+		t.Fatalf("WorkResumeCursor = %q", got.WorkResumeCursor)
+	}
+	if got.InvokedModel != "gpt-5" {
+		t.Fatalf("InvokedModel = %q, want gpt-5", got.InvokedModel)
+	}
+	if got.PlanBeginAt == nil || !got.PlanBeginAt.Equal(*prePlanBegin) {
+		t.Fatalf("PlanBeginAt = %v, want %v", got.PlanBeginAt, prePlanBegin)
+	}
+	if got.PlanEndAt == nil || !got.PlanEndAt.Equal(*prePlanEnd) {
+		t.Fatalf("PlanEndAt = %v, want %v", got.PlanEndAt, prePlanEnd)
+	}
+	if got.WorkBeginAt == nil || got.WorkEndAt == nil {
+		t.Fatalf("work timestamps missing: %+v", got)
 	}
 }
 
-func TestRun_AgentError_LogsHelpStatus(t *testing.T) {
+// TestFinishWork_ErrorPath drives the StatusHelp branch when the
+// underlying agent.Work errored.
+func TestFinishWork_ErrorPath(t *testing.T) {
 	t.Chdir(t.TempDir())
-	plan := writePlan(t, "x")
-	agent := newScriptedAgent()
-	agent.workErr = errors.New("agent boom")
-	err := Run(context.Background(), Options{
-		Target: plan,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	})
-	if err == nil {
-		t.Fatal("expected error")
+	if _, err := store.EnsureTaskDir("seed"); err != nil {
+		t.Fatal(err)
 	}
+	lc := beginWorkTaskNew(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "m", store.NewTaskID(), "/tmp/x.plan.md", "", "body", "")
+	lc.finishWork(errors.New("boom"))
 	tasks := readTasks(t)
 	if len(tasks) != 1 || tasks[0].Status != store.StatusHelp {
 		t.Fatalf("tasks = %+v, want one help task", tasks)
 	}
 	if tasks[0].DoneAt != nil {
-		t.Fatalf("DoneAt should be nil on failure: %v", tasks[0].DoneAt)
+		t.Fatalf("DoneAt should remain nil on failure: %v", tasks[0].DoneAt)
 	}
 }
 
@@ -184,7 +191,7 @@ func TestWorkSummary_Fallbacks(t *testing.T) {
 		{"# req heading\nbody", "## plan", "/tmp/x.plan.md", "req heading"},
 		{"", "## plan heading", "/tmp/x.plan.md", "plan heading"},
 		{"", "", "/tmp/x.plan.md", "x.plan.md"},
-		{"", "", "", "work session"},
+		{"", "", "", ""},
 	}
 	for _, c := range cases {
 		if got := workSummary(c.req, c.plan, c.planPath); got != c.want {
@@ -195,22 +202,24 @@ func TestWorkSummary_Fallbacks(t *testing.T) {
 
 func TestFinishWork_Idempotent(t *testing.T) {
 	t.Chdir(t.TempDir())
-	plan := writePlan(t, "body")
-	lc := beginWorkTask(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", plan, "body", "")
+	if _, err := store.EnsureTaskDir("seed"); err != nil {
+		t.Fatal(err)
+	}
+	lc := beginWorkTaskNew(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", store.NewTaskID(), "/tmp/x.plan.md", "", "body", "")
 	lc.finishWork(nil)
 	lc.finishWork(errors.New("ignored"))
 	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusDone {
+	if len(tasks) != 1 || tasks[0].Status != store.StatusWorkDone {
 		t.Fatalf("second finish should be a no-op: %+v", tasks)
 	}
 }
 
-// TestBeginWorkTask_OpenTaskLogFails forces store.OpenTaskLog to
-// return ok=false by making the tasks path a directory; finishWork on
-// the resulting nil-store lifecycle is a silent no-op.
-func TestBeginWorkTask_OpenTaskLogFails(t *testing.T) {
+// TestOpenLifecycle_OpenTaskLogFails forces store.OpenTaskLog to
+// return ok=false by making the index.db path a directory; finishWork
+// on the resulting nil-store lifecycle is a silent no-op.
+func TestOpenLifecycle_OpenTaskLogFails(t *testing.T) {
 	t.Chdir(t.TempDir())
-	path, err := store.DefaultTasksPath()
+	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +227,7 @@ func TestBeginWorkTask_OpenTaskLogFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	lc := beginWorkTask(Options{Stderr: &stderr}, &scriptedAgent{name: "cursor"}, "m", "/tmp/x.plan.md", "body", "")
+	lc := beginWorkTaskNew(Options{Stderr: &stderr}, &scriptedAgent{name: "cursor"}, "m", store.NewTaskID(), "/tmp/x.plan.md", "", "body", "")
 	if lc.store != nil {
 		t.Fatal("store should be nil after open failure")
 	}
@@ -232,11 +241,11 @@ func TestBeginWorkTask_OpenTaskLogFails(t *testing.T) {
 // by injecting a closed store into the lifecycle so PutTask fails.
 func TestFinishWork_PutErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
-	path, err := store.DefaultTasksPath()
-	if err != nil {
+	if _, err := store.EnsureTaskDir("seed"); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
 		t.Fatal(err)
 	}
 	s, err := store.Open(path)

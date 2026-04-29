@@ -55,8 +55,6 @@ func readCalls(t *testing.T, path string) []string {
 		return nil
 	}
 	parts := strings.Split(string(b), "\x00")
-	// printf appends a trailing NUL after the last arg, leaving an
-	// empty tail entry in the split — discard it.
 	if parts[len(parts)-1] == "" {
 		parts = parts[:len(parts)-1]
 	}
@@ -127,6 +125,27 @@ func TestCreateChatID_RunnerError(t *testing.T) {
 	}
 }
 
+func TestNewResumeID_DelegatesToCreateChat(t *testing.T) {
+	calls := installStub(t, "  abc-id  \n", 0)
+	id, err := New().NewResumeID(context.Background())
+	if err != nil {
+		t.Fatalf("NewResumeID: %v", err)
+	}
+	if id != "abc-id" {
+		t.Fatalf("id = %q, want abc-id", id)
+	}
+	if got := readCalls(t, calls); !reflect.DeepEqual(got, []string{"create-chat"}) {
+		t.Fatalf("argv = %v", got)
+	}
+}
+
+func TestNewResumeID_PropagatesError(t *testing.T) {
+	installStub(t, "", 1)
+	if _, err := New().NewResumeID(context.Background()); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestCheckLogin(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -160,21 +179,26 @@ func TestCheckLogin(t *testing.T) {
 	}
 }
 
+// TestPlan_Interactive pins the interactive flow's argv shape and the
+// embedded save instruction in the prompt: the agent is responsible
+// for writing both requirements.md and plan.md.
 func TestPlan_Interactive(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "spec.md")
 	if err := os.WriteFile(target, []byte("# task\nbody"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out := filepath.Join(dir, "spec.plan.md")
+	reqOut := filepath.Join(dir, "requirements.md")
+	planOut := filepath.Join(dir, "plan.md")
 	calls := installStub(t, "", 0)
 
 	err := New().Plan(context.Background(), codingagents.PlanRequest{
-		TargetPath:  target,
-		Body:        "# task\nbody",
-		Model:       "composer-2-fast",
-		OutputPath:  out,
-		Interactive: true,
+		FromFilePath:           target,
+		Body:                   "# task\nbody",
+		Model:                  "composer-2-fast",
+		RequirementsOutputPath: reqOut,
+		PlanOutputPath:         planOut,
+		Interactive:            true,
 	})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
@@ -193,10 +217,13 @@ func TestPlan_Interactive(t *testing.T) {
 	if !strings.Contains(prompt, "# task") || !strings.Contains(prompt, target) {
 		t.Fatalf("prompt missing task/target: %q", prompt)
 	}
-	if !strings.Contains(prompt, out) {
-		t.Fatalf("prompt missing output path %q: %q", out, prompt)
+	if !strings.Contains(prompt, reqOut) {
+		t.Fatalf("prompt missing requirements path %q: %q", reqOut, prompt)
 	}
-	if !strings.Contains(prompt, "save it to") {
+	if !strings.Contains(prompt, planOut) {
+		t.Fatalf("prompt missing plan path %q: %q", planOut, prompt)
+	}
+	if !strings.Contains(prompt, "Save") {
 		t.Fatalf("prompt missing save instruction: %q", prompt)
 	}
 }
@@ -207,16 +234,16 @@ func TestPlan_Interactive_ResumeChatID(t *testing.T) {
 	if err := os.WriteFile(target, []byte("# task\nbody"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out := filepath.Join(dir, "spec.plan.md")
 	calls := installStub(t, "", 0)
 	rid := "22222222-2222-4222-8222-222222222222"
 	err := New().Plan(context.Background(), codingagents.PlanRequest{
-		TargetPath:   target,
-		Body:         "# task\nbody",
-		Model:        "composer-2-fast",
-		OutputPath:   out,
-		Interactive:  true,
-		ResumeChatID: rid,
+		FromFilePath:           target,
+		Body:                   "# task\nbody",
+		Model:                  "composer-2-fast",
+		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
+		PlanOutputPath:         filepath.Join(dir, "plan.md"),
+		Interactive:            true,
+		ResumeChatID:           rid,
 	})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
@@ -236,32 +263,37 @@ func TestPlan_Interactive_ResumeChatID(t *testing.T) {
 func TestPlan_Interactive_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
 	err := New().Plan(context.Background(), codingagents.PlanRequest{
-		TargetPath:  "/tmp/x.md",
-		Body:        "x",
-		Model:       "m",
-		OutputPath:  "/tmp/x.plan.md",
-		Interactive: true,
+		FromFilePath:           "/tmp/x.md",
+		Body:                   "x",
+		Model:                  "m",
+		RequirementsOutputPath: "/tmp/requirements.md",
+		PlanOutputPath:         "/tmp/plan.md",
+		Interactive:            true,
 	})
 	if err == nil || !strings.Contains(err.Error(), "cursor-agent") {
 		t.Fatalf("err = %v", err)
 	}
 }
 
+// TestPlan_Headless pins the headless argv shape: --print
+// --output-format text --mode plan, plus the save-instruction prompt.
+// The agent is responsible for writing the files; the orchestrator
+// only consumes the captured stdout for warnings.
 func TestPlan_Headless(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "spec.md")
 	if err := os.WriteFile(target, []byte("# task\nbody"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out := filepath.Join(dir, "spec.plan.md")
-	calls := installStub(t, "  1. step one\n2. step two  \n", 0)
+	calls := installStub(t, "ok\n", 0)
 
 	err := New().Plan(context.Background(), codingagents.PlanRequest{
-		TargetPath:  target,
-		Body:        "# task\nbody",
-		Model:       "sonnet-4",
-		OutputPath:  out,
-		Interactive: false,
+		FromFilePath:           target,
+		Body:                   "# task\nbody",
+		Model:                  "sonnet-4",
+		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
+		PlanOutputPath:         filepath.Join(dir, "plan.md"),
+		Interactive:            false,
 	})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
@@ -282,13 +314,6 @@ func TestPlan_Headless(t *testing.T) {
 			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
 		}
 	}
-	body, err := os.ReadFile(out)
-	if err != nil {
-		t.Fatalf("plan file: %v", err)
-	}
-	if got := strings.TrimSpace(string(body)); got != "1. step one\n2. step two" {
-		t.Fatalf("plan body = %q", got)
-	}
 }
 
 func TestPlan_Headless_ResumeChatID(t *testing.T) {
@@ -297,16 +322,16 @@ func TestPlan_Headless_ResumeChatID(t *testing.T) {
 	if err := os.WriteFile(target, []byte("# task\nbody"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out := filepath.Join(dir, "spec.plan.md")
-	calls := installStub(t, "  1. step one\n2. step two  \n", 0)
+	calls := installStub(t, "ok\n", 0)
 	rid := "33333333-3333-4333-8333-333333333333"
 	err := New().Plan(context.Background(), codingagents.PlanRequest{
-		TargetPath:   target,
-		Body:         "# task\nbody",
-		Model:        "sonnet-4",
-		OutputPath:   out,
-		Interactive:  false,
-		ResumeChatID: rid,
+		FromFilePath:           target,
+		Body:                   "# task\nbody",
+		Model:                  "sonnet-4",
+		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
+		PlanOutputPath:         filepath.Join(dir, "plan.md"),
+		Interactive:            false,
+		ResumeChatID:           rid,
 	})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
@@ -330,72 +355,15 @@ func TestPlan_Headless_ResumeChatID(t *testing.T) {
 	}
 }
 
-func TestPlan_Headless_EmptyOutput(t *testing.T) {
-	installStub(t, "   \n  ", 0)
-	err := New().Plan(context.Background(), codingagents.PlanRequest{
-		TargetPath:  "/tmp/x.md",
-		Body:        "x",
-		Model:       "m",
-		OutputPath:  "/tmp/x.plan.md",
-		Interactive: false,
-	})
-	if err == nil || !strings.Contains(err.Error(), "empty plan") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 func TestPlan_Headless_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
 	err := New().Plan(context.Background(), codingagents.PlanRequest{
-		TargetPath:  "/tmp/x.md",
-		Body:        "x",
-		Model:       "m",
-		OutputPath:  "/tmp/x.plan.md",
-		Interactive: false,
-	})
-	if err == nil || !strings.Contains(err.Error(), "cursor-agent") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestPlan_Scratch(t *testing.T) {
-	calls := installStub(t, "", 0)
-
-	err := New().Plan(context.Background(), codingagents.PlanRequest{
-		Model:       "composer-2-fast",
-		Interactive: true,
-	})
-	if err != nil {
-		t.Fatalf("Plan: %v", err)
-	}
-	want := []string{"--mode", "plan", "--model", "composer-2-fast"}
-	if argv := readCalls(t, calls); !reflect.DeepEqual(argv, want) {
-		t.Fatalf("argv = %v, want %v", argv, want)
-	}
-}
-
-func TestPlan_Scratch_ResumeChatID(t *testing.T) {
-	calls := installStub(t, "", 0)
-	rid := "11111111-1111-4111-9111-111111111111"
-	err := New().Plan(context.Background(), codingagents.PlanRequest{
-		Model:        "composer-2-fast",
-		Interactive:  true,
-		ResumeChatID: rid,
-	})
-	if err != nil {
-		t.Fatalf("Plan: %v", err)
-	}
-	want := []string{"--resume", rid, "--mode", "plan", "--model", "composer-2-fast"}
-	if argv := readCalls(t, calls); !reflect.DeepEqual(argv, want) {
-		t.Fatalf("argv = %v, want %v", argv, want)
-	}
-}
-
-func TestPlan_Scratch_RunnerError(t *testing.T) {
-	installStub(t, "", 1)
-	err := New().Plan(context.Background(), codingagents.PlanRequest{
-		Model:       "m",
-		Interactive: true,
+		FromFilePath:           "/tmp/x.md",
+		Body:                   "x",
+		Model:                  "m",
+		RequirementsOutputPath: "/tmp/requirements.md",
+		PlanOutputPath:         "/tmp/plan.md",
+		Interactive:            false,
 	})
 	if err == nil || !strings.Contains(err.Error(), "cursor-agent") {
 		t.Fatalf("err = %v", err)
@@ -572,26 +540,6 @@ func TestWork_Headless_RunnerError(t *testing.T) {
 		Interactive: false,
 	})
 	if err == nil || !strings.Contains(err.Error(), "cursor-agent") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestPlan_Headless_WriteError(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.Chmod(dir, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-
-	installStub(t, "step\n", 0)
-	err := New().Plan(context.Background(), codingagents.PlanRequest{
-		TargetPath:  filepath.Join(dir, "spec.md"),
-		Body:        "x",
-		Model:       "m",
-		OutputPath:  filepath.Join(dir, "spec.plan.md"),
-		Interactive: false,
-	})
-	if err == nil || !strings.Contains(err.Error(), "write") {
 		t.Fatalf("err = %v", err)
 	}
 }

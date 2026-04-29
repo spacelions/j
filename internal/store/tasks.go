@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -32,39 +33,54 @@ type TaskStatus string
 // Allowed Task.Status values. The set is intentionally closed: callers
 // must use one of these constants. New states require a code change so
 // the listing/sorting logic in `j tasks` can be updated together.
+//
+// `verifying`, `verify-done`, and `completed` are reserved for a future
+// `j verify` command and are never written by `j plan` or `j work`
+// today; the data model still includes them so listing/sorting code
+// does not need to change when verification is wired up.
 const (
-	StatusPlanning  TaskStatus = "planning"
-	StatusPlanned   TaskStatus = "planned"
-	StatusWorking   TaskStatus = "working"
-	StatusVerifying TaskStatus = "verifying"
-	StatusDone      TaskStatus = "done"
-	StatusHelp      TaskStatus = "help"
+	StatusPlanning   TaskStatus = "planning"
+	StatusPlanDone   TaskStatus = "plan-done"
+	StatusWorking    TaskStatus = "working"
+	StatusWorkDone   TaskStatus = "work-done"
+	StatusVerifying  TaskStatus = "verifying"
+	StatusVerifyDone TaskStatus = "verify-done"
+	StatusCompleted  TaskStatus = "completed"
+	StatusHelp       TaskStatus = "help"
 )
 
 // Valid reports whether s is one of the allowlisted TaskStatus values.
 func (s TaskStatus) Valid() bool {
 	switch s {
-	case StatusPlanning, StatusPlanned, StatusWorking,
-		StatusVerifying, StatusDone, StatusHelp:
+	case StatusPlanning, StatusPlanDone, StatusWorking, StatusWorkDone,
+		StatusVerifying, StatusVerifyDone, StatusCompleted, StatusHelp:
 		return true
 	}
 	return false
 }
 
 // Task is the JSON-serialized value stored under each key in
-// BucketTasks. Pointer-typed time fields and PlanMarkdown serialize as
-// JSON null / are omitted when unknown so a partially-completed task
-// (planning in flight, work not started) never claims fake timestamps.
+// BucketTasks. Pointer-typed time fields are omitted when unknown so
+// a partially-completed task (planning in flight, work not started)
+// never claims fake timestamps.
+//
+// The body markdown is no longer stored in bbolt; the canonical
+// requirement and plan documents live as files at
+// `<cwd>/.j/tasks/<id>/requirements.md` and
+// `<cwd>/.j/tasks/<id>/plan.md`. Bbolt only carries metadata.
+//
+// Each phase mints its own resume token via Agent.NewResumeID; an
+// empty string means "no session for that phase yet".
 type Task struct {
-	ID                  string     `json:"id"`
-	RequirementMarkdown string     `json:"requirement_markdown"`
-	PlanMarkdown        *string    `json:"plan_markdown"`
-	Status              TaskStatus `json:"status"`
-	InvokedTool         string     `json:"invoked_tool"`
-	InvokedModel        string     `json:"invoked_model"`
-	// ResumeCursor is the Cursor agent chat id for `cursor-agent --resume`.
-	ResumeCursor string `json:"resume_cursor"`
-	Summary      string `json:"summary"`
+	ID           string     `json:"id"`
+	Status       TaskStatus `json:"status"`
+	InvokedTool  string     `json:"invoked_tool"`
+	InvokedModel string     `json:"invoked_model"`
+	Summary      string     `json:"summary"`
+
+	PlanResumeCursor   string `json:"plan_resume_cursor"`
+	WorkResumeCursor   string `json:"work_resume_cursor"`
+	VerifyResumeCursor string `json:"verify_resume_cursor"`
 
 	PlanBeginAt   *time.Time `json:"plan_begin_at,omitempty"`
 	PlanEndAt     *time.Time `json:"plan_end_at,omitempty"`
@@ -115,6 +131,37 @@ func (s *Store) PutTask(t Task) error {
 		}
 		return b.Put([]byte(t.ID), data)
 	})
+}
+
+// GetTask returns the Task stored under id. The error wraps
+// fs.ErrNotExist when the bucket is missing or the key is absent so
+// callers can tell "no such task" apart from a transport error.
+func (s *Store) GetTask(id string) (Task, error) {
+	var (
+		out  Task
+		data []byte
+	)
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(BucketTasks))
+		if b == nil {
+			return fmt.Errorf("store: get task %q: %w", id, fs.ErrNotExist)
+		}
+		v := b.Get([]byte(id))
+		if v == nil {
+			return fmt.Errorf("store: get task %q: %w", id, fs.ErrNotExist)
+		}
+		// Copy out of the bolt-managed slice before the View
+		// transaction returns.
+		data = append(data[:0], v...)
+		return nil
+	})
+	if err != nil {
+		return Task{}, err
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return Task{}, fmt.Errorf("store: decode task %q: %w", id, err)
+	}
+	return out, nil
 }
 
 // ListTasks returns every task stored in BucketTasks. A missing bucket
@@ -174,8 +221,8 @@ func SortTasks(tasks []Task) {
 }
 
 // taskIsActive returns true for the four "still in flight" statuses.
-// Anything else (planned, done, plus any future state) is treated as
-// inactive by SortTasks.
+// Anything else (plan-done, work-done, verify-done, completed, plus
+// any future inactive state) is treated as inactive by SortTasks.
 func taskIsActive(s TaskStatus) bool {
 	switch s {
 	case StatusPlanning, StatusWorking, StatusVerifying, StatusHelp:
@@ -186,13 +233,16 @@ func taskIsActive(s TaskStatus) bool {
 
 // taskFallbackTime returns the timestamp SortTasks compares for
 // inactive tasks. The cascade reflects how a task's lifecycle ends:
-// most done tasks have done_at; some that were aborted after `j work`
-// only have work_end_at; planning-only artefacts only have plan_end_at;
-// anything older falls through to the zero time so ID order takes over.
+// completed tasks have done_at; verify-done tasks only have
+// verify_end_at; work-done tasks only have work_end_at; plan-done
+// tasks only have plan_end_at; anything older falls through to the
+// zero time so ID order takes over.
 func taskFallbackTime(t Task) time.Time {
 	switch {
 	case t.DoneAt != nil:
 		return *t.DoneAt
+	case t.VerifyEndAt != nil:
+		return *t.VerifyEndAt
 	case t.WorkEndAt != nil:
 		return *t.WorkEndAt
 	case t.PlanEndAt != nil:

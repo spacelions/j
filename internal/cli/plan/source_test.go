@@ -11,7 +11,6 @@ func TestPlanSource_String(t *testing.T) {
 		want string
 	}{
 		{SourceMarkdown, "markdown file"},
-		{SourceScratch, "from scratch"},
 		{SourceLinear, "linear"},
 	}
 	for _, tc := range cases {
@@ -29,7 +28,6 @@ func TestParseSource(t *testing.T) {
 		in   string
 		want PlanSource
 	}{
-		{"from scratch", SourceScratch},
 		{"markdown file", SourceMarkdown},
 		{"linear", SourceLinear},
 	}
@@ -45,6 +43,9 @@ func TestParseSource(t *testing.T) {
 	}
 	if _, err := ParseSource("nonsense"); err == nil {
 		t.Error("ParseSource should fail on unknown labels")
+	}
+	if _, err := ParseSource("from scratch"); err == nil {
+		t.Error("ParseSource should reject the removed scratch label")
 	}
 }
 

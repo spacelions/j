@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -89,7 +90,7 @@ func TestOpenTaskLog_Success(t *testing.T) {
 // and return ok=false.
 func TestOpenTaskLog_OpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
-	path, err := DefaultTasksPath()
+	path, err := DefaultTasksDBPath()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,6 +119,30 @@ func TestOpenTaskLog_BucketFails(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "tasks bucket") {
 		t.Fatalf("stderr = %q, want bucket warning", stderr.String())
+	}
+}
+
+// TestOpenTaskLog_LegacyTasksFile pins the friendly error path: a
+// regular file at .j/tasks (the previous schema) blocks the new
+// directory layout, so OpenTaskLog must surface a warning and return
+// ok=false.
+func TestOpenTaskLog_LegacyTasksFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jdir := filepath.Join(dir, ".j")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	if s, ok := OpenTaskLog(&stderr, BucketTasks); ok {
+		_ = s.Close()
+		t.Fatal("expected legacy file to block open")
+	}
+	if !strings.Contains(stderr.String(), "tasks dir") {
+		t.Fatalf("stderr = %q, want tasks-dir warning", stderr.String())
 	}
 }
 

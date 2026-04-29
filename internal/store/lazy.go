@@ -33,12 +33,25 @@ func OpenDefault(stderr io.Writer, bucket string) (*Store, bool) {
 	return s, true
 }
 
-// OpenTaskLog opens `<cwd>/.j/tasks` (a separate bbolt file from
-// settings), ensures the bucket, and on failure reports one stderr
-// line and returns ok=false so the caller can skip task logging the
-// same way plan/work skip settings persistence.
+// OpenTaskLog opens `<cwd>/.j/tasks/index.db` (a bbolt file in the
+// per-project tasks directory), ensures the bucket, and on failure
+// reports one stderr line and returns ok=false so the caller can skip
+// task logging the same way plan/work skip settings persistence.
+//
+// Callers that need the directory itself (for per-task subfolders)
+// should use EnsureTaskDir; this helper just guarantees the bbolt
+// metadata file is reachable.
 func OpenTaskLog(stderr io.Writer, bucket string) (*Store, bool) {
-	path, err := DefaultTasksPath()
+	tasksDir, err := DefaultTasksDir()
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
+		return nil, false
+	}
+	if err := ensureTasksDir(tasksDir); err != nil {
+		fmt.Fprintf(stderr, "warning: tasks dir: %v\n", err)
+		return nil, false
+	}
+	path, err := DefaultTasksDBPath()
 	if err != nil {
 		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
 		return nil, false

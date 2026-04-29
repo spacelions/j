@@ -34,9 +34,33 @@ const dirName = ".j"
 // fileName is the bbolt file inside dirName.
 const fileName = "settings"
 
-// TasksFileName is the bbolt filename for per-project task log entries
-// (separate from settings) at `<cwd>/.j/` + TasksFileName.
-const TasksFileName = "tasks"
+// TasksDirName is the per-project tasks directory inside dirName. The
+// directory holds both the bbolt metadata file (TasksDBName) and one
+// subdirectory per task (`<id>/`) with `requirements.md` and
+// `plan.md`.
+const TasksDirName = "tasks"
+
+// TasksDBName is the bbolt filename inside <cwd>/.j/<TasksDirName>/.
+// It carries task metadata only; the body markdown lives in the
+// per-task subdirectories.
+const TasksDBName = "index.db"
+
+// PlanFileName is the filename of the plan markdown stored under
+// <cwd>/.j/tasks/<id>/. j plan writes it; j work reads it.
+const PlanFileName = "plan.md"
+
+// RequirementsFileName is the filename of the requirements markdown
+// stored under <cwd>/.j/tasks/<id>/. j plan writes it; j work and
+// j tasks summary derivation read it.
+const RequirementsFileName = "requirements.md"
+
+// ErrLegacyTasksFile is returned by Open / OpenTaskLog when the path
+// `<cwd>/.j/tasks` exists as a regular file rather than a directory.
+// That layout corresponds to the previous bbolt-only schema; the new
+// schema uses `<cwd>/.j/tasks/` as a directory and stores the bbolt
+// file inside it as `index.db`. Callers should surface a clear "rename
+// or remove the legacy file" message.
+var ErrLegacyTasksFile = errors.New("store: found legacy .j/tasks regular file; rename or remove it before continuing")
 
 // openTimeout bounds how long we'll wait for a file lock when opening
 // the bolt DB. A short timeout keeps tests responsive and surfaces
@@ -80,14 +104,70 @@ func DefaultPath() (string, error) {
 	return filepath.Join(dir, fileName), nil
 }
 
-// DefaultTasksPath returns the absolute path to the per-project task
-// log database (`<cwd>/.j/tasks`).
-func DefaultTasksPath() (string, error) {
+// DefaultTasksDir returns the absolute path to the per-project tasks
+// directory (`<cwd>/.j/tasks`). The directory holds the bbolt metadata
+// file (DefaultTasksDBPath) plus one subdirectory per task.
+func DefaultTasksDir() (string, error) {
 	dir, err := DefaultDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, TasksFileName), nil
+	return filepath.Join(dir, TasksDirName), nil
+}
+
+// DefaultTasksDBPath returns the absolute path to the bbolt task
+// metadata file at `<cwd>/.j/tasks/index.db`.
+func DefaultTasksDBPath() (string, error) {
+	tasksDir, err := DefaultTasksDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(tasksDir, TasksDBName), nil
+}
+
+// EnsureTaskDir creates `<cwd>/.j/tasks/<id>/` (with mkdir -p) and
+// returns its absolute path. It also creates the parent `.j/tasks/`
+// directory and the `.j/.gitignore` entry, mirroring Open's setup.
+// When `.j/tasks` exists as a regular file the helper returns
+// ErrLegacyTasksFile so the cmd layer can surface a friendly message.
+func EnsureTaskDir(id string) (string, error) {
+	if id == "" {
+		return "", errors.New("store: empty task id")
+	}
+	tasksDir, err := DefaultTasksDir()
+	if err != nil {
+		return "", err
+	}
+	if err := ensureTasksDir(tasksDir); err != nil {
+		return "", err
+	}
+	taskDir := filepath.Join(tasksDir, id)
+	if err := os.MkdirAll(taskDir, 0o755); err != nil {
+		return "", fmt.Errorf("store: mkdir %q: %w", taskDir, err)
+	}
+	return taskDir, nil
+}
+
+// ensureTasksDir mkdirs `<cwd>/.j/tasks/`, gitignore-tags the parent
+// `.j/`, and rejects pre-existing regular files at the tasks path
+// (the legacy bbolt-only schema). It is idempotent.
+func ensureTasksDir(tasksDir string) error {
+	jDir := filepath.Dir(tasksDir)
+	if err := os.MkdirAll(jDir, 0o755); err != nil {
+		return fmt.Errorf("store: mkdir %q: %w", jDir, err)
+	}
+	if err := ensureGitignoreEntry(jDir); err != nil {
+		return err
+	}
+	if info, err := os.Stat(tasksDir); err == nil && !info.IsDir() {
+		return ErrLegacyTasksFile
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("store: stat %q: %w", tasksDir, err)
+	}
+	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
+		return fmt.Errorf("store: mkdir %q: %w", tasksDir, err)
+	}
+	return nil
 }
 
 // Open creates the parent directory (if missing) and opens the bolt

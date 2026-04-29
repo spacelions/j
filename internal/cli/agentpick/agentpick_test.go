@@ -98,6 +98,10 @@ func (s *stubAgent) CheckLogin(context.Context) error {
 	return s.loginErr
 }
 
+func (s *stubAgent) NewResumeID(context.Context) (string, error) {
+	return "", errors.New("agentpick: NewResumeID should not be called")
+}
+
 func (s *stubAgent) Plan(context.Context, codingagents.PlanRequest) error {
 	return errors.New("agentpick: Plan should not be called")
 }

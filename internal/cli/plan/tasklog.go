@@ -24,31 +24,30 @@ type planLifecycle struct {
 }
 
 // beginPlanTask records the "planning" entry for a real plan run.
-//   - target: the markdown file the user is planning against, or
-//     "" for a scratch session.
-//   - requirement: the markdown body the user is planning from, or
-//     "" for scratch. The summary is derived from the body when
-//     possible and falls back to the file basename, then to a
-//     stable label so `j tasks` never shows a blank summary.
-//   - resumeChatID: when the planner is Cursor, the chat session id
-//     from `cursor-agent create-chat` for `j tasks` and `cursor-agent
-//     --resume`; empty for other agents or on create-chat failure.
+//   - taskID: minted by the caller so the per-task directory under
+//     <cwd>/.j/tasks/ uses the same id as the bbolt row.
+//   - target: the markdown file the user is planning against. The
+//     summary is derived from the body when possible and falls back
+//     to the file basename so `j tasks` never shows a blank summary.
+//   - requirement: the markdown body the user is planning from.
+//   - planResumeChatID: per-phase resume token from
+//     Agent.NewResumeID; empty for agents with no notion of resume
+//     or on a NewResumeID failure (already warned by the caller).
 //
 // Best effort: failure to open the task log or to write the initial
 // row warns once on stderr (the store helper handles open warnings;
 // the put error is wrapped here) and execution continues with a
 // nil-store lifecycle.
-func beginPlanTask(opts Options, agent codingagents.Agent, model, target, requirement, resumeChatID string) *planLifecycle {
+func beginPlanTask(opts Options, agent codingagents.Agent, model, taskID, target, requirement, planResumeChatID string) *planLifecycle {
 	begin := time.Now().UTC()
 	task := store.Task{
-		ID:                  store.NewTaskID(),
-		RequirementMarkdown: requirement,
-		Status:              store.StatusPlanning,
-		InvokedTool:         agent.Name(),
-		InvokedModel:        model,
-		ResumeCursor:        resumeChatID,
-		Summary:             planSummary(requirement, target),
-		PlanBeginAt:         &begin,
+		ID:               taskID,
+		Status:           store.StatusPlanning,
+		InvokedTool:      agent.Name(),
+		InvokedModel:     model,
+		PlanResumeCursor: planResumeChatID,
+		Summary:          planSummary(requirement, target),
+		PlanBeginAt:      &begin,
 	}
 	lc := &planLifecycle{stderr: opts.Stderr, task: task}
 	s, ok := store.OpenTaskLog(opts.Stderr, store.BucketTasks)
@@ -63,11 +62,13 @@ func beginPlanTask(opts Options, agent codingagents.Agent, model, target, requir
 }
 
 // finishPlan stamps plan_end_at, decides the terminal status from
-// runErr, and (when planErr is nil) attaches the plan markdown body
-// passed in by the caller. The task is rewritten to the log even on
-// errors so `help` is observable from `j tasks`. The store is closed
-// here, idempotently.
-func (lc *planLifecycle) finishPlan(runErr error, planMarkdown string) {
+// runErr, and (when planErr is nil) re-derives Summary from the
+// refined requirements (then the plan body, then the file basename)
+// because the agent may have rewritten the requirements during the
+// session. The task is rewritten to the log even on errors so `help`
+// is observable from `j tasks`. The store is closed here,
+// idempotently.
+func (lc *planLifecycle) finishPlan(runErr error, refinedRequirements, planMarkdown, target string) {
 	if lc.closed {
 		return
 	}
@@ -77,11 +78,8 @@ func (lc *planLifecycle) finishPlan(runErr error, planMarkdown string) {
 	if runErr != nil {
 		lc.task.Status = store.StatusHelp
 	} else {
-		lc.task.Status = store.StatusPlanned
-		if planMarkdown != "" {
-			pm := planMarkdown
-			lc.task.PlanMarkdown = &pm
-		}
+		lc.task.Status = store.StatusPlanDone
+		lc.task.Summary = planSummary(pickSummarySource(refinedRequirements, planMarkdown), target)
 	}
 	if lc.store == nil {
 		return
@@ -92,13 +90,24 @@ func (lc *planLifecycle) finishPlan(runErr error, planMarkdown string) {
 	_ = lc.store.Close()
 }
 
+// pickSummarySource returns whichever of the refined requirements or
+// the plan body has a usable first non-empty line, preferring the
+// requirements summary because that is the document the agent rewrote
+// to capture user intent. Both empty falls through to the file
+// basename in planSummary.
+func pickSummarySource(refinedRequirements, planMarkdown string) string {
+	if store.SummarizeMarkdown(refinedRequirements) != "" {
+		return refinedRequirements
+	}
+	return planMarkdown
+}
+
 // planSummary picks a one-line summary in this order:
-//  1. first non-empty line of the requirement markdown,
-//  2. the requirement file basename when the body was unreadable,
-//  3. a constant scratch-session label so the row is still findable.
+//  1. first non-empty line of the requirement / plan markdown,
+//  2. the requirement file basename when the body was unreadable.
 //
 // Truncation is delegated to store.SummarizeMarkdown for the body
-// path; the basename / label paths are short by construction.
+// path; the basename path is short by construction.
 func planSummary(requirement, target string) string {
 	if s := store.SummarizeMarkdown(requirement); s != "" {
 		return s
@@ -106,5 +115,5 @@ func planSummary(requirement, target string) string {
 	if target != "" {
 		return filepath.Base(target)
 	}
-	return "from scratch"
+	return ""
 }

@@ -48,9 +48,12 @@ func runCommand(t *testing.T, args ...string) (string, string, error) {
 func openTasksDB(t *testing.T) *store.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
-	path, err := store.DefaultTasksPath()
+	path, err := store.DefaultTasksDBPath()
 	if err != nil {
-		t.Fatalf("DefaultTasksPath: %v", err)
+		t.Fatalf("DefaultTasksDBPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir tasks dir: %v", err)
 	}
 	s, err := store.Open(path)
 	if err != nil {
@@ -98,15 +101,43 @@ func TestRun_EmptyDB_PrintsEmptyMessage(t *testing.T) {
 	}
 }
 
+// TestRun_PrintsHeaderAndSortedTasks pins the table layout: header
+// first, summary rows in active-then-by-phase-end order, and three
+// indented session lines per task. Active tasks should sort before
+// inactive ones; among inactive tasks the most recent phase-end wins.
 func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 	s := openTasksDB(t)
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	t2 := t1.Add(time.Hour)
 
 	tasks := []store.Task{
-		{ID: "ddd-done-old", Status: store.StatusDone, InvokedTool: "cursor", InvokedModel: "gpt-5", ResumeCursor: "", Summary: "old one", DoneAt: &t1},
-		{ID: "aaa-done-new", Status: store.StatusDone, InvokedTool: "cursor", InvokedModel: "sonnet-4", ResumeCursor: "8c7e6a9d-0f1a-4b2c-9d8e-1234567890ab", Summary: "new one", DoneAt: &t2},
-		{ID: "active-1", Status: store.StatusPlanning, InvokedTool: "cursor", InvokedModel: "sonnet-4", ResumeCursor: "11111111-1111-4111-9111-111111111111", Summary: "draft idea"},
+		{
+			ID:               "ddd-old-plan-done",
+			Status:           store.StatusPlanDone,
+			InvokedTool:      "cursor",
+			InvokedModel:     "gpt-5",
+			PlanResumeCursor: "",
+			Summary:          "old one",
+			PlanEndAt:        &t1,
+		},
+		{
+			ID:               "aaa-new-work-done",
+			Status:           store.StatusWorkDone,
+			InvokedTool:      "cursor",
+			InvokedModel:     "sonnet-4",
+			PlanResumeCursor: "8c7e6a9d-0f1a-4b2c-9d8e-1234567890ab",
+			WorkResumeCursor: "11111111-2222-3333-4444-555555555555",
+			Summary:          "new one",
+			WorkEndAt:        &t2,
+		},
+		{
+			ID:               "active-1",
+			Status:           store.StatusPlanning,
+			InvokedTool:      "cursor",
+			InvokedModel:     "sonnet-4",
+			PlanResumeCursor: "11111111-1111-4111-9111-111111111111",
+			Summary:          "draft idea",
+		},
 	}
 	for _, task := range tasks {
 		if err := s.PutTask(task); err != nil {
@@ -122,39 +153,59 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 	lines := splitLines(out)
-	if len(lines) < 4 {
+	// Header + 3 tasks * (1 summary + 3 session lines) = 1 + 12 = 13.
+	if len(lines) < 13 {
 		t.Fatalf("output has fewer rows than expected: %q", out)
 	}
 	if !strings.HasPrefix(lines[0], "ID") || !strings.Contains(lines[0], "STATUS") {
 		t.Fatalf("missing header: %q", lines[0])
 	}
-	if !strings.Contains(lines[0], "RESUME") {
-		t.Fatalf("header missing RESUME: %q", lines[0])
+	// The new layout drops the RESUME column from the table; resume
+	// ids only appear on the indented session lines below each row.
+	if strings.Contains(lines[0], "RESUME") {
+		t.Fatalf("header should not contain RESUME column: %q", lines[0])
 	}
 	if !strings.Contains(out, "8c7e6a9d-0f1a-4b2c-9d8e-1234567890ab") || !strings.Contains(out, "11111111-1111-4111-9111-111111111111") {
 		t.Fatalf("expected resume session ids in output: %q", out)
 	}
-	wantOrder := []string{"active-1", "aaa-done-new", "ddd-done-old"}
+	if !strings.Contains(out, "11111111-2222-3333-4444-555555555555") {
+		t.Fatalf("expected work session id in output: %q", out)
+	}
+	// Active first, then most-recent phase-end-at first among inactive.
+	wantOrder := []string{"active-1", "aaa-new-work-done", "ddd-old-plan-done"}
+	summaryRows := []string{lines[1], lines[5], lines[9]}
 	for i, id := range wantOrder {
-		if !strings.Contains(lines[i+1], id) {
-			t.Fatalf("row %d = %q, want substring %q", i+1, lines[i+1], id)
+		if !strings.Contains(summaryRows[i], id) {
+			t.Fatalf("summary row %d = %q, want substring %q", i, summaryRows[i], id)
 		}
 	}
-	if !strings.Contains(out, "planning") || !strings.Contains(out, "done") {
+	// Each summary row is followed by exactly three indented session
+	// lines in plan/work/verify order.
+	if !strings.Contains(lines[2], "plan session:") {
+		t.Fatalf("expected plan session line: %q", lines[2])
+	}
+	if !strings.Contains(lines[3], "work session:") {
+		t.Fatalf("expected work session line: %q", lines[3])
+	}
+	if !strings.Contains(lines[4], "verify session:") {
+		t.Fatalf("expected verify session line: %q", lines[4])
+	}
+	// Empty cursors should render as a dash on the active task.
+	if !strings.Contains(lines[4], "verify session: -") {
+		t.Fatalf("empty verify cursor should show '-': %q", lines[4])
+	}
+	if !strings.Contains(out, "planning") || !strings.Contains(out, "plan-done") || !strings.Contains(out, "work-done") {
 		t.Fatalf("status column missing: %q", out)
 	}
 }
 
+// TestRun_StatNonENOENTPropagates makes the index.db path a directory
+// holding a file so os.Stat succeeds (it's a directory) but bolt.Open
+// fails when listTasks tries to open it. This exercises the non-
+// ENOENT propagation path for the underlying open error.
 func TestRun_StatNonENOENTPropagates(t *testing.T) {
 	t.Chdir(t.TempDir())
-	dir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	tasksPath, err := store.DefaultTasksPath()
+	tasksPath, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +222,7 @@ func TestRun_StatNonENOENTPropagates(t *testing.T) {
 }
 
 // TestRun_DefaultTasksPathError replaces the cwd with one we then
-// remove so DefaultTasksPath -> os.Getwd fails. On macOS getwd may
+// remove so DefaultTasksDBPath -> os.Getwd fails. On macOS getwd may
 // still succeed via cached inodes; in that case the test skips.
 func TestRun_DefaultTasksPathError(t *testing.T) {
 	if os.Geteuid() == 0 {
@@ -192,15 +243,15 @@ func TestRun_DefaultTasksPathError(t *testing.T) {
 	}
 	_, _, err := runCommand(t)
 	if err == nil {
-		t.Fatal("expected DefaultTasksPath to surface getwd error")
+		t.Fatal("expected DefaultTasksDBPath to surface getwd error")
 	}
 }
 
-// TestRun_OpenError points the tasks path at an existing directory so
-// bolt.Open fails, exercising the open-error branch.
+// TestRun_OpenError points the tasks DB path at an existing directory
+// so bolt.Open fails, exercising the open-error branch.
 func TestRun_OpenError(t *testing.T) {
 	t.Chdir(t.TempDir())
-	path, err := store.DefaultTasksPath()
+	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +281,7 @@ func TestRun_DecodeError(t *testing.T) {
 // drive the JSON decode failure branch in ListTasks.
 func writeRawTaskBytes(t *testing.T, key string, value []byte) error {
 	t.Helper()
-	path, err := store.DefaultTasksPath()
+	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		return err
 	}
@@ -255,33 +306,35 @@ func writeRawTaskBytes(t *testing.T, key string, value []byte) error {
 // by passing a writer that fails on every Write.
 func TestWriteTasks_FlushError(t *testing.T) {
 	err := writeTasks(failingWriter{}, []store.Task{
-		{ID: "x", Status: store.StatusPlanned},
+		{ID: "x", Status: store.StatusPlanDone},
 	})
 	if err == nil {
 		t.Fatal("expected error from failing writer")
 	}
 }
 
-func TestFormatResumeCursor(t *testing.T) {
-	if got, want := formatResumeCursor(""), "-"; got != want {
+// TestFormatSession pins the rendering of the indented session line:
+// empty ids become "-", non-empty ids are echoed verbatim, and the
+// label/indent are constant prefixes the tests can rely on.
+func TestFormatSession(t *testing.T) {
+	if got, want := formatSession("plan session", ""), "  plan session: -"; got != want {
 		t.Fatalf("empty: got %q, want %q", got, want)
 	}
-	if got, want := formatResumeCursor("2b43f90a-b742-4d4b-9f0c-e1ee8ad43f83"), "2b43f90a-b742-4d4b-9f0c-e1ee8ad43f83"; got != want {
+	if got, want := formatSession("work session", "uuid-1"), "  work session: uuid-1"; got != want {
 		t.Fatalf("uuid: got %q, want %q", got, want)
+	}
+	if got, want := formatSession("verify session", "abc"), "  verify session: abc"; got != want {
+		t.Fatalf("verify: got %q, want %q", got, want)
 	}
 }
 
-// TestWriteTasks_HeaderError exercises the header-write error path
-// (the `Fprintln(tw, "ID\tSTATUS\t...")` line) by using a writer that
-// fails on the first write. tabwriter buffers internally, so we wrap
-// the write in a helper that drives an immediate flush after each
-// Fprintf to surface the error promptly.
-func TestWriteTasks_HeaderError(t *testing.T) {
-	// An empty task list still writes the header; if that fails the
-	// function must propagate the error.
+// TestWriteTasks_EmptyHeaderFlushError covers the no-tasks branch:
+// even with no rows the header is written and Flush surfaces the
+// failingWriter error.
+func TestWriteTasks_EmptyHeaderFlushError(t *testing.T) {
 	err := writeTasks(failingWriter{}, nil)
 	if err == nil {
-		t.Fatal("expected header write error")
+		t.Fatal("expected flush error from failingWriter even with no rows")
 	}
 }
 

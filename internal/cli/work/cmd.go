@@ -18,13 +18,18 @@ import (
 func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "work",
-		Short: "Run a coding agent against an existing plan markdown file",
-		Long: "Reads a plan markdown file, asks which coding agent and model to use, " +
-			"verifies that backend is signed in, and hands the plan to the agent " +
-			"so it can execute the plan against the plan's directory.",
+		Short: "Run a coding agent against a plan stored under .j/tasks/<id>/",
+		Long: "Resolves a plan to execute and hands it to a coding agent. The plan is " +
+			"selected in this order: --task <id> (load .j/tasks/<id>/plan.md), " +
+			"--from-file/-f or WORK_FROM_FILE (legacy import: copy the file into a fresh " +
+			".j/tasks/<new-id>/plan.md), the most recent plan-done task in bbolt, or an " +
+			"interactive picker over plan-done tasks. The coder updates the existing task " +
+			"row in place (plan-done -> working -> work-done|help) when sourced from " +
+			"bbolt; legacy imports create a new task row.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return Run(cmd.Context(), Options{
-				Target:       viper.GetString("work.target"),
+				TaskID:       viper.GetString("work.task"),
+				FromFile:     viper.GetString("work.from_file"),
 				Interactive:  viper.GetBool("work.interactive"),
 				FromSettings: viper.GetBool("work.from_settings"),
 				Stdin:        cmd.InOrStdin(),
@@ -34,13 +39,16 @@ func New() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringP("target", "t", "", "Path to a plan markdown file produced by `j plan`")
+	cmd.Flags().String("task", "", "Existing task id to work on (loads <cwd>/.j/tasks/<id>/plan.md)")
+	cmd.Flags().StringP("from-file", "f", "", "Legacy: import an external plan markdown file into a new task")
 	cmd.Flags().Bool("interactive", true, "Launch the coding agent in interactive mode (its TUI). Set to false for headless capture.")
 	cmd.Flags().Bool("from-settings", true, "Use the tool/model recorded in <cwd>/.j/settings; pass --from-settings=false to be prompted instead.")
-	_ = viper.BindPFlag("work.target", cmd.Flags().Lookup("target"))
+	_ = viper.BindPFlag("work.task", cmd.Flags().Lookup("task"))
+	_ = viper.BindPFlag("work.from_file", cmd.Flags().Lookup("from-file"))
 	_ = viper.BindPFlag("work.interactive", cmd.Flags().Lookup("interactive"))
 	_ = viper.BindPFlag("work.from_settings", cmd.Flags().Lookup("from-settings"))
-	_ = viper.BindEnv("work.target", "WORK_TARGET")
+	_ = viper.BindEnv("work.task", "WORK_TASK")
+	_ = viper.BindEnv("work.from_file", "WORK_FROM_FILE")
 	_ = viper.BindEnv("work.interactive", "WORK_INTERACTIVE")
 	_ = viper.BindEnv("work.from_settings", "WORK_FROM_SETTINGS")
 	return cmd

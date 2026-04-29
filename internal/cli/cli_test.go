@@ -119,27 +119,27 @@ func TestExecute_WebMissingKey(t *testing.T) {
 	assertExecuteFails(t, "GOOGLE_API_KEY")
 }
 
-func TestExecute_PlanInvalidTarget_FromFlag(t *testing.T) {
+func TestExecute_PlanInvalidFromFile_FromFlag(t *testing.T) {
 	resetGlobals(t)
-	withArgs(t, "plan", "--target", "/this/path/does/not/exist.md")
+	withArgs(t, "plan", "--from-file", "/this/path/does/not/exist.md")
 	assertExecuteFails(t, "j:", "stat")
 }
 
-func TestExecute_PlanInvalidTarget_FromEnv(t *testing.T) {
+func TestExecute_PlanInvalidFromFile_FromEnv(t *testing.T) {
 	resetGlobals(t)
-	t.Setenv("PLAN_TARGET", "/this/path/does/not/exist.md")
+	t.Setenv("PLAN_FROM_FILE", "/this/path/does/not/exist.md")
 	withArgs(t, "plan")
 	assertExecuteFails(t, "j:", "stat")
 }
 
 // TestExecute_PlanInteractiveFlag_FromFlag confirms --interactive is
 // parsed by cobra and surfaces on the viper singleton via BindPFlag.
-// We piggy-back on the invalid-target failure path so the test stays
-// hermetic (no agent invocation), and read viper after Execute to
-// observe the bound value.
+// We piggy-back on the invalid-from-file failure path so the test
+// stays hermetic (no agent invocation), and read viper after Execute
+// to observe the bound value.
 func TestExecute_PlanInteractiveFlag_FromFlag(t *testing.T) {
 	resetGlobals(t)
-	withArgs(t, "plan", "--interactive=false", "--target", "/this/path/does/not/exist.md")
+	withArgs(t, "plan", "--interactive=false", "--from-file", "/this/path/does/not/exist.md")
 	assertExecuteFails(t, "stat")
 	if viper.GetBool("plan.interactive") {
 		t.Fatalf("plan.interactive should be false after --interactive=false")
@@ -149,7 +149,7 @@ func TestExecute_PlanInteractiveFlag_FromFlag(t *testing.T) {
 func TestExecute_PlanInteractiveFlag_FromEnv(t *testing.T) {
 	resetGlobals(t)
 	t.Setenv("PLAN_INTERACTIVE", "false")
-	t.Setenv("PLAN_TARGET", "/this/path/does/not/exist.md")
+	t.Setenv("PLAN_FROM_FILE", "/this/path/does/not/exist.md")
 	withArgs(t, "plan")
 	assertExecuteFails(t, "stat")
 	if viper.GetBool("plan.interactive") {
@@ -157,27 +157,27 @@ func TestExecute_PlanInteractiveFlag_FromEnv(t *testing.T) {
 	}
 }
 
-func TestExecute_WorkInvalidTarget_FromFlag(t *testing.T) {
+func TestExecute_WorkInvalidFromFile_FromFlag(t *testing.T) {
 	resetGlobals(t)
-	withArgs(t, "work", "--target", "/this/path/does/not/exist.md")
+	withArgs(t, "work", "--from-file", "/this/path/does/not/exist.md")
 	assertExecuteFails(t, "j:", "stat")
 }
 
-func TestExecute_WorkInvalidTarget_FromEnv(t *testing.T) {
+func TestExecute_WorkInvalidFromFile_FromEnv(t *testing.T) {
 	resetGlobals(t)
-	t.Setenv("WORK_TARGET", "/this/path/does/not/exist.md")
+	t.Setenv("WORK_FROM_FILE", "/this/path/does/not/exist.md")
 	withArgs(t, "work")
 	assertExecuteFails(t, "j:", "stat")
 }
 
 // TestExecute_WorkInteractiveFlag_FromFlag confirms --interactive is
 // parsed by cobra and surfaces on the viper singleton via BindPFlag.
-// We piggy-back on the invalid-target failure path so the test stays
-// hermetic (no agent invocation), and read viper after Execute to
-// observe the bound value.
+// We piggy-back on the invalid-from-file failure path so the test
+// stays hermetic (no agent invocation), and read viper after Execute
+// to observe the bound value.
 func TestExecute_WorkInteractiveFlag_FromFlag(t *testing.T) {
 	resetGlobals(t)
-	withArgs(t, "work", "--interactive=false", "--target", "/this/path/does/not/exist.md")
+	withArgs(t, "work", "--interactive=false", "--from-file", "/this/path/does/not/exist.md")
 	assertExecuteFails(t, "stat")
 	if viper.GetBool("work.interactive") {
 		t.Fatalf("work.interactive should be false after --interactive=false")
@@ -187,7 +187,7 @@ func TestExecute_WorkInteractiveFlag_FromFlag(t *testing.T) {
 func TestExecute_WorkInteractiveFlag_FromEnv(t *testing.T) {
 	resetGlobals(t)
 	t.Setenv("WORK_INTERACTIVE", "false")
-	t.Setenv("WORK_TARGET", "/this/path/does/not/exist.md")
+	t.Setenv("WORK_FROM_FILE", "/this/path/does/not/exist.md")
 	withArgs(t, "work")
 	assertExecuteFails(t, "stat")
 	if viper.GetBool("work.interactive") {
