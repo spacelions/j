@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
@@ -375,6 +376,30 @@ func TestRunResume_Work_PickerError(t *testing.T) {
 	}
 }
 
+// TestRunResume_Work_PickerCancelled covers the deferred
+// huh.ErrUserAborted guard in RunResume: a user-abort surfaced from
+// the picker maps to a clean nil return and the agent is never
+// invoked.
+func TestRunResume_Work_PickerCancelled(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	seedResumableWork(t, nil)
+	seedResumableWork(t, nil)
+	agent := newScriptedAgent()
+	err := RunResume(context.Background(), ResumeOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{resumeErr: huh.ErrUserAborted},
+	})
+	if err != nil {
+		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
+	}
+	if agent.worked != 0 {
+		t.Fatal("agent should not be touched after cancel")
+	}
+}
+
 // TestRunResume_Work_AppliesDefaults exercises ResumeOptions.withDefaults
 // (the nil-stdin / nil-stdout / nil-stderr / nil-UI branches).
 func TestRunResume_Work_AppliesDefaults(t *testing.T) {
@@ -406,7 +431,7 @@ func TestRunResume_Work_ListUnavailable(t *testing.T) {
 		Agents: []codingagents.Agent{newScriptedAgent()},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "tasks database unavailable") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -430,7 +455,7 @@ func TestRunResume_Work_FromTaskUnavailable(t *testing.T) {
 		Agents: []codingagents.Agent{newScriptedAgent()},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "tasks database unavailable") {
 		t.Fatalf("err = %v", err)
 	}
 }

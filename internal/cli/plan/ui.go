@@ -33,9 +33,6 @@ type UI interface {
 	PickPlanTask(ctx context.Context, tasks []store.Task) (string, error)
 }
 
-// ErrCancelled is returned by the UI when the user aborts a prompt.
-var ErrCancelled = errors.New("plan: cancelled by user")
-
 // huhUI is the huh-backed implementation of UI. The methods drive real
 // huh.Form instances and so are not exercised by unit tests in headless
 // CI; orchestration logic is unit-tested through the UI interface using
@@ -128,13 +125,19 @@ func (u *huhUI) choose(ctx context.Context, title string, options []string) (str
 	return v, nil
 }
 
+// run drives a single huh.Field to completion. A user-abort
+// (Ctrl+C / Esc) is surfaced as huh.ErrUserAborted verbatim so the
+// orchestrator's Run / RunResume can recognise the signal via
+// errors.Is and exit cleanly with a nil error. Every other error is
+// wrapped with a "ui: " prefix so genuine UI failures still surface
+// distinguishably.
 func (u *huhUI) run(ctx context.Context, field huh.Field) error {
 	err := huh.NewForm(huh.NewGroup(field)).
 		WithInput(u.in).
 		WithOutput(u.out).
 		RunWithContext(ctx)
 	if errors.Is(err, huh.ErrUserAborted) {
-		return ErrCancelled
+		return huh.ErrUserAborted
 	}
 	if err != nil {
 		return fmt.Errorf("ui: %w", err)

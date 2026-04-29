@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
@@ -331,6 +332,29 @@ func TestRunResume_PickerError(t *testing.T) {
 	}
 }
 
+// TestRunResume_PickerCancelled covers the deferred huh.ErrUserAborted
+// guard in RunResume: a user-abort surfaced from the picker maps to
+// a clean nil return and the agent is never invoked.
+func TestRunResume_PickerCancelled(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	seedResumableTask(t, nil)
+	seedResumableTask(t, nil)
+	agent := newScriptedAgent()
+	err := RunResume(context.Background(), ResumeOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{pickErr: huh.ErrUserAborted},
+	})
+	if err != nil {
+		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
+	}
+	if agent.planned != 0 {
+		t.Fatal("agent should not be touched after cancel")
+	}
+}
+
 // TestRunResume_SelectorAutoPicksSingle pins the one-task short-
 // circuit: when exactly one resumable task exists, RunResume skips
 // the picker and resumes it directly.
@@ -428,7 +452,7 @@ func TestRunResume_ListUnavailable(t *testing.T) {
 		Agents: []codingagents.Agent{newScriptedAgent()},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "tasks database unavailable") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -452,7 +476,7 @@ func TestRunResume_FromTaskUnavailable(t *testing.T) {
 		Agents: []codingagents.Agent{newScriptedAgent()},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "tasks database unavailable") {
 		t.Fatalf("err = %v", err)
 	}
 }

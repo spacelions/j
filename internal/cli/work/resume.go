@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -66,10 +67,19 @@ func (o ResumeOptions) withDefaults() ResumeOptions {
 // eligibility filter is permissive — any task with a non-empty
 // WorkResumeCursor qualifies, regardless of status. validateForWork
 // is intentionally NOT called.
-func RunResume(ctx context.Context, opts ResumeOptions) error {
+//
+// A user-abort in the resume picker (huh.ErrUserAborted) is
+// translated to a nil return by the deferred guard below so cancel
+// exits cleanly without surfacing a "cancelled by user" line.
+func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
+	defer func() {
+		if errors.Is(err, huh.ErrUserAborted) {
+			err = nil
+		}
+	}()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
-		return errors.New("work resume: no coding agents configured")
+		return errors.New("J: no coding agents configured")
 	}
 
 	task, ok, err := resolveResumeTask(ctx, opts)
@@ -83,7 +93,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) error {
 
 	agent, ok := lookupResumeAgent(opts.Agents, task.InvokedTool)
 	if !ok {
-		return fmt.Errorf("work resume: unknown tool %q", task.InvokedTool)
+		return fmt.Errorf("J: unknown tool %q", task.InvokedTool)
 	}
 
 	tasksDir, err := store.DefaultTasksDir()
@@ -107,7 +117,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) error {
 		return workErr
 	}
 
-	fmt.Fprintf(opts.Stdout, "work resume on task %s\n", task.ID)
+	fmt.Fprintf(opts.Stdout, "J: work resume on task %s\n", task.ID)
 	return nil
 }
 
@@ -141,7 +151,7 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 			return t, true, nil
 		}
 	}
-	return store.Task{}, false, fmt.Errorf("work resume: task %q not found", chosen)
+	return store.Task{}, false, fmt.Errorf("J: task %q not found", chosen)
 }
 
 // resolveResumeByID loads the named task and validates it has a
@@ -151,18 +161,18 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 func resolveResumeByID(stderr io.Writer, id string) (store.Task, bool, error) {
 	s, ok := openTaskLog(stderr)
 	if !ok {
-		return store.Task{}, false, errors.New("work resume: tasks db unavailable")
+		return store.Task{}, false, errors.New("J: tasks database unavailable")
 	}
 	defer func() { _ = s.Close() }()
 	task, err := s.GetTask(id)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return store.Task{}, false, fmt.Errorf("work resume: task %q not found", id)
+			return store.Task{}, false, fmt.Errorf("J: task %q not found", id)
 		}
 		return store.Task{}, false, err
 	}
 	if task.WorkResumeCursor == "" {
-		return store.Task{}, false, fmt.Errorf("work resume: task %q has no work session", id)
+		return store.Task{}, false, fmt.Errorf("J: task %q has no work session", id)
 	}
 	return task, true, nil
 }
@@ -176,7 +186,7 @@ func resolveResumeByID(stderr io.Writer, id string) (store.Task, bool, error) {
 func listResumableTasks(stderr io.Writer) ([]store.Task, error) {
 	s, ok := openTaskLog(stderr)
 	if !ok {
-		return nil, errors.New("work resume: tasks db unavailable")
+		return nil, errors.New("J: tasks database unavailable")
 	}
 	defer func() { _ = s.Close() }()
 	all, err := s.ListTasks()

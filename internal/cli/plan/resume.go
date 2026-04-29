@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -68,10 +69,19 @@ func (o ResumeOptions) withDefaults() ResumeOptions {
 // runs, then re-opened to write the terminal status; the agent
 // invocation never holds the file lock so a concurrent `j tasks`
 // or `j plan resume` from another shell does not deadlock.
-func RunResume(ctx context.Context, opts ResumeOptions) error {
+//
+// A user-abort in the resume picker (huh.ErrUserAborted) is
+// translated to a nil return by the deferred guard below so cancel
+// exits cleanly without surfacing a "cancelled by user" line.
+func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
+	defer func() {
+		if errors.Is(err, huh.ErrUserAborted) {
+			err = nil
+		}
+	}()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
-		return errors.New("plan resume: no coding agents configured")
+		return errors.New("J: no coding agents configured")
 	}
 
 	task, ok, err := resolveResumeTask(ctx, opts)
@@ -85,7 +95,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) error {
 
 	agent, ok := lookupResumeAgent(opts.Agents, task.InvokedTool)
 	if !ok {
-		return fmt.Errorf("plan resume: unknown tool %q", task.InvokedTool)
+		return fmt.Errorf("J: unknown tool %q", task.InvokedTool)
 	}
 
 	tasksDir, err := store.DefaultTasksDir()
@@ -120,7 +130,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) error {
 		return planErr
 	}
 
-	fmt.Fprintf(opts.Stdout, "plan resume on task %s\n", task.ID)
+	fmt.Fprintf(opts.Stdout, "J: plan resume on task %s\n", task.ID)
 	return nil
 }
 
@@ -165,18 +175,18 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 func resolveResumeByID(stderr io.Writer, id string) (store.Task, bool, error) {
 	s, ok := openTaskLog(stderr)
 	if !ok {
-		return store.Task{}, false, errors.New("plan resume: tasks db unavailable")
+		return store.Task{}, false, errors.New("J: tasks database unavailable")
 	}
 	defer func() { _ = s.Close() }()
 	task, err := s.GetTask(id)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return store.Task{}, false, fmt.Errorf("plan resume: task %q not found", id)
+			return store.Task{}, false, fmt.Errorf("J: task %q not found", id)
 		}
 		return store.Task{}, false, err
 	}
 	if task.PlanResumeCursor == "" {
-		return store.Task{}, false, fmt.Errorf("plan resume: task %q has no plan session", id)
+		return store.Task{}, false, fmt.Errorf("J: task %q has no plan session", id)
 	}
 	return task, true, nil
 }
@@ -190,7 +200,7 @@ func resolveResumeByID(stderr io.Writer, id string) (store.Task, bool, error) {
 func listResumableTasks(stderr io.Writer) ([]store.Task, error) {
 	s, ok := openTaskLog(stderr)
 	if !ok {
-		return nil, errors.New("plan resume: tasks db unavailable")
+		return nil, errors.New("J: tasks database unavailable")
 	}
 	defer func() { _ = s.Close() }()
 	all, err := s.ListTasks()
