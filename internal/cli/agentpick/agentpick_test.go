@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -400,6 +401,92 @@ func TestFromStore_DoesNotPersist(t *testing.T) {
 	want := []string{"model", "tool"}
 	if !reflect.DeepEqual(keys, want) {
 		t.Fatalf("planner keys = %v, want %v (FromStore must not Put)", keys, want)
+	}
+}
+
+// TestStoredInteractive_NilStore documents that the read-only helper
+// returns (false, false) when no store is configured, so callers
+// can pipe Options.Store straight in without a nil check.
+func TestStoredInteractive_NilStore(t *testing.T) {
+	v, ok := StoredInteractive(nil, store.BucketCoder)
+	if v || ok {
+		t.Fatalf("StoredInteractive(nil) = (%v, %v), want (false, false)", v, ok)
+	}
+}
+
+// TestStoredInteractive_Missing covers the bucket-exists-but-no-key
+// branch: ok must be false and v must be the zero value.
+func TestStoredInteractive_Missing(t *testing.T) {
+	s := openTestStore(t, store.BucketCoder)
+	v, ok := StoredInteractive(s, store.BucketCoder)
+	if v || ok {
+		t.Fatalf("StoredInteractive(missing) = (%v, %v), want (false, false)", v, ok)
+	}
+}
+
+// TestStoredInteractive_Empty asserts that an empty stored value is
+// treated as "not set" so callers fall back to the cobra default.
+func TestStoredInteractive_Empty(t *testing.T) {
+	s := openTestStore(t, store.BucketCoder)
+	if err := s.Put(store.BucketCoder, "interactive", ""); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	v, ok := StoredInteractive(s, store.BucketCoder)
+	if v || ok {
+		t.Fatalf("StoredInteractive(empty) = (%v, %v), want (false, false)", v, ok)
+	}
+}
+
+// TestStoredInteractive_Unparseable asserts that a non-bool string
+// (e.g. corruption) collapses to the not-set sentinel so we never
+// surface a parse error to the caller.
+func TestStoredInteractive_Unparseable(t *testing.T) {
+	s := openTestStore(t, store.BucketCoder)
+	if err := s.Put(store.BucketCoder, "interactive", "garbage"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	v, ok := StoredInteractive(s, store.BucketCoder)
+	if v || ok {
+		t.Fatalf("StoredInteractive(garbage) = (%v, %v), want (false, false)", v, ok)
+	}
+}
+
+// TestStoredInteractive_True round-trips strconv.FormatBool(true).
+func TestStoredInteractive_True(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Put(store.BucketPlanner, "interactive", strconv.FormatBool(true)); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	v, ok := StoredInteractive(s, store.BucketPlanner)
+	if !ok || !v {
+		t.Fatalf("StoredInteractive(true) = (%v, %v), want (true, true)", v, ok)
+	}
+}
+
+// TestStoredInteractive_False round-trips strconv.FormatBool(false).
+func TestStoredInteractive_False(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Put(store.BucketPlanner, "interactive", strconv.FormatBool(false)); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	v, ok := StoredInteractive(s, store.BucketPlanner)
+	if !ok || v {
+		t.Fatalf("StoredInteractive(false) = (%v, %v), want (false, true)", v, ok)
+	}
+}
+
+// TestStoredInteractive_GetError covers the `err != nil` branch in
+// the helper: a closed bbolt DB rejects every View call so Get
+// surfaces the failure and StoredInteractive returns the
+// not-set sentinel rather than propagating the error.
+func TestStoredInteractive_GetError(t *testing.T) {
+	s := openTestStore(t, store.BucketCoder)
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	v, ok := StoredInteractive(s, store.BucketCoder)
+	if v || ok {
+		t.Fatalf("StoredInteractive(closed) = (%v, %v), want (false, false)", v, ok)
 	}
 }
 

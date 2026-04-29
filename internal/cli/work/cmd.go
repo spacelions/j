@@ -1,6 +1,8 @@
 package work
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -21,7 +23,7 @@ func New() *cobra.Command {
 		Use:   "work",
 		Short: "Run a coding agent against a plan stored under .j/tasks/<id>/",
 		Long: "Resolves a plan to execute and hands it to a coding agent. The plan is " +
-			"selected in this order: --task <id> (load .j/tasks/<id>/plan.md), " +
+			"selected in this order: --from-task <id> (load .j/tasks/<id>/plan.md), " +
 			"--from-file/-f or WORK_FROM_FILE (legacy import: copy the file into a fresh " +
 			".j/tasks/<new-id>/plan.md), the most recent plan-done task in bbolt, or an " +
 			"interactive picker over plan-done tasks. The coder updates the existing task " +
@@ -29,10 +31,19 @@ func New() *cobra.Command {
 			"bbolt; legacy imports create a new task row.",
 		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Only forward Interactive when the user was explicit
+			// (cobra flag or env var). When unset we leave it nil
+			// so Run can fall back to the stored value or the
+			// cobra default true.
+			var interactive *bool
+			if cmd.Flags().Changed("interactive") || os.Getenv("WORK_INTERACTIVE") != "" {
+				v := viper.GetBool("work.interactive")
+				interactive = &v
+			}
 			return Run(cmd.Context(), Options{
-				TaskID:       viper.GetString("work.task"),
+				TaskID:       viper.GetString("work.from_task"),
 				FromFile:     viper.GetString("work.from_file"),
-				Interactive:  viper.GetBool("work.interactive"),
+				Interactive:  interactive,
 				FromSettings: viper.GetBool("work.from_settings"),
 				Stdin:        cmd.InOrStdin(),
 				Stdout:       cmd.OutOrStdout(),
@@ -41,15 +52,15 @@ func New() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("task", "", "Existing task id to work on (loads <cwd>/.j/tasks/<id>/plan.md)")
+	cmd.Flags().String("from-task", "", "Existing task id to work on (loads <cwd>/.j/tasks/<id>/plan.md)")
 	cmd.Flags().StringP("from-file", "f", "", "Legacy: import an external plan markdown file into a new task")
 	cmd.Flags().Bool("interactive", true, "Launch the coding agent in interactive mode (its TUI). Set to false for headless capture.")
 	cmd.Flags().Bool("from-settings", true, "Use the tool/model recorded in <cwd>/.j/settings; pass --from-settings=false to be prompted instead.")
-	_ = viper.BindPFlag("work.task", cmd.Flags().Lookup("task"))
+	_ = viper.BindPFlag("work.from_task", cmd.Flags().Lookup("from-task"))
 	_ = viper.BindPFlag("work.from_file", cmd.Flags().Lookup("from-file"))
 	_ = viper.BindPFlag("work.interactive", cmd.Flags().Lookup("interactive"))
 	_ = viper.BindPFlag("work.from_settings", cmd.Flags().Lookup("from-settings"))
-	_ = viper.BindEnv("work.task", "WORK_TASK")
+	_ = viper.BindEnv("work.from_task", "WORK_FROM_TASK")
 	_ = viper.BindEnv("work.from_file", "WORK_FROM_FILE")
 	_ = viper.BindEnv("work.interactive", "WORK_INTERACTIVE")
 	_ = viper.BindEnv("work.from_settings", "WORK_FROM_SETTINGS")

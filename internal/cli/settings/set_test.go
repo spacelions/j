@@ -11,48 +11,57 @@ import (
 
 func TestSet_Table(t *testing.T) {
 	cases := []struct {
-		name     string
-		bucketKV string
-		value    string
-		wantOut  string
-		wantErr  string
+		name      string
+		arg       string
+		wantOut   string
+		wantErr   string
+		wantStore string
 	}{
 		{
-			name:     "valid",
-			bucketKV: "planner.model",
-			value:    "gpt-5",
-			wantOut:  "set planner.model = gpt-5",
+			name:      "valid",
+			arg:       "planner.model=gpt-5",
+			wantOut:   "set planner.model = gpt-5",
+			wantStore: "gpt-5",
 		},
 		{
-			name:     "key_with_dots",
-			bucketKV: "planner.key.with.suffix",
-			value:    "v",
-			wantOut:  "set planner.key.with.suffix = v",
+			name:      "key_with_dots",
+			arg:       "planner.key.with.suffix=v",
+			wantOut:   "set planner.key.with.suffix = v",
+			wantStore: "v",
 		},
 		{
-			name:     "no_dot",
-			bucketKV: "nope",
-			value:    "x",
-			wantErr:  "missing",
+			name:      "value_with_equals",
+			arg:       "foo.bar=a=b",
+			wantOut:   "set foo.bar = a=b",
+			wantStore: "a=b",
 		},
 		{
-			name:     "empty_bucket",
-			bucketKV: ".onlykey",
-			value:    "v",
-			wantErr:  "non-empty",
+			name:      "empty_value",
+			arg:       "foo.bar=",
+			wantOut:   "set foo.bar = ",
+			wantStore: "",
 		},
 		{
-			name:     "empty_key",
-			bucketKV: "bucket.",
-			value:    "v",
-			wantErr:  "non-empty",
+			name:    "no_equals",
+			arg:     "nope",
+			wantErr: "missing '='",
+		},
+		{
+			name:    "empty_bucket",
+			arg:     ".onlykey=v",
+			wantErr: "non-empty",
+		},
+		{
+			name:    "empty_key",
+			arg:     "bucket.=v",
+			wantErr: "non-empty",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Chdir(t.TempDir())
 			mustInit(t)
-			out, err := runSetArgs(t, "set", tc.bucketKV, tc.value)
+			out, err := runSetArgs(t, "set", tc.arg)
 			if tc.wantErr != "" {
 				if err == nil {
 					t.Fatal("expected error")
@@ -68,6 +77,31 @@ func TestSet_Table(t *testing.T) {
 			if !strings.Contains(out, tc.wantOut) {
 				t.Fatalf("stdout = %q, want %q", out, tc.wantOut)
 			}
+			// Confirm the literal stored value matches what we
+			// asked for, including embedded '=' and empty strings.
+			bucket, key, _, parseErr := parseKeyValue(tc.arg)
+			if parseErr != nil {
+				t.Fatalf("parseKeyValue helper failed: %v", parseErr)
+			}
+			path, err := store.DefaultPath()
+			if err != nil {
+				t.Fatalf("DefaultPath: %v", err)
+			}
+			s, err := store.Open(path)
+			if err != nil {
+				t.Fatalf("Open: %v", err)
+			}
+			t.Cleanup(func() { _ = s.Close() })
+			got, ok, err := s.Get(bucket, key)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if !ok {
+				t.Fatalf("Get(%s.%s): missing", bucket, key)
+			}
+			if got != tc.wantStore {
+				t.Fatalf("stored value = %q, want %q", got, tc.wantStore)
+			}
 		})
 	}
 }
@@ -79,7 +113,7 @@ func TestSet_Table(t *testing.T) {
 func TestSet_PostInitWritesValue(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	out, err := runSetArgs(t, "set", "mybucket.key", "hello")
+	out, err := runSetArgs(t, "set", "mybucket.key=hello")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -132,7 +166,7 @@ func TestSet_OpenFails(t *testing.T) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runSetDirect(t, "a.b", "v"); err == nil {
+	if _, err := runSetDirect(t, "a.b=v"); err == nil {
 		t.Fatal("expected error when path is a directory")
 	}
 }

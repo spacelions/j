@@ -3,7 +3,7 @@
 // agent backend, verifies that backend is signed in, and runs it to
 // produce a refined requirements summary and a plan stored under
 // <cwd>/.j/tasks/<id>/. No file is written to the workspace; `j tasks`
-// lists the runs and `j work --task <id>` executes the plan.
+// lists the runs and `j work --from-task <id>` executes the plan.
 package plan
 
 import (
@@ -29,8 +29,14 @@ type Options struct {
 	// FromFile is the markdown task description path (from --from-file
 	// or PLAN_FROM_FILE). When empty the orchestrator prompts via the
 	// UI.
-	FromFile    string
-	Interactive bool
+	FromFile string
+	// Interactive is a tri-state: a non-nil value is the explicit
+	// user choice (cobra `--interactive` flag or PLAN_INTERACTIVE
+	// env var), and nil means "not set, fall back to the stored
+	// `interactive` (when FromSettings is true) or the cobra
+	// default true". Stored only wins when Interactive is nil and
+	// FromSettings is true; explicit always wins.
+	Interactive *bool
 
 	// FromSettings, when true, makes Run reuse the tool/model
 	// recorded in the planner bucket of <cwd>/.j/settings instead of
@@ -74,6 +80,13 @@ func Run(ctx context.Context, opts Options) error {
 	if len(opts.Agents) == 0 {
 		return errors.New("plan: no coding agents configured")
 	}
+	// Resolve the effective interactive flag once so the same
+	// value flows into both the agent request and the plan-done
+	// row (and into persistPlannerSelection on the prompted path).
+	// Precedence: explicit (opts.Interactive != nil) > stored
+	// (FromSettings && bucket has parseable value) > cobra default
+	// true.
+	opts.Interactive = boolPtr(resolveInteractive(opts))
 
 	if opts.FromFile != "" {
 		return runMarkdown(ctx, opts, opts.FromFile)
@@ -139,7 +152,7 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		Model:                  model,
 		RequirementsOutputPath: requirementsPath,
 		PlanOutputPath:         planPath,
-		Interactive:            opts.Interactive,
+		Interactive:            *opts.Interactive,
 		ResumeChatID:           resumeID,
 	})
 
@@ -201,8 +214,39 @@ func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, strin
 // and otherwise swallowed so plan can keep running. When opts.Store
 // is nil this is a no-op.
 func persistPlannerSelection(opts Options, tool, model string) {
-	store.PersistAgentSelection(opts.Store, opts.Stderr, store.BucketPlanner, tool, model, opts.Interactive)
+	// opts.Interactive is normally non-nil here: Run resolves it
+	// via resolveInteractive before any selection branch fires.
+	// The nil-guard below keeps the helper callable from tests
+	// that construct a bare Options{} for the nil-store smoke
+	// path; resolveInteractive's default of true is reproduced
+	// verbatim.
+	interactive := true
+	if opts.Interactive != nil {
+		interactive = *opts.Interactive
+	}
+	store.PersistAgentSelection(opts.Store, opts.Stderr, store.BucketPlanner, tool, model, interactive)
 }
+
+// resolveInteractive applies the documented precedence (explicit >
+// stored > cobra default true) and returns a concrete bool. Pulled
+// out of Run to keep the early-setup block readable and testable in
+// isolation.
+func resolveInteractive(opts Options) bool {
+	if opts.Interactive != nil {
+		return *opts.Interactive
+	}
+	if opts.FromSettings {
+		if v, ok := agentpick.StoredInteractive(opts.Store, store.BucketPlanner); ok {
+			return v
+		}
+	}
+	return true
+}
+
+// boolPtr is the package-private companion that lets Run / tests
+// build a non-nil *bool from a literal without spelling out a temp
+// variable at every call site.
+func boolPtr(b bool) *bool { return &b }
 
 func (o Options) withDefaults() Options {
 	if o.Stdin == nil {

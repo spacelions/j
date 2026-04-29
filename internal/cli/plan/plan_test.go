@@ -263,7 +263,7 @@ func TestRun_Success_WithFlag(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		FromFile:    target,
-		Interactive: true,
+		Interactive: boolPtr(true),
 		Stdin:       strings.NewReader(""),
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
@@ -330,7 +330,7 @@ func TestRun_Headless_PropagatesFlag(t *testing.T) {
 	agent := newScriptedAgent()
 	err := Run(context.Background(), Options{
 		FromFile:    target,
-		Interactive: false,
+		Interactive: boolPtr(false),
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -745,7 +745,7 @@ func TestRun_Markdown_PersistsPlannerSelection(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		FromFile:    target,
-		Interactive: true,
+		Interactive: boolPtr(true),
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -897,7 +897,7 @@ func TestRun_FromSettings_PopulatedStore_SkipsPrompts(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		FromFile:     target,
-		Interactive:  true,
+		Interactive:  boolPtr(true),
 		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       &stderr,
@@ -950,7 +950,7 @@ func TestRun_FromSettings_EmptyStore_FallsBackToPrompt(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		FromFile:     target,
-		Interactive:  true,
+		Interactive:  boolPtr(true),
 		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       &stderr,
@@ -1177,5 +1177,183 @@ func TestRun_EnsureTaskDirError(t *testing.T) {
 	}
 	if agent.planned != 0 {
 		t.Fatal("agent.Plan should not run when EnsureTaskDir fails")
+	}
+}
+
+// TestRun_FromSettings_StoredInteractiveFalseOverridesDefault pins
+// the bug fix on the planner side: stored interactive=false flows
+// through to the agent request and the persisted row when no
+// explicit pointer is supplied.
+func TestRun_FromSettings_StoredInteractiveFalseOverridesDefault(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "interactive", "false"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	target := writeFromFile(t, "body")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		FromFile:     target,
+		Interactive:  nil,
+		FromSettings: true,
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+		Agents:       []codingagents.Agent{agent},
+		UI:           &scriptedUI{},
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if agent.lastReq.Interactive {
+		t.Fatalf("agent.lastReq.Interactive = true, want false (stored override): %+v", agent.lastReq)
+	}
+	if v, ok := mustGet(t, s, "interactive"); !ok || v != "false" {
+		t.Fatalf("planner.interactive = %q (ok=%v), want false", v, ok)
+	}
+}
+
+// TestRun_FromSettings_ExplicitInteractiveWins documents the
+// explicit-beats-stored half on the planner side.
+func TestRun_FromSettings_ExplicitInteractiveWins(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "interactive", "false"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	target := writeFromFile(t, "body")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		FromFile:     target,
+		Interactive:  boolPtr(true),
+		FromSettings: true,
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+		Agents:       []codingagents.Agent{agent},
+		UI:           &scriptedUI{},
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("agent.lastReq.Interactive = false, want true (explicit wins): %+v", agent.lastReq)
+	}
+}
+
+// TestRun_FromSettings_StoredInteractiveUnparseable confirms a
+// garbled bucket value collapses to "not set" with no warning.
+func TestRun_FromSettings_StoredInteractiveUnparseable(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "interactive", "garbage"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	target := writeFromFile(t, "body")
+	agent := newScriptedAgent()
+	var stderr bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		FromFile:     target,
+		Interactive:  nil,
+		FromSettings: true,
+		Stdout:       io.Discard,
+		Stderr:       &stderr,
+		Agents:       []codingagents.Agent{agent},
+		UI:           &scriptedUI{},
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("agent.lastReq.Interactive = false, want true (default): %+v", agent.lastReq)
+	}
+	if strings.Contains(stderr.String(), "interactive") {
+		t.Fatalf("stderr should not warn on unparseable interactive: %q", stderr.String())
+	}
+}
+
+// TestRun_FromSettings_False_IgnoresStoredInteractive pins the
+// FromSettings=false branch on the planner side: explicit value
+// flows through, bucket is ignored.
+func TestRun_FromSettings_False_IgnoresStoredInteractive(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "interactive", "false"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	target := writeFromFile(t, "body")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		FromFile:     target,
+		Interactive:  boolPtr(true),
+		FromSettings: false,
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+		Agents:       []codingagents.Agent{agent},
+		UI:           &scriptedUI{},
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("agent.lastReq.Interactive = false, want true: %+v", agent.lastReq)
+	}
+}
+
+// TestRun_FromSettings_NoInteractiveKey_DefaultTrue locks down the
+// resolveInteractive default branch: a populated bucket without an
+// `interactive` entry leaves the cobra default (true) intact.
+func TestRun_FromSettings_NoInteractiveKey_DefaultTrue(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	target := writeFromFile(t, "body")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		FromFile:     target,
+		Interactive:  nil,
+		FromSettings: true,
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+		Agents:       []codingagents.Agent{agent},
+		UI:           &scriptedUI{},
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("agent.lastReq.Interactive = false, want true (default): %+v", agent.lastReq)
 	}
 }
