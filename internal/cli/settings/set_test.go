@@ -10,8 +10,6 @@ import (
 )
 
 func TestSet_Table(t *testing.T) {
-	t.Chdir(t.TempDir())
-
 	cases := []struct {
 		name     string
 		bucketKV string
@@ -53,6 +51,7 @@ func TestSet_Table(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Chdir(t.TempDir())
+			mustInit(t)
 			out, err := runSetArgs(t, "set", tc.bucketKV, tc.value)
 			if tc.wantErr != "" {
 				if err == nil {
@@ -73,8 +72,13 @@ func TestSet_Table(t *testing.T) {
 	}
 }
 
-func TestSet_LazilyCreatesJ(t *testing.T) {
+// TestSet_PostInitWritesValue confirms that, after the new `j init`
+// has laid down the layout, `j settings set` writes a value into the
+// existing settings DB. This replaces the older lazy-creation test:
+// pre-flight is what creates the file; set just writes to it.
+func TestSet_PostInitWritesValue(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	out, err := runSetArgs(t, "set", "mybucket.key", "hello")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -87,7 +91,7 @@ func TestSet_LazilyCreatesJ(t *testing.T) {
 		t.Fatalf("DefaultPath: %v", err)
 	}
 	if _, err := os.Stat(p); err != nil {
-		t.Fatalf("db not created: %v", err)
+		t.Fatalf("db not present: %v", err)
 	}
 }
 
@@ -102,6 +106,23 @@ func runSetArgs(t *testing.T, args ...string) (string, error) {
 	return stdout.String() + stderr.String(), err
 }
 
+// runSetDirect drives runSet without going through the cobra root
+// tree, so the shared pre-flight hook is bypassed. Tests use it to
+// exercise defensive branches (e.g. settings path is a directory).
+func runSetDirect(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	cmd := newSetCmd()
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stdout)
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return stdout.String(), err
+}
+
+// TestSet_OpenFails forces store.Open to fail by replacing the
+// settings path with a directory. We bypass cobra so the corrupt
+// layout reaches runSet instead of being healed by pre-flight.
 func TestSet_OpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	path, err := store.DefaultPath()
@@ -111,8 +132,7 @@ func TestSet_OpenFails(t *testing.T) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, err = runSetArgs(t, "set", "a.b", "v")
-	if err == nil {
+	if _, err := runSetDirect(t, "a.b", "v"); err == nil {
 		t.Fatal("expected error when path is a directory")
 	}
 }

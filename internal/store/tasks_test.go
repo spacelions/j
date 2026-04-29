@@ -130,6 +130,9 @@ func TestTask_JSON_OmitsNilTimestamps(t *testing.T) {
 func openTaskStore(t *testing.T) *Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
 	path, err := DefaultTasksDBPath()
 	if err != nil {
 		t.Fatalf("DefaultTasksDBPath: %v", err)

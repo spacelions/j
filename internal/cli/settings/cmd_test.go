@@ -33,10 +33,11 @@ func TestNew_Smoke(t *testing.T) {
 }
 
 // TestNew_BareSettingsRunsList exercises the parent RunE: plain
-// `j settings` is the list path. With no DB, output is
-// "no settings stored".
+// `j settings` is the list path. After mustInit the DB is empty so
+// output is "no settings stored".
 func TestNew_BareSettingsRunsList(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	cmd := New()
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)

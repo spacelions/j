@@ -185,7 +185,7 @@ func resolvePlan(ctx context.Context, opts Options) (resolved, error) {
 // the row) so we derive paths via filepath.Join instead of round-
 // tripping through the path helpers and their Getwd error returns.
 func resolveByTaskID(opts Options, id string) (resolved, error) {
-	s, ok := store.OpenTaskLog(opts.Stderr, store.BucketTasks)
+	s, ok := openTaskLog(opts.Stderr)
 	if !ok {
 		return resolved{}, errors.New("work: tasks db unavailable")
 	}
@@ -261,7 +261,7 @@ func resolveFromFile(opts Options, raw string) (resolved, error) {
 // the most recent first (SortTasks already groups active first; we
 // filter here so the UI picker only shows actionable rows).
 func listPlanDoneTasks(opts Options) ([]store.Task, error) {
-	s, ok := store.OpenTaskLog(opts.Stderr, store.BucketTasks)
+	s, ok := openTaskLog(opts.Stderr)
 	if !ok {
 		return nil, errors.New("work: tasks db unavailable")
 	}
@@ -303,10 +303,11 @@ func validateForWork(t store.Task) error {
 // selectCoder is the single chokepoint for choosing the coder
 // tool/model. When FromSettings is true it tries the read-only
 // agentpick.FromStore path first and only falls back to the
-// interactive Pick flow on ErrNoStoredSelection (printing a single
-// stderr line so the user knows why they're being prompted). The
-// just-confirmed selection is persisted only on the prompted path:
-// values that came from the store are already there.
+// interactive Pick flow on ErrNoStoredSelection (printing the
+// "Choose your favourite:" cue on stderr so the user knows the
+// prompt is intentional). The just-confirmed selection is persisted
+// only on the prompted path: values that came from the store are
+// already there.
 func selectCoder(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
 	if opts.FromSettings {
 		agent, model, err := agentpick.FromStore(ctx, opts.Store, store.BucketCoder, opts.Agents)
@@ -316,7 +317,7 @@ func selectCoder(ctx context.Context, opts Options) (codingagents.Agent, string,
 		if !errors.Is(err, agentpick.ErrNoStoredSelection) {
 			return nil, "", err
 		}
-		fmt.Fprintln(opts.Stderr, "no stored coder selection; prompting")
+		fmt.Fprintln(opts.Stderr, "Choose your favourite:")
 	}
 	agent, model, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
 	if err != nil {
@@ -349,10 +350,48 @@ func (o Options) withDefaults() Options {
 		o.UI = newHuhUI(o.Stdin, o.Stderr)
 	}
 	if o.Store == nil {
-		if s, ok := store.OpenDefault(o.Stderr, store.BucketCoder); ok {
+		if s, ok := openSettingsStore(o.Stderr); ok {
 			o.Store = s
 			o.closeStore = true
 		}
 	}
 	return o
+}
+
+// openSettingsStore opens `<cwd>/.j/settings` for the coder. It is
+// the post-init replacement for store.OpenDefault: pre-flight has
+// already created the layout, so failures here are real (e.g.
+// concurrent locks) and surface as a single "warning: ..." line on
+// stderr.
+func openSettingsStore(stderr io.Writer) (*store.Store, bool) {
+	path, err := store.DefaultPath()
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: settings path: %v\n", err)
+		return nil, false
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: settings db: %v\n", err)
+		return nil, false
+	}
+	return s, true
+}
+
+// openTaskLog opens `<cwd>/.j/tasks/list.db` for the work flow. Like
+// openSettingsStore this is the post-init replacement for
+// store.OpenTaskLog: pre-flight ensures the file exists, so any
+// failure here is reported once on stderr and the lifecycle
+// degrades to a nil-store no-op.
+func openTaskLog(stderr io.Writer) (*store.Store, bool) {
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
+		return nil, false
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
+		return nil, false
+	}
+	return s, true
 }

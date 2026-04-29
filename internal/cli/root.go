@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/spacelions/j/internal/cli/initcmd"
 	"github.com/spacelions/j/internal/cli/plan"
 	"github.com/spacelions/j/internal/cli/run"
 	"github.com/spacelions/j/internal/cli/settings"
@@ -39,6 +40,7 @@ func Execute() int {
 		work.New(),
 		settings.New(),
 		tasks.New(),
+		initcmd.New(),
 	)
 	root.SetArgs(os.Args[1:])
 	if err := root.Execute(); err != nil {

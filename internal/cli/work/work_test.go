@@ -62,6 +62,7 @@ exit 1
 func openTestStore(t *testing.T) *store.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	path, err := store.DefaultPath()
 	if err != nil {
 		t.Fatalf("DefaultPath: %v", err)
@@ -75,6 +76,17 @@ func openTestStore(t *testing.T) *store.Store {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return s
+}
+
+// mustInit lays down the .j layout in the current working directory.
+// Tests that previously relied on lazy creation by Run / OpenDefault
+// / EnsureTaskDir must call this helper after t.Chdir so the new
+// pre-init contract is satisfied. Idempotent.
+func mustInit(t *testing.T) {
+	t.Helper()
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
 }
 
 func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
@@ -287,6 +299,7 @@ func writePlan(t *testing.T, body string) string {
 // updates the same row to `work-done`.
 func TestRun_ByTaskID_Success(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "seeded summary", "1. step\n2. step", "# requirement\nbody")
 	agent := newScriptedAgent()
 	ui := &scriptedUI{}
@@ -345,6 +358,7 @@ func TestRun_ByTaskID_Success(t *testing.T) {
 // id does not exist in bbolt.
 func TestRun_ByTaskID_NotFound(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	// Open the tasks log just to materialize the empty bucket.
 	if _, err := store.EnsureTaskDir("seed"); err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
@@ -378,6 +392,7 @@ func TestRun_ByTaskID_NotFound(t *testing.T) {
 // is not plan-done or help should be rejected.
 func TestRun_ByTaskID_StatusRejected(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "plan", "")
 	// Mutate the task to working so reuse is rejected.
 	dbPath, err := store.DefaultTasksDBPath()
@@ -419,6 +434,7 @@ func TestRun_ByTaskID_StatusRejected(t *testing.T) {
 // prompting the user.
 func TestRun_AutoPicksLatestPlanDone(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "auto", "auto plan", "")
 	agent := newScriptedAgent()
 	ui := &scriptedUI{}
@@ -445,6 +461,7 @@ func TestRun_AutoPicksLatestPlanDone(t *testing.T) {
 // when more than one plan-done task is available.
 func TestRun_PickerOverMultipleTasks(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id1 := seedPlanDoneTask(t, "first", "plan one", "")
 	id2 := seedPlanDoneTask(t, "second", "plan two", "")
 	agent := newScriptedAgent()
@@ -484,6 +501,7 @@ func TestRun_PickerOverMultipleTasks(t *testing.T) {
 // TestRun_PickerError surfaces the UI picker error verbatim.
 func TestRun_PickerError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	seedPlanDoneTask(t, "a", "x", "")
 	seedPlanDoneTask(t, "b", "x", "")
 	agent := newScriptedAgent()
@@ -504,6 +522,7 @@ func TestRun_PickerError(t *testing.T) {
 // when no plan-done task exists, Run prompts AskFromFile.
 func TestRun_NoPlanDoneFallsBackToAskFromFile(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	plan := writePlan(t, "legacy plan body")
 	agent := newScriptedAgent()
 	ui := &scriptedUI{fromFile: plan}
@@ -532,6 +551,7 @@ func TestRun_NoPlanDoneFallsBackToAskFromFile(t *testing.T) {
 // folder and creates a fresh task row.
 func TestRun_FromFile_LegacyImport(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	dir := t.TempDir()
 	planSrc := filepath.Join(dir, "spec.plan.md")
 	if err := os.WriteFile(planSrc, []byte("# legacy plan\nstep"), 0o600); err != nil {
@@ -586,6 +606,7 @@ func TestRun_FromFile_LegacyImport(t *testing.T) {
 // is no `<stem>.md` sidecar; the imported task gets only plan.md.
 func TestRun_FromFile_NoSidecar(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	plan := writePlan(t, "## plan only")
 	agent := newScriptedAgent()
 	err := Run(context.Background(), Options{
@@ -609,6 +630,7 @@ func TestRun_FromFile_NoSidecar(t *testing.T) {
 
 func TestRun_Headless_PropagatesFlag(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "x", "")
 	agent := newScriptedAgent()
 	err := Run(context.Background(), Options{
@@ -629,6 +651,7 @@ func TestRun_Headless_PropagatesFlag(t *testing.T) {
 
 func TestRun_AskFromFileError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	agent := newScriptedAgent()
 	ui := &scriptedUI{askErr: errors.New("ask boom")}
 	err := Run(context.Background(), Options{
@@ -647,6 +670,7 @@ func TestRun_AskFromFileError(t *testing.T) {
 
 func TestRun_FromFile_ValidationError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	dir := t.TempDir()
 	bad := filepath.Join(dir, "spec.txt")
 	if err := os.WriteFile(bad, []byte("x"), 0o600); err != nil {
@@ -673,6 +697,7 @@ func TestRun_FromFile_ValidationError(t *testing.T) {
 
 func TestRun_FromFile_PlanReadError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	plan := writePlan(t, "x")
 	if err := os.Chmod(plan, 0o000); err != nil {
 		t.Fatal(err)
@@ -693,6 +718,7 @@ func TestRun_FromFile_PlanReadError(t *testing.T) {
 
 func TestRun_NoAgents(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "x", "")
 	err := Run(context.Background(), Options{
 		TaskID: id,
@@ -717,6 +743,7 @@ func TestRun_NoAgents_AppliesDefaults(t *testing.T) {
 
 func TestRun_ListModelsError_StopsBeforeUI(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "x", "")
 	agent := newScriptedAgent()
 	agent.modelsErr = errors.New("network down")
@@ -742,6 +769,7 @@ func TestRun_ListModelsError_StopsBeforeUI(t *testing.T) {
 
 func TestRun_SelectModelError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "x", "")
 	agent := newScriptedAgent()
 	ui := &scriptedUI{modelErr: errors.New("model boom")}
@@ -762,6 +790,7 @@ func TestRun_SelectModelError(t *testing.T) {
 
 func TestRun_LoginFailure_StopsBeforeAgent(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "x", "")
 	agent := newScriptedAgent()
 	agent.loginErr = errors.New("not logged in")
@@ -783,6 +812,7 @@ func TestRun_LoginFailure_StopsBeforeAgent(t *testing.T) {
 
 func TestRun_UICancelled(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "x", "")
 	agent := newScriptedAgent()
 
@@ -803,6 +833,7 @@ func TestRun_UICancelled(t *testing.T) {
 
 func TestRun_AgentWorkError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "x", "")
 	agent := newScriptedAgent()
 	agent.workErr = errors.New("agent boom")
@@ -829,6 +860,7 @@ func TestRun_AgentWorkError(t *testing.T) {
 
 func TestRun_NewResumeID_ErrorWarnsButContinues(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "x", "")
 	agent := newScriptedAgent()
 	agent.resumeErr = errors.New("create-chat down")
@@ -854,6 +886,7 @@ func TestRun_NewResumeID_ErrorWarnsButContinues(t *testing.T) {
 
 func TestRun_UnknownToolFromUI(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "x", "")
 	agent := newScriptedAgent()
 	agent.name = "cursor"
@@ -1054,7 +1087,7 @@ func TestRun_FromSettings_PopulatedStore_SkipsPrompts(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("coder keys = %v, want %v", got, want)
 	}
-	if strings.Contains(stderr.String(), "no stored coder selection") {
+	if strings.Contains(stderr.String(), "Choose your favourite:") {
 		t.Fatalf("stderr should not warn when store is populated: %q", stderr.String())
 	}
 }
@@ -1082,7 +1115,7 @@ func TestRun_FromSettings_EmptyStore_FallsBackToPrompt(t *testing.T) {
 	if ui.toolCalls != 1 || ui.modelCalls != 1 {
 		t.Fatalf("UI should be prompted: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
 	}
-	if !strings.Contains(stderr.String(), "no stored coder selection; prompting") {
+	if !strings.Contains(stderr.String(), "Choose your favourite:") {
 		t.Fatalf("stderr should warn about fallback: %q", stderr.String())
 	}
 	if v, ok := mustGet(t, s, "tool"); !ok || v != "cursor" {
@@ -1118,7 +1151,7 @@ func TestRun_FromSettings_False_AlwaysPrompts(t *testing.T) {
 	if ui.toolCalls != 1 || ui.modelCalls != 1 {
 		t.Fatalf("UI should be prompted: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
 	}
-	if strings.Contains(stderr.String(), "no stored coder selection") {
+	if strings.Contains(stderr.String(), "Choose your favourite:") {
 		t.Fatalf("stderr should not warn on explicit --from-settings=false: %q", stderr.String())
 	}
 }
@@ -1186,6 +1219,7 @@ func TestRun_FromSettings_NonSentinelStoreError(t *testing.T) {
 // coder bucket.
 func TestRun_StoreLazyDefault(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "body", "")
 	agent := newScriptedAgent()
 
@@ -1258,6 +1292,7 @@ func TestRun_ByTaskID_TasksDBUnavailable(t *testing.T) {
 // out from under it.
 func TestRun_ByTaskID_PlanReadError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "plan body", "")
 	planPath := taskFilePath(t, id, store.PlanFileName)
 	if err := os.Remove(planPath); err != nil {
@@ -1306,6 +1341,7 @@ func TestRun_ListPlanDoneTasks_DBUnavailable(t *testing.T) {
 // propagate it instead of swallowing it.
 func TestRun_ListPlanDoneTasks_DecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	if _, err := store.EnsureTaskDir("seed"); err != nil {
 		t.Fatal(err)
 	}
@@ -1369,6 +1405,7 @@ func TestRun_FromFile_EnsureTaskDirError(t *testing.T) {
 // store.PutTask rejects without ever reaching bbolt.
 func TestOpenLifecycle_PutTaskErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	if _, err := store.EnsureTaskDir("seed"); err != nil {
 		t.Fatal(err)
 	}

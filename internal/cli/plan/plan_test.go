@@ -21,6 +21,7 @@ import (
 func openTestStore(t *testing.T) *store.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	path, err := store.DefaultPath()
 	if err != nil {
 		t.Fatalf("DefaultPath: %v", err)
@@ -34,6 +35,18 @@ func openTestStore(t *testing.T) *store.Store {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return s
+}
+
+// mustInit lays down the .j layout in the current working directory.
+// Tests that previously relied on lazy creation by Run / OpenDefault /
+// EnsureTaskDir must call this helper after t.Chdir so the new
+// pre-init contract is satisfied. The helper is idempotent so calling
+// it twice (e.g. via openTestStore) is harmless.
+func mustInit(t *testing.T) {
+	t.Helper()
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
 }
 
 func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
@@ -242,6 +255,7 @@ func writeFromFile(t *testing.T, body string) string {
 
 func TestRun_Success_WithFlag(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "# task\nbody")
 	agent := newScriptedAgent()
 	ui := &scriptedUI{}
@@ -311,6 +325,7 @@ func TestRun_Success_WithFlag(t *testing.T) {
 
 func TestRun_Headless_PropagatesFlag(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "x")
 	agent := newScriptedAgent()
 	err := Run(context.Background(), Options{
@@ -336,6 +351,7 @@ func TestRun_Headless_PropagatesFlag(t *testing.T) {
 // signal here).
 func TestRun_AgentDidNotWriteFiles(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "x")
 	agent := newScriptedAgent()
 	agent.skipWrite = true
@@ -360,6 +376,7 @@ func TestRun_AgentDidNotWriteFiles(t *testing.T) {
 
 func TestRun_PromptsForTarget_WhenFlagMissing(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "body")
 	agent := newScriptedAgent()
 	ui := &scriptedUI{source: SourceMarkdown, fromFile: target}
@@ -387,6 +404,7 @@ func TestRun_PromptsForTarget_WhenFlagMissing(t *testing.T) {
 // prompting the user for a source.
 func TestRun_FromFileFlag_BypassesSourceSelector(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "body")
 	agent := newScriptedAgent()
 	ui := &scriptedUI{}
@@ -407,6 +425,7 @@ func TestRun_FromFileFlag_BypassesSourceSelector(t *testing.T) {
 
 func TestRun_Linear_NoOp(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	agent := newScriptedAgent()
 	ui := &scriptedUI{source: SourceLinear}
 	var stdout bytes.Buffer
@@ -429,6 +448,7 @@ func TestRun_Linear_NoOp(t *testing.T) {
 
 func TestRun_SelectSourceError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	agent := newScriptedAgent()
 	ui := &scriptedUI{sourceErr: errors.New("source boom")}
 	err := Run(context.Background(), Options{
@@ -449,6 +469,7 @@ func TestRun_SelectSourceError(t *testing.T) {
 // new PlanSource constant without a switch arm fails loudly in tests.
 func TestRun_UnsupportedSource(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	agent := newScriptedAgent()
 	ui := &scriptedUI{source: PlanSource(99)}
 	err := Run(context.Background(), Options{
@@ -464,6 +485,7 @@ func TestRun_UnsupportedSource(t *testing.T) {
 
 func TestRun_TargetValidationErrors(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	dir := t.TempDir()
 	bad := filepath.Join(dir, "spec.txt")
 	if err := os.WriteFile(bad, []byte("x"), 0o600); err != nil {
@@ -490,6 +512,7 @@ func TestRun_TargetValidationErrors(t *testing.T) {
 
 func TestRun_NoAgents(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "x")
 	err := Run(context.Background(), Options{
 		FromFile: target,
@@ -507,6 +530,7 @@ func TestRun_NoAgents(t *testing.T) {
 // Run to short-circuit on the empty agent list before any UI is touched.
 func TestRun_NoAgents_AppliesDefaults(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	err := Run(context.Background(), Options{})
 	if err == nil || !strings.Contains(err.Error(), "no coding agents") {
 		t.Fatalf("err = %v", err)
@@ -515,6 +539,7 @@ func TestRun_NoAgents_AppliesDefaults(t *testing.T) {
 
 func TestRun_AskFromFileError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	agent := newScriptedAgent()
 	ui := &scriptedUI{askErr: errors.New("ask boom")}
 	err := Run(context.Background(), Options{
@@ -533,6 +558,7 @@ func TestRun_AskFromFileError(t *testing.T) {
 
 func TestRun_SelectModelError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "x")
 	agent := newScriptedAgent()
 	ui := &scriptedUI{modelErr: errors.New("model boom")}
@@ -553,6 +579,7 @@ func TestRun_SelectModelError(t *testing.T) {
 
 func TestRun_TargetReadError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "x")
 	if err := os.Chmod(target, 0o000); err != nil {
 		t.Fatal(err)
@@ -573,6 +600,7 @@ func TestRun_TargetReadError(t *testing.T) {
 
 func TestRun_ListModelsError_StopsBeforeUI(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "x")
 	agent := newScriptedAgent()
 	agent.modelsErr = errors.New("network down")
@@ -598,6 +626,7 @@ func TestRun_ListModelsError_StopsBeforeUI(t *testing.T) {
 
 func TestRun_LoginFailure_StopsBeforeAgent(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "x")
 	agent := newScriptedAgent()
 	agent.loginErr = errors.New("not logged in")
@@ -622,6 +651,7 @@ func TestRun_LoginFailure_StopsBeforeAgent(t *testing.T) {
 
 func TestRun_UICancelled(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "x")
 	agent := newScriptedAgent()
 
@@ -642,6 +672,7 @@ func TestRun_UICancelled(t *testing.T) {
 
 func TestRun_AgentPlanError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "x")
 	agent := newScriptedAgent()
 	agent.planErr = errors.New("agent boom")
@@ -660,6 +691,7 @@ func TestRun_AgentPlanError(t *testing.T) {
 
 func TestRun_NewResumeID_ErrorWarnsButContinues(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "x")
 	agent := newScriptedAgent()
 	agent.resumeErr = errors.New("create-chat down")
@@ -685,6 +717,7 @@ func TestRun_NewResumeID_ErrorWarnsButContinues(t *testing.T) {
 
 func TestRun_UnknownToolFromUI(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "x")
 	agent := newScriptedAgent()
 	agent.name = "cursor"
@@ -899,7 +932,7 @@ func TestRun_FromSettings_PopulatedStore_SkipsPrompts(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("planner keys = %v, want %v", got, want)
 	}
-	if strings.Contains(stderr.String(), "no stored planner selection") {
+	if strings.Contains(stderr.String(), "Choose your favourite:") {
 		t.Fatalf("stderr should not warn when store is populated: %q", stderr.String())
 	}
 }
@@ -931,7 +964,7 @@ func TestRun_FromSettings_EmptyStore_FallsBackToPrompt(t *testing.T) {
 	if ui.toolCalls != 1 || ui.modelCalls != 1 {
 		t.Fatalf("UI should be prompted: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
 	}
-	if !strings.Contains(stderr.String(), "no stored planner selection; prompting") {
+	if !strings.Contains(stderr.String(), "Choose your favourite:") {
 		t.Fatalf("stderr should warn about fallback: %q", stderr.String())
 	}
 	if v, ok := mustGet(t, s, "tool"); !ok || v != "cursor" {
@@ -970,7 +1003,7 @@ func TestRun_FromSettings_False_AlwaysPrompts(t *testing.T) {
 	if ui.toolCalls != 1 || ui.modelCalls != 1 {
 		t.Fatalf("UI should be prompted: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
 	}
-	if strings.Contains(stderr.String(), "no stored planner selection") {
+	if strings.Contains(stderr.String(), "Choose your favourite:") {
 		t.Fatalf("stderr should not warn on explicit --from-settings=false: %q", stderr.String())
 	}
 }
@@ -1040,23 +1073,18 @@ func TestRun_FromSettings_NonSentinelStoreError(t *testing.T) {
 	}
 }
 
-// TestRun_EmptyJDir_FromSettings_CreatesJ asserts AC #3: with no
-// pre-existing .j, plan Run still creates <cwd>/.j/settings. AC #4
+// TestRun_FromSettings_EmptyStore_PromptsPick asserts AC #4
 // (fallback): with FromSettings, an empty project store triggers the
-// "no stored planner selection" line then Pick.
-func TestRun_EmptyJDir_FromSettings_CreatesJ(t *testing.T) {
+// "Choose your favourite:" line then Pick. The .j layout is
+// pre-created via mustInit (the new pre-flight contract: callers
+// must run `j init` before plan).
+func TestRun_FromSettings_EmptyStore_PromptsPick(t *testing.T) {
 	t.Chdir(t.TempDir())
-	jdir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(jdir); !os.IsNotExist(err) {
-		t.Fatalf("precondition: .j should not exist: %v", err)
-	}
+	mustInit(t)
 	target := writeFromFile(t, "x")
 	agent := newScriptedAgent()
 	var stderr bytes.Buffer
-	err = Run(context.Background(), Options{
+	err := Run(context.Background(), Options{
 		FromFile:     target,
 		FromSettings: true,
 		Stdin:        strings.NewReader(""),
@@ -1069,8 +1097,8 @@ func TestRun_EmptyJDir_FromSettings_CreatesJ(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "no stored planner selection; prompting") {
-		t.Fatalf("stderr = %q, want no-stored line", stderr.String())
+	if !strings.Contains(stderr.String(), "Choose your favourite:") {
+		t.Fatalf("stderr = %q, want choose-your-favourite line", stderr.String())
 	}
 	path, err := store.DefaultPath()
 	if err != nil {
@@ -1082,10 +1110,11 @@ func TestRun_EmptyJDir_FromSettings_CreatesJ(t *testing.T) {
 }
 
 // TestRun_StoreLazyDefault confirms that a nil opts.Store causes
-// withDefaults to open and close the default DB. We chdir into a
-// temp dir so the on-disk side effect is hermetic.
+// withDefaults to open the existing default DB created by mustInit.
+// The pre-flight contract guarantees the file is on disk before Run.
 func TestRun_StoreLazyDefault(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "body")
 	agent := newScriptedAgent()
 
@@ -1104,7 +1133,7 @@ func TestRun_StoreLazyDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("default DB was not created: %v", err)
+		t.Fatalf("default DB unexpectedly missing: %v", err)
 	}
 	s, err := store.Open(path)
 	if err != nil {

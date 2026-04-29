@@ -41,6 +41,7 @@ func readTasks(t *testing.T) []store.Task {
 // (since the legacy importer never had a plan phase).
 func TestBeginWorkTaskNew_RecordsRow(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	if _, err := store.EnsureTaskDir("seed"); err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +75,7 @@ func TestBeginWorkTaskNew_RecordsRow(t *testing.T) {
 // work-phase fields and tool/model/resume-cursor are overwritten.
 func TestBeginWorkTaskReuse_PreservesPlanPhase(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	id := seedPlanDoneTask(t, "seeded", "plan body", "req body")
 	dbPath, err := store.DefaultTasksDBPath()
 	if err != nil {
@@ -127,6 +129,7 @@ func TestBeginWorkTaskReuse_PreservesPlanPhase(t *testing.T) {
 // underlying agent.Work errored.
 func TestFinishWork_ErrorPath(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	if _, err := store.EnsureTaskDir("seed"); err != nil {
 		t.Fatal(err)
 	}
@@ -202,6 +205,7 @@ func TestWorkSummary_Fallbacks(t *testing.T) {
 
 func TestFinishWork_Idempotent(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	if _, err := store.EnsureTaskDir("seed"); err != nil {
 		t.Fatal(err)
 	}
@@ -214,13 +218,17 @@ func TestFinishWork_Idempotent(t *testing.T) {
 	}
 }
 
-// TestOpenLifecycle_OpenTaskLogFails forces store.OpenTaskLog to
-// return ok=false by making the index.db path a directory; finishWork
-// on the resulting nil-store lifecycle is a silent no-op.
+// TestOpenLifecycle_OpenTaskLogFails forces openTaskLog to return
+// ok=false by replacing the post-init list.db file with a directory;
+// finishWork on the resulting nil-store lifecycle is a silent no-op.
 func TestOpenLifecycle_OpenTaskLogFails(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(path, 0o755); err != nil {
@@ -241,6 +249,7 @@ func TestOpenLifecycle_OpenTaskLogFails(t *testing.T) {
 // by injecting a closed store into the lifecycle so PutTask fails.
 func TestFinishWork_PutErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	if _, err := store.EnsureTaskDir("seed"); err != nil {
 		t.Fatal(err)
 	}

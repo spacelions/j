@@ -1,0 +1,315 @@
+package initcmd
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/spf13/viper"
+
+	"github.com/spacelions/j/internal/store"
+)
+
+// scriptedUI returns a pre-set boolean from ConfirmReset and tracks
+// invocation count so tests can assert prompts fire (or don't).
+type scriptedUI struct {
+	confirm bool
+	err     error
+	calls   int
+}
+
+func (u *scriptedUI) ConfirmReset(context.Context) (bool, error) {
+	u.calls++
+	if u.err != nil {
+		return false, u.err
+	}
+	return u.confirm, nil
+}
+
+// fileExists is a small helper so each filesystem assertion stays a
+// single line in the test bodies.
+func fileExists(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected %q to exist: %v", path, err)
+	}
+}
+
+func dirExists(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("expected %q to exist: %v", path, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("expected %q to be a directory", path)
+	}
+}
+
+func TestRun_FreshInitCreatesAllArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	var stdout, stderr bytes.Buffer
+	err := Run(context.Background(), Options{
+		Stdout: &stdout,
+		Stderr: &stderr,
+		UI:     &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	dirExists(t, filepath.Join(dir, ".j"))
+	dirExists(t, filepath.Join(dir, ".j", store.TasksDirName))
+	fileExists(t, filepath.Join(dir, ".j", "settings"))
+	fileExists(t, filepath.Join(dir, ".j", store.TasksDirName, store.TasksDBName))
+	if !strings.Contains(stdout.String(), "initialized ") {
+		t.Fatalf("stdout = %q, want initialized", stdout.String())
+	}
+}
+
+func TestRun_FreshInit_DoesNotPrompt(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	ui := &scriptedUI{}
+	if err := Run(context.Background(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     ui,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.calls != 0 {
+		t.Fatalf("UI.ConfirmReset calls = %d, want 0", ui.calls)
+	}
+}
+
+func TestRun_AlreadyInitialized_PromptAccept_WipesAndRecreates(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	// Drop a sentinel file inside .j to confirm the wipe ran.
+	sentinel := filepath.Join(dir, ".j", "marker.txt")
+	if err := os.WriteFile(sentinel, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ui := &scriptedUI{confirm: true}
+	if err := Run(context.Background(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     ui,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.calls != 1 {
+		t.Fatalf("UI calls = %d, want 1", ui.calls)
+	}
+	if _, err := os.Stat(sentinel); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("sentinel should be gone after wipe: %v", err)
+	}
+	fileExists(t, filepath.Join(dir, ".j", "settings"))
+}
+
+func TestRun_AlreadyInitialized_PromptDecline_LeavesUntouched(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(dir, ".j", "marker.txt")
+	if err := os.WriteFile(sentinel, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ui := &scriptedUI{confirm: false}
+	var stdout bytes.Buffer
+	if err := Run(context.Background(), Options{
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		UI:     ui,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "init aborted") {
+		t.Fatalf("stdout = %q, want init aborted", stdout.String())
+	}
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Fatalf("sentinel should still exist after decline: %v", err)
+	}
+}
+
+func TestRun_AlreadyInitialized_YesFlag_SkipsPrompt(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(dir, ".j", "marker.txt")
+	if err := os.WriteFile(sentinel, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ui := &scriptedUI{}
+	if err := Run(context.Background(), Options{
+		Yes:    true,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     ui,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.calls != 0 {
+		t.Fatalf("UI calls = %d, want 0 with --yes", ui.calls)
+	}
+	if _, err := os.Stat(sentinel); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("sentinel should be gone: %v", err)
+	}
+}
+
+func TestRun_PartialState_FillsMissingArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(dir, ".j"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ui := &scriptedUI{}
+	if err := Run(context.Background(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     ui,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.calls != 0 {
+		t.Fatalf("UI calls = %d, want 0 (partial state should not prompt)", ui.calls)
+	}
+	fileExists(t, filepath.Join(dir, ".j", "settings"))
+	fileExists(t, filepath.Join(dir, ".j", store.TasksDirName, store.TasksDBName))
+}
+
+func TestRun_LegacyTasksFile_SurfacesError(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jdir := filepath.Join(dir, ".j")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := Run(context.Background(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     &scriptedUI{},
+	})
+	if !errors.Is(err, store.ErrLegacyTasksFile) {
+		t.Fatalf("err = %v, want ErrLegacyTasksFile", err)
+	}
+}
+
+func TestRun_UIError(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	boom := errors.New("ui boom")
+	err := Run(context.Background(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     &scriptedUI{err: boom},
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want %v", err, boom)
+	}
+}
+
+func TestRun_NewSmoke(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	cmd := New()
+	if cmd == nil {
+		t.Fatal("New returned nil")
+	}
+	if cmd.Use != "init" {
+		t.Fatalf("Use = %q, want init", cmd.Use)
+	}
+	if f := cmd.Flags().Lookup("yes"); f == nil {
+		t.Fatal("--yes flag was not registered")
+	}
+	if cmd.RunE == nil {
+		t.Fatal("RunE is nil")
+	}
+}
+
+// TestNew_RunE_ExecutesInTempDir drives the cobra command's RunE in a
+// temp dir so the rest of Run is exercised through the cobra wiring.
+func TestNew_RunE_ExecutesInTempDir(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	cmd := New()
+	cmd.SetIn(strings.NewReader(""))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetContext(context.Background())
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+	dirExists(t, filepath.Join(dir, ".j"))
+}
+
+// TestNew_FlagDefaults pins the registered flag default and the
+// viper key it binds to.
+func TestNew_FlagDefaults(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	cmd := New()
+	f := cmd.Flags().Lookup("yes")
+	if f == nil {
+		t.Fatal("yes flag not registered")
+	}
+	if f.DefValue != "false" {
+		t.Fatalf("--yes default = %q, want false", f.DefValue)
+	}
+	if viper.GetBool("init.yes") {
+		t.Error("init.yes should default to false via BindPFlag")
+	}
+}
+
+// TestNew_FlagEnv covers the env-var binding so INIT_YES=true flips
+// init.yes from CI without a flag.
+func TestNew_FlagEnv(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Setenv("INIT_YES", "true")
+	_ = New()
+	if !viper.GetBool("init.yes") {
+		t.Error("INIT_YES=true should make init.yes true")
+	}
+}
+
+// TestWithDefaults_FillsAllNilStreams exercises the Stdin/Stdout/Stderr
+// nil-default branches in withDefaults. We assert each field becomes
+// the matching os.Std* handle without invoking Run (which would write
+// to those handles during the test).
+func TestWithDefaults_FillsAllNilStreams(t *testing.T) {
+	o := Options{}.withDefaults()
+	if o.Stdin != os.Stdin {
+		t.Errorf("Stdin = %v, want os.Stdin", o.Stdin)
+	}
+	if o.Stdout != os.Stdout {
+		t.Errorf("Stdout = %v, want os.Stdout", o.Stdout)
+	}
+	if o.Stderr != os.Stderr {
+		t.Errorf("Stderr = %v, want os.Stderr", o.Stderr)
+	}
+	if o.UI == nil {
+		t.Error("UI was not defaulted")
+	}
+}

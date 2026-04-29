@@ -8,6 +8,7 @@ package settings
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/spacelions/j/internal/cli/preflight"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -18,9 +19,10 @@ func New() *cobra.Command {
 		Short: "List, set, or reset local j settings",
 		Long: "Manages the on-disk settings database used by `j` to persist user " +
 			"preferences (e.g. the planner or coder tool/model last selected). The DB " +
-			"lives at <cwd>/.j/settings. It is created lazily when you first write " +
-			"via `j settings set` or when another command (such as `j plan`) " +
-			"persists a selection.",
+			"lives at <cwd>/.j/settings. The file is created by `j init`; the " +
+			"settings subcommands assume it already exists (a missing file makes the " +
+			"shared pre-flight prompt the user to run init).",
+		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runList(cmd)
 		},

@@ -3,6 +3,12 @@
 // last used, etc.). It deliberately does NOT define an interface: per
 // AGENTS.md ("no seams, use allowlist") callers depend on the concrete
 // *Store and tests drive isolation by chdir'ing into a temp dir.
+//
+// Write-side responsibility for the on-disk layout is concentrated in
+// EnsureProject (called by `j init` and by the pre-flight confirm
+// path). Every other helper here is read/write only and assumes the
+// layout is already present; callers that need creation must invoke
+// EnsureProject first.
 package store
 
 import (
@@ -43,7 +49,7 @@ const TasksDirName = "tasks"
 // TasksDBName is the bbolt filename inside <cwd>/.j/<TasksDirName>/.
 // It carries task metadata only; the body markdown lives in the
 // per-task subdirectories.
-const TasksDBName = "index.db"
+const TasksDBName = "list.db"
 
 // PlanFileName is the filename of the plan markdown stored under
 // <cwd>/.j/tasks/<id>/. j plan writes it; j work reads it.
@@ -54,12 +60,12 @@ const PlanFileName = "plan.md"
 // j tasks summary derivation read it.
 const RequirementsFileName = "requirements.md"
 
-// ErrLegacyTasksFile is returned by Open / OpenTaskLog when the path
-// `<cwd>/.j/tasks` exists as a regular file rather than a directory.
-// That layout corresponds to the previous bbolt-only schema; the new
-// schema uses `<cwd>/.j/tasks/` as a directory and stores the bbolt
-// file inside it as `index.db`. Callers should surface a clear "rename
-// or remove the legacy file" message.
+// ErrLegacyTasksFile is returned by EnsureProject and EnsureTaskDir
+// when the path `<cwd>/.j/tasks` exists as a regular file rather than
+// a directory. That layout corresponds to the previous bbolt-only
+// schema; the new schema uses `<cwd>/.j/tasks/` as a directory and
+// stores the bbolt file inside it as `list.db`. Callers should
+// surface a clear "rename or remove the legacy file" message.
 var ErrLegacyTasksFile = errors.New("store: found legacy .j/tasks regular file; rename or remove it before continuing")
 
 // openTimeout bounds how long we'll wait for a file lock when opening
@@ -116,7 +122,7 @@ func DefaultTasksDir() (string, error) {
 }
 
 // DefaultTasksDBPath returns the absolute path to the bbolt task
-// metadata file at `<cwd>/.j/tasks/index.db`.
+// metadata file at `<cwd>/.j/tasks/list.db`.
 func DefaultTasksDBPath() (string, error) {
 	tasksDir, err := DefaultTasksDir()
 	if err != nil {
@@ -125,11 +131,133 @@ func DefaultTasksDBPath() (string, error) {
 	return filepath.Join(tasksDir, TasksDBName), nil
 }
 
+// EnsureProject creates the per-project state layout under <cwd>/:
+//   - .j/                   (0o755)
+//   - .j/tasks/             (0o755)
+//   - .j/settings           (empty bbolt file with no buckets)
+//   - .j/tasks/list.db      (empty bbolt file with no buckets)
+//
+// It also appends `.j` to <cwd>/.gitignore when one already exists
+// and does not yet carry the entry. The helper is idempotent: a
+// re-run on a fully-initialized layout creates nothing new but is
+// not an error.
+//
+// EnsureProject is the only write-side helper in this package: every
+// other Open / EnsureTaskDir call assumes the layout exists and
+// surfaces a wrapped error otherwise. `j init` and the pre-flight
+// confirm path are the sole callers.
+func EnsureProject() error {
+	jDir, err := DefaultDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(jDir, 0o755); err != nil {
+		return fmt.Errorf("store: mkdir %q: %w", jDir, err)
+	}
+	tasksDir := filepath.Join(jDir, TasksDirName)
+	if info, statErr := os.Stat(tasksDir); statErr == nil {
+		if !info.IsDir() {
+			return ErrLegacyTasksFile
+		}
+	} else if !errors.Is(statErr, fs.ErrNotExist) {
+		return fmt.Errorf("store: stat %q: %w", tasksDir, statErr)
+	}
+	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
+		return fmt.Errorf("store: mkdir %q: %w", tasksDir, err)
+	}
+	if err := touchBoltFile(filepath.Join(jDir, fileName)); err != nil {
+		return err
+	}
+	if err := touchBoltFile(filepath.Join(tasksDir, TasksDBName)); err != nil {
+		return err
+	}
+	return ensureGitignoreEntry(jDir)
+}
+
+// touchBoltFile opens path with bolt.Open and immediately closes the
+// resulting handle when the file does not yet exist. The side effect
+// is the same as the legacy lazy path: a valid (empty) bbolt file
+// appears at path. Buckets are NOT pre-created so callers can rely
+// on CreateBucketIfNotExists to mint them on first write. When the
+// file already exists EnsureProject treats it as user data and skips
+// the open call so an unrelated (non-bbolt) file at the same path
+// doesn't trigger a misleading "invalid database" error.
+func touchBoltFile(path string) error {
+	if info, err := os.Stat(path); err == nil {
+		if info.IsDir() {
+			return fmt.Errorf("store: %q is a directory", path)
+		}
+		return nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("store: stat %q: %w", path, err)
+	}
+	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: openTimeout})
+	if err != nil {
+		return fmt.Errorf("store: open %q: %w", path, err)
+	}
+	if err := db.Close(); err != nil {
+		return fmt.Errorf("store: close %q: %w", path, err)
+	}
+	return nil
+}
+
+// ProjectInitialized reports whether the four artifacts written by
+// EnsureProject (the two directories and the two bbolt files) are
+// all present in the current working directory. It returns
+// (true, nil) only when every artifact exists with the expected
+// type; missing artifacts yield (false, nil) so callers can
+// distinguish "needs init" from "stat error".
+func ProjectInitialized() (bool, error) {
+	jDir, err := DefaultDir()
+	if err != nil {
+		return false, err
+	}
+	checks := []struct {
+		path  string
+		isDir bool
+	}{
+		{jDir, true},
+		{filepath.Join(jDir, fileName), false},
+		{filepath.Join(jDir, TasksDirName), true},
+		{filepath.Join(jDir, TasksDirName, TasksDBName), false},
+	}
+	for _, c := range checks {
+		ok, err := pathHasKind(c.path, c.isDir)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// pathHasKind returns true when path exists as the requested kind
+// (directory when isDir is true, regular file otherwise). A
+// fs.ErrNotExist stat error yields (false, nil); any other stat
+// error propagates.
+func pathHasKind(path string, isDir bool) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("store: stat %q: %w", path, err)
+	}
+	if isDir {
+		return info.IsDir(), nil
+	}
+	return !info.IsDir(), nil
+}
+
 // EnsureTaskDir creates `<cwd>/.j/tasks/<id>/` (with mkdir -p) and
-// returns its absolute path. It also creates the parent `.j/tasks/`
-// directory and the `.j/.gitignore` entry, mirroring Open's setup.
-// When `.j/tasks` exists as a regular file the helper returns
-// ErrLegacyTasksFile so the cmd layer can surface a friendly message.
+// returns its absolute path. The parent `.j/tasks/` directory must
+// already exist (created by `j init` via EnsureProject); a missing
+// parent surfaces a wrapped fs.ErrNotExist so callers can prompt the
+// user to run init. A pre-existing regular file at `.j/tasks` (the
+// legacy schema) returns ErrLegacyTasksFile so the cmd layer can
+// surface a friendly message.
 func EnsureTaskDir(id string) (string, error) {
 	if id == "" {
 		return "", errors.New("store: empty task id")
@@ -138,8 +266,15 @@ func EnsureTaskDir(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := ensureTasksDir(tasksDir); err != nil {
-		return "", err
+	info, err := os.Stat(tasksDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("store: %q missing; run `j init`: %w", tasksDir, err)
+		}
+		return "", fmt.Errorf("store: stat %q: %w", tasksDir, err)
+	}
+	if !info.IsDir() {
+		return "", ErrLegacyTasksFile
 	}
 	taskDir := filepath.Join(tasksDir, id)
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
@@ -148,40 +283,14 @@ func EnsureTaskDir(id string) (string, error) {
 	return taskDir, nil
 }
 
-// ensureTasksDir mkdirs `<cwd>/.j/tasks/`, gitignore-tags the parent
-// `.j/`, and rejects pre-existing regular files at the tasks path
-// (the legacy bbolt-only schema). It is idempotent.
-func ensureTasksDir(tasksDir string) error {
-	jDir := filepath.Dir(tasksDir)
-	if err := os.MkdirAll(jDir, 0o755); err != nil {
-		return fmt.Errorf("store: mkdir %q: %w", jDir, err)
-	}
-	if err := ensureGitignoreEntry(jDir); err != nil {
-		return err
-	}
-	if info, err := os.Stat(tasksDir); err == nil && !info.IsDir() {
-		return ErrLegacyTasksFile
-	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("store: stat %q: %w", tasksDir, err)
-	}
-	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
-		return fmt.Errorf("store: mkdir %q: %w", tasksDir, err)
-	}
-	return nil
-}
-
-// Open creates the parent directory (if missing) and opens the bolt
-// database at path. It does NOT pre-create any buckets; callers should
-// invoke EnsureBucket as needed.
+// Open opens the bolt database at path. The parent directory and the
+// file itself must already exist (EnsureProject is the sole creator);
+// a missing path yields a wrapped fs.ErrNotExist so callers can
+// prompt the user to run `j init`. Open does NOT pre-create any
+// buckets; callers should invoke EnsureBucket as needed.
 func Open(path string) (*Store, error) {
 	if path == "" {
 		return nil, errors.New("store: empty path")
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, fmt.Errorf("store: mkdir %q: %w", filepath.Dir(path), err)
-	}
-	if err := ensureGitignoreEntry(filepath.Dir(path)); err != nil {
-		return nil, err
 	}
 	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: openTimeout})
 	if err != nil {

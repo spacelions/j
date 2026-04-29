@@ -1,6 +1,6 @@
 // Package tasks implements the `j tasks` subcommand. It reads the
 // per-project task log written by `j plan` and `j work` (the bbolt DB
-// at `<cwd>/.j/tasks/index.db`) and prints a stable, human-readable
+// at `<cwd>/.j/tasks/list.db`) and prints a stable, human-readable
 // list to stdout. No mutations are performed: editing, deleting, and
 // resuming tasks are intentionally out of scope.
 package tasks
@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/spacelions/j/internal/cli/preflight"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -22,7 +23,7 @@ import (
 // exists yet, the bucket is missing, or the bucket is empty. Pinning it
 // in a constant keeps the test assertion and the command output in
 // lockstep.
-const emptyMessage = "no tasks recorded"
+const emptyMessage = "J: no tasks"
 
 // New returns the `j tasks` cobra command.
 func New() *cobra.Command {
@@ -30,7 +31,7 @@ func New() *cobra.Command {
 		Use:   "tasks",
 		Short: "List planning/work tasks recorded in <cwd>/.j/tasks/",
 		Long: "Reads the per-project task log written by `j plan` and " +
-			"`j work` (bbolt at <cwd>/.j/tasks/index.db) and prints a " +
+			"`j work` (bbolt at <cwd>/.j/tasks/list.db) and prints a " +
 			"stable list to stdout. Active tasks (planning, working, " +
 			"verifying, help) appear first; inactive tasks (plan-done, " +
 			"work-done, verify-done, completed) follow, sorted by the " +
@@ -42,6 +43,7 @@ func New() *cobra.Command {
 			"`cursor-agent --resume <id>` using the id printed here. " +
 			"Task bodies live as files in <cwd>/.j/tasks/<id>/ " +
 			"(requirements.md, plan.md).",
+		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return listTasks(cmd.OutOrStdout())
 		},
@@ -50,9 +52,10 @@ func New() *cobra.Command {
 
 // listTasks resolves the default tasks DB path, opens it, decodes
 // every Task, sorts them via store.SortTasks, and writes the multi-
-// line per-task block. Missing DB or empty bucket prints emptyMessage.
-// A non-NotExist stat failure (e.g. permission denied on the parent
-// dir) propagates through bolt.Open below as a wrapped open error.
+// line per-task block. Pre-flight guarantees the file exists before
+// listTasks runs, but the missing-DB short-circuit is kept for
+// defense in depth (e.g. a unit test that drives the function
+// without going through the cobra wiring).
 func listTasks(stdout io.Writer) error {
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {

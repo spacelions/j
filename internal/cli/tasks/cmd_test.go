@@ -41,25 +41,35 @@ func runCommand(t *testing.T, args ...string) (string, string, error) {
 	return stdout.String(), stderr.String(), err
 }
 
-// openTasksDB chdirs to a fresh temp dir and opens the tasks DB. The
-// caller is responsible for closing the store before running `j tasks`
-// because bbolt holds an exclusive file lock and the command opens its
-// own store from the same path.
+// openTasksDB chdirs to a fresh temp dir, runs mustInit (the new
+// pre-flight contract), and opens the tasks DB. The caller is
+// responsible for closing the store before running `j tasks` because
+// bbolt holds an exclusive file lock and the command opens its own
+// store from the same path.
 func openTasksDB(t *testing.T) *store.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatalf("DefaultTasksDBPath: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir tasks dir: %v", err)
 	}
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	return s
+}
+
+// mustInit lays down the .j layout in the current working directory.
+// Tests must call this helper after t.Chdir so the new pre-flight
+// contract is satisfied (otherwise the j tasks command intercepts
+// with the init prompt). Idempotent.
+func mustInit(t *testing.T) {
+	t.Helper()
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
 }
 
 func TestNew_Smoke(t *testing.T) {
@@ -75,14 +85,19 @@ func TestNew_Smoke(t *testing.T) {
 	}
 }
 
+// TestRun_NoTasksFile_PrintsEmptyMessage covers the defense-in-depth
+// short-circuit in listTasks: when list.db is missing it returns
+// emptyMessage instead of a stat error. We bypass the cobra layer
+// (and its pre-flight) so the missing-file state survives long enough
+// to reach the branch.
 func TestRun_NoTasksFile_PrintsEmptyMessage(t *testing.T) {
 	t.Chdir(t.TempDir())
-	out, _, err := runCommand(t)
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
+	var out bytes.Buffer
+	if err := listTasks(&out); err != nil {
+		t.Fatalf("listTasks: %v", err)
 	}
-	if !strings.Contains(out, emptyMessage) {
-		t.Fatalf("stdout = %q, want %q", out, emptyMessage)
+	if !strings.Contains(out.String(), emptyMessage) {
+		t.Fatalf("stdout = %q, want %q", out.String(), emptyMessage)
 	}
 }
 
@@ -199,10 +214,11 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 	}
 }
 
-// TestRun_StatNonENOENTPropagates makes the index.db path a directory
+// TestRun_StatNonENOENTPropagates makes the list.db path a directory
 // holding a file so os.Stat succeeds (it's a directory) but bolt.Open
 // fails when listTasks tries to open it. This exercises the non-
-// ENOENT propagation path for the underlying open error.
+// ENOENT propagation path for the underlying open error. We bypass
+// cobra so pre-flight does not heal the corrupt layout.
 func TestRun_StatNonENOENTPropagates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	tasksPath, err := store.DefaultTasksDBPath()
@@ -215,15 +231,15 @@ func TestRun_StatNonENOENTPropagates(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tasksPath, "blocker"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = runCommand(t)
-	if err == nil {
+	if err := listTasks(io.Discard); err == nil {
 		t.Fatal("expected open to fail when path is a non-empty directory")
 	}
 }
 
 // TestRun_DefaultTasksPathError replaces the cwd with one we then
 // remove so DefaultTasksDBPath -> os.Getwd fails. On macOS getwd may
-// still succeed via cached inodes; in that case the test skips.
+// still succeed via cached inodes; in that case the test skips. We
+// bypass cobra (and pre-flight) so the broken cwd reaches listTasks.
 func TestRun_DefaultTasksPathError(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root may bypass relevant FS errors")
@@ -241,14 +257,14 @@ func TestRun_DefaultTasksPathError(t *testing.T) {
 	if _, err := os.Getwd(); err == nil {
 		t.Skip("os.Getwd unexpectedly succeeded; cannot exercise failure path")
 	}
-	_, _, err := runCommand(t)
-	if err == nil {
+	if err := listTasks(io.Discard); err == nil {
 		t.Fatal("expected DefaultTasksDBPath to surface getwd error")
 	}
 }
 
 // TestRun_OpenError points the tasks DB path at an existing directory
-// so bolt.Open fails, exercising the open-error branch.
+// so bolt.Open fails, exercising the open-error branch in listTasks.
+// We bypass cobra (and pre-flight) so the corrupt layout survives.
 func TestRun_OpenError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	path, err := store.DefaultTasksDBPath()
@@ -258,15 +274,18 @@ func TestRun_OpenError(t *testing.T) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := runCommand(t); err == nil {
+	if err := listTasks(io.Discard); err == nil {
 		t.Fatal("expected open error when tasks path is a directory")
 	}
 }
 
 // TestRun_DecodeError plants a non-JSON value into the tasks bucket so
-// ListTasks returns a decode error and runList propagates it.
+// ListTasks returns a decode error and runList propagates it. The
+// seeded list.db satisfies pre-flight so the cobra path runs end-to-
+// end and surfaces the decode error rather than the init prompt.
 func TestRun_DecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	if err := writeRawTaskBytes(t, "bad", []byte("not-json")); err != nil {
 		t.Fatalf("seed: %v", err)
 	}

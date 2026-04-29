@@ -67,9 +67,11 @@ func beginWorkTaskReuse(opts Options, agent codingagents.Agent, model string, ex
 // best-effort writes the initial row, and returns a workLifecycle
 // suitable for finishWork. Open / put failures warn once and then
 // degrade to a nil-store lifecycle so the orchestrator can still run.
+// Pre-flight has already laid down `.j/tasks/list.db`, so the open
+// call is read/write only.
 func openLifecycle(opts Options, task store.Task) *workLifecycle {
 	lc := &workLifecycle{stderr: opts.Stderr, task: task}
-	s, ok := store.OpenTaskLog(opts.Stderr, store.BucketTasks)
+	s, ok := openTaskLog(opts.Stderr)
 	if !ok {
 		return lc
 	}

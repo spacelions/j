@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/preflight"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 )
@@ -24,6 +25,7 @@ func New() *cobra.Command {
 			"refined requirements.md and the produced plan.md inside <cwd>/.j/tasks/<id>/. " +
 			"No file is written to the workspace; use `j tasks` to list runs and `j work --task <id>` " +
 			"to execute the plan.",
+		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Run's withDefaults opens the per-cwd settings DB when
 			// Options.Store is nil and closes it on the way out, so we

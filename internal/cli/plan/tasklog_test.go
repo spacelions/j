@@ -40,6 +40,7 @@ func readTasks(t *testing.T) []store.Task {
 
 func TestRun_Markdown_LogsPlanDoneTask(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "# spec heading\nbody text")
 	agent := newScriptedAgent()
 	err := Run(context.Background(), Options{
@@ -100,6 +101,7 @@ func TestRun_Markdown_LogsPlanDoneTask(t *testing.T) {
 
 func TestRun_Markdown_AgentError_LogsHelpStatus(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "x")
 	agent := newScriptedAgent()
 	agent.planErr = errors.New("agent boom")
@@ -126,6 +128,7 @@ func TestRun_Markdown_AgentError_LogsHelpStatus(t *testing.T) {
 // requirements body could not be re-read.
 func TestRun_Markdown_AgentSkippedWrite(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	target := writeFromFile(t, "x")
 	agent := newScriptedAgent()
 	agent.skipWrite = true
@@ -192,6 +195,7 @@ func TestPickSummarySource(t *testing.T) {
 // second finishPlan call is a silent no-op.
 func TestFinishPlan_Idempotent(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	lc := beginPlanTask(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", store.NewTaskID(), "/tmp/x.md", "# heading", "")
 	lc.finishPlan(nil, "# heading", "plan", "/tmp/x.md")
 	lc.finishPlan(errors.New("boom"), "should not", "change", "anything")
@@ -207,6 +211,7 @@ func TestFinishPlan_Idempotent(t *testing.T) {
 // exercise that warning is printed; the lifecycle still completes.
 func TestBeginPlanTask_PutErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatal(err)
@@ -238,6 +243,7 @@ func TestBeginPlanTask_PutErrorWarns(t *testing.T) {
 // emitted on stderr.
 func TestBeginPlanTask_PutErrorAtBegin(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	if _, err := store.EnsureTaskDir("seed"); err != nil {
 		t.Fatal(err)
 	}
@@ -252,19 +258,21 @@ func TestBeginPlanTask_PutErrorAtBegin(t *testing.T) {
 	}
 }
 
-// TestBeginPlanTask_OpenTaskLogFails forces store.OpenTaskLog to
-// return ok=false by making the tasks dir contain an unreadable
-// index.db (a directory), so bolt.Open errors. The lifecycle must
-// still produce a non-nil pointer with a nil store, and finishPlan on
-// it must be a silent no-op (no panic).
+// TestBeginPlanTask_OpenTaskLogFails forces openTaskLog to return
+// ok=false by replacing the post-init list.db file with a directory,
+// so bolt.Open errors. The lifecycle must still produce a non-nil
+// pointer with a nil store, and finishPlan on it must be a silent
+// no-op (no panic).
 func TestBeginPlanTask_OpenTaskLogFails(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Pre-create the parent and place a directory at the would-be
-	// index.db path so bolt.Open fails.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}

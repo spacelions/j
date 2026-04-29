@@ -168,10 +168,11 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 // selectPlanner is the single chokepoint for choosing the planner
 // tool/model. When FromSettings is true it tries the read-only
 // agentpick.FromStore path first and only falls back to the
-// interactive Pick flow on ErrNoStoredSelection (printing a single
-// stderr line so the user knows why they're being prompted). The
-// just-confirmed selection is persisted only on the prompted path:
-// values that came from the store are already there.
+// interactive Pick flow on ErrNoStoredSelection (printing the
+// "Choose your favourite:" cue on stderr so the user knows the
+// prompt is intentional). The just-confirmed selection is persisted
+// only on the prompted path: values that came from the store are
+// already there.
 func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
 	if opts.FromSettings {
 		agent, model, err := agentpick.FromStore(ctx, opts.Store, store.BucketPlanner, opts.Agents)
@@ -181,7 +182,7 @@ func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, strin
 		if !errors.Is(err, agentpick.ErrNoStoredSelection) {
 			return nil, "", err
 		}
-		fmt.Fprintln(opts.Stderr, "no stored planner selection; prompting")
+		fmt.Fprintln(opts.Stderr, "Choose your favourite:")
 	}
 	agent, model, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
 	if err != nil {
@@ -217,10 +218,30 @@ func (o Options) withDefaults() Options {
 		o.UI = newHuhUI(o.Stdin, o.Stderr)
 	}
 	if o.Store == nil {
-		if s, ok := store.OpenDefault(o.Stderr, store.BucketPlanner); ok {
+		if s, ok := openSettingsStore(o.Stderr); ok {
 			o.Store = s
 			o.closeStore = true
 		}
 	}
 	return o
+}
+
+// openSettingsStore opens `<cwd>/.j/settings` for the planner. It is
+// the post-init replacement for store.OpenDefault: pre-flight has
+// already created the layout, so failures here are real (e.g.
+// concurrent locks) and surface as a single "warning: ..." line on
+// stderr. Best-effort by design; nil store callers (no recorded
+// selection) are tolerated downstream.
+func openSettingsStore(stderr io.Writer) (*store.Store, bool) {
+	path, err := store.DefaultPath()
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: settings path: %v\n", err)
+		return nil, false
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: settings db: %v\n", err)
+		return nil, false
+	}
+	return s, true
 }

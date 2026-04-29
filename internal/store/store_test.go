@@ -82,35 +82,33 @@ func TestOpen_EmptyPath(t *testing.T) {
 	}
 }
 
-func TestOpen_CreatesParentDir(t *testing.T) {
+// TestOpen_RequiresExistingParent pins the new Open contract: the
+// helper no longer mkdir-as the parent. A nested path with a missing
+// parent surfaces the underlying bolt.Open error.
+func TestOpen_RequiresExistingParent(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "nested", "child", "settings")
+	if _, err := Open(path); err == nil {
+		t.Fatal("Open should fail when parent dir is missing")
+	}
+}
+
+// TestOpen_OpensExistingPath confirms Open succeeds when EnsureProject
+// has already laid down the parent directory and bbolt file.
+func TestOpen_OpensExistingPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	path, err := DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
 	s, err := Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-
-	if _, err := os.Stat(filepath.Dir(path)); err != nil {
-		t.Fatalf("parent dir not created: %v", err)
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("db file not created: %v", err)
-	}
-}
-
-// TestOpen_MkdirFails forces MkdirAll to fail by pointing the parent at
-// a regular file (which cannot become a directory).
-func TestOpen_MkdirFails(t *testing.T) {
-	root := t.TempDir()
-	blocker := filepath.Join(root, "blocker")
-	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(blocker, "nested", "settings")
-	if _, err := Open(path); err == nil {
-		t.Fatal("expected mkdir error")
-	}
 }
 
 // TestOpen_BoltOpenFails forces bolt.Open to fail by pointing path at
@@ -133,9 +131,16 @@ func TestStore_CloseNil(t *testing.T) {
 	}
 }
 
+// openInTemp chdirs into a fresh temp dir, runs EnsureProject so the
+// .j layout is in place, opens the settings DB, and registers a
+// Cleanup to close it. Tests that need to drive Store methods reach
+// for this helper.
 func openInTemp(t *testing.T) *Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
 	path, err := DefaultPath()
 	if err != nil {
 		t.Fatalf("DefaultPath: %v", err)
@@ -320,217 +325,13 @@ func TestListBuckets_EmptyDB(t *testing.T) {
 	}
 }
 
-func TestOpen_AppendsToExistingGitignore(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	gi := filepath.Join(dir, ".gitignore")
-	if err := os.WriteFile(gi, []byte("node_modules/\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	path, err := DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-
-	got, err := os.ReadFile(gi)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	want := "node_modules/\n.j\n"
-	if string(got) != want {
-		t.Fatalf("gitignore = %q, want %q", string(got), want)
-	}
-}
-
-func TestOpen_GitignoreWithoutTrailingNewline(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	gi := filepath.Join(dir, ".gitignore")
-	if err := os.WriteFile(gi, []byte("node_modules/"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	path, err := DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-
-	got, err := os.ReadFile(gi)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	want := "node_modules/\n.j\n"
-	if string(got) != want {
-		t.Fatalf("gitignore = %q, want %q", string(got), want)
-	}
-}
-
-func TestOpen_GitignoreAlreadyHasJEntry(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	gi := filepath.Join(dir, ".gitignore")
-	original := "node_modules/\n.j\nbuild/\n"
-	if err := os.WriteFile(gi, []byte(original), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	path, err := DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-
-	got, err := os.ReadFile(gi)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	if string(got) != original {
-		t.Fatalf("gitignore changed: got %q, want %q", string(got), original)
-	}
-}
-
-func TestOpen_GitignoreAlreadyHasJSlashEntry(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	gi := filepath.Join(dir, ".gitignore")
-	original := "  .j/  \nbuild/\n"
-	if err := os.WriteFile(gi, []byte(original), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	path, err := DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-
-	got, err := os.ReadFile(gi)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	if string(got) != original {
-		t.Fatalf("gitignore changed: got %q, want %q", string(got), original)
-	}
-}
-
-func TestOpen_NoGitignoreLeavesNothingBehind(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-
-	path, err := DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-
-	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
-		t.Fatalf(".gitignore should not have been created: err=%v", err)
-	}
-}
-
-// TestOpen_NonDotJCustomPathDoesNotTouchGitignore confirms the helper
-// is scoped to the default `.j` directory: a custom path whose parent
-// is not named `.j` must leave any neighbouring `.gitignore` alone.
-func TestOpen_NonDotJCustomPathDoesNotTouchGitignore(t *testing.T) {
-	dir := t.TempDir()
-	gi := filepath.Join(dir, ".gitignore")
-	original := "node_modules/\n"
-	if err := os.WriteFile(gi, []byte(original), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "custom", "settings")
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-
-	got, err := os.ReadFile(gi)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	if string(got) != original {
-		t.Fatalf("gitignore changed: got %q, want %q", string(got), original)
-	}
-}
-
-// TestOpen_GitignoreReadFails turns the .gitignore path into a
-// directory so os.ReadFile returns a non-NotExist error, exercising
-// the read-error branch in ensureGitignoreEntry.
-func TestOpen_GitignoreReadFails(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	if err := os.Mkdir(filepath.Join(dir, ".gitignore"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	path, err := DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
-	if _, err := Open(path); err == nil {
-		t.Fatal("expected error when .gitignore is a directory")
-	} else if !strings.Contains(err.Error(), "read") {
-		t.Fatalf("err = %v, want read failure", err)
-	}
-}
-
-// TestOpen_GitignoreAppendFails marks the existing .gitignore
-// read-only so OpenFile with O_APPEND|O_WRONLY returns EACCES,
-// exercising the append-error branch.
-func TestOpen_GitignoreAppendFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix file-mode semantics required")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root bypasses file-mode permissions")
-	}
-	dir := t.TempDir()
-	t.Chdir(dir)
-	gi := filepath.Join(dir, ".gitignore")
-	if err := os.WriteFile(gi, []byte("foo\n"), 0o400); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(gi, 0o600) })
-
-	path, err := DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
-	if _, err := Open(path); err == nil {
-		t.Fatal("expected error writing to read-only .gitignore")
-	} else if !strings.Contains(err.Error(), "write") {
-		t.Fatalf("err = %v, want write failure", err)
-	}
-}
-
 // TestStore_OperationsAfterClose drives the error paths in Put/Get/List/
 // EnsureBucket/ListBuckets by invoking them on a closed DB.
 func TestStore_OperationsAfterClose(t *testing.T) {
 	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
 	path, err := DefaultPath()
 	if err != nil {
 		t.Fatal(err)
@@ -643,7 +444,7 @@ func TestIsEmpty_NonEmpty(t *testing.T) {
 }
 
 // TestDefaultTasksDir_RootedInCwd pins the new tasks-folder layout:
-// <cwd>/.j/tasks/ with the bbolt file at index.db inside it.
+// <cwd>/.j/tasks/ with the bbolt file at list.db inside it.
 func TestDefaultTasksDir_RootedInCwd(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -666,6 +467,14 @@ func TestDefaultTasksDir_RootedInCwd(t *testing.T) {
 	}
 	if filepath.Dir(gotDB) != gotDir {
 		t.Fatalf("DefaultTasksDBPath dir = %q, want %q", filepath.Dir(gotDB), gotDir)
+	}
+}
+
+// TestTasksDBName_IsListDB pins the renamed bbolt filename so the
+// rename from index.db -> list.db cannot regress silently.
+func TestTasksDBName_IsListDB(t *testing.T) {
+	if TasksDBName != "list.db" {
+		t.Fatalf("TasksDBName = %q, want %q", TasksDBName, "list.db")
 	}
 }
 
@@ -697,12 +506,508 @@ func TestDefaultTasksDir_PropagatesCwdError(t *testing.T) {
 	}
 }
 
+// TestEnsureProject_FreshDirCreatesAllArtifacts pins AC #1: a brand-
+// new directory becomes a fully-initialized project after a single
+// EnsureProject call. All four artifacts (.j, .j/tasks, .j/settings,
+// .j/tasks/list.db) must exist with the right type.
+func TestEnsureProject_FreshDirCreatesAllArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	jdir := filepath.Join(dir, ".j")
+	if info, err := os.Stat(jdir); err != nil || !info.IsDir() {
+		t.Fatalf(".j dir missing: err=%v", err)
+	}
+	tasksDir := filepath.Join(jdir, TasksDirName)
+	if info, err := os.Stat(tasksDir); err != nil || !info.IsDir() {
+		t.Fatalf(".j/tasks dir missing: err=%v", err)
+	}
+	settingsPath := filepath.Join(jdir, "settings")
+	if info, err := os.Stat(settingsPath); err != nil || info.IsDir() {
+		t.Fatalf(".j/settings file missing: err=%v", err)
+	}
+	listPath := filepath.Join(tasksDir, TasksDBName)
+	if info, err := os.Stat(listPath); err != nil || info.IsDir() {
+		t.Fatalf(".j/tasks/list.db file missing: err=%v", err)
+	}
+}
+
+// TestEnsureProject_Idempotent re-runs EnsureProject on a fully
+// initialized project and asserts it stays a no-op (no error, files
+// remain in place).
+func TestEnsureProject_Idempotent(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("first EnsureProject: %v", err)
+	}
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("second EnsureProject: %v", err)
+	}
+	ok, err := ProjectInitialized()
+	if err != nil {
+		t.Fatalf("ProjectInitialized: %v", err)
+	}
+	if !ok {
+		t.Fatal("project should still be initialized after re-run")
+	}
+}
+
+// TestEnsureProject_PartialState completes the layout when only some
+// artifacts exist.
+func TestEnsureProject_PartialState(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jdir := filepath.Join(dir, ".j")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Settings file present, tasks dir missing.
+	if err := os.WriteFile(filepath.Join(jdir, "settings"), []byte("dummy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	ok, err := ProjectInitialized()
+	if err != nil {
+		t.Fatalf("ProjectInitialized: %v", err)
+	}
+	if !ok {
+		t.Fatal("project should be initialized after partial-state ensure")
+	}
+}
+
+// TestEnsureProject_RejectsLegacyTasksFile pins the friendly error
+// when the old single-file .j/tasks layout still lives in the
+// directory: the helper must NOT clobber the file, instead it
+// surfaces ErrLegacyTasksFile so the cmd layer can ask the user to
+// rename or remove it.
+func TestEnsureProject_RejectsLegacyTasksFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jdir := filepath.Join(dir, ".j")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(jdir, "tasks")
+	if err := os.WriteFile(legacy, []byte("legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureProject(); !errors.Is(err, ErrLegacyTasksFile) {
+		t.Fatalf("err = %v, want ErrLegacyTasksFile", err)
+	}
+}
+
+// TestEnsureProject_StatTasksDirError forces the non-NotExist stat
+// branch by making the .j directory unreadable. On macOS / Linux the
+// stat in EnsureProject then fails with EACCES (root bypasses the
+// permission so we skip there).
+func TestEnsureProject_StatTasksDirError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file-mode semantics required")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jdir := filepath.Join(dir, ".j")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 0o000 makes the directory unreadable; stat on its children fails.
+	if err := os.Chmod(jdir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(jdir, 0o755) })
+	if err := EnsureProject(); err == nil {
+		t.Fatal("expected stat error")
+	}
+}
+
+// TestEnsureProject_AppendsToExistingGitignore pins the .gitignore
+// allowlist behavior: an existing file gains the `.j` line.
+func TestEnsureProject_AppendsToExistingGitignore(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	gi := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(gi, []byte("node_modules/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	got, err := os.ReadFile(gi)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	want := "node_modules/\n.j\n"
+	if string(got) != want {
+		t.Fatalf("gitignore = %q, want %q", string(got), want)
+	}
+}
+
+// TestEnsureProject_GitignoreWithoutTrailingNewline preserves the
+// existing append-with-newline-prefix behavior on dirty files.
+func TestEnsureProject_GitignoreWithoutTrailingNewline(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	gi := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(gi, []byte("node_modules/"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	got, err := os.ReadFile(gi)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	want := "node_modules/\n.j\n"
+	if string(got) != want {
+		t.Fatalf("gitignore = %q, want %q", string(got), want)
+	}
+}
+
+// TestEnsureProject_GitignoreAlreadyHasJEntry leaves a .gitignore
+// that already mentions .j unchanged.
+func TestEnsureProject_GitignoreAlreadyHasJEntry(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	gi := filepath.Join(dir, ".gitignore")
+	original := "node_modules/\n.j\nbuild/\n"
+	if err := os.WriteFile(gi, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	got, err := os.ReadFile(gi)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != original {
+		t.Fatalf("gitignore changed: got %q, want %q", string(got), original)
+	}
+}
+
+// TestEnsureProject_GitignoreAlreadyHasJSlashEntry covers the .j/
+// variant and surrounding whitespace tolerance.
+func TestEnsureProject_GitignoreAlreadyHasJSlashEntry(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	gi := filepath.Join(dir, ".gitignore")
+	original := "  .j/  \nbuild/\n"
+	if err := os.WriteFile(gi, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	got, err := os.ReadFile(gi)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != original {
+		t.Fatalf("gitignore changed: got %q, want %q", string(got), original)
+	}
+}
+
+// TestEnsureProject_NoGitignoreLeavesNothingBehind pins the rule that
+// EnsureProject does NOT manufacture a .gitignore for users who
+// haven't opted into one.
+func TestEnsureProject_NoGitignoreLeavesNothingBehind(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); !os.IsNotExist(err) {
+		t.Fatalf(".gitignore should not have been created: err=%v", err)
+	}
+}
+
+// TestEnsureProject_GitignoreReadFails turns the .gitignore path into
+// a directory so os.ReadFile returns a non-NotExist error, exercising
+// the read-error branch in ensureGitignoreEntry.
+func TestEnsureProject_GitignoreReadFails(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.Mkdir(filepath.Join(dir, ".gitignore"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureProject(); err == nil {
+		t.Fatal("expected error when .gitignore is a directory")
+	} else if !strings.Contains(err.Error(), "read") {
+		t.Fatalf("err = %v, want read failure", err)
+	}
+}
+
+// TestEnsureProject_GitignoreAppendFails marks the existing
+// .gitignore read-only so OpenFile with O_APPEND|O_WRONLY returns
+// EACCES, exercising the append-error branch.
+func TestEnsureProject_GitignoreAppendFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file-mode semantics required")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	gi := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(gi, []byte("foo\n"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(gi, 0o600) })
+	if err := EnsureProject(); err == nil {
+		t.Fatal("expected error writing to read-only .gitignore")
+	} else if !strings.Contains(err.Error(), "write") {
+		t.Fatalf("err = %v, want write failure", err)
+	}
+}
+
+// TestEnsureProject_TouchSettingsFails forces the touchBoltFile error
+// branch by parking a directory at .j/settings so bolt.Open cannot
+// produce a regular file there.
+func TestEnsureProject_TouchSettingsFails(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jdir := filepath.Join(dir, ".j")
+	if err := os.MkdirAll(filepath.Join(jdir, "settings"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureProject(); err == nil {
+		t.Fatal("expected touchBoltFile to fail")
+	}
+}
+
+// TestEnsureProject_TouchListDBFails is the same idea but at the
+// tasks-DB path so the second touchBoltFile call errors.
+func TestEnsureProject_TouchListDBFails(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	tasksDir := filepath.Join(dir, ".j", TasksDirName)
+	if err := os.MkdirAll(filepath.Join(tasksDir, TasksDBName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureProject(); err == nil {
+		t.Fatal("expected touchBoltFile to fail for list.db")
+	}
+}
+
+// TestEnsureProject_MkdirJDirFails forces the first os.MkdirAll error
+// by parking a regular file at the .j path.
+func TestEnsureProject_MkdirJDirFails(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile(filepath.Join(dir, ".j"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureProject(); err == nil {
+		t.Fatal("expected mkdir error for .j path occupied by a file")
+	}
+}
+
+// TestEnsureProject_PropagatesCwdError exercises the DefaultDir
+// propagation branch by removing cwd out from under the helper.
+func TestEnsureProject_PropagatesCwdError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("cwd cannot be removed while in use on windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root may bypass relevant FS errors")
+	}
+	parent := t.TempDir()
+	gone := filepath.Join(parent, "gone")
+	if err := os.Mkdir(gone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(gone)
+	t.Setenv("PWD", "")
+	if err := os.Remove(gone); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if _, err := DefaultDir(); err == nil {
+		t.Skip("os.Getwd unexpectedly succeeded")
+	}
+	if err := EnsureProject(); err == nil {
+		t.Fatal("EnsureProject should propagate DefaultDir error")
+	}
+}
+
+// TestProjectInitialized_FullLayoutIsTrue pins the happy path.
+func TestProjectInitialized_FullLayoutIsTrue(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	ok, err := ProjectInitialized()
+	if err != nil {
+		t.Fatalf("ProjectInitialized: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected initialized")
+	}
+}
+
+// TestProjectInitialized_FreshDirIsFalse asserts the empty-cwd case.
+func TestProjectInitialized_FreshDirIsFalse(t *testing.T) {
+	t.Chdir(t.TempDir())
+	ok, err := ProjectInitialized()
+	if err != nil {
+		t.Fatalf("ProjectInitialized: %v", err)
+	}
+	if ok {
+		t.Fatal("expected not initialized on a fresh dir")
+	}
+}
+
+// TestProjectInitialized_MissingArtifacts walks every individual
+// missing-artifact case so the four "false" branches are covered.
+func TestProjectInitialized_MissingArtifacts(t *testing.T) {
+	cases := []struct {
+		name   string
+		remove string
+	}{
+		{"settings", "settings"},
+		{"tasksDir", filepath.Join(TasksDirName, "")},
+		{"listDB", filepath.Join(TasksDirName, TasksDBName)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			if err := EnsureProject(); err != nil {
+				t.Fatalf("EnsureProject: %v", err)
+			}
+			target := filepath.Join(dir, ".j", c.remove)
+			if err := os.RemoveAll(target); err != nil {
+				t.Fatalf("RemoveAll: %v", err)
+			}
+			ok, err := ProjectInitialized()
+			if err != nil {
+				t.Fatalf("ProjectInitialized: %v", err)
+			}
+			if ok {
+				t.Fatalf("expected not initialized after removing %s", c.name)
+			}
+		})
+	}
+}
+
+// TestProjectInitialized_WrongTypeArtifacts pins the "exists with the
+// wrong kind" branch (e.g. settings is a directory or tasks is a file).
+func TestProjectInitialized_WrongTypeArtifacts(t *testing.T) {
+	t.Run("settings_is_dir", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Chdir(dir)
+		if err := os.MkdirAll(filepath.Join(dir, ".j", "settings"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		ok, err := ProjectInitialized()
+		if err != nil {
+			t.Fatalf("ProjectInitialized: %v", err)
+		}
+		if ok {
+			t.Fatal("expected not initialized when settings is a directory")
+		}
+	})
+	t.Run("tasks_is_file", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Chdir(dir)
+		jdir := filepath.Join(dir, ".j")
+		if err := os.MkdirAll(jdir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(jdir, TasksDirName), []byte("legacy"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		ok, err := ProjectInitialized()
+		if err != nil {
+			t.Fatalf("ProjectInitialized: %v", err)
+		}
+		if ok {
+			t.Fatal("expected not initialized when tasks is a regular file")
+		}
+	})
+}
+
+// TestProjectInitialized_StatError forces a non-NotExist stat error
+// (read-protected .j) so the propagation path is covered.
+func TestProjectInitialized_StatError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file-mode semantics required")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	jdir := filepath.Join(dir, ".j")
+	if err := os.Chmod(jdir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(jdir, 0o755) })
+	if _, err := ProjectInitialized(); err == nil {
+		t.Fatal("expected stat error to propagate")
+	}
+}
+
+// TestProjectInitialized_PropagatesCwdError covers the DefaultDir
+// failure path.
+func TestProjectInitialized_PropagatesCwdError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("cwd cannot be removed while in use on windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root may bypass relevant FS errors")
+	}
+	parent := t.TempDir()
+	gone := filepath.Join(parent, "gone")
+	if err := os.Mkdir(gone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(gone)
+	t.Setenv("PWD", "")
+	if err := os.Remove(gone); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if _, err := DefaultDir(); err == nil {
+		t.Skip("os.Getwd unexpectedly succeeded")
+	}
+	if _, err := ProjectInitialized(); err == nil {
+		t.Fatal("ProjectInitialized should propagate DefaultDir error")
+	}
+}
+
+// TestEnsureTaskDir_RequiresInitialisedTasksDir pins the new contract:
+// EnsureTaskDir no longer creates the parent .j/tasks/ folder; the
+// caller is expected to have run EnsureProject first.
+func TestEnsureTaskDir_RequiresInitialisedTasksDir(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if _, err := EnsureTaskDir("abc"); err == nil {
+		t.Fatal("EnsureTaskDir should fail when .j/tasks is missing")
+	} else if !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("err = %v, want missing-prereq error", err)
+	}
+}
+
 // TestEnsureTaskDir_CreatesNested verifies the per-task directory is
-// created with mkdir -p semantics inside .j/tasks/, that the parent
-// .j/ exists, and that calling it again is a no-op.
+// created inside an already-initialized .j/tasks/, that the helper
+// is idempotent, and that the parent .j/ exists.
 func TestEnsureTaskDir_CreatesNested(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
 	taskDir, err := EnsureTaskDir("abc")
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
@@ -731,28 +1036,6 @@ func TestEnsureTaskDir_CreatesNested(t *testing.T) {
 	}
 }
 
-// TestEnsureTaskDir_AppendsGitignoreEntry pins that EnsureTaskDir
-// invokes the .gitignore allowlist when one already exists in the
-// repo root.
-func TestEnsureTaskDir_AppendsGitignoreEntry(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	gi := filepath.Join(dir, ".gitignore")
-	if err := os.WriteFile(gi, []byte("node_modules/\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := EnsureTaskDir("abc"); err != nil {
-		t.Fatalf("EnsureTaskDir: %v", err)
-	}
-	got, err := os.ReadFile(gi)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	if !strings.Contains(string(got), ".j") {
-		t.Fatalf("gitignore = %q, want .j entry", string(got))
-	}
-}
-
 func TestEnsureTaskDir_RejectsEmptyID(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if _, err := EnsureTaskDir(""); err == nil {
@@ -772,8 +1055,8 @@ func TestEnsureTaskDir_ParentMkdirReadOnly(t *testing.T) {
 	}
 	dir := t.TempDir()
 	t.Chdir(dir)
-	if _, err := EnsureTaskDir("seed"); err != nil {
-		t.Fatalf("seed EnsureTaskDir: %v", err)
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
 	}
 	tasksDir := filepath.Join(dir, ".j", TasksDirName)
 	if err := os.Chmod(tasksDir, 0o500); err != nil {
@@ -788,10 +1071,9 @@ func TestEnsureTaskDir_ParentMkdirReadOnly(t *testing.T) {
 	}
 }
 
-// TestEnsureTaskDir_TasksDirIsFile covers the ensureTasksDir branch
-// where the *sibling* path is a regular file (legacy schema). It
-// reuses the LegacyTasksFile assertion so the same fixture exercises
-// both the public helper and the package-private branch.
+// TestEnsureTaskDir_LegacyTasksFile pins the legacy-file path: a
+// regular file at .j/tasks blocks the new layout, surfaced as
+// ErrLegacyTasksFile.
 func TestEnsureTaskDir_LegacyTasksFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -809,6 +1091,57 @@ func TestEnsureTaskDir_LegacyTasksFile(t *testing.T) {
 	}
 }
 
+// TestEnsureTaskDir_StatError forces a non-NotExist stat error on the
+// .j/tasks path so the wrapped-error branch is covered.
+func TestEnsureTaskDir_StatError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file-mode semantics required")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jdir := filepath.Join(dir, ".j")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(jdir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(jdir, 0o755) })
+	if _, err := EnsureTaskDir("x"); err == nil {
+		t.Fatal("expected stat error")
+	}
+}
+
+// TestEnsureTaskDir_PropagatesCwdError exercises the DefaultDir
+// propagation branch.
+func TestEnsureTaskDir_PropagatesCwdError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("cwd cannot be removed while in use on windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root may bypass relevant FS errors")
+	}
+	parent := t.TempDir()
+	gone := filepath.Join(parent, "gone")
+	if err := os.Mkdir(gone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(gone)
+	t.Setenv("PWD", "")
+	if err := os.Remove(gone); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if _, err := DefaultDir(); err == nil {
+		t.Skip("os.Getwd unexpectedly succeeded")
+	}
+	if _, err := EnsureTaskDir("x"); err == nil {
+		t.Fatal("EnsureTaskDir should propagate DefaultDir error")
+	}
+}
+
 // TestTaskFileNameConstants pins the package-level filename constants
 // that callers use with filepath.Join(DefaultTasksDir(), id, name) to
 // build per-task body paths. The values are part of the on-disk
@@ -819,5 +1152,90 @@ func TestTaskFileNameConstants(t *testing.T) {
 	}
 	if RequirementsFileName != "requirements.md" {
 		t.Fatalf("RequirementsFileName = %q, want %q", RequirementsFileName, "requirements.md")
+	}
+}
+
+// TestTouchBoltFile_BoltOpenFails exercises the bolt.Open failure
+// branch of the unexported touchBoltFile helper by pointing it at a
+// path whose parent directory does not exist. EnsureProject never
+// hits this case (it pre-creates parents) so we drive it directly.
+func TestTouchBoltFile_BoltOpenFails(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "no", "such", "parent", "list.db")
+	if err := touchBoltFile(missing); err == nil {
+		t.Fatal("expected bolt.Open to fail when parent does not exist")
+	} else if !strings.Contains(err.Error(), "open") {
+		t.Fatalf("err = %v, want open failure", err)
+	}
+}
+
+// TestTouchBoltFile_StatNonENOENT exercises the stat-error branch
+// (errno other than ENOENT) by chmod'ing the parent directory to
+// 0o000 so stat on the inner path returns EACCES rather than NotExist.
+func TestTouchBoltFile_StatNonENOENT(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file-mode semantics required")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	parent := filepath.Join(t.TempDir(), "locked")
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(parent, "list.db")
+	if err := os.WriteFile(target, []byte("seed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(parent, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+	if err := touchBoltFile(target); err == nil {
+		t.Fatal("expected stat error to propagate")
+	}
+}
+
+// TestEnsureProject_MkdirTasksDirFails forces the os.MkdirAll error
+// branch for the tasks subdirectory by making .j read-only after it
+// exists but before EnsureProject runs. The existing .j dir survives
+// the no-op MkdirAll for the parent, but the child mkdir fails.
+func TestEnsureProject_MkdirTasksDirFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file-mode semantics required")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jdir := filepath.Join(dir, ".j")
+	if err := os.MkdirAll(jdir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(jdir, 0o755) })
+	if err := EnsureProject(); err == nil {
+		t.Fatal("expected mkdir to fail on read-only .j")
+	}
+}
+
+// TestEnsureGitignoreEntry_NotJDirIsNoop pins the early-return branch
+// in ensureGitignoreEntry: the helper does nothing for arbitrary
+// paths whose base name is not ".j" so callers using a custom store
+// path are left untouched.
+func TestEnsureGitignoreEntry_NotJDirIsNoop(t *testing.T) {
+	dir := t.TempDir()
+	gi := filepath.Join(dir, ".gitignore")
+	if err := os.WriteFile(gi, []byte("foo\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureGitignoreEntry(filepath.Join(dir, "custom-store")); err != nil {
+		t.Fatalf("ensureGitignoreEntry: %v", err)
+	}
+	got, err := os.ReadFile(gi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "foo\n" {
+		t.Fatalf(".gitignore = %q, want untouched", got)
 	}
 }

@@ -1,73 +1,18 @@
 package store
 
+// This file used to host the lazy-create helpers (OpenDefault and
+// OpenTaskLog) that materialised the .j layout on first call. Those
+// helpers are gone: `j init` and the shared pre-flight are the only
+// callers that write to disk now. The remaining helper here is the
+// best-effort agent-selection persister used by both `j plan` and
+// `j work`; renaming the file would generate churn without value, so
+// the historical name is kept.
+
 import (
 	"fmt"
 	"io"
 	"strconv"
 )
-
-// OpenDefault resolves the default `<cwd>/.j/settings` DB path, opens
-// it, and ensures the named bucket exists. Any failure is reported on
-// stderr as a single "warning: ..." line and the function returns
-// ok=false so callers can proceed without persistence (settings
-// recording is intentionally optional for `j plan` and `j work`).
-//
-// This helper is shared by both subcommand packages so they cannot
-// drift on the warning prefix or close-on-bucket-error semantics.
-func OpenDefault(stderr io.Writer, bucket string) (*Store, bool) {
-	path, err := DefaultPath()
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: settings path: %v\n", err)
-		return nil, false
-	}
-	s, err := Open(path)
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: settings db: %v\n", err)
-		return nil, false
-	}
-	if err := s.EnsureBucket(bucket); err != nil {
-		fmt.Fprintf(stderr, "warning: settings bucket: %v\n", err)
-		_ = s.Close()
-		return nil, false
-	}
-	return s, true
-}
-
-// OpenTaskLog opens `<cwd>/.j/tasks/index.db` (a bbolt file in the
-// per-project tasks directory), ensures the bucket, and on failure
-// reports one stderr line and returns ok=false so the caller can skip
-// task logging the same way plan/work skip settings persistence.
-//
-// Callers that need the directory itself (for per-task subfolders)
-// should use EnsureTaskDir; this helper just guarantees the bbolt
-// metadata file is reachable.
-func OpenTaskLog(stderr io.Writer, bucket string) (*Store, bool) {
-	tasksDir, err := DefaultTasksDir()
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
-		return nil, false
-	}
-	if err := ensureTasksDir(tasksDir); err != nil {
-		fmt.Fprintf(stderr, "warning: tasks dir: %v\n", err)
-		return nil, false
-	}
-	path, err := DefaultTasksDBPath()
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
-		return nil, false
-	}
-	s, err := Open(path)
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
-		return nil, false
-	}
-	if err := s.EnsureBucket(bucket); err != nil {
-		fmt.Fprintf(stderr, "warning: tasks bucket: %v\n", err)
-		_ = s.Close()
-		return nil, false
-	}
-	return s, true
-}
 
 // PersistAgentSelection writes tool/model/interactive into bucket as a
 // best-effort operation: any error is logged to stderr as a single

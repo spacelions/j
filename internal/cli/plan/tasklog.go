@@ -35,9 +35,9 @@ type planLifecycle struct {
 //     or on a NewResumeID failure (already warned by the caller).
 //
 // Best effort: failure to open the task log or to write the initial
-// row warns once on stderr (the store helper handles open warnings;
-// the put error is wrapped here) and execution continues with a
-// nil-store lifecycle.
+// row warns once on stderr and execution continues with a nil-store
+// lifecycle. Pre-flight has already laid down `.j/tasks/list.db`, so
+// the open call is read/write only and never creates new files.
 func beginPlanTask(opts Options, agent codingagents.Agent, model, taskID, target, requirement, planResumeChatID string) *planLifecycle {
 	begin := time.Now().UTC()
 	task := store.Task{
@@ -50,7 +50,7 @@ func beginPlanTask(opts Options, agent codingagents.Agent, model, taskID, target
 		PlanBeginAt:      &begin,
 	}
 	lc := &planLifecycle{stderr: opts.Stderr, task: task}
-	s, ok := store.OpenTaskLog(opts.Stderr, store.BucketTasks)
+	s, ok := openTaskLog(opts.Stderr)
 	if !ok {
 		return lc
 	}
@@ -59,6 +59,26 @@ func beginPlanTask(opts Options, agent codingagents.Agent, model, taskID, target
 		fmt.Fprintf(opts.Stderr, "warning: tasks put: %v\n", err)
 	}
 	return lc
+}
+
+// openTaskLog opens `<cwd>/.j/tasks/list.db` for the plan lifecycle.
+// Like openSettingsStore in plan.go this is the post-init replacement
+// for store.OpenTaskLog: pre-flight ensures the file exists, so any
+// failure here surfaces as a single "warning: ..." line on stderr and
+// the lifecycle degrades to a nil-store no-op. Both helpers share
+// the same shape so a future consolidation does not break callers.
+func openTaskLog(stderr io.Writer) (*store.Store, bool) {
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
+		return nil, false
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
+		return nil, false
+	}
+	return s, true
 }
 
 // finishPlan stamps plan_end_at, decides the terminal status from
