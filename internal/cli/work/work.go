@@ -15,6 +15,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/spacelions/j/internal/cli/agentpick"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
@@ -99,13 +101,24 @@ type resolved struct {
 // Run executes `j work`. It resolves the plan source (Options.TaskID,
 // Options.FromFile, latest plan-done bbolt row, then UI picker), then
 // dispatches to the reuse or import path.
-func Run(ctx context.Context, opts Options) error {
+//
+// User-abort signals from any huh prompt (Ctrl+C / Esc) propagate up
+// as huh.ErrUserAborted; the deferred guard below converts them to a
+// nil return so an explicit cancel exits the command cleanly without
+// printing a bogus "cancelled by user" line. Genuine errors keep
+// their original wrapping.
+func Run(ctx context.Context, opts Options) (err error) {
+	defer func() {
+		if errors.Is(err, huh.ErrUserAborted) {
+			err = nil
+		}
+	}()
 	opts = opts.withDefaults()
 	if opts.closeStore && opts.Store != nil {
 		defer func() { _ = opts.Store.Close() }()
 	}
 	if len(opts.Agents) == 0 {
-		return errors.New("work: no coding agents configured")
+		return errors.New("J: no coding agents configured")
 	}
 	// Resolve the effective interactive flag once so the same
 	// value flows into both the agent request and the work-done

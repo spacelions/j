@@ -6,4 +6,4 @@ Task:
 - If verifier feedback is present, revise the previous code to address it.
 - Check follow-ups.
 - before submit the code, scan for refactoring opportunities.
-- Output the pull request
+- Submit the pull request if it's github, merge request if it's gitlab

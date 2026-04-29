@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/huh"
+
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 )
@@ -110,15 +112,20 @@ type scriptedUI struct {
 	fromFile  string
 	tool      string
 	model     string
+	pickedID  string
 	sourceErr error
 	askErr    error
 	toolErr   error
 	modelErr  error
+	pickErr   error
 
 	sourceCalls int
 	askCalls    int
 	toolCalls   int
 	modelCalls  int
+	pickCalls   int
+
+	pickedTasks []store.Task
 }
 
 func (s *scriptedUI) SelectSource(context.Context) (PlanSource, error) {
@@ -157,6 +164,21 @@ func (s *scriptedUI) SelectModel(_ context.Context, options []string) (string, e
 		return s.model, nil
 	}
 	return options[0], nil
+}
+
+func (s *scriptedUI) PickPlanTask(_ context.Context, tasks []store.Task) (string, error) {
+	s.pickCalls++
+	s.pickedTasks = tasks
+	if s.pickErr != nil {
+		return "", s.pickErr
+	}
+	if s.pickedID != "" {
+		return s.pickedID, nil
+	}
+	if len(tasks) == 0 {
+		return "", errors.New("scriptedUI: no tasks to pick")
+	}
+	return tasks[0].ID, nil
 }
 
 // scriptedAgent stands in for any codingagents.Agent in tests.
@@ -318,7 +340,7 @@ func TestRun_Success_WithFlag(t *testing.T) {
 	if !strings.Contains(string(req), "# task") {
 		t.Fatalf("requirements body = %q", req)
 	}
-	if !strings.Contains(stdout.String(), "plan recorded as task ") {
+	if !strings.Contains(stdout.String(), "the requirements.md and plan.md are saved in .j/tasks/") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
@@ -649,6 +671,9 @@ func TestRun_LoginFailure_StopsBeforeAgent(t *testing.T) {
 	}
 }
 
+// TestRun_UICancelled exercises the user-abort path: when a huh
+// prompt returns huh.ErrUserAborted, Run treats it as a clean exit
+// (nil error) and never reaches the agent.
 func TestRun_UICancelled(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -660,10 +685,10 @@ func TestRun_UICancelled(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{agent},
-		UI:       &scriptedUI{toolErr: ErrCancelled},
+		UI:       &scriptedUI{toolErr: huh.ErrUserAborted},
 	})
-	if !errors.Is(err, ErrCancelled) {
-		t.Fatalf("err = %v, want ErrCancelled", err)
+	if err != nil {
+		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
 	}
 	if agent.listed != 0 || agent.planned != 0 {
 		t.Fatal("agent should not be touched after cancel")
@@ -806,7 +831,10 @@ func TestRun_LoginFailure_DoesNotPersist(t *testing.T) {
 }
 
 // TestRun_SelectionCancelled_DoesNotPersist mirrors the login-failure
-// case for the user-cancel path through agentpick.Pick.
+// case for the user-cancel path through agentpick.Pick. With the
+// abort-to-nil contract, Run returns no error on cancel; the
+// invariant the test guards is that nothing was persisted to the
+// planner bucket because Pick was never confirmed.
 func TestRun_SelectionCancelled_DoesNotPersist(t *testing.T) {
 	s := openTestStore(t)
 	target := writeFromFile(t, "body")
@@ -817,11 +845,11 @@ func TestRun_SelectionCancelled_DoesNotPersist(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{agent},
-		UI:       &scriptedUI{toolErr: ErrCancelled},
+		UI:       &scriptedUI{toolErr: huh.ErrUserAborted},
 		Store:    s,
 	})
-	if !errors.Is(err, ErrCancelled) {
-		t.Fatalf("err = %v, want ErrCancelled", err)
+	if err != nil {
+		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
 	}
 	entries, listErr := s.List(store.BucketPlanner)
 	if listErr != nil {

@@ -14,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/charmbracelet/huh"
+
 	"github.com/spacelions/j/internal/cli/agentpick"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
@@ -72,7 +74,18 @@ type Options struct {
 // to the markdown source (preserving --from-file/PLAN_FROM_FILE
 // semantics). Otherwise it asks the user which source to use and
 // dispatches.
-func Run(ctx context.Context, opts Options) error {
+//
+// User-abort signals from any huh prompt (Ctrl+C / Esc) propagate up
+// as huh.ErrUserAborted; the deferred guard below converts them to a
+// nil return so an explicit cancel exits the command cleanly without
+// printing a bogus "cancelled by user" line. Genuine errors keep
+// their original wrapping.
+func Run(ctx context.Context, opts Options) (err error) {
+	defer func() {
+		if errors.Is(err, huh.ErrUserAborted) {
+			err = nil
+		}
+	}()
 	opts = opts.withDefaults()
 	if opts.closeStore && opts.Store != nil {
 		defer func() { _ = opts.Store.Close() }()
@@ -174,7 +187,7 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		return planErr
 	}
 
-	fmt.Fprintf(opts.Stdout, "plan recorded as task %s\n", taskID)
+	fmt.Fprintf(opts.Stdout, "J: the requirements.md and plan.md are saved in .j/tasks/%s/\n", taskID)
 	return nil
 }
 
