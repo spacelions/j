@@ -168,10 +168,11 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 // selectPlanner is the single chokepoint for choosing the planner
 // tool/model. When FromSettings is true it tries the read-only
 // agentpick.FromStore path first and only falls back to the
-// interactive Pick flow on ErrNoStoredSelection (printing a single
-// stderr line so the user knows why they're being prompted). The
-// just-confirmed selection is persisted only on the prompted path:
-// values that came from the store are already there.
+// interactive Pick flow on ErrNoStoredSelection (printing the
+// "Choose your favourite:" cue on stderr so the user knows the
+// prompt is intentional). The just-confirmed selection is persisted
+// only on the prompted path: values that came from the store are
+// already there.
 func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
 	if opts.FromSettings {
 		agent, model, err := agentpick.FromStore(ctx, opts.Store, store.BucketPlanner, opts.Agents)
@@ -181,7 +182,7 @@ func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, strin
 		if !errors.Is(err, agentpick.ErrNoStoredSelection) {
 			return nil, "", err
 		}
-		fmt.Fprintln(opts.Stderr, "no stored planner selection; prompting")
+		fmt.Fprintln(opts.Stderr, "Choose your favourite:")
 	}
 	agent, model, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
 	if err != nil {

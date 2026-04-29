@@ -932,7 +932,7 @@ func TestRun_FromSettings_PopulatedStore_SkipsPrompts(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("planner keys = %v, want %v", got, want)
 	}
-	if strings.Contains(stderr.String(), "no stored planner selection") {
+	if strings.Contains(stderr.String(), "Choose your favourite:") {
 		t.Fatalf("stderr should not warn when store is populated: %q", stderr.String())
 	}
 }
@@ -964,7 +964,7 @@ func TestRun_FromSettings_EmptyStore_FallsBackToPrompt(t *testing.T) {
 	if ui.toolCalls != 1 || ui.modelCalls != 1 {
 		t.Fatalf("UI should be prompted: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
 	}
-	if !strings.Contains(stderr.String(), "no stored planner selection; prompting") {
+	if !strings.Contains(stderr.String(), "Choose your favourite:") {
 		t.Fatalf("stderr should warn about fallback: %q", stderr.String())
 	}
 	if v, ok := mustGet(t, s, "tool"); !ok || v != "cursor" {
@@ -1003,7 +1003,7 @@ func TestRun_FromSettings_False_AlwaysPrompts(t *testing.T) {
 	if ui.toolCalls != 1 || ui.modelCalls != 1 {
 		t.Fatalf("UI should be prompted: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
 	}
-	if strings.Contains(stderr.String(), "no stored planner selection") {
+	if strings.Contains(stderr.String(), "Choose your favourite:") {
 		t.Fatalf("stderr should not warn on explicit --from-settings=false: %q", stderr.String())
 	}
 }
@@ -1075,7 +1075,7 @@ func TestRun_FromSettings_NonSentinelStoreError(t *testing.T) {
 
 // TestRun_FromSettings_EmptyStore_PromptsPick asserts AC #4
 // (fallback): with FromSettings, an empty project store triggers the
-// "no stored planner selection" line then Pick. The .j layout is
+// "Choose your favourite:" line then Pick. The .j layout is
 // pre-created via mustInit (the new pre-flight contract: callers
 // must run `j init` before plan).
 func TestRun_FromSettings_EmptyStore_PromptsPick(t *testing.T) {
@@ -1097,8 +1097,8 @@ func TestRun_FromSettings_EmptyStore_PromptsPick(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "no stored planner selection; prompting") {
-		t.Fatalf("stderr = %q, want no-stored line", stderr.String())
+	if !strings.Contains(stderr.String(), "Choose your favourite:") {
+		t.Fatalf("stderr = %q, want choose-your-favourite line", stderr.String())
 	}
 	path, err := store.DefaultPath()
 	if err != nil {

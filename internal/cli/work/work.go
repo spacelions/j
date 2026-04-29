@@ -303,10 +303,11 @@ func validateForWork(t store.Task) error {
 // selectCoder is the single chokepoint for choosing the coder
 // tool/model. When FromSettings is true it tries the read-only
 // agentpick.FromStore path first and only falls back to the
-// interactive Pick flow on ErrNoStoredSelection (printing a single
-// stderr line so the user knows why they're being prompted). The
-// just-confirmed selection is persisted only on the prompted path:
-// values that came from the store are already there.
+// interactive Pick flow on ErrNoStoredSelection (printing the
+// "Choose your favourite:" cue on stderr so the user knows the
+// prompt is intentional). The just-confirmed selection is persisted
+// only on the prompted path: values that came from the store are
+// already there.
 func selectCoder(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
 	if opts.FromSettings {
 		agent, model, err := agentpick.FromStore(ctx, opts.Store, store.BucketCoder, opts.Agents)
@@ -316,7 +317,7 @@ func selectCoder(ctx context.Context, opts Options) (codingagents.Agent, string,
 		if !errors.Is(err, agentpick.ErrNoStoredSelection) {
 			return nil, "", err
 		}
-		fmt.Fprintln(opts.Stderr, "no stored coder selection; prompting")
+		fmt.Fprintln(opts.Stderr, "Choose your favourite:")
 	}
 	agent, model, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
 	if err != nil {

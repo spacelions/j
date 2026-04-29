@@ -1087,7 +1087,7 @@ func TestRun_FromSettings_PopulatedStore_SkipsPrompts(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("coder keys = %v, want %v", got, want)
 	}
-	if strings.Contains(stderr.String(), "no stored coder selection") {
+	if strings.Contains(stderr.String(), "Choose your favourite:") {
 		t.Fatalf("stderr should not warn when store is populated: %q", stderr.String())
 	}
 }
@@ -1115,7 +1115,7 @@ func TestRun_FromSettings_EmptyStore_FallsBackToPrompt(t *testing.T) {
 	if ui.toolCalls != 1 || ui.modelCalls != 1 {
 		t.Fatalf("UI should be prompted: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
 	}
-	if !strings.Contains(stderr.String(), "no stored coder selection; prompting") {
+	if !strings.Contains(stderr.String(), "Choose your favourite:") {
 		t.Fatalf("stderr should warn about fallback: %q", stderr.String())
 	}
 	if v, ok := mustGet(t, s, "tool"); !ok || v != "cursor" {
@@ -1151,7 +1151,7 @@ func TestRun_FromSettings_False_AlwaysPrompts(t *testing.T) {
 	if ui.toolCalls != 1 || ui.modelCalls != 1 {
 		t.Fatalf("UI should be prompted: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
 	}
-	if strings.Contains(stderr.String(), "no stored coder selection") {
+	if strings.Contains(stderr.String(), "Choose your favourite:") {
 		t.Fatalf("stderr should not warn on explicit --from-settings=false: %q", stderr.String())
 	}
 }
