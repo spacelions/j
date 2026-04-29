@@ -28,9 +28,31 @@ func runResetArgs(t *testing.T, in io.Reader, args ...string) (string, error) {
 	return stdout.String() + stderr.String(), err
 }
 
+// runResetDirect drives runReset / runResetFull / runResetOneKey
+// without going through the cobra root tree, so the shared pre-flight
+// hook is bypassed. Tests use it to exercise the defense-in-depth
+// branches that fire when artifacts are missing or corrupt.
+func runResetDirect(t *testing.T, in io.Reader, args ...string) (string, error) {
+	t.Helper()
+	cmd := newResetCmd()
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stdout)
+	if in == nil {
+		in = &bytes.Buffer{}
+	}
+	cmd.SetIn(in)
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return stdout.String(), err
+}
+
+// TestReset_Full_MissingJDir pins the `nothing to reset` defense
+// branch: when .j is missing the full-reset path short-circuits.
+// We bypass cobra so pre-flight does not heal the missing layout.
 func TestReset_Full_MissingJDir(t *testing.T) {
 	t.Chdir(t.TempDir())
-	out, err := runResetArgs(t, &bytes.Buffer{}, "reset")
+	out, err := runResetDirect(t, &bytes.Buffer{})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -39,6 +61,9 @@ func TestReset_Full_MissingJDir(t *testing.T) {
 	}
 }
 
+// TestReset_Full_EmptyJ pins the second defense branch: .j exists
+// but settings does not. We bypass cobra so the partial layout
+// reaches runReset instead of being completed by pre-flight.
 func TestReset_Full_EmptyJ(t *testing.T) {
 	t.Chdir(t.TempDir())
 	jDir, err := store.DefaultDir()
@@ -48,7 +73,7 @@ func TestReset_Full_EmptyJ(t *testing.T) {
 	if err := os.MkdirAll(jDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	out, err := runResetArgs(t, &bytes.Buffer{}, "reset")
+	out, err := runResetDirect(t, &bytes.Buffer{})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -59,6 +84,7 @@ func TestReset_Full_EmptyJ(t *testing.T) {
 
 func TestReset_Full_YesRemovesJ(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	if _, err := runSetArgs(t, "set", "a.k", "v"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -83,6 +109,7 @@ func TestReset_Full_YesRemovesJ(t *testing.T) {
 
 func TestReset_Full_StdinYes(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	if _, err := runSetArgs(t, "set", "a.k", "v"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -98,6 +125,7 @@ func TestReset_Full_StdinYes(t *testing.T) {
 
 func TestReset_Full_StdinY(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	if _, err := runSetArgs(t, "set", "a.k", "v"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -113,6 +141,7 @@ func TestReset_Full_StdinY(t *testing.T) {
 
 func TestReset_Full_StdinNo(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	if _, err := runSetArgs(t, "set", "a.k", "v"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -129,9 +158,12 @@ func TestReset_Full_StdinNo(t *testing.T) {
 	}
 }
 
+// TestReset_Single_MissingDB pins the `nothing to reset` defense
+// branch in runResetOneKey when settings is missing. We bypass cobra
+// so the missing-file state survives long enough to reach the branch.
 func TestReset_Single_MissingDB(t *testing.T) {
 	t.Chdir(t.TempDir())
-	out, err := runResetArgs(t, &bytes.Buffer{}, "reset", "a.b")
+	out, err := runResetDirect(t, &bytes.Buffer{}, "a.b")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -142,6 +174,7 @@ func TestReset_Single_MissingDB(t *testing.T) {
 
 func TestReset_Single_RemovesValue(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	if _, err := runSetArgs(t, "set", "b.k1", "x"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -179,6 +212,7 @@ func TestReset_Single_RemovesValue(t *testing.T) {
 
 func TestReset_Single_MissingKeyStillOK(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	if _, err := runSetArgs(t, "set", "b.k2", "y"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -190,6 +224,7 @@ func TestReset_Single_MissingKeyStillOK(t *testing.T) {
 
 func TestReset_Single_BadKey(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	_, err := runResetArgs(t, &bytes.Buffer{}, "reset", "nodot")
 	if err == nil {
 		t.Fatal("expected error")
@@ -208,8 +243,9 @@ func TestReadConfirmationLine_ReadError(t *testing.T) {
 	}
 }
 
-// TestRunResetOneKey_StatError exercises the non-ENOENT stat error path
-// (same shape as the list path when .j is a file).
+// TestRunResetOneKey_StatError exercises the non-ENOENT stat error
+// path: when .j is a regular file the settings stat fails. We bypass
+// cobra so the corrupt layout reaches runResetOneKey.
 func TestRunResetOneKey_StatError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	d, err := store.DefaultDir()
@@ -219,8 +255,7 @@ func TestRunResetOneKey_StatError(t *testing.T) {
 	if err := os.WriteFile(d, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = runResetArgs(t, &bytes.Buffer{}, "reset", "a.b")
-	if err == nil {
+	if _, err := runResetDirect(t, &bytes.Buffer{}, "a.b"); err == nil {
 		t.Fatal("expected error")
 	}
 }

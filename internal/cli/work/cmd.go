@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/preflight"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 )
@@ -26,6 +27,7 @@ func New() *cobra.Command {
 			"interactive picker over plan-done tasks. The coder updates the existing task " +
 			"row in place (plan-done -> working -> work-done|help) when sourced from " +
 			"bbolt; legacy imports create a new task row.",
+		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return Run(cmd.Context(), Options{
 				TaskID:       viper.GetString("work.task"),

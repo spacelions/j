@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -20,11 +22,39 @@ func runSettingsArgs(t *testing.T, args ...string) (string, string, error) {
 	return stdout.String(), stderr.String(), err
 }
 
+// runListBare exercises the plain `j settings` list path WITHOUT
+// going through the cobra wiring (and therefore without pre-flight).
+// Tests use it to drive the defensive branches in runList that the
+// pre-flight contract would otherwise hide.
+func runListBare(t *testing.T) (string, error) {
+	t.Helper()
+	cmd := &cobra.Command{}
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	err := runList(cmd)
+	return stdout.String(), err
+}
+
+// mustInit lays down the .j layout in the current working directory.
+// Tests must call this helper after t.Chdir so the new pre-flight
+// contract is satisfied (otherwise the j settings command intercepts
+// with the init prompt). Idempotent.
+func mustInit(t *testing.T) {
+	t.Helper()
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+}
+
+// TestList_MissingDB pins the defense-in-depth branch in runList: a
+// missing settings file prints "no settings stored" instead of
+// surfacing a stat error. Pre-flight normally heals this state; we
+// bypass cobra to keep the file missing while exercising runList.
 func TestList_MissingDB(t *testing.T) {
 	t.Chdir(t.TempDir())
-	out, _, err := runSettingsArgs(t)
+	out, err := runListBare(t)
 	if err != nil {
-		t.Fatalf("Execute: %v", err)
+		t.Fatalf("runList: %v", err)
 	}
 	if !strings.Contains(out, "no settings stored") {
 		t.Fatalf("stdout = %q, want no settings", out)
@@ -33,17 +63,7 @@ func TestList_MissingDB(t *testing.T) {
 
 func TestList_EmptyDB(t *testing.T) {
 	t.Chdir(t.TempDir())
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
+	mustInit(t)
 
 	out, _, err := runSettingsArgs(t)
 	if err != nil {
@@ -56,6 +76,7 @@ func TestList_EmptyDB(t *testing.T) {
 
 func TestList_PrintsSortedEntries(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	path, err := store.DefaultPath()
 	if err != nil {
 		t.Fatal(err)
@@ -103,8 +124,10 @@ func TestList_PrintsSortedEntries(t *testing.T) {
 	}
 }
 
-// TestList_OpenError forces store.Open to fail: path exists as a
-// directory so the DB cannot be opened.
+// TestList_OpenError forces store.Open to fail: the settings path
+// exists as a directory so bolt.Open cannot open it. The test
+// bypasses cobra (and pre-flight) so the corrupt layout reaches
+// runList unchanged.
 func TestList_OpenError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	path, err := store.DefaultPath()
@@ -114,13 +137,14 @@ func TestList_OpenError(t *testing.T) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = runSettingsArgs(t)
-	if err == nil {
+	if _, err := runListBare(t); err == nil {
 		t.Fatal("expected open error")
 	}
 }
 
-// TestList_StatNonENOENT exercises a stat error that is not ErrNotExist.
+// TestList_StatNonENOENT exercises a stat error that is not
+// ErrNotExist: a file at the .j path makes the parent stat fail. The
+// test bypasses cobra so the corrupt layout survives pre-flight.
 func TestList_StatNonENOENT(t *testing.T) {
 	t.Chdir(t.TempDir())
 	dir, err := store.DefaultDir()
@@ -130,16 +154,16 @@ func TestList_StatNonENOENT(t *testing.T) {
 	if err := os.WriteFile(dir, []byte("not a dir"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = runSettingsArgs(t)
-	if err == nil {
+	if _, err := runListBare(t); err == nil {
 		t.Fatal("expected stat error to propagate")
 	}
 }
 
-// TestList_EmptyBucketsPath prints the same as missing keys: DB
+// TestList_OnlyEmptyBuckets prints the same as missing keys: a DB
 // with only empty bucket names still lists no KVs, IsEmpty is true.
 func TestList_OnlyEmptyBuckets(t *testing.T) {
 	t.Chdir(t.TempDir())
+	mustInit(t)
 	path, err := store.DefaultPath()
 	if err != nil {
 		t.Fatal(err)

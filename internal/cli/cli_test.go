@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/settings"
+	"github.com/spacelions/j/internal/store"
 )
 
 // TestMain chdir's the entire cli-package test binary into an
@@ -32,6 +33,24 @@ func resetGlobals(t *testing.T) {
 	t.Helper()
 	viper.Reset()
 	t.Cleanup(func() { viper.Reset() })
+}
+
+// mustInit lays down the .j layout in the current working directory.
+// CLI tests that exercise plan/work/tasks/settings via Execute must
+// call this helper so the new pre-flight contract is satisfied.
+// Idempotent.
+func mustInit(t *testing.T) {
+	t.Helper()
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	t.Cleanup(func() {
+		jDir, err := store.DefaultDir()
+		if err != nil {
+			return
+		}
+		_ = os.RemoveAll(jDir)
+	})
 }
 
 func captureStderr(t *testing.T, fn func()) string {
@@ -121,12 +140,14 @@ func TestExecute_WebMissingKey(t *testing.T) {
 
 func TestExecute_PlanInvalidFromFile_FromFlag(t *testing.T) {
 	resetGlobals(t)
+	mustInit(t)
 	withArgs(t, "plan", "--from-file", "/this/path/does/not/exist.md")
 	assertExecuteFails(t, "j:", "stat")
 }
 
 func TestExecute_PlanInvalidFromFile_FromEnv(t *testing.T) {
 	resetGlobals(t)
+	mustInit(t)
 	t.Setenv("PLAN_FROM_FILE", "/this/path/does/not/exist.md")
 	withArgs(t, "plan")
 	assertExecuteFails(t, "j:", "stat")
@@ -139,6 +160,7 @@ func TestExecute_PlanInvalidFromFile_FromEnv(t *testing.T) {
 // to observe the bound value.
 func TestExecute_PlanInteractiveFlag_FromFlag(t *testing.T) {
 	resetGlobals(t)
+	mustInit(t)
 	withArgs(t, "plan", "--interactive=false", "--from-file", "/this/path/does/not/exist.md")
 	assertExecuteFails(t, "stat")
 	if viper.GetBool("plan.interactive") {
@@ -148,6 +170,7 @@ func TestExecute_PlanInteractiveFlag_FromFlag(t *testing.T) {
 
 func TestExecute_PlanInteractiveFlag_FromEnv(t *testing.T) {
 	resetGlobals(t)
+	mustInit(t)
 	t.Setenv("PLAN_INTERACTIVE", "false")
 	t.Setenv("PLAN_FROM_FILE", "/this/path/does/not/exist.md")
 	withArgs(t, "plan")
@@ -159,12 +182,14 @@ func TestExecute_PlanInteractiveFlag_FromEnv(t *testing.T) {
 
 func TestExecute_WorkInvalidFromFile_FromFlag(t *testing.T) {
 	resetGlobals(t)
+	mustInit(t)
 	withArgs(t, "work", "--from-file", "/this/path/does/not/exist.md")
 	assertExecuteFails(t, "j:", "stat")
 }
 
 func TestExecute_WorkInvalidFromFile_FromEnv(t *testing.T) {
 	resetGlobals(t)
+	mustInit(t)
 	t.Setenv("WORK_FROM_FILE", "/this/path/does/not/exist.md")
 	withArgs(t, "work")
 	assertExecuteFails(t, "j:", "stat")
@@ -177,6 +202,7 @@ func TestExecute_WorkInvalidFromFile_FromEnv(t *testing.T) {
 // to observe the bound value.
 func TestExecute_WorkInteractiveFlag_FromFlag(t *testing.T) {
 	resetGlobals(t)
+	mustInit(t)
 	withArgs(t, "work", "--interactive=false", "--from-file", "/this/path/does/not/exist.md")
 	assertExecuteFails(t, "stat")
 	if viper.GetBool("work.interactive") {
@@ -186,6 +212,7 @@ func TestExecute_WorkInteractiveFlag_FromFlag(t *testing.T) {
 
 func TestExecute_WorkInteractiveFlag_FromEnv(t *testing.T) {
 	resetGlobals(t)
+	mustInit(t)
 	t.Setenv("WORK_INTERACTIVE", "false")
 	t.Setenv("WORK_FROM_FILE", "/this/path/does/not/exist.md")
 	withArgs(t, "work")

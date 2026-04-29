@@ -217,10 +217,30 @@ func (o Options) withDefaults() Options {
 		o.UI = newHuhUI(o.Stdin, o.Stderr)
 	}
 	if o.Store == nil {
-		if s, ok := store.OpenDefault(o.Stderr, store.BucketPlanner); ok {
+		if s, ok := openSettingsStore(o.Stderr); ok {
 			o.Store = s
 			o.closeStore = true
 		}
 	}
 	return o
+}
+
+// openSettingsStore opens `<cwd>/.j/settings` for the planner. It is
+// the post-init replacement for store.OpenDefault: pre-flight has
+// already created the layout, so failures here are real (e.g.
+// concurrent locks) and surface as a single "warning: ..." line on
+// stderr. Best-effort by design; nil store callers (no recorded
+// selection) are tolerated downstream.
+func openSettingsStore(stderr io.Writer) (*store.Store, bool) {
+	path, err := store.DefaultPath()
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: settings path: %v\n", err)
+		return nil, false
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: settings db: %v\n", err)
+		return nil, false
+	}
+	return s, true
 }

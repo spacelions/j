@@ -185,7 +185,7 @@ func resolvePlan(ctx context.Context, opts Options) (resolved, error) {
 // the row) so we derive paths via filepath.Join instead of round-
 // tripping through the path helpers and their Getwd error returns.
 func resolveByTaskID(opts Options, id string) (resolved, error) {
-	s, ok := store.OpenTaskLog(opts.Stderr, store.BucketTasks)
+	s, ok := openTaskLog(opts.Stderr)
 	if !ok {
 		return resolved{}, errors.New("work: tasks db unavailable")
 	}
@@ -261,7 +261,7 @@ func resolveFromFile(opts Options, raw string) (resolved, error) {
 // the most recent first (SortTasks already groups active first; we
 // filter here so the UI picker only shows actionable rows).
 func listPlanDoneTasks(opts Options) ([]store.Task, error) {
-	s, ok := store.OpenTaskLog(opts.Stderr, store.BucketTasks)
+	s, ok := openTaskLog(opts.Stderr)
 	if !ok {
 		return nil, errors.New("work: tasks db unavailable")
 	}
@@ -349,10 +349,48 @@ func (o Options) withDefaults() Options {
 		o.UI = newHuhUI(o.Stdin, o.Stderr)
 	}
 	if o.Store == nil {
-		if s, ok := store.OpenDefault(o.Stderr, store.BucketCoder); ok {
+		if s, ok := openSettingsStore(o.Stderr); ok {
 			o.Store = s
 			o.closeStore = true
 		}
 	}
 	return o
+}
+
+// openSettingsStore opens `<cwd>/.j/settings` for the coder. It is
+// the post-init replacement for store.OpenDefault: pre-flight has
+// already created the layout, so failures here are real (e.g.
+// concurrent locks) and surface as a single "warning: ..." line on
+// stderr.
+func openSettingsStore(stderr io.Writer) (*store.Store, bool) {
+	path, err := store.DefaultPath()
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: settings path: %v\n", err)
+		return nil, false
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: settings db: %v\n", err)
+		return nil, false
+	}
+	return s, true
+}
+
+// openTaskLog opens `<cwd>/.j/tasks/list.db` for the work flow. Like
+// openSettingsStore this is the post-init replacement for
+// store.OpenTaskLog: pre-flight ensures the file exists, so any
+// failure here is reported once on stderr and the lifecycle
+// degrades to a nil-store no-op.
+func openTaskLog(stderr io.Writer) (*store.Store, bool) {
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
+		return nil, false
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
+		return nil, false
+	}
+	return s, true
 }
