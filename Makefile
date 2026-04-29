@@ -37,6 +37,7 @@ coverage:
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+choose[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
 		-e 'internal/store/lazy\.go:[0-9]+:[[:space:]]+OpenDefault[[:space:]]' \
+		-e 'internal/store/lazy\.go:[0-9]+:[[:space:]]+OpenTaskLog[[:space:]]' \
 		-e 'internal/cli/settings/cmd\.go:[0-9]+:[[:space:]]+withOpenStore[[:space:]]' \
 		-e 'internal/cli/settings/list\.go:[0-9]+:[[:space:]]+runList[[:space:]]' \
 		-e 'internal/cli/settings/set\.go:[0-9]+:[[:space:]]+runSet[[:space:]]' \
@@ -46,6 +47,13 @@ coverage:
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+DefaultDir[[:space:]]' \
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+IsEmpty[[:space:]]' \
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+DefaultPath[[:space:]]' \
+		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+DefaultTasksPath[[:space:]]' \
+		-e 'internal/store/tasks\.go:[0-9]+:[[:space:]]+PutTask[[:space:]]' \
+		-e 'internal/cli/plan/tasklog\.go:[0-9]+:[[:space:]]+beginPlanTask[[:space:]]' \
+		-e 'internal/cli/plan/tasklog\.go:[0-9]+:[[:space:]]+planResumeCursor[[:space:]]' \
+		-e 'internal/cli/work/tasklog\.go:[0-9]+:[[:space:]]+beginWorkTask[[:space:]]' \
+		-e 'internal/cli/tasks/cmd\.go:[0-9]+:[[:space:]]+listTasks[[:space:]]' \
+		-e 'internal/cli/tasks/cmd\.go:[0-9]+:[[:space:]]+writeTasks[[:space:]]' \
 		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+AskTarget[[:space:]]' \
 		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+SelectTool[[:space:]]' \
 		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+SelectModel[[:space:]]' \

@@ -64,6 +64,63 @@ func TestOpenDefault_BucketFails(t *testing.T) {
 	}
 }
 
+func TestOpenTaskLog_Success(t *testing.T) {
+	t.Chdir(t.TempDir())
+	var stderr bytes.Buffer
+	s, ok := OpenTaskLog(&stderr, BucketTasks)
+	if !ok {
+		t.Fatalf("OpenTaskLog failed: %s", stderr.String())
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr should be empty, got %q", stderr.String())
+	}
+	buckets, err := s.ListBuckets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(buckets) != 1 || buckets[0] != BucketTasks {
+		t.Fatalf("buckets = %v", buckets)
+	}
+}
+
+// TestOpenTaskLog_OpenFails replaces the would-be DB path with a
+// directory so bolt.Open errors. The helper must surface the warning
+// and return ok=false.
+func TestOpenTaskLog_OpenFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	path, err := DefaultTasksPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	if s, ok := OpenTaskLog(&stderr, BucketTasks); ok {
+		_ = s.Close()
+		t.Fatal("expected open to fail")
+	}
+	if !strings.Contains(stderr.String(), "tasks db") {
+		t.Fatalf("stderr = %q, want db warning", stderr.String())
+	}
+}
+
+// TestOpenTaskLog_BucketFails passes an empty bucket name; bbolt
+// rejects empty bucket names with ErrBucketNameRequired, exercising
+// the EnsureBucket failure branch.
+func TestOpenTaskLog_BucketFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	var stderr bytes.Buffer
+	if s, ok := OpenTaskLog(&stderr, ""); ok {
+		_ = s.Close()
+		t.Fatal("expected ensure bucket to fail")
+	}
+	if !strings.Contains(stderr.String(), "tasks bucket") {
+		t.Fatalf("stderr = %q, want bucket warning", stderr.String())
+	}
+}
+
 func TestPersistAgentSelection_NilStore(t *testing.T) {
 	var stderr bytes.Buffer
 	PersistAgentSelection(nil, &stderr, BucketPlanner, "cursor", "sonnet-4", true)

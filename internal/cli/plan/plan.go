@@ -98,7 +98,9 @@ func Run(ctx context.Context, opts Options) error {
 // runMarkdown is the original markdown-file flow: resolve and read the
 // target, pick a tool/model, verify login, and ask the agent to produce
 // <stem>.plan.md. The agent owns the file write; we just stat it after
-// to surface success or a "was not written" warning.
+// to surface success or a "was not written" warning. A `planning` task
+// is logged before agent.Plan and updated to `planned` (with the
+// produced plan body attached) on success or `help` on failure.
 func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 	target, err := mdfile.Resolve(rawTarget)
 	if err != nil {
@@ -115,14 +117,23 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 	}
 
 	out := planOutputPath(target)
-	if err := agent.Plan(ctx, codingagents.PlanRequest{
+	lc := beginPlanTask(opts, agent, model, target, string(body))
+	planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		TargetPath:  target,
 		Body:        string(body),
 		Model:       model,
 		OutputPath:  out,
 		Interactive: opts.Interactive,
-	}); err != nil {
-		return err
+	})
+	var planMD string
+	if planErr == nil {
+		if data, readErr := os.ReadFile(out); readErr == nil {
+			planMD = string(data)
+		}
+	}
+	lc.finishPlan(planErr, planMD)
+	if planErr != nil {
+		return planErr
 	}
 
 	if _, err := os.Stat(out); err == nil {
@@ -136,16 +147,20 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 // runScratch hands the agent's plan-mode TUI to the user with no
 // markdown body and no expected output file. The empty TargetPath +
 // OutputPath in the request is the contract that signals scratch to
-// the agent.
+// the agent. A `planning` task is still logged so `j tasks` reflects
+// every real plan run.
 func runScratch(ctx context.Context, opts Options) error {
 	agent, model, err := selectPlanner(ctx, opts)
 	if err != nil {
 		return err
 	}
-	return agent.Plan(ctx, codingagents.PlanRequest{
+	lc := beginPlanTask(opts, agent, model, "", "")
+	planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		Model:       model,
 		Interactive: true,
 	})
+	lc.finishPlan(planErr, "")
+	return planErr
 }
 
 // selectPlanner is the single chokepoint for choosing the planner

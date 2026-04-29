@@ -93,13 +93,16 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 
-	if err := agent.Work(ctx, codingagents.WorkRequest{
+	lc := beginWorkTask(opts, agent, model, plan, string(body))
+	workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:    plan,
 		Body:        string(body),
 		Model:       model,
 		Interactive: opts.Interactive,
-	}); err != nil {
-		return err
+	})
+	lc.finishWork(workErr)
+	if workErr != nil {
+		return workErr
 	}
 
 	fmt.Fprintf(opts.Stdout, "coding against %s\n", plan)

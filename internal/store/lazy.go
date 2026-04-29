@@ -33,6 +33,29 @@ func OpenDefault(stderr io.Writer, bucket string) (*Store, bool) {
 	return s, true
 }
 
+// OpenTaskLog opens `<cwd>/.j/tasks` (a separate bbolt file from
+// settings), ensures the bucket, and on failure reports one stderr
+// line and returns ok=false so the caller can skip task logging the
+// same way plan/work skip settings persistence.
+func OpenTaskLog(stderr io.Writer, bucket string) (*Store, bool) {
+	path, err := DefaultTasksPath()
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
+		return nil, false
+	}
+	s, err := Open(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
+		return nil, false
+	}
+	if err := s.EnsureBucket(bucket); err != nil {
+		fmt.Fprintf(stderr, "warning: tasks bucket: %v\n", err)
+		_ = s.Close()
+		return nil, false
+	}
+	return s, true
+}
+
 // PersistAgentSelection writes tool/model/interactive into bucket as a
 // best-effort operation: any error is logged to stderr as a single
 // "warning: persist <key>: ..." line and the function returns. A nil

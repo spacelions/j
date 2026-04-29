@@ -34,6 +34,10 @@ const dirName = ".j"
 // fileName is the bbolt file inside dirName.
 const fileName = "settings"
 
+// TasksFileName is the bbolt filename for per-project task log entries
+// (separate from settings) at `<cwd>/.j/` + TasksFileName.
+const TasksFileName = "tasks"
+
 // openTimeout bounds how long we'll wait for a file lock when opening
 // the bolt DB. A short timeout keeps tests responsive and surfaces
 // concurrent-access bugs quickly.
@@ -74,6 +78,16 @@ func DefaultPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, fileName), nil
+}
+
+// DefaultTasksPath returns the absolute path to the per-project task
+// log database (`<cwd>/.j/tasks`).
+func DefaultTasksPath() (string, error) {
+	dir, err := DefaultDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, TasksFileName), nil
 }
 
 // Open creates the parent directory (if missing) and opens the bolt
