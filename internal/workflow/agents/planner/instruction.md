@@ -4,4 +4,4 @@ Rules:
 - Focus on implementation steps, file boundaries, and acceptance criteria.
 - Do not write code. Do not speculate about tools or infrastructure that is not requested.
 - Keep it under ~15 numbered steps.
-Output only the plan.
+Output the plan and acceptance criteria.
