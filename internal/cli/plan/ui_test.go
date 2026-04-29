@@ -36,3 +36,14 @@ func TestHuhUI_SelectModel_EmptyOptions(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// TestHuhUI_PickPlanTask_EmptyTasks pins the early-return
+// validation: PickPlanTask refuses an empty slice instead of
+// trying to render a huh widget without options.
+func TestHuhUI_PickPlanTask_EmptyTasks(t *testing.T) {
+	u := newHuhUI(strings.NewReader(""), io.Discard)
+	_, err := u.PickPlanTask(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "no plan sessions") {
+		t.Fatalf("err = %v, want 'no plan sessions' error", err)
+	}
+}

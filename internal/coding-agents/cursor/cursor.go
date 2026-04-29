@@ -97,8 +97,9 @@ func (*Agent) CheckLogin(ctx context.Context) error {
 // Two flavours are supported:
 //
 //   - Interactive (req.Interactive == true): launch cursor's TUI
-//     (no --print, no --mode) and ask cursor to save both files before
-//     exiting via a suffix on the prompt.
+//     with --mode plan and ask cursor to save both files before
+//     exiting via a suffix on the prompt. The TUI is allowed to
+//     write files in plan mode for this purpose.
 //   - Headless (req.Interactive == false): --print --output-format text
 //     --mode plan, with the same save-instruction suffix on the
 //     prompt; cursor writes the files via its tool use and the
@@ -119,7 +120,7 @@ func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
 		if req.ResumeChatID != "" {
 			args = append(args, "--resume", req.ResumeChatID)
 		}
-		args = append(args, "--model", req.Model, "--workspace", workspace, prompt)
+		args = append(args, "--mode", "plan", "--model", req.Model, "--workspace", workspace, prompt)
 		if err := run.Run(ctx, Binary, args...); err != nil {
 			return fmt.Errorf("cursor-agent: %w", err)
 		}

@@ -64,5 +64,6 @@ func New() *cobra.Command {
 	_ = viper.BindEnv("work.from_file", "WORK_FROM_FILE")
 	_ = viper.BindEnv("work.interactive", "WORK_INTERACTIVE")
 	_ = viper.BindEnv("work.from_settings", "WORK_FROM_SETTINGS")
+	cmd.AddCommand(newResumeCmd())
 	return cmd
 }

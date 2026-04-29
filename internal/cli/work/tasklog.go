@@ -63,6 +63,30 @@ func beginWorkTaskReuse(opts Options, agent codingagents.Agent, model string, ex
 	return openLifecycle(opts, task)
 }
 
+// beginWorkTaskResume is the resume-flow companion of
+// beginWorkTaskReuse. The two functions diverge in two places:
+//
+//  1. The existing WorkResumeCursor is preserved verbatim instead
+//     of being overwritten with a fresh `Agent.NewResumeID` value
+//     (the whole point of resume is reusing the cursor recorded on
+//     the task row).
+//  2. The original WorkBeginAt timestamp is preserved when set so
+//     the task row keeps its first-run lineage; only WorkEndAt /
+//     DoneAt are cleared so finishWork stamps fresh values on the
+//     next finalize. Tool/model are kept verbatim because resume
+//     never re-prompts the user for them.
+func beginWorkTaskResume(opts Options, existing store.Task) *workLifecycle {
+	task := existing
+	task.Status = store.StatusWorking
+	task.WorkEndAt = nil
+	task.DoneAt = nil
+	if task.WorkBeginAt == nil {
+		begin := time.Now().UTC()
+		task.WorkBeginAt = &begin
+	}
+	return openLifecycle(opts, task)
+}
+
 // openLifecycle is the shared helper that opens the task log,
 // best-effort writes the initial row, and returns a workLifecycle
 // suitable for finishWork. Open / put failures warn once and then

@@ -36,13 +36,9 @@ func New() *cobra.Command {
 			"verifying, help) appear first; inactive tasks (plan-done, " +
 			"work-done, verify-done, completed) follow, sorted by the " +
 			"latest of their phase end timestamps. Each task is " +
-			"rendered as one summary row followed by three indented " +
-			"lines showing the per-phase resume sessions: `plan " +
-			"session`, `work session`, and `verify session`. Empty " +
-			"sessions show a dash. Resume a Cursor session with " +
-			"`cursor-agent --resume <id>` using the id printed here. " +
-			"Task bodies live as files in <cwd>/.j/tasks/<id>/ " +
-			"(requirements.md, plan.md).",
+			"rendered as a single summary row carrying id, status, " +
+			"tool, model, and the human summary. Task bodies live as " +
+			"files in <cwd>/.j/tasks/<id>/ (requirements.md, plan.md).",
 		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return listTasks(cmd.OutOrStdout())
@@ -84,10 +80,10 @@ func listTasks(stdout io.Writer) error {
 }
 
 // writeTasks emits one summary line per task (tab-aligned via
-// tabwriter) plus three indented session lines so consumers can see
-// every per-phase resume id without widening the table. The summary
-// line carries id, status, tool, model, and the human summary; the
-// session lines carry the plan / work / verify cursor (or a dash).
+// tabwriter) carrying id, status, tool, model, and the human summary.
+// Per-phase resume cursors (plan / work / verify) are still kept on
+// the underlying Task so `j plan resume` and `j work resume` can use
+// them, but `j tasks` no longer surfaces them in the listing.
 //
 // tabwriter buffers writes internally and only surfaces underlying
 // writer errors on Flush, so per-line Fprintln returns are
@@ -98,17 +94,15 @@ func writeTasks(out io.Writer, tasks []store.Task) error {
 	for _, t := range tasks {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
 			t.ID, t.Status, t.InvokedTool, t.InvokedModel, t.Summary)
-		fmt.Fprintln(tw, formatSession("plan session", t.PlanResumeCursor))
-		fmt.Fprintln(tw, formatSession("work session", t.WorkResumeCursor))
-		fmt.Fprintln(tw, formatSession("verify session", t.VerifyResumeCursor))
 	}
 	return tw.Flush()
 }
 
 // formatSession renders a single indented session line of the form
 // "  <label>: <id>" where id falls back to "-" when empty. The
-// leading spaces visually nest the line under its summary row even
-// after tabwriter aligns the table above.
+// helper is no longer used by `j tasks` itself but is retained as a
+// package-private utility so resume-side selectors can reuse the
+// same label shape if they need to surface session ids.
 func formatSession(label, id string) string {
 	if id == "" {
 		id = "-"

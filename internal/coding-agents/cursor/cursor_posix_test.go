@@ -181,7 +181,9 @@ func TestCheckLogin(t *testing.T) {
 
 // TestPlan_Interactive pins the interactive flow's argv shape and the
 // embedded save instruction in the prompt: the agent is responsible
-// for writing both requirements.md and plan.md.
+// for writing both requirements.md and plan.md. The interactive path
+// also passes `--mode plan` (alongside the headless path) so users get
+// the same plan-mode behaviour in the TUI.
 func TestPlan_Interactive(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "spec.md")
@@ -204,7 +206,7 @@ func TestPlan_Interactive(t *testing.T) {
 		t.Fatalf("Plan: %v", err)
 	}
 	argv := readCalls(t, calls)
-	want := []string{"--model", "composer-2-fast", "--workspace", dir}
+	want := []string{"--mode", "plan", "--model", "composer-2-fast", "--workspace", dir}
 	if len(argv) != len(want)+1 {
 		t.Fatalf("argv = %v", argv)
 	}
@@ -249,7 +251,7 @@ func TestPlan_Interactive_ResumeChatID(t *testing.T) {
 		t.Fatalf("Plan: %v", err)
 	}
 	argv := readCalls(t, calls)
-	want := []string{"--resume", rid, "--model", "composer-2-fast", "--workspace", dir}
+	want := []string{"--resume", rid, "--mode", "plan", "--model", "composer-2-fast", "--workspace", dir}
 	if len(argv) != len(want)+1 {
 		t.Fatalf("argv = %v", argv)
 	}

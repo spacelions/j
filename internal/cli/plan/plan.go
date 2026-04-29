@@ -174,7 +174,7 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		return planErr
 	}
 
-	fmt.Fprintf(opts.Stdout, "plan recorded as task %s\n", taskID)
+	fmt.Fprintf(opts.Stdout, "J: the requirements.md and plan.md are saved in .j/tasks/%s/\n", taskID)
 	return nil
 }
 

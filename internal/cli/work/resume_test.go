@@ -1,0 +1,656 @@
+package work
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
+
+	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/store"
+)
+
+// seedResumableWork creates a task row plus the matching plan.md
+// so RunResume's best-effort read does not warn. The default row
+// is `work-done` with a non-empty WorkResumeCursor; tests override
+// fields via mutate.
+func seedResumableWork(t *testing.T, mutate func(*store.Task)) (string, *time.Time) {
+	t.Helper()
+	id := store.NewTaskID()
+	if _, err := store.EnsureTaskDir(id); err != nil {
+		t.Fatalf("EnsureTaskDir: %v", err)
+	}
+	tasksDir, err := store.DefaultTasksDir()
+	if err != nil {
+		t.Fatalf("DefaultTasksDir: %v", err)
+	}
+	taskDir := filepath.Join(tasksDir, id)
+	if err := os.WriteFile(filepath.Join(taskDir, store.PlanFileName), []byte("1. step\n2. step\n"), 0o644); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	planBegin := time.Now().UTC().Add(-3 * time.Hour)
+	planEnd := planBegin.Add(time.Hour)
+	workBegin := planEnd.Add(time.Minute)
+	workEnd := workBegin.Add(30 * time.Minute)
+	task := store.Task{
+		ID:               id,
+		Status:           store.StatusWorkDone,
+		InvokedTool:      "cursor",
+		InvokedModel:     "sonnet-4",
+		PlanResumeCursor: "plan-cursor",
+		WorkResumeCursor: "work-cursor",
+		Summary:          "seeded work",
+		PlanBeginAt:      &planBegin,
+		PlanEndAt:        &planEnd,
+		WorkBeginAt:      &workBegin,
+		WorkEndAt:        &workEnd,
+	}
+	if mutate != nil {
+		mutate(&task)
+	}
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatalf("DefaultTasksDBPath: %v", err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.PutTask(task); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	return id, task.WorkBeginAt
+}
+
+func TestRunResume_Work_EmptySelector(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	agent := newScriptedAgent()
+	ui := &scriptedUI{}
+	var stdout bytes.Buffer
+
+	err := RunResume(context.Background(), ResumeOptions{
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if got := strings.TrimRight(stdout.String(), "\n"); got != "J: there are no resumable sessions" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if agent.worked != 0 {
+		t.Fatal("agent.Work should not be called when no sessions exist")
+	}
+	if ui.pickResumeCalls != 0 {
+		t.Fatalf("PickWorkTask should not be called: pickResumeCalls=%d", ui.pickResumeCalls)
+	}
+}
+
+// TestRunResume_Work_FromTaskHappyPath pins the --from-task flow:
+// the agent receives Interactive=true and the recorded
+// WorkResumeCursor + model, the row finishes as work-done, and the
+// original WorkBeginAt is preserved. DoneAt stays nil.
+func TestRunResume_Work_FromTaskHappyPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, originalBegin := seedResumableWork(t, nil)
+	agent := newScriptedAgent()
+	var stdout bytes.Buffer
+
+	err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "work resume on task "+id) {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if agent.worked != 1 {
+		t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
+	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("Interactive should be true: %+v", agent.lastReq)
+	}
+	if agent.lastReq.ResumeChatID != "work-cursor" {
+		t.Fatalf("ResumeChatID = %q, want work-cursor", agent.lastReq.ResumeChatID)
+	}
+	if agent.lastReq.Model != "sonnet-4" {
+		t.Fatalf("Model = %q, want sonnet-4", agent.lastReq.Model)
+	}
+	if agent.resumeIDed != 0 {
+		t.Fatalf("NewResumeID should not be invoked on resume; calls=%d", agent.resumeIDed)
+	}
+	tasks := readTasks(t)
+	if len(tasks) != 1 || tasks[0].ID != id {
+		t.Fatalf("tasks = %+v", tasks)
+	}
+	got := tasks[0]
+	if got.Status != store.StatusWorkDone {
+		t.Fatalf("Status = %q, want work-done", got.Status)
+	}
+	if got.WorkBeginAt == nil || !got.WorkBeginAt.Equal(*originalBegin) {
+		t.Fatalf("WorkBeginAt = %v, want preserved %v", got.WorkBeginAt, originalBegin)
+	}
+	if got.WorkEndAt == nil {
+		t.Fatalf("WorkEndAt should be bumped: %+v", got)
+	}
+	if got.DoneAt != nil {
+		t.Fatalf("DoneAt should remain nil: %v", got.DoneAt)
+	}
+}
+
+func TestRunResume_Work_FromTaskMissing(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	agent := newScriptedAgent()
+	err := RunResume(context.Background(), ResumeOptions{
+		TaskID: "missing",
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), `task "missing" not found`) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRunResume_Work_FromTaskNoSession(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableWork(t, func(task *store.Task) { task.WorkResumeCursor = "" })
+	agent := newScriptedAgent()
+	err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "has no work session") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestRunResume_Work_SelectorPicksSecond pins the multi-task path:
+// scripted UI returns the second eligible task and the agent
+// receives that task's WorkResumeCursor.
+func TestRunResume_Work_SelectorPicksSecond(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id1, _ := seedResumableWork(t, func(task *store.Task) { task.WorkResumeCursor = "first-cursor" })
+	id2, _ := seedResumableWork(t, func(task *store.Task) { task.WorkResumeCursor = "second-cursor" })
+	agent := newScriptedAgent()
+	ui := &scriptedUI{resumePicked: id2}
+
+	err := RunResume(context.Background(), ResumeOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if ui.pickResumeCalls != 1 {
+		t.Fatalf("PickWorkTask calls = %d, want 1", ui.pickResumeCalls)
+	}
+	if ui.pickCalls != 0 {
+		t.Fatalf("PickPlanTask should not be called on resume; calls=%d", ui.pickCalls)
+	}
+	if agent.lastReq.ResumeChatID != "second-cursor" {
+		t.Fatalf("ResumeChatID = %q, want second-cursor (id1=%s)", agent.lastReq.ResumeChatID, id1)
+	}
+}
+
+// TestRunResume_Work_PickerReturnsUnknownID covers the post-loop
+// branch where the picker returns an off-list id (impossible with
+// the real huh widget but reachable via a scripted fake).
+func TestRunResume_Work_PickerReturnsUnknownID(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	seedResumableWork(t, nil)
+	seedResumableWork(t, nil)
+	agent := newScriptedAgent()
+	ui := &scriptedUI{resumePicked: "ghost-id"}
+	err := RunResume(context.Background(), ResumeOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err == nil || !strings.Contains(err.Error(), `task "ghost-id" not found`) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRunResume_Work_UnknownTool(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableWork(t, func(task *store.Task) { task.InvokedTool = "ghost" })
+	agent := newScriptedAgent()
+	err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRunResume_Work_AgentError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableWork(t, nil)
+	agent := newScriptedAgent()
+	agent.workErr = errors.New("work boom")
+
+	err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "work boom") {
+		t.Fatalf("err = %v", err)
+	}
+	tasks := readTasks(t)
+	if len(tasks) != 1 || tasks[0].Status != store.StatusHelp {
+		t.Fatalf("tasks = %+v, want one help-status row", tasks)
+	}
+	if tasks[0].WorkEndAt == nil {
+		t.Fatalf("WorkEndAt should be bumped on failure: %+v", tasks[0])
+	}
+	if tasks[0].DoneAt != nil {
+		t.Fatalf("DoneAt should remain nil: %v", tasks[0].DoneAt)
+	}
+}
+
+// TestRunResume_Work_StatusWorkingIsResumable pins the permissive
+// eligibility filter: a task whose status is `working` (which the
+// non-resume `j work --from-task` path rejects via validateForWork)
+// is still resumable as long as its WorkResumeCursor is non-empty.
+func TestRunResume_Work_StatusWorkingIsResumable(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableWork(t, func(task *store.Task) { task.Status = store.StatusWorking })
+	agent := newScriptedAgent()
+	err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if agent.worked != 1 {
+		t.Fatalf("agent.Work calls = %d, want 1 (working should be resumable)", agent.worked)
+	}
+}
+
+// TestRunResume_Work_AutoPicksSingle exercises the case-1 branch
+// in resolveResumeTask: a single eligible task is picked
+// automatically without consulting the UI. It also deletes
+// plan.md before invoking RunResume so readBestEffort's
+// error-swallow branch is covered (the resume flow tolerates
+// a missing plan body).
+func TestRunResume_Work_AutoPicksSingle(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableWork(t, nil)
+	tasksDir, err := store.DefaultTasksDir()
+	if err != nil {
+		t.Fatalf("DefaultTasksDir: %v", err)
+	}
+	if err := os.Remove(filepath.Join(tasksDir, id, store.PlanFileName)); err != nil {
+		t.Fatalf("Remove plan.md: %v", err)
+	}
+	agent := newScriptedAgent()
+	ui := &scriptedUI{}
+	err = RunResume(context.Background(), ResumeOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if ui.pickResumeCalls != 0 {
+		t.Fatalf("picker should not be called for a single task, calls = %d", ui.pickResumeCalls)
+	}
+	if agent.worked != 1 {
+		t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
+	}
+	if agent.lastReq.Body != "" {
+		t.Fatalf("Body should be empty when plan.md is missing, got %q", agent.lastReq.Body)
+	}
+}
+
+func TestRunResume_Work_NoAgents(t *testing.T) {
+	err := RunResume(context.Background(), ResumeOptions{Stdout: io.Discard, Stderr: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "no coding agents") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRunResume_Work_PickerError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	seedResumableWork(t, nil)
+	seedResumableWork(t, nil)
+	agent := newScriptedAgent()
+	ui := &scriptedUI{resumeErr: errors.New("picker boom")}
+	err := RunResume(context.Background(), ResumeOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err == nil || !strings.Contains(err.Error(), "picker boom") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestRunResume_Work_AppliesDefaults exercises ResumeOptions.withDefaults
+// (the nil-stdin / nil-stdout / nil-stderr / nil-UI branches).
+func TestRunResume_Work_AppliesDefaults(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	if err := RunResume(context.Background(), ResumeOptions{
+		Agents: []codingagents.Agent{newScriptedAgent()},
+	}); err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+}
+
+// TestRunResume_Work_ListUnavailable forces openTaskLog to fail by
+// parking a regular file at .j/tasks. The list helper must surface
+// the wrapped error.
+func TestRunResume_Work_ListUnavailable(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jdir := filepath.Join(dir, ".j")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := RunResume(context.Background(), ResumeOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{newScriptedAgent()},
+		UI:     &scriptedUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestRunResume_Work_FromTaskUnavailable forces resolveResumeByID
+// to see openTaskLog fail. Symmetric to the list variant.
+func TestRunResume_Work_FromTaskUnavailable(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jdir := filepath.Join(dir, ".j")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := RunResume(context.Background(), ResumeOptions{
+		TaskID: "anything",
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{newScriptedAgent()},
+		UI:     &scriptedUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestRunResume_Work_ListDecodeError plants a bad JSON payload in
+// the tasks bucket so listResumableTasks returns a decode error.
+func TestRunResume_Work_ListDecodeError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureBucket(store.BucketTasks); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketTasks, "bad", "not-json"); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	err = RunResume(context.Background(), ResumeOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{newScriptedAgent()},
+		UI:     &scriptedUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "decode task") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestRunResume_Work_FromTaskDecodeError plants a bad JSON
+// payload under a known task id and exercises the
+// resolveResumeByID branch that returns a non-fs.ErrNotExist
+// error from GetTask.
+func TestRunResume_Work_FromTaskDecodeError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureBucket(store.BucketTasks); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketTasks, "broken", "not-json"); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	err = RunResume(context.Background(), ResumeOptions{
+		TaskID: "broken",
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{newScriptedAgent()},
+		UI:     &scriptedUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "decode task") {
+		t.Fatalf("err = %v, want decode-task error from GetTask", err)
+	}
+}
+
+// TestNewResumeCmd_FromTaskFlowsToViper covers the cobra wiring.
+func TestNewResumeCmd_FromTaskFlowsToViper(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	cmd := newResumeCmd()
+	if err := cmd.Flags().Set("from-task", "abc"); err != nil {
+		t.Fatalf("Flags().Set: %v", err)
+	}
+	if got := viper.GetString("work.resume.from_task"); got != "abc" {
+		t.Errorf("work.resume.from_task = %q, want %q", got, "abc")
+	}
+}
+
+func TestNewResumeCmd_FromTaskEnv(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Setenv("WORK_RESUME_FROM_TASK", "env-task")
+
+	_ = newResumeCmd()
+	if got := viper.GetString("work.resume.from_task"); got != "env-task" {
+		t.Errorf("work.resume.from_task = %q, want %q", got, "env-task")
+	}
+}
+
+func TestNewResumeCmd_RegistersOnlyFromTask(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	cmd := newResumeCmd()
+	if cmd.Use != "resume" {
+		t.Fatalf("Use = %q", cmd.Use)
+	}
+	var names []string
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		names = append(names, f.Name)
+	})
+	if len(names) != 1 || names[0] != "from-task" {
+		t.Fatalf("flags = %v, want only [from-task]", names)
+	}
+	for _, banned := range []string{"interactive", "from-settings", "from-file"} {
+		if cmd.Flags().Lookup(banned) != nil {
+			t.Fatalf("--%s should not be registered on `j work resume`", banned)
+		}
+	}
+}
+
+// TestNewResumeCmd_RunEPropagates exercises the RunE closure by
+// pointing --from-task at a missing id; the closure must build an
+// Options struct from viper and call RunResume.
+func TestNewResumeCmd_RunEPropagates(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Chdir(t.TempDir())
+	mustInit(t)
+
+	cmd := newResumeCmd()
+	if err := cmd.Flags().Set("from-task", "missing-id"); err != nil {
+		t.Fatalf("Flags().Set: %v", err)
+	}
+	cmd.SetContext(context.Background())
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.RunE(cmd, nil)
+	if err == nil || !strings.Contains(err.Error(), `task "missing-id" not found`) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRunResume_Work_RegisteredAsChild(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	parent := New()
+	var found bool
+	for _, sub := range parent.Commands() {
+		if sub.Name() == "resume" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("`j work resume` should be registered as a child of `j work`")
+	}
+}
+
+// TestBeginWorkTaskResume_PreservesCursorAndBegin pins the lifecycle
+// helper directly: WorkResumeCursor is preserved verbatim and the
+// existing WorkBeginAt is not overwritten.
+func TestBeginWorkTaskResume_PreservesCursorAndBegin(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableWork(t, nil)
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	preBegin := existing.WorkBeginAt
+	preCursor := existing.WorkResumeCursor
+
+	lc := beginWorkTaskResume(Options{Stderr: io.Discard}, existing)
+	lc.finishWork(nil)
+
+	tasks := readTasks(t)
+	if len(tasks) != 1 || tasks[0].ID != id {
+		t.Fatalf("tasks = %+v", tasks)
+	}
+	got := tasks[0]
+	if got.WorkResumeCursor != preCursor {
+		t.Fatalf("WorkResumeCursor changed: got %q, want %q", got.WorkResumeCursor, preCursor)
+	}
+	if got.WorkBeginAt == nil || !got.WorkBeginAt.Equal(*preBegin) {
+		t.Fatalf("WorkBeginAt = %v, want preserved %v", got.WorkBeginAt, preBegin)
+	}
+}
+
+// TestBeginWorkTaskResume_NilWorkBeginAtStampsFreshOne covers the
+// fallback path where an existing task somehow has a nil
+// WorkBeginAt; the helper must mint a fresh timestamp.
+func TestBeginWorkTaskResume_NilWorkBeginAtStampsFreshOne(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableWork(t, func(task *store.Task) { task.WorkBeginAt = nil })
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+
+	lc := beginWorkTaskResume(Options{Stderr: io.Discard}, existing)
+	lc.finishWork(nil)
+
+	tasks := readTasks(t)
+	if len(tasks) != 1 || tasks[0].WorkBeginAt == nil {
+		t.Fatalf("WorkBeginAt should be stamped: %+v", tasks)
+	}
+}

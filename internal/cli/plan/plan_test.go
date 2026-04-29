@@ -110,15 +110,20 @@ type scriptedUI struct {
 	fromFile  string
 	tool      string
 	model     string
+	pickedID  string
 	sourceErr error
 	askErr    error
 	toolErr   error
 	modelErr  error
+	pickErr   error
 
 	sourceCalls int
 	askCalls    int
 	toolCalls   int
 	modelCalls  int
+	pickCalls   int
+
+	pickedTasks []store.Task
 }
 
 func (s *scriptedUI) SelectSource(context.Context) (PlanSource, error) {
@@ -157,6 +162,21 @@ func (s *scriptedUI) SelectModel(_ context.Context, options []string) (string, e
 		return s.model, nil
 	}
 	return options[0], nil
+}
+
+func (s *scriptedUI) PickPlanTask(_ context.Context, tasks []store.Task) (string, error) {
+	s.pickCalls++
+	s.pickedTasks = tasks
+	if s.pickErr != nil {
+		return "", s.pickErr
+	}
+	if s.pickedID != "" {
+		return s.pickedID, nil
+	}
+	if len(tasks) == 0 {
+		return "", errors.New("scriptedUI: no tasks to pick")
+	}
+	return tasks[0].ID, nil
 }
 
 // scriptedAgent stands in for any codingagents.Agent in tests.
@@ -318,7 +338,7 @@ func TestRun_Success_WithFlag(t *testing.T) {
 	if !strings.Contains(string(req), "# task") {
 		t.Fatalf("requirements body = %q", req)
 	}
-	if !strings.Contains(stdout.String(), "plan recorded as task ") {
+	if !strings.Contains(stdout.String(), "the requirements.md and plan.md are saved in .j/tasks/") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }

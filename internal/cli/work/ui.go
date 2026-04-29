@@ -24,8 +24,14 @@ type UI interface {
 	// PickPlanTask asks the user to choose one of the supplied tasks
 	// (rendered with their summary and id) and returns the chosen
 	// task's id. The slice is expected to be non-empty and sorted by
-	// the caller (most-recent plan-done first).
+	// the caller (most-recent plan-done first). Used by the
+	// non-resume `j work` flow.
 	PickPlanTask(ctx context.Context, tasks []store.Task) (string, error)
+	// PickWorkTask is the picker variant used by `j work resume`. It
+	// shares the underlying widget shape with PickPlanTask but
+	// renders a different title (`Select a task to resume`)
+	// so users see immediately which command they are inside.
+	PickWorkTask(ctx context.Context, tasks []store.Task) (string, error)
 	SelectTool(ctx context.Context, options []string) (string, error)
 	SelectModel(ctx context.Context, options []string) (string, error)
 }
@@ -62,8 +68,23 @@ func (u *huhUI) AskFromFile(ctx context.Context) (string, error) {
 }
 
 func (u *huhUI) PickPlanTask(ctx context.Context, tasks []store.Task) (string, error) {
+	return u.pickTask(ctx, "Select a plan-done task", "pick plan task", tasks)
+}
+
+// PickWorkTask is the resume-flow variant: it shares the shape of
+// PickPlanTask but uses a different title and error prefix so users
+// can tell at a glance which command they are inside.
+func (u *huhUI) PickWorkTask(ctx context.Context, tasks []store.Task) (string, error) {
+	return u.pickTask(ctx, "Select a task to resume", "pick work task", tasks)
+}
+
+// pickTask is the shared widget body behind PickPlanTask /
+// PickWorkTask. The title string is the only user-visible
+// difference; errPrefix tags the error messages so logs from the
+// two flows are distinguishable.
+func (u *huhUI) pickTask(ctx context.Context, title, errPrefix string, tasks []store.Task) (string, error) {
 	if len(tasks) == 0 {
-		return "", errors.New("pick plan task: no plan-done tasks available")
+		return "", fmt.Errorf("%s: no tasks available", errPrefix)
 	}
 	labels := make([]string, 0, len(tasks))
 	byLabel := make(map[string]string, len(tasks))
@@ -76,13 +97,13 @@ func (u *huhUI) PickPlanTask(ctx context.Context, tasks []store.Task) (string, e
 		labels = append(labels, label)
 		byLabel[label] = t.ID
 	}
-	chosen, err := u.choose(ctx, "Select a plan-done task", labels)
+	chosen, err := u.choose(ctx, title, labels)
 	if err != nil {
 		return "", err
 	}
 	id, ok := byLabel[chosen]
 	if !ok {
-		return "", fmt.Errorf("pick plan task: unknown selection %q", chosen)
+		return "", fmt.Errorf("%s: unknown selection %q", errPrefix, chosen)
 	}
 	return id, nil
 }

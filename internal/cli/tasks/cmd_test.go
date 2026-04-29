@@ -117,9 +117,11 @@ func TestRun_EmptyDB_PrintsEmptyMessage(t *testing.T) {
 }
 
 // TestRun_PrintsHeaderAndSortedTasks pins the table layout: header
-// first, summary rows in active-then-by-phase-end order, and three
-// indented session lines per task. Active tasks should sort before
-// inactive ones; among inactive tasks the most recent phase-end wins.
+// first, summary rows in active-then-by-phase-end order. The three
+// per-phase session lines that earlier versions emitted are gone, so
+// the output is exactly header + 1 line per task. Active tasks should
+// sort before inactive ones; among inactive tasks the most recent
+// phase-end wins.
 func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 	s := openTasksDB(t)
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -168,49 +170,83 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 	lines := splitLines(out)
-	// Header + 3 tasks * (1 summary + 3 session lines) = 1 + 12 = 13.
-	if len(lines) < 13 {
-		t.Fatalf("output has fewer rows than expected: %q", out)
+	// Header + 3 task summary rows = 4 lines. Session lines are gone.
+	if len(lines) != 4 {
+		t.Fatalf("output should be header + 3 summary rows, got %d lines: %q", len(lines), out)
 	}
 	if !strings.HasPrefix(lines[0], "ID") || !strings.Contains(lines[0], "STATUS") {
 		t.Fatalf("missing header: %q", lines[0])
 	}
 	// The new layout drops the RESUME column from the table; resume
-	// ids only appear on the indented session lines below each row.
+	// ids should not surface on this listing at all.
 	if strings.Contains(lines[0], "RESUME") {
 		t.Fatalf("header should not contain RESUME column: %q", lines[0])
 	}
-	if !strings.Contains(out, "8c7e6a9d-0f1a-4b2c-9d8e-1234567890ab") || !strings.Contains(out, "11111111-1111-4111-9111-111111111111") {
-		t.Fatalf("expected resume session ids in output: %q", out)
+	for _, banned := range []string{
+		"8c7e6a9d-0f1a-4b2c-9d8e-1234567890ab",
+		"11111111-1111-4111-9111-111111111111",
+		"11111111-2222-3333-4444-555555555555",
+	} {
+		if strings.Contains(out, banned) {
+			t.Fatalf("session id %q should not surface in `j tasks` output: %q", banned, out)
+		}
 	}
-	if !strings.Contains(out, "11111111-2222-3333-4444-555555555555") {
-		t.Fatalf("expected work session id in output: %q", out)
+	for _, banned := range []string{"plan session:", "work session:", "verify session:"} {
+		if strings.Contains(out, banned) {
+			t.Fatalf("`%s` line should be hidden: %q", banned, out)
+		}
 	}
 	// Active first, then most-recent phase-end-at first among inactive.
 	wantOrder := []string{"active-1", "aaa-new-work-done", "ddd-old-plan-done"}
-	summaryRows := []string{lines[1], lines[5], lines[9]}
+	summaryRows := []string{lines[1], lines[2], lines[3]}
 	for i, id := range wantOrder {
 		if !strings.Contains(summaryRows[i], id) {
 			t.Fatalf("summary row %d = %q, want substring %q", i, summaryRows[i], id)
 		}
 	}
-	// Each summary row is followed by exactly three indented session
-	// lines in plan/work/verify order.
-	if !strings.Contains(lines[2], "plan session:") {
-		t.Fatalf("expected plan session line: %q", lines[2])
-	}
-	if !strings.Contains(lines[3], "work session:") {
-		t.Fatalf("expected work session line: %q", lines[3])
-	}
-	if !strings.Contains(lines[4], "verify session:") {
-		t.Fatalf("expected verify session line: %q", lines[4])
-	}
-	// Empty cursors should render as a dash on the active task.
-	if !strings.Contains(lines[4], "verify session: -") {
-		t.Fatalf("empty verify cursor should show '-': %q", lines[4])
-	}
 	if !strings.Contains(out, "planning") || !strings.Contains(out, "plan-done") || !strings.Contains(out, "work-done") {
 		t.Fatalf("status column missing: %q", out)
+	}
+}
+
+// TestRun_HidesSessionLines pins the contract that `j tasks` no longer
+// emits the indented `plan session:` / `work session:` /
+// `verify session:` lines, even when the task has non-empty resume
+// cursors for every phase.
+func TestRun_HidesSessionLines(t *testing.T) {
+	s := openTasksDB(t)
+	task := store.Task{
+		ID:                 "all-cursors",
+		Status:             store.StatusPlanDone,
+		InvokedTool:        "cursor",
+		InvokedModel:       "sonnet-4",
+		PlanResumeCursor:   "plan-cursor-id",
+		WorkResumeCursor:   "work-cursor-id",
+		VerifyResumeCursor: "verify-cursor-id",
+		Summary:            "all cursors set",
+	}
+	if err := s.PutTask(task); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	out, _, err := runCommand(t)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	for _, banned := range []string{
+		"plan session:",
+		"work session:",
+		"verify session:",
+		"plan-cursor-id",
+		"work-cursor-id",
+		"verify-cursor-id",
+	} {
+		if strings.Contains(out, banned) {
+			t.Fatalf("output unexpectedly contains %q: %q", banned, out)
+		}
 	}
 }
 

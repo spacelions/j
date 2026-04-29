@@ -101,21 +101,25 @@ func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
 // scriptedUI returns predetermined answers for each prompt and tracks
 // how many times each prompt was invoked.
 type scriptedUI struct {
-	fromFile string
-	pickedID string
-	tool     string
-	model    string
-	askErr   error
-	pickErr  error
-	toolErr  error
-	modelErr error
+	fromFile     string
+	pickedID     string
+	resumePicked string
+	tool         string
+	model        string
+	askErr       error
+	pickErr      error
+	resumeErr    error
+	toolErr      error
+	modelErr     error
 
-	askCalls   int
-	pickCalls  int
-	toolCalls  int
-	modelCalls int
+	askCalls         int
+	pickCalls        int
+	pickResumeCalls  int
+	toolCalls        int
+	modelCalls       int
 
-	pickedTasks []store.Task
+	pickedTasks       []store.Task
+	pickResumedTasks  []store.Task
 }
 
 func (s *scriptedUI) AskFromFile(context.Context) (string, error) {
@@ -137,6 +141,21 @@ func (s *scriptedUI) PickPlanTask(_ context.Context, tasks []store.Task) (string
 	}
 	if len(tasks) == 0 {
 		return "", errors.New("scriptedUI: no tasks to pick")
+	}
+	return tasks[0].ID, nil
+}
+
+func (s *scriptedUI) PickWorkTask(_ context.Context, tasks []store.Task) (string, error) {
+	s.pickResumeCalls++
+	s.pickResumedTasks = tasks
+	if s.resumeErr != nil {
+		return "", s.resumeErr
+	}
+	if s.resumePicked != "" {
+		return s.resumePicked, nil
+	}
+	if len(tasks) == 0 {
+		return "", errors.New("scriptedUI: no tasks to resume-pick")
 	}
 	return tasks[0].ID, nil
 }
