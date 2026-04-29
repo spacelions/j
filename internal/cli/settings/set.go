@@ -11,9 +11,9 @@ import (
 
 func newSetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "set [bucket.key] [value]",
+		Use:   "set [bucket.key=value]",
 		Short: "Set a value under bucket.key in the local settings database",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			return runSet(c, args)
 		},
@@ -21,7 +21,7 @@ func newSetCmd() *cobra.Command {
 }
 
 func runSet(cmd *cobra.Command, args []string) error {
-	bucket, key, err := parseBucketKey(args[0])
+	bucket, key, value, err := parseKeyValue(args[0])
 	if err != nil {
 		return err
 	}
@@ -29,12 +29,28 @@ func runSet(cmd *cobra.Command, args []string) error {
 		if err := s.EnsureBucket(bucket); err != nil {
 			return err
 		}
-		if err := s.Put(bucket, key, args[1]); err != nil {
+		if err := s.Put(bucket, key, value); err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "set %s.%s = %s\n", bucket, key, args[1])
+		fmt.Fprintf(cmd.OutOrStdout(), "set %s.%s = %s\n", bucket, key, value)
 		return nil
 	})
+}
+
+// parseKeyValue splits arg on the first '=' so values may contain
+// additional '=' characters (e.g. "foo.bar=a=b" stores literal "a=b").
+// The bucket.key portion is delegated to parseBucketKey so the
+// reset path keeps using the same validation.
+func parseKeyValue(arg string) (bucket, key, value string, err error) {
+	i := strings.IndexByte(arg, '=')
+	if i < 0 {
+		return "", "", "", fmt.Errorf("settings: %q is not a valid key=value (missing '=')", arg)
+	}
+	bucket, key, err = parseBucketKey(arg[:i])
+	if err != nil {
+		return "", "", "", err
+	}
+	return bucket, key, arg[i+1:], nil
 }
 
 func parseBucketKey(s string) (bucket, key string, err error) {

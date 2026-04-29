@@ -295,7 +295,7 @@ func writePlan(t *testing.T, body string) string {
 }
 
 // TestRun_ByTaskID_Success exercises the bbolt-sourced reuse path:
-// `--task <id>` loads the existing row, executes its plan.md, and
+// `--from-task <id>` loads the existing row, executes its plan.md, and
 // updates the same row to `work-done`.
 func TestRun_ByTaskID_Success(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -307,7 +307,7 @@ func TestRun_ByTaskID_Success(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:      id,
-		Interactive: true,
+		Interactive: boolPtr(true),
 		Stdin:       strings.NewReader(""),
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
@@ -635,7 +635,7 @@ func TestRun_Headless_PropagatesFlag(t *testing.T) {
 	agent := newScriptedAgent()
 	err := Run(context.Background(), Options{
 		TaskID:      id,
-		Interactive: false,
+		Interactive: boolPtr(false),
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -914,7 +914,7 @@ func TestRun_PersistsCoderSelection(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:      id,
-		Interactive: true,
+		Interactive: boolPtr(true),
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -1052,7 +1052,7 @@ func TestRun_FromSettings_PopulatedStore_SkipsPrompts(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:       id,
-		Interactive:  true,
+		Interactive:  boolPtr(true),
 		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       &stderr,
@@ -1101,7 +1101,7 @@ func TestRun_FromSettings_EmptyStore_FallsBackToPrompt(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:       id,
-		Interactive:  true,
+		Interactive:  boolPtr(true),
 		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       &stderr,
@@ -1444,5 +1444,185 @@ func TestValidateForWork(t *testing.T) {
 		if c.wantErr != "" && (err == nil || !strings.Contains(err.Error(), c.wantErr)) {
 			t.Errorf("status=%q: err = %v, want %q", c.status, err, c.wantErr)
 		}
+	}
+}
+
+// TestRun_FromSettings_StoredInteractiveFalseOverridesDefault pins
+// the bug fix: with FromSettings on and no explicit Interactive
+// pointer, a stored interactive=false in the coder bucket flows
+// through to both the agent request and the persisted value.
+func TestRun_FromSettings_StoredInteractiveFalseOverridesDefault(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketCoder, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketCoder, "interactive", "false"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	id := seedPlanDoneTask(t, "x", "body", "")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		TaskID:       id,
+		Interactive:  nil,
+		FromSettings: true,
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+		Agents:       []codingagents.Agent{agent},
+		UI:           &scriptedUI{},
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if agent.lastReq.Interactive {
+		t.Fatalf("agent.lastReq.Interactive = true, want false (stored override): %+v", agent.lastReq)
+	}
+	if v, ok := mustGet(t, s, "interactive"); !ok || v != "false" {
+		t.Fatalf("coder.interactive = %q (ok=%v), want false", v, ok)
+	}
+}
+
+// TestRun_FromSettings_ExplicitInteractiveWins covers the
+// explicit-beats-stored half of the precedence: a non-nil
+// Interactive pointer must win even when the bucket says otherwise.
+func TestRun_FromSettings_ExplicitInteractiveWins(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketCoder, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketCoder, "interactive", "false"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	id := seedPlanDoneTask(t, "x", "body", "")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		TaskID:       id,
+		Interactive:  boolPtr(true),
+		FromSettings: true,
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+		Agents:       []codingagents.Agent{agent},
+		UI:           &scriptedUI{},
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("agent.lastReq.Interactive = false, want true (explicit wins): %+v", agent.lastReq)
+	}
+}
+
+// TestRun_FromSettings_StoredInteractiveUnparseable confirms a
+// garbled bucket value is treated as "not set" and the cobra
+// default flows through without a warning.
+func TestRun_FromSettings_StoredInteractiveUnparseable(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketCoder, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketCoder, "interactive", "garbage"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	id := seedPlanDoneTask(t, "x", "body", "")
+	agent := newScriptedAgent()
+	var stderr bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		TaskID:       id,
+		Interactive:  nil,
+		FromSettings: true,
+		Stdout:       io.Discard,
+		Stderr:       &stderr,
+		Agents:       []codingagents.Agent{agent},
+		UI:           &scriptedUI{},
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("agent.lastReq.Interactive = false, want true (cobra default): %+v", agent.lastReq)
+	}
+	if strings.Contains(stderr.String(), "interactive") {
+		t.Fatalf("stderr should not warn on unparseable interactive: %q", stderr.String())
+	}
+}
+
+// TestRun_FromSettings_False_IgnoresStoredInteractive pins the
+// FromSettings=false branch of resolveInteractive: the bucket is
+// never consulted, the explicit value flows through.
+func TestRun_FromSettings_False_IgnoresStoredInteractive(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketCoder, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketCoder, "interactive", "false"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	id := seedPlanDoneTask(t, "x", "body", "")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		TaskID:       id,
+		Interactive:  boolPtr(true),
+		FromSettings: false,
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+		Agents:       []codingagents.Agent{agent},
+		UI:           &scriptedUI{},
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("agent.lastReq.Interactive = false, want true: %+v", agent.lastReq)
+	}
+}
+
+// TestRun_FromSettings_NoInteractiveKey_DefaultTrue locks down the
+// resolveInteractive default branch: a populated bucket without an
+// `interactive` entry leaves the cobra default (true) intact.
+func TestRun_FromSettings_NoInteractiveKey_DefaultTrue(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketCoder, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	id := seedPlanDoneTask(t, "x", "body", "")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		TaskID:       id,
+		Interactive:  nil,
+		FromSettings: true,
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+		Agents:       []codingagents.Agent{agent},
+		UI:           &scriptedUI{},
+		Store:        s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("agent.lastReq.Interactive = false, want true (default): %+v", agent.lastReq)
 	}
 }

@@ -48,6 +48,34 @@ func TestNew_FromSettingsEnv(t *testing.T) {
 	}
 }
 
+// TestNew_FromTaskFlowsToViper confirms BindPFlag wires the renamed
+// --from-task flag into the work.from_task viper key.
+func TestNew_FromTaskFlowsToViper(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	cmd := New()
+	if err := cmd.Flags().Set("from-task", "abc"); err != nil {
+		t.Fatalf("Flags().Set: %v", err)
+	}
+	if got := viper.GetString("work.from_task"); got != "abc" {
+		t.Errorf("work.from_task = %q, want %q", got, "abc")
+	}
+}
+
+// TestNew_FromTaskEnv covers the env-var binding so WORK_FROM_TASK
+// can be used from CI without a flag.
+func TestNew_FromTaskEnv(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Setenv("WORK_FROM_TASK", "abc")
+
+	_ = New()
+	if got := viper.GetString("work.from_task"); got != "abc" {
+		t.Errorf("WORK_FROM_TASK=abc should make work.from_task = %q, got %q", "abc", got)
+	}
+}
+
 func TestNew_Smoke(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
@@ -68,8 +96,8 @@ func TestNew_Smoke(t *testing.T) {
 	if f := cmd.Flags().Lookup("target"); f != nil {
 		t.Error("--target should no longer be registered after rename")
 	}
-	if f := cmd.Flags().Lookup("task"); f == nil {
-		t.Error("--task flag was not registered")
+	if f := cmd.Flags().Lookup("from-task"); f == nil {
+		t.Error("--from-task flag was not registered")
 	}
 	if f := cmd.Flags().Lookup("interactive"); f == nil {
 		t.Error("--interactive flag was not registered")

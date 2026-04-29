@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
@@ -105,6 +106,26 @@ func FromStore(ctx context.Context, s *store.Store, bucket string, agents []codi
 		return nil, "", err
 	}
 	return agent, model, nil
+}
+
+// StoredInteractive returns the parsed `interactive` value recorded
+// in bucket, and a boolean indicating whether a usable value was
+// found. A nil store, missing key, empty value, or unparseable value
+// all yield (false, false). Treated as advisory: callers fall back
+// to opts.Interactive when ok is false.
+func StoredInteractive(s *store.Store, bucket string) (bool, bool) {
+	if s == nil {
+		return false, false
+	}
+	v, ok, err := s.Get(bucket, "interactive")
+	if err != nil || !ok || v == "" {
+		return false, false
+	}
+	parsed, perr := strconv.ParseBool(v)
+	if perr != nil {
+		return false, false
+	}
+	return parsed, true
 }
 
 // lookup returns the first agent whose Name matches. The caller is

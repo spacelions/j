@@ -85,7 +85,7 @@ func TestReset_Full_EmptyJ(t *testing.T) {
 func TestReset_Full_YesRemovesJ(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	if _, err := runSetArgs(t, "set", "a.k", "v"); err != nil {
+	if _, err := runSetArgs(t, "set", "a.k=v"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 	jDir, err := store.DefaultDir()
@@ -110,7 +110,7 @@ func TestReset_Full_YesRemovesJ(t *testing.T) {
 func TestReset_Full_StdinYes(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	if _, err := runSetArgs(t, "set", "a.k", "v"); err != nil {
+	if _, err := runSetArgs(t, "set", "a.k=v"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 	_, err := runResetArgs(t, bytes.NewBufferString("yes\n"), "reset")
@@ -126,7 +126,7 @@ func TestReset_Full_StdinYes(t *testing.T) {
 func TestReset_Full_StdinY(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	if _, err := runSetArgs(t, "set", "a.k", "v"); err != nil {
+	if _, err := runSetArgs(t, "set", "a.k=v"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 	_, err := runResetArgs(t, bytes.NewBufferString("y\n"), "reset")
@@ -142,7 +142,7 @@ func TestReset_Full_StdinY(t *testing.T) {
 func TestReset_Full_StdinNo(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	if _, err := runSetArgs(t, "set", "a.k", "v"); err != nil {
+	if _, err := runSetArgs(t, "set", "a.k=v"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 	out, err := runResetArgs(t, bytes.NewBufferString("n\n"), "reset")
@@ -175,10 +175,10 @@ func TestReset_Single_MissingDB(t *testing.T) {
 func TestReset_Single_RemovesValue(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	if _, err := runSetArgs(t, "set", "b.k1", "x"); err != nil {
+	if _, err := runSetArgs(t, "set", "b.k1=x"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	if _, err := runSetArgs(t, "set", "b.k2", "y"); err != nil {
+	if _, err := runSetArgs(t, "set", "b.k2=y"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 	out, err := runResetArgs(t, &bytes.Buffer{}, "reset", "b.k1")
@@ -213,7 +213,7 @@ func TestReset_Single_RemovesValue(t *testing.T) {
 func TestReset_Single_MissingKeyStillOK(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	if _, err := runSetArgs(t, "set", "b.k2", "y"); err != nil {
+	if _, err := runSetArgs(t, "set", "b.k2=y"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 	_, err := runResetArgs(t, &bytes.Buffer{}, "reset", "b.ghost")

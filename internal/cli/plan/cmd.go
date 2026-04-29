@@ -1,6 +1,8 @@
 package plan
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -23,7 +25,7 @@ func New() *cobra.Command {
 		Long: "Reads a markdown task description (via --from-file/-f or PLAN_FROM_FILE), asks " +
 			"which coding agent and model to use, runs that agent in plan mode, and stores the " +
 			"refined requirements.md and the produced plan.md inside <cwd>/.j/tasks/<id>/. " +
-			"No file is written to the workspace; use `j tasks` to list runs and `j work --task <id>` " +
+			"No file is written to the workspace; use `j tasks` to list runs and `j work --from-task <id>` " +
 			"to execute the plan.",
 		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -31,9 +33,19 @@ func New() *cobra.Command {
 			// Options.Store is nil and closes it on the way out, so we
 			// don't construct one here. Tests inject their own to keep
 			// the on-disk side effects hermetic.
+			//
+			// Only forward Interactive when the user was explicit
+			// (cobra flag or env var). When unset we leave it nil
+			// so Run can fall back to the stored value or the
+			// cobra default true.
+			var interactive *bool
+			if cmd.Flags().Changed("interactive") || os.Getenv("PLAN_INTERACTIVE") != "" {
+				v := viper.GetBool("plan.interactive")
+				interactive = &v
+			}
 			return Run(cmd.Context(), Options{
 				FromFile:     viper.GetString("plan.from_file"),
-				Interactive:  viper.GetBool("plan.interactive"),
+				Interactive:  interactive,
 				FromSettings: viper.GetBool("plan.from_settings"),
 				Stdin:        cmd.InOrStdin(),
 				Stdout:       cmd.OutOrStdout(),
