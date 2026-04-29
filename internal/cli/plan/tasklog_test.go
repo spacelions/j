@@ -205,30 +205,16 @@ func TestFinishPlan_Idempotent(t *testing.T) {
 	}
 }
 
-// TestBeginPlanTask_PutErrorWarns drives the "tasks put" warning path
-// by closing the bbolt DB out from under the lifecycle (the underlying
-// store helper succeeds at open, but PutTask then fails). We only
-// exercise that warning is printed; the lifecycle still completes.
-func TestBeginPlanTask_PutErrorWarns(t *testing.T) {
+// TestFinishPlan_PutErrorWarns drives the "tasks put" warning branch
+// inside finishPlan by feeding a task with no ID through the
+// lifecycle. openTaskLog succeeds (the .j layout is initialised), but
+// store.PutTask rejects the empty ID, so persistTaskWarn emits the
+// expected warning.
+func TestFinishPlan_PutErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.EnsureTaskDir("seed"); err != nil {
-		t.Fatal(err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
 	var stderr bytes.Buffer
-	lc := &planLifecycle{stderr: &stderr, store: s, task: store.Task{
-		ID:     store.NewTaskID(),
+	lc := &planLifecycle{stderr: &stderr, task: store.Task{
 		Status: store.StatusPlanning,
 	}}
 	lc.finishPlan(nil, "", "", "")
@@ -239,8 +225,8 @@ func TestBeginPlanTask_PutErrorWarns(t *testing.T) {
 
 // TestBeginPlanTask_PutErrorAtBegin pins the put-error branch *inside*
 // beginPlanTask: the store opens but PutTask fails because the task
-// has no ID. The lifecycle still has a non-nil store and a warning is
-// emitted on stderr.
+// has no ID. The warning surfaces on stderr and the begin call still
+// returns a usable lifecycle.
 func TestBeginPlanTask_PutErrorAtBegin(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -249,8 +235,8 @@ func TestBeginPlanTask_PutErrorAtBegin(t *testing.T) {
 	}
 	var stderr bytes.Buffer
 	lc := beginPlanTask(Options{Stderr: &stderr}, &scriptedAgent{name: "cursor"}, "m", "", "", "", "")
-	if lc.store == nil {
-		t.Fatal("store should be open even when initial put fails")
+	if lc == nil {
+		t.Fatal("beginPlanTask returned nil lifecycle")
 	}
 	t.Cleanup(func() { lc.finishPlan(nil, "", "", "") })
 	if !strings.Contains(stderr.String(), "warning: tasks put") {
@@ -260,9 +246,8 @@ func TestBeginPlanTask_PutErrorAtBegin(t *testing.T) {
 
 // TestBeginPlanTask_OpenTaskLogFails forces openTaskLog to return
 // ok=false by replacing the post-init list.db file with a directory,
-// so bolt.Open errors. The lifecycle must still produce a non-nil
-// pointer with a nil store, and finishPlan on it must be a silent
-// no-op (no panic).
+// so bolt.Open errors. Both beginPlanTask and finishPlan emit the
+// expected warning and execution continues without panicking.
 func TestBeginPlanTask_OpenTaskLogFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -278,8 +263,8 @@ func TestBeginPlanTask_OpenTaskLogFails(t *testing.T) {
 	}
 	var stderr bytes.Buffer
 	lc := beginPlanTask(Options{Stderr: &stderr}, &scriptedAgent{name: "cursor"}, "m", store.NewTaskID(), "", "", "")
-	if lc.store != nil {
-		t.Fatal("store should be nil after open failure")
+	if lc == nil {
+		t.Fatal("beginPlanTask returned nil lifecycle")
 	}
 	lc.finishPlan(nil, "", "", "")
 	if !strings.Contains(stderr.String(), "tasks") {

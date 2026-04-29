@@ -66,15 +66,13 @@ type Options struct {
 	// tool/model/interactive flag last used. The work source is
 	// intentionally NOT persisted: the user must supply or be
 	// prompted for it every run. The orchestrator does not own the
-	// lifecycle when the caller supplies a Store. When nil,
-	// withDefaults opens the default <cwd>/.j/settings DB and closes
-	// it after Run returns.
+	// lifecycle when the caller supplies a Store. When nil, the
+	// helpers below open `<cwd>/.j/settings` only for the duration
+	// of each individual read/write so the bbolt file lock is never
+	// held across the long-running agent.Work invocation. Tests
+	// that supply a Store directly skip the open/close cycle
+	// entirely.
 	Store *store.Store
-
-	// closeStore is set internally by withDefaults when it allocates
-	// the default Store, so Run can close it before returning. Tests
-	// that pass their own Store leave this false.
-	closeStore bool
 }
 
 // resolved is the outcome of resolvePlan: it tells Run which path to
@@ -107,6 +105,12 @@ type resolved struct {
 // nil return so an explicit cancel exits the command cleanly without
 // printing a bogus "cancelled by user" line. Genuine errors keep
 // their original wrapping.
+//
+// The bbolt file lock on `<cwd>/.j/settings` is never held across the
+// agent.Work call: each settings read/write below opens the DB,
+// performs the operation, and closes before any agent work begins so
+// concurrent `j settings` / `j tasks` invocations are not blocked on
+// the OS file lock.
 func Run(ctx context.Context, opts Options) (err error) {
 	defer func() {
 		if errors.Is(err, huh.ErrUserAborted) {
@@ -114,9 +118,6 @@ func Run(ctx context.Context, opts Options) (err error) {
 		}
 	}()
 	opts = opts.withDefaults()
-	if opts.closeStore && opts.Store != nil {
-		defer func() { _ = opts.Store.Close() }()
-	}
 	if len(opts.Agents) == 0 {
 		return errors.New("J: no coding agents configured")
 	}
@@ -334,9 +335,14 @@ func validateForWork(t store.Task) error {
 // prompt is intentional). The just-confirmed selection is persisted
 // only on the prompted path: values that came from the store are
 // already there.
+//
+// Settings DB access is short-lived: the bucket is read inside
+// coderFromSettings and the handle is released before this returns
+// so the agent.Work call downstream never contends on the bbolt file
+// lock.
 func selectCoder(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
 	if opts.FromSettings {
-		agent, model, err := agentpick.FromStore(ctx, opts.Store, store.BucketCoder, opts.Agents)
+		agent, model, err := coderFromSettings(ctx, opts)
 		if err == nil {
 			return agent, model, nil
 		}
@@ -353,11 +359,33 @@ func selectCoder(ctx context.Context, opts Options) (codingagents.Agent, string,
 	return agent, model, nil
 }
 
+// coderFromSettings reads the coder bucket and returns the chosen
+// tool/model. When opts.Store is non-nil (test injection) it is reused
+// without any open/close cycle. Otherwise this opens
+// `<cwd>/.j/settings` only for the duration of agentpick.FromStore and
+// releases it before returning. A failure to open the settings DB
+// surfaces as ErrNoStoredSelection so the caller falls back to the
+// prompt path the same way an empty bucket would.
+func coderFromSettings(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
+	if opts.Store != nil {
+		return agentpick.FromStore(ctx, opts.Store, store.BucketCoder, opts.Agents)
+	}
+	s, ok := openSettingsStore(opts.Stderr)
+	if !ok {
+		return nil, "", agentpick.ErrNoStoredSelection
+	}
+	defer func() { _ = s.Close() }()
+	return agentpick.FromStore(ctx, s, store.BucketCoder, opts.Agents)
+}
+
 // persistCoderSelection writes the just-confirmed tool/model and the
 // interactive flag to the coder bucket. The plan path (the work
 // "source") is intentionally NOT persisted so the user picks one per
 // run. Persistence is best-effort: errors warn on opts.Stderr and
-// don't abort the run.
+// don't abort the run. When opts.Store is non-nil it is used directly
+// (test injection); otherwise this opens `<cwd>/.j/settings` for the
+// duration of the write and closes it immediately so the file lock
+// is not held across the agent invocation.
 func persistCoderSelection(opts Options, tool, model string) {
 	// opts.Interactive is normally non-nil here: Run resolves it
 	// via resolveInteractive before any selection branch fires.
@@ -369,7 +397,16 @@ func persistCoderSelection(opts Options, tool, model string) {
 	if opts.Interactive != nil {
 		interactive = *opts.Interactive
 	}
-	store.PersistAgentSelection(opts.Store, opts.Stderr, store.BucketCoder, tool, model, interactive)
+	if opts.Store != nil {
+		store.PersistAgentSelection(opts.Store, opts.Stderr, store.BucketCoder, tool, model, interactive)
+		return
+	}
+	s, ok := openSettingsStore(opts.Stderr)
+	if !ok {
+		return
+	}
+	defer func() { _ = s.Close() }()
+	store.PersistAgentSelection(s, opts.Stderr, store.BucketCoder, tool, model, interactive)
 }
 
 // resolveInteractive applies the documented precedence (explicit >
@@ -381,11 +418,29 @@ func resolveInteractive(opts Options) bool {
 		return *opts.Interactive
 	}
 	if opts.FromSettings {
-		if v, ok := agentpick.StoredInteractive(opts.Store, store.BucketCoder); ok {
+		if v, ok := storedCoderInteractive(opts); ok {
 			return v
 		}
 	}
 	return true
+}
+
+// storedCoderInteractive looks up the coder bucket's `interactive`
+// entry. When opts.Store is non-nil it is reused; otherwise the
+// settings DB is opened and closed solely for this read so the lock
+// is not held across the agent call. A failed open or a missing /
+// unparseable value yields (_, false) so callers fall back to the
+// cobra default.
+func storedCoderInteractive(opts Options) (bool, bool) {
+	if opts.Store != nil {
+		return agentpick.StoredInteractive(opts.Store, store.BucketCoder)
+	}
+	s, ok := openSettingsStore(opts.Stderr)
+	if !ok {
+		return false, false
+	}
+	defer func() { _ = s.Close() }()
+	return agentpick.StoredInteractive(s, store.BucketCoder)
 }
 
 // boolPtr is the package-private companion that lets Run / tests
@@ -405,12 +460,6 @@ func (o Options) withDefaults() Options {
 	}
 	if o.UI == nil {
 		o.UI = newHuhUI(o.Stdin, o.Stderr)
-	}
-	if o.Store == nil {
-		if s, ok := openSettingsStore(o.Stderr); ok {
-			o.Store = s
-			o.closeStore = true
-		}
 	}
 	return o
 }
@@ -437,8 +486,8 @@ func openSettingsStore(stderr io.Writer) (*store.Store, bool) {
 // openTaskLog opens `<cwd>/.j/tasks/list.db` for the work flow. Like
 // openSettingsStore this is the post-init replacement for
 // store.OpenTaskLog: pre-flight ensures the file exists, so any
-// failure here is reported once on stderr and the lifecycle
-// degrades to a nil-store no-op.
+// failure here is reported once on stderr. Callers that just want
+// the open-write-close pattern should use writeWorkTaskWarn instead.
 func openTaskLog(stderr io.Writer) (*store.Store, bool) {
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {

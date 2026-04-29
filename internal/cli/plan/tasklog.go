@@ -11,14 +11,16 @@ import (
 )
 
 // planLifecycle owns the begin/end task-log writes around a single
-// agent.Plan invocation. A nil store field means OpenTaskLog failed
-// (already warned by the store helper) and subsequent updates are
-// silent no-ops. The struct is constructed with beginPlanTask and
-// finalised with finishPlan; callers pair them with a defer so the
-// task is always written even when agent.Plan panics.
+// agent.Plan invocation. The struct holds no bbolt handle — every
+// task-log write goes through persistTaskWarn (defined in resume.go),
+// which opens `<cwd>/.j/tasks/list.db`, writes, and closes within the
+// same call so the bbolt file lock is never held across agent.Plan
+// and a concurrent `j tasks` from another shell is not blocked. The
+// lifecycle is constructed with beginPlanTask and finalised with
+// finishPlan; callers pair them with a defer so the task is always
+// written even when agent.Plan panics.
 type planLifecycle struct {
 	stderr io.Writer
-	store  *store.Store
 	task   store.Task
 	closed bool
 }
@@ -35,8 +37,8 @@ type planLifecycle struct {
 //     or on a NewResumeID failure (already warned by the caller).
 //
 // Best effort: failure to open the task log or to write the initial
-// row warns once on stderr and execution continues with a nil-store
-// lifecycle. Pre-flight has already laid down `.j/tasks/list.db`, so
+// row warns once on stderr and execution continues. The on-disk
+// pre-flight (`j init`) has already laid down `.j/tasks/list.db`, so
 // the open call is read/write only and never creates new files.
 func beginPlanTask(opts Options, agent codingagents.Agent, model, taskID, target, requirement, planResumeChatID string) *planLifecycle {
 	begin := time.Now().UTC()
@@ -50,23 +52,17 @@ func beginPlanTask(opts Options, agent codingagents.Agent, model, taskID, target
 		PlanBeginAt:      &begin,
 	}
 	lc := &planLifecycle{stderr: opts.Stderr, task: task}
-	s, ok := openTaskLog(opts.Stderr)
-	if !ok {
-		return lc
-	}
-	lc.store = s
-	if err := s.PutTask(task); err != nil {
-		fmt.Fprintf(opts.Stderr, "warning: tasks put: %v\n", err)
-	}
+	persistTaskWarn(opts.Stderr, task)
 	return lc
 }
 
 // openTaskLog opens `<cwd>/.j/tasks/list.db` for the plan lifecycle.
 // Like openSettingsStore in plan.go this is the post-init replacement
 // for store.OpenTaskLog: pre-flight ensures the file exists, so any
-// failure here surfaces as a single "warning: ..." line on stderr and
-// the lifecycle degrades to a nil-store no-op. Both helpers share
-// the same shape so a future consolidation does not break callers.
+// failure here surfaces as a single "warning: ..." line on stderr.
+// Callers that just want the open-write-close pattern should use
+// persistTaskWarn instead. Both helpers share the same shape so a
+// future consolidation does not break callers.
 func openTaskLog(stderr io.Writer) (*store.Store, bool) {
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
@@ -86,8 +82,9 @@ func openTaskLog(stderr io.Writer) (*store.Store, bool) {
 // refined requirements (then the plan body, then the file basename)
 // because the agent may have rewritten the requirements during the
 // session. The task is rewritten to the log even on errors so `help`
-// is observable from `j tasks`. The store is closed here,
-// idempotently.
+// is observable from `j tasks`. The bbolt store is opened just long
+// enough to write the row and closed before this returns; calling
+// finishPlan twice is a silent no-op via the closed flag.
 func (lc *planLifecycle) finishPlan(runErr error, refinedRequirements, planMarkdown, target string) {
 	if lc.closed {
 		return
@@ -101,13 +98,7 @@ func (lc *planLifecycle) finishPlan(runErr error, refinedRequirements, planMarkd
 		lc.task.Status = store.StatusPlanDone
 		lc.task.Summary = planSummary(pickSummarySource(refinedRequirements, planMarkdown), target)
 	}
-	if lc.store == nil {
-		return
-	}
-	if err := lc.store.PutTask(lc.task); err != nil {
-		fmt.Fprintf(lc.stderr, "warning: tasks put: %v\n", err)
-	}
-	_ = lc.store.Close()
+	persistTaskWarn(lc.stderr, lc.task)
 }
 
 // pickSummarySource returns whichever of the refined requirements or

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -193,6 +194,11 @@ type scriptedAgent struct {
 	requirement string
 	planErr     error
 	skipWrite   bool
+	// planHook, when non-nil, is invoked at the start of Plan
+	// before any side effects so tests can assert invariants
+	// (e.g. that no bbolt file lock is held) while the agent is
+	// "running". A non-nil error short-circuits Plan.
+	planHook func(req codingagents.PlanRequest) error
 
 	listed     int
 	checked    int
@@ -237,10 +243,16 @@ func (s *scriptedAgent) NewResumeID(context.Context) (string, error) {
 // req.RequirementsOutputPath and req.PlanOutputPath itself (the
 // agent's responsibility under the new contract). Tests can opt out of
 // the file-write side effect by setting skipWrite to exercise the
-// orchestrator's "could not read" warnings.
+// orchestrator's "could not read" warnings. planHook, when set, runs
+// first so callers can assert mid-flight invariants.
 func (s *scriptedAgent) Plan(_ context.Context, req codingagents.PlanRequest) error {
 	s.planned++
 	s.lastReq = req
+	if s.planHook != nil {
+		if err := s.planHook(req); err != nil {
+			return err
+		}
+	}
 	if s.planErr != nil {
 		return s.planErr
 	}
@@ -891,14 +903,49 @@ func TestRun_StoreWriteError_WarnsAndContinues(t *testing.T) {
 	}
 }
 
-// TestPersistPlannerSelection_NilStore exercises the early-return
-// branch when no Store is configured (e.g. because withDefaults could
-// not open one and the caller did not supply a fallback).
-func TestPersistPlannerSelection_NilStore(t *testing.T) {
+// TestPersistPlannerSelection_NilStore_LazyOpenSucceeds exercises the
+// nil-Store branch when openSettingsStore can lay hands on a real
+// `<cwd>/.j/settings`: the helper opens, persists, and closes
+// silently and the values land on disk.
+func TestPersistPlannerSelection_NilStore_LazyOpenSucceeds(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	var stderr bytes.Buffer
+	persistPlannerSelection(Options{
+		Stderr:      &stderr,
+		Interactive: boolPtr(true),
+	}, "cursor", "sonnet-4")
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr should stay empty on success, got %q", stderr.String())
+	}
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	v, ok, err := s.Get(store.BucketPlanner, "tool")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !ok || v != "cursor" {
+		t.Fatalf("planner.tool = %q (ok=%v), want cursor", v, ok)
+	}
+}
+
+// TestPersistPlannerSelection_NilStore_LazyOpenFails covers the
+// early-return branch when openSettingsStore can't open the DB
+// (no .j layout on disk): the helper warns once and returns
+// without panicking.
+func TestPersistPlannerSelection_NilStore_LazyOpenFails(t *testing.T) {
+	t.Chdir(t.TempDir())
 	var stderr bytes.Buffer
 	persistPlannerSelection(Options{Stderr: &stderr}, "cursor", "sonnet-4")
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr should stay empty, got %q", stderr.String())
+	if !strings.Contains(stderr.String(), "warning: settings") {
+		t.Fatalf("stderr = %q, want settings warning", stderr.String())
 	}
 }
 
@@ -1383,5 +1430,113 @@ func TestRun_FromSettings_NoInteractiveKey_DefaultTrue(t *testing.T) {
 	}
 	if !agent.lastReq.Interactive {
 		t.Fatalf("agent.lastReq.Interactive = false, want true (default): %+v", agent.lastReq)
+	}
+}
+
+// TestRun_FromSettings_NilStore_SettingsOpenFails covers the lazy
+// open-fails branches on the settings path: with FromSettings=true,
+// no caller-supplied Store, and a `<cwd>/.j/settings` directory
+// (instead of file) sabotaging bolt.Open, plannerFromSettings and
+// storedPlannerInteractive both surface the openSettingsStore
+// warning and fall back to the prompted Pick path. Coverage tracks
+// the !ok branches that the happy-path EmptyStore test cannot hit.
+func TestRun_FromSettings_NilStore_SettingsOpenFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	settingsPath, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(settingsPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(settingsPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := writeFromFile(t, "x")
+	agent := newScriptedAgent()
+	var stderr bytes.Buffer
+	err = Run(context.Background(), Options{
+		FromFile:     target,
+		FromSettings: true,
+		Stdin:        strings.NewReader(""),
+		Stdout:       io.Discard,
+		Stderr:       &stderr,
+		Agents:       []codingagents.Agent{agent},
+		UI:           &scriptedUI{},
+		Store:        nil,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "warning: settings") {
+		t.Fatalf("stderr should warn about settings open: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Choose your favourite:") {
+		t.Fatalf("stderr should fall back to prompt: %q", stderr.String())
+	}
+	if agent.planned != 1 {
+		t.Fatalf("agent.Plan calls = %d, want 1", agent.planned)
+	}
+}
+
+// TestRun_DoesNotHoldFileLocks_DuringAgentPlan is the regression
+// guard for the open-write-close refactor: while agent.Plan is
+// running, both `<cwd>/.j/settings` and `<cwd>/.j/tasks/list.db`
+// must be openable by another caller without hitting the bbolt
+// 2-second openTimeout. The scripted agent's planHook performs the
+// concurrent opens and short-circuits Plan with an error when either
+// open fails, which propagates back through Run as a real
+// agent.Plan error.
+func TestRun_DoesNotHoldFileLocks_DuringAgentPlan(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	target := writeFromFile(t, "# spec\nbody")
+
+	settingsPath, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	tasksPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatalf("DefaultTasksDBPath: %v", err)
+	}
+
+	agent := newScriptedAgent()
+	agent.planHook = func(_ codingagents.PlanRequest) error {
+		s, err := store.Open(settingsPath)
+		if err != nil {
+			return fmt.Errorf("settings db should not be locked: %w", err)
+		}
+		if err := s.Close(); err != nil {
+			return fmt.Errorf("close settings: %w", err)
+		}
+		s, err = store.Open(tasksPath)
+		if err != nil {
+			return fmt.Errorf("tasks db should not be locked: %w", err)
+		}
+		if err := s.Close(); err != nil {
+			return fmt.Errorf("close tasks: %w", err)
+		}
+		return nil
+	}
+
+	err = Run(context.Background(), Options{
+		FromFile:    target,
+		Interactive: boolPtr(true),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{agent},
+		UI:          &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v (a non-nil err here means a bbolt lock was held across agent.Plan)", err)
+	}
+	if agent.planned != 1 {
+		t.Fatalf("agent.Plan calls = %d, want 1", agent.planned)
+	}
+	tasks := readTasks(t)
+	if len(tasks) != 1 || tasks[0].Status != store.StatusPlanDone {
+		t.Fatalf("tasks = %+v, want one plan-done task", tasks)
 	}
 }
