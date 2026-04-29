@@ -227,3 +227,40 @@ func (s *Store) ListBuckets() ([]string, error) {
 	sort.Strings(names)
 	return names, nil
 }
+
+// Delete removes key from bucket. Missing bucket or key is a no-op
+// with a nil error. Other failures are returned wrapped.
+func (s *Store) Delete(bucket, key string) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucket))
+		if b == nil {
+			return nil
+		}
+		if b.Get([]byte(key)) == nil {
+			return nil
+		}
+		return b.Delete([]byte(key))
+	})
+}
+
+// IsEmpty reports whether the database has no buckets or every
+// bucket has no key/value entries.
+func (s *Store) IsEmpty() (bool, error) {
+	buckets, err := s.ListBuckets()
+	if err != nil {
+		return false, err
+	}
+	if len(buckets) == 0 {
+		return true, nil
+	}
+	for _, name := range buckets {
+		entries, err := s.List(name)
+		if err != nil {
+			return false, err
+		}
+		if len(entries) > 0 {
+			return false, nil
+		}
+	}
+	return true, nil
+}

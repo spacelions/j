@@ -1,7 +1,8 @@
 // Package settings implements the `j settings` subcommand. It owns
-// the on-disk bbolt database under `<cwd>/.j/settings` and exposes
-// `init` to create it and `show` to print stored values. Bare
-// `j settings` is a synonym for `j settings show`.
+// the on-disk bbolt database under `<cwd>/.j/settings`. Listing is
+// done with plain `j settings`. Values are set with
+// `j settings set bucket.key value` and cleared with
+// `j settings reset` (all) or `j settings reset bucket.key`.
 package settings
 
 import (
@@ -14,46 +15,26 @@ import (
 func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "settings",
-		Short: "Inspect or initialize the local settings database",
+		Short: "List, set, or reset local j settings",
 		Long: "Manages the on-disk settings database used by `j` to persist user " +
-			"preferences (e.g. the planner tool/model last selected). The DB lives " +
-			"at <cwd>/.j/settings and is created lazily by `j settings init`.",
+			"preferences (e.g. the planner or coder tool/model last selected). The DB " +
+			"lives at <cwd>/.j/settings. It is created lazily when you first write " +
+			"via `j settings set` or when another command (such as `j plan`) " +
+			"persists a selection.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runShow(cmd)
+			return runList(cmd)
 		},
 	}
 	cmd.AddCommand(
-		newInitCmd(),
-		newShowCmd(),
+		newSetCmd(),
+		newResetCmd(),
 	)
 	return cmd
 }
 
-func newInitCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "init",
-		Short: "Create the settings database and its planner bucket",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runInit(cmd)
-		},
-	}
-}
-
-func newShowCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "show",
-		Short: "Print stored settings",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runShow(cmd)
-		},
-	}
-}
-
 // withOpenStore resolves the default DB path, opens it, and invokes fn
 // with the result. The store is closed before withOpenStore returns,
-// regardless of fn's outcome. Both error paths (path resolution and
-// open) are exercised through the unit tests for runInit/runShow which
-// use t.Chdir + filesystem-shape tricks to drive realistic failures.
+// regardless of fn's outcome.
 func withOpenStore(fn func(path string, s *store.Store) error) error {
 	path, err := store.DefaultPath()
 	if err != nil {

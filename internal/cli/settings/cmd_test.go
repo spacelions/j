@@ -18,24 +18,24 @@ func TestNew_Smoke(t *testing.T) {
 		t.Fatal("RunE is nil; bare `j settings` would fail")
 	}
 
-	var found struct{ init_, show bool }
+	var found struct{ set, reset bool }
 	for _, sub := range cmd.Commands() {
-		switch sub.Use {
-		case "init":
-			found.init_ = true
-		case "show":
-			found.show = true
+		switch {
+		case strings.HasPrefix(sub.Use, "set "):
+			found.set = true
+		case strings.HasPrefix(sub.Use, "reset "):
+			found.reset = true
 		}
 	}
-	if !found.init_ || !found.show {
+	if !found.set || !found.reset {
 		t.Fatalf("missing subcommands: %+v", found)
 	}
 }
 
-// TestNew_BareSettingsRunsShow exercises the parent RunE so plain
-// `j settings` is equivalent to `j settings show`. We chdir into a
-// temp dir without an existing DB and assert the missing-DB hint.
-func TestNew_BareSettingsRunsShow(t *testing.T) {
+// TestNew_BareSettingsRunsList exercises the parent RunE: plain
+// `j settings` is the list path. With no DB, output is
+// "no settings stored".
+func TestNew_BareSettingsRunsList(t *testing.T) {
 	t.Chdir(t.TempDir())
 	cmd := New()
 	var stdout, stderr bytes.Buffer
@@ -46,7 +46,7 @@ func TestNew_BareSettingsRunsShow(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "j settings init") {
-		t.Fatalf("stdout = %q, want hint to run init", stdout.String())
+	if !strings.Contains(stdout.String(), "no settings stored") {
+		t.Fatalf("stdout = %q, want no settings", stdout.String())
 	}
 }

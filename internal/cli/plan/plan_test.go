@@ -1092,6 +1092,47 @@ func TestRun_FromSettings_NonSentinelStoreError(t *testing.T) {
 	}
 }
 
+// TestRun_EmptyJDir_FromSettings_CreatesJ asserts AC #3: with no
+// pre-existing .j, plan Run still creates <cwd>/.j/settings. AC #4
+// (fallback): with FromSettings, an empty project store triggers the
+// "no stored planner selection" line then Pick.
+func TestRun_EmptyJDir_FromSettings_CreatesJ(t *testing.T) {
+	t.Chdir(t.TempDir())
+	jdir, err := store.DefaultDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(jdir); !os.IsNotExist(err) {
+		t.Fatalf("precondition: .j should not exist: %v", err)
+	}
+	target := writeTarget(t, "x")
+	agent := newScriptedAgent()
+	var stderr bytes.Buffer
+	err = Run(context.Background(), Options{
+		Target:       target,
+		FromSettings: true,
+		Stdin:        strings.NewReader(""),
+		Stdout:       io.Discard,
+		Stderr:       &stderr,
+		Agents:       []codingagents.Agent{agent},
+		UI:           &scriptedUI{},
+		Store:        nil,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "no stored planner selection; prompting") {
+		t.Fatalf("stderr = %q, want no-stored line", stderr.String())
+	}
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("settings file not created: %v", err)
+	}
+}
+
 // TestRun_StoreLazyDefault confirms that a nil opts.Store causes
 // withDefaults to open and close the default DB. We chdir into a
 // temp dir so the on-disk side effect is hermetic.
