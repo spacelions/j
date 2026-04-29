@@ -105,8 +105,8 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 
 	tasks := []store.Task{
 		{ID: "ddd-done-old", Status: store.StatusDone, InvokedTool: "cursor", InvokedModel: "gpt-5", ResumeCursor: "", Summary: "old one", DoneAt: &t1},
-		{ID: "aaa-done-new", Status: store.StatusDone, InvokedTool: "cursor", InvokedModel: "sonnet-4", ResumeCursor: "/tmp/cursor-ws-aaa", Summary: "new one", DoneAt: &t2},
-		{ID: "active-1", Status: store.StatusPlanning, InvokedTool: "cursor", InvokedModel: "sonnet-4", ResumeCursor: "/tmp/cursor-ws-active", Summary: "draft idea"},
+		{ID: "aaa-done-new", Status: store.StatusDone, InvokedTool: "cursor", InvokedModel: "sonnet-4", ResumeCursor: "8c7e6a9d-0f1a-4b2c-9d8e-1234567890ab", Summary: "new one", DoneAt: &t2},
+		{ID: "active-1", Status: store.StatusPlanning, InvokedTool: "cursor", InvokedModel: "sonnet-4", ResumeCursor: "11111111-1111-4111-9111-111111111111", Summary: "draft idea"},
 	}
 	for _, task := range tasks {
 		if err := s.PutTask(task); err != nil {
@@ -131,8 +131,8 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 	if !strings.Contains(lines[0], "RESUME") {
 		t.Fatalf("header missing RESUME: %q", lines[0])
 	}
-	if !strings.Contains(out, "/tmp/cursor-ws-aaa") || !strings.Contains(out, "/tmp/cursor-ws-active") {
-		t.Fatalf("expected resume paths in output: %q", out)
+	if !strings.Contains(out, "8c7e6a9d-0f1a-4b2c-9d8e-1234567890ab") || !strings.Contains(out, "11111111-1111-4111-9111-111111111111") {
+		t.Fatalf("expected resume session ids in output: %q", out)
 	}
 	wantOrder := []string{"active-1", "aaa-done-new", "ddd-done-old"}
 	for i, id := range wantOrder {
@@ -266,8 +266,8 @@ func TestFormatResumeCursor(t *testing.T) {
 	if got, want := formatResumeCursor(""), "-"; got != want {
 		t.Fatalf("empty: got %q, want %q", got, want)
 	}
-	if got, want := formatResumeCursor("/proj/app"), "/proj/app"; got != want {
-		t.Fatalf("path: got %q, want %q", got, want)
+	if got, want := formatResumeCursor("2b43f90a-b742-4d4b-9f0c-e1ee8ad43f83"), "2b43f90a-b742-4d4b-9f0c-e1ee8ad43f83"; got != want {
+		t.Fatalf("uuid: got %q, want %q", got, want)
 	}
 }
 

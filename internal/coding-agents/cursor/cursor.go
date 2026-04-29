@@ -27,6 +27,23 @@ type Agent struct{}
 // New returns a Cursor agent that shells out to the cursor-agent CLI.
 func New() *Agent { return &Agent{} }
 
+// CreateChatID runs `cursor-agent create-chat` and returns the new chat
+// session id (a UUID) printed on stdout. The caller should pass that id
+// in PlanRequest.ResumeChatID or WorkRequest.ResumeChatID and retain the
+// same value in the task log so `j tasks` can show how to resume with
+// `cursor-agent --resume <id>`.
+func CreateChatID(ctx context.Context) (string, error) {
+	out, err := run.Output(ctx, Binary, "create-chat")
+	if err != nil {
+		return "", fmt.Errorf("create-chat: %w", err)
+	}
+	id := strings.TrimSpace(out)
+	if id == "" {
+		return "", errors.New("create-chat: empty id")
+	}
+	return id, nil
+}
+
 // Name implements codingagents.Agent.
 func (*Agent) Name() string { return "cursor" }
 
@@ -78,10 +95,12 @@ func (*Agent) CheckLogin(ctx context.Context) error {
 //     capture stdout, write the file from Go.
 func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
 	if req.TargetPath == "" {
-		if err := run.Run(ctx, Binary,
-			"--mode", "plan",
-			"--model", req.Model,
-		); err != nil {
+		var args []string
+		if req.ResumeChatID != "" {
+			args = append(args, "--resume", req.ResumeChatID)
+		}
+		args = append(args, "--mode", "plan", "--model", req.Model)
+		if err := run.Run(ctx, Binary, args...); err != nil {
 			return fmt.Errorf("cursor-agent: %w", err)
 		}
 		return nil
@@ -95,24 +114,23 @@ func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
 			"%s\n\nWhen the plan is final, save it to %q (overwrite if it exists), then exit.",
 			base, req.OutputPath,
 		)
-		if err := run.Run(ctx, Binary,
-			"--model", req.Model,
-			"--workspace", workspace,
-			prompt,
-		); err != nil {
+		var args []string
+		if req.ResumeChatID != "" {
+			args = append(args, "--resume", req.ResumeChatID)
+		}
+		args = append(args, "--model", req.Model, "--workspace", workspace, prompt)
+		if err := run.Run(ctx, Binary, args...); err != nil {
 			return fmt.Errorf("cursor-agent: %w", err)
 		}
 		return nil
 	}
 
-	out, err := run.Output(ctx, Binary,
-		"--print",
-		"--output-format", "text",
-		"--mode", "plan",
-		"--model", req.Model,
-		"--workspace", workspace,
-		base,
-	)
+	var hargs []string
+	if req.ResumeChatID != "" {
+		hargs = append(hargs, "--resume", req.ResumeChatID)
+	}
+	hargs = append(hargs, "--print", "--output-format", "text", "--mode", "plan", "--model", req.Model, "--workspace", workspace, base)
+	out, err := run.Output(ctx, Binary, hargs...)
 	if err != nil {
 		return fmt.Errorf("cursor-agent: %w", err)
 	}
@@ -142,23 +160,22 @@ func (*Agent) Work(ctx context.Context, req codingagents.WorkRequest) error {
 	prompt := prompts.BuildCoder(req.PlanPath, req.Body)
 
 	if req.Interactive {
-		if err := run.Run(ctx, Binary,
-			"--model", req.Model,
-			"--workspace", workspace,
-			prompt,
-		); err != nil {
+		var wargs []string
+		if req.ResumeChatID != "" {
+			wargs = append(wargs, "--resume", req.ResumeChatID)
+		}
+		wargs = append(wargs, "--model", req.Model, "--workspace", workspace, prompt)
+		if err := run.Run(ctx, Binary, wargs...); err != nil {
 			return fmt.Errorf("cursor-agent: %w", err)
 		}
 		return nil
 	}
 
-	if _, err := run.Output(ctx, Binary,
-		"--print",
-		"--output-format", "text",
-		"--model", req.Model,
-		"--workspace", workspace,
-		prompt,
-	); err != nil {
+	pargs := []string{"--print", "--output-format", "text", "--model", req.Model, "--workspace", workspace, prompt}
+	if req.ResumeChatID != "" {
+		pargs = append([]string{"--resume", req.ResumeChatID}, pargs...)
+	}
+	if _, err := run.Output(ctx, Binary, pargs...); err != nil {
 		return fmt.Errorf("cursor-agent: %w", err)
 	}
 	return nil

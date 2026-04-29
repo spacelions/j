@@ -48,12 +48,17 @@ type Agent interface {
 // should hand its plan-mode TUI to the user as-is. A non-empty
 // TargetPath always pairs with a non-empty OutputPath and the agent
 // is expected to leave OutputPath behind on success.
+//
+// ResumeChatID, when set, is the Cursor agent chat session id: the
+// backend passes it to `cursor-agent --resume` so the run continues
+// that server-side thread. Other agents ignore it.
 type PlanRequest struct {
-	TargetPath  string
-	Body        string
-	Model       string
-	OutputPath  string
-	Interactive bool
+	TargetPath   string
+	Body         string
+	Model        string
+	OutputPath   string
+	Interactive  bool
+	ResumeChatID string
 }
 
 // WorkRequest is the input to Agent.Work. The caller pre-reads the plan
@@ -62,9 +67,13 @@ type PlanRequest struct {
 // there is no OutputPath: the coder edits files in the plan's
 // directory directly, so the orchestrator does not stat a single
 // output file afterwards.
+//
+// ResumeChatID, when set, is the Cursor agent chat session id for
+// `cursor-agent --resume`. Other agents ignore it.
 type WorkRequest struct {
-	PlanPath    string
-	Body        string
-	Model       string
-	Interactive bool
+	PlanPath     string
+	Body         string
+	Model        string
+	Interactive  bool
+	ResumeChatID string
 }

@@ -80,8 +80,8 @@ func TestRun_Markdown_LogsPlannedTask(t *testing.T) {
 	if got.PlanEndAt.Before(*got.PlanBeginAt) {
 		t.Fatalf("end %v before begin %v", got.PlanEndAt, got.PlanBeginAt)
 	}
-	if got.ResumeCursor != filepath.Dir(target) {
-		t.Fatalf("ResumeCursor = %q, want %q", got.ResumeCursor, filepath.Dir(target))
+	if got.ResumeCursor != testCursorChatID {
+		t.Fatalf("ResumeCursor = %q, want %q", got.ResumeCursor, testCursorChatID)
 	}
 }
 
@@ -172,8 +172,8 @@ func TestRun_Scratch_LogsPlannedTaskWithFallbackSummary(t *testing.T) {
 	if got.PlanMarkdown != nil {
 		t.Fatalf("PlanMarkdown should be nil for scratch: %v", got.PlanMarkdown)
 	}
-	if got.ResumeCursor == "" {
-		t.Fatal("scratch ResumeCursor should fall back to cwd, not empty")
+	if got.ResumeCursor != testCursorChatID {
+		t.Fatalf("ResumeCursor = %q, want %q", got.ResumeCursor, testCursorChatID)
 	}
 }
 
@@ -214,26 +214,11 @@ func TestPlanSummary_Fallbacks(t *testing.T) {
 	}
 }
 
-// TestPlanResumeCursor pins the workspace and cwd-fallback branches.
-func TestPlanResumeCursor(t *testing.T) {
-	if got := planResumeCursor("/foo/bar/spec.md"); got != "/foo/bar" {
-		t.Fatalf("planResumeCursor(target) = %q", got)
-	}
-	t.Chdir(t.TempDir())
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd: %v", err)
-	}
-	if got := planResumeCursor(""); got != cwd {
-		t.Fatalf("planResumeCursor(\"\") = %q, want %q", got, cwd)
-	}
-}
-
 // TestFinishPlan_Idempotent pins the closed-flag short-circuit so a
 // second finishPlan call is a silent no-op.
 func TestFinishPlan_Idempotent(t *testing.T) {
 	t.Chdir(t.TempDir())
-	lc := beginPlanTask(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", "", "")
+	lc := beginPlanTask(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", "", "", "")
 	lc.finishPlan(nil, "")
 	lc.finishPlan(errors.New("boom"), "should not change anything")
 	tasks := readTasks(t)
@@ -292,7 +277,7 @@ func TestBeginPlanTask_OpenTaskLogFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	lc := beginPlanTask(Options{Stderr: &stderr}, &scriptedAgent{name: "cursor"}, "m", "", "")
+	lc := beginPlanTask(Options{Stderr: &stderr}, &scriptedAgent{name: "cursor"}, "m", "", "", "")
 	if lc.store != nil {
 		t.Fatal("store should be nil after open failure")
 	}

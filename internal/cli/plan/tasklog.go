@@ -3,7 +3,6 @@ package plan
 import (
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -31,12 +30,15 @@ type planLifecycle struct {
 //     "" for scratch. The summary is derived from the body when
 //     possible and falls back to the file basename, then to a
 //     stable label so `j tasks` never shows a blank summary.
+//   - resumeChatID: when the planner is Cursor, the chat session id
+//     from `cursor-agent create-chat` for `j tasks` and `cursor-agent
+//     --resume`; empty for other agents or on create-chat failure.
 //
 // Best effort: failure to open the task log or to write the initial
 // row warns once on stderr (the store helper handles open warnings;
 // the put error is wrapped here) and execution continues with a
 // nil-store lifecycle.
-func beginPlanTask(opts Options, agent codingagents.Agent, model, target, requirement string) *planLifecycle {
+func beginPlanTask(opts Options, agent codingagents.Agent, model, target, requirement, resumeChatID string) *planLifecycle {
 	begin := time.Now().UTC()
 	task := store.Task{
 		ID:                  store.NewTaskID(),
@@ -44,7 +46,7 @@ func beginPlanTask(opts Options, agent codingagents.Agent, model, target, requir
 		Status:              store.StatusPlanning,
 		InvokedTool:         agent.Name(),
 		InvokedModel:        model,
-		ResumeCursor:        planResumeCursor(target),
+		ResumeCursor:        resumeChatID,
 		Summary:             planSummary(requirement, target),
 		PlanBeginAt:         &begin,
 	}
@@ -105,19 +107,4 @@ func planSummary(requirement, target string) string {
 		return filepath.Base(target)
 	}
 	return "from scratch"
-}
-
-// planResumeCursor returns a workspace path the user can later feed to
-// cursor-agent to pick up where they left off. For a markdown source
-// it's the directory containing the target (matching the agent's own
-// --workspace argument); for a scratch session there's no target so we
-// fall back to the cwd, and finally to "" if even that is unavailable.
-func planResumeCursor(target string) string {
-	if target != "" {
-		return codingagents.DefaultWorkspace(target)
-	}
-	if cwd, err := os.Getwd(); err == nil {
-		return cwd
-	}
-	return ""
 }

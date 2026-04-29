@@ -31,8 +31,9 @@ type workLifecycle struct {
 // when present (the standard `j plan` output convention); otherwise it
 // stays empty. The summary mirrors the same precedence used by `j plan`
 // so a task started by `j work` looks consistent with one started by
-// `j plan`.
-func beginWorkTask(opts Options, agent codingagents.Agent, model, planPath, planBody string) *workLifecycle {
+// `j plan`. resumeChatID is the Cursor `create-chat` id when the coder
+// is Cursor; otherwise empty.
+func beginWorkTask(opts Options, agent codingagents.Agent, model, planPath, planBody, resumeChatID string) *workLifecycle {
 	begin := time.Now().UTC()
 	requirement := readRequirementSidecar(planPath)
 	planMD := planBody
@@ -43,7 +44,7 @@ func beginWorkTask(opts Options, agent codingagents.Agent, model, planPath, plan
 		Status:              store.StatusWorking,
 		InvokedTool:         agent.Name(),
 		InvokedModel:        model,
-		ResumeCursor:        codingagents.DefaultWorkspace(planPath),
+		ResumeCursor:        resumeChatID,
 		Summary:             workSummary(requirement, planBody, planPath),
 		WorkBeginAt:         &begin,
 	}

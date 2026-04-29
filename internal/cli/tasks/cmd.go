@@ -33,9 +33,10 @@ func New() *cobra.Command {
 			"`j work` and prints a stable list to stdout. Active tasks " +
 			"(planning, working, verifying, help) appear first; " +
 			"completed tasks follow, sorted by done_at descending. " +
-			"The RESUME column is the workspace directory to use with Cursor " +
-			"agent CLI (e.g. --workspace) to continue that task, or - when " +
-			"not set.",
+			"The RESUME column is the Cursor agent chat session id from " +
+			"`cursor-agent create-chat` for that run; resume later with " +
+			"`cursor-agent --resume <id>` (same id shown here). Shows - when " +
+			"unset or not applicable.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return listTasks(cmd.OutOrStdout())
 		},
@@ -77,9 +78,9 @@ func listTasks(stdout io.Writer) error {
 
 // writeTasks emits the header row plus one row per task to a
 // tabwriter so the columns line up regardless of ID/summary length.
-// The RESUME column is Task.ResumeCursor (workspace path for Cursor);
-// an empty value prints as a hyphen. Time columns are omitted; callers
-// that want timestamps can read the raw JSON via bbolt.
+// The RESUME column is Task.ResumeCursor: the Cursor chat id for
+// `cursor-agent --resume`, or "-" when empty. Time columns are omitted;
+// callers that want timestamps can read the raw JSON via bbolt.
 func writeTasks(out io.Writer, tasks []store.Task) error {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	if _, err := fmt.Fprintln(tw, "ID\tSTATUS\tTOOL\tMODEL\tRESUME\tSUMMARY"); err != nil {
@@ -95,8 +96,8 @@ func writeTasks(out io.Writer, tasks []store.Task) error {
 	return tw.Flush()
 }
 
-// formatResumeCursor prints the path passed to the Cursor agent as
-// --workspace for this task, or a visible placeholder when unset.
+// formatResumeCursor prints the Cursor session id for --resume, or "-"
+// when there is no id to show.
 func formatResumeCursor(s string) string {
 	if s == "" {
 		return "-"

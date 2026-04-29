@@ -15,10 +15,16 @@ import (
 	"github.com/spacelions/j/internal/store"
 )
 
+// testCursorChatID is the `cursor-agent create-chat` id from the
+// TestMain stub; Run stores it in Task.ResumeCursor for the Cursor
+// backend.
+const testCursorChatID = "00000000-0000-4000-8000-000000000001"
+
 // TestMain chdir's the entire work-package test binary into an
 // ephemeral directory so any test that calls Run without an explicit
 // Store doesn't pollute the source tree with a `.j/settings` file
-// when withDefaults lazily opens the default DB.
+// when withDefaults lazily opens the default DB. It prepends a
+// `cursor-agent` stub for `create-chat` so Run stays hermetic.
 func TestMain(m *testing.M) {
 	tmp, err := os.MkdirTemp("", "work-test-*")
 	if err != nil {
@@ -26,6 +32,25 @@ func TestMain(m *testing.M) {
 	}
 	defer os.RemoveAll(tmp)
 	if err := os.Chdir(tmp); err != nil {
+		panic(err)
+	}
+	stubDir, err := os.MkdirTemp(tmp, "cursor-path")
+	if err != nil {
+		panic(err)
+	}
+	stub := filepath.Join(stubDir, "cursor-agent")
+	stubScript := `#!/bin/sh
+if [ "$1" = "create-chat" ]; then
+  echo "00000000-0000-4000-8000-000000000001"
+  exit 0
+fi
+echo "cursor-agent test stub: unhandled argv" >&2
+exit 1
+`
+	if err := os.WriteFile(stub, []byte(stubScript), 0o755); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH")); err != nil {
 		panic(err)
 	}
 	os.Exit(m.Run())

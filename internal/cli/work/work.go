@@ -15,6 +15,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/agentpick"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/mdfile"
 )
@@ -93,12 +94,14 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 
-	lc := beginWorkTask(opts, agent, model, plan, string(body))
+	resumeID := cursorResumeChatID(ctx, opts, agent)
+	lc := beginWorkTask(opts, agent, model, plan, string(body), resumeID)
 	workErr := agent.Work(ctx, codingagents.WorkRequest{
-		PlanPath:    plan,
-		Body:        string(body),
-		Model:       model,
-		Interactive: opts.Interactive,
+		PlanPath:     plan,
+		Body:         string(body),
+		Model:        model,
+		Interactive:  opts.Interactive,
+		ResumeChatID: resumeID,
 	})
 	lc.finishWork(workErr)
 	if workErr != nil {
@@ -164,4 +167,16 @@ func (o Options) withDefaults() Options {
 		}
 	}
 	return o
+}
+
+func cursorResumeChatID(ctx context.Context, opts Options, agent codingagents.Agent) string {
+	if agent.Name() != "cursor" {
+		return ""
+	}
+	id, err := cursor.CreateChatID(ctx)
+	if err != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
+		return ""
+	}
+	return id
 }

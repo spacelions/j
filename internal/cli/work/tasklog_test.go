@@ -79,8 +79,8 @@ func TestRun_LogsDoneTask_WithSidecar(t *testing.T) {
 	if got.WorkBeginAt == nil || got.WorkEndAt == nil || got.DoneAt == nil {
 		t.Fatalf("timestamps incomplete: %+v", got)
 	}
-	if got.ResumeCursor != filepath.Dir(plan) {
-		t.Fatalf("ResumeCursor = %q", got.ResumeCursor)
+	if got.ResumeCursor != testCursorChatID {
+		t.Fatalf("ResumeCursor = %q, want %q", got.ResumeCursor, testCursorChatID)
 	}
 }
 
@@ -196,7 +196,7 @@ func TestWorkSummary_Fallbacks(t *testing.T) {
 func TestFinishWork_Idempotent(t *testing.T) {
 	t.Chdir(t.TempDir())
 	plan := writePlan(t, "body")
-	lc := beginWorkTask(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", plan, "body")
+	lc := beginWorkTask(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", plan, "body", "")
 	lc.finishWork(nil)
 	lc.finishWork(errors.New("ignored"))
 	tasks := readTasks(t)
@@ -218,7 +218,7 @@ func TestBeginWorkTask_OpenTaskLogFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	lc := beginWorkTask(Options{Stderr: &stderr}, &scriptedAgent{name: "cursor"}, "m", "/tmp/x.plan.md", "body")
+	lc := beginWorkTask(Options{Stderr: &stderr}, &scriptedAgent{name: "cursor"}, "m", "/tmp/x.plan.md", "body", "")
 	if lc.store != nil {
 		t.Fatal("store should be nil after open failure")
 	}

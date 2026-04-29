@@ -97,6 +97,36 @@ func TestListModels_EmptyList(t *testing.T) {
 	}
 }
 
+func TestCreateChatID(t *testing.T) {
+	calls := installStub(t, "  2b43f90a-b742-4d4b-9f0c-e1ee8ad43f83  \n", 0)
+	id, err := CreateChatID(context.Background())
+	if err != nil {
+		t.Fatalf("CreateChatID: %v", err)
+	}
+	if id != "2b43f90a-b742-4d4b-9f0c-e1ee8ad43f83" {
+		t.Fatalf("id = %q", id)
+	}
+	if got := readCalls(t, calls); !reflect.DeepEqual(got, []string{"create-chat"}) {
+		t.Fatalf("argv = %v", got)
+	}
+}
+
+func TestCreateChatID_EmptyOutput(t *testing.T) {
+	installStub(t, "  \n  \t  ", 0)
+	_, err := CreateChatID(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "empty id") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCreateChatID_RunnerError(t *testing.T) {
+	installStub(t, "", 1)
+	_, err := CreateChatID(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "create-chat") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestCheckLogin(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -171,6 +201,38 @@ func TestPlan_Interactive(t *testing.T) {
 	}
 }
 
+func TestPlan_Interactive_ResumeChatID(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "spec.md")
+	if err := os.WriteFile(target, []byte("# task\nbody"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "spec.plan.md")
+	calls := installStub(t, "", 0)
+	rid := "22222222-2222-4222-8222-222222222222"
+	err := New().Plan(context.Background(), codingagents.PlanRequest{
+		TargetPath:   target,
+		Body:         "# task\nbody",
+		Model:        "composer-2-fast",
+		OutputPath:   out,
+		Interactive:  true,
+		ResumeChatID: rid,
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	argv := readCalls(t, calls)
+	want := []string{"--resume", rid, "--model", "composer-2-fast", "--workspace", dir}
+	if len(argv) != len(want)+1 {
+		t.Fatalf("argv = %v", argv)
+	}
+	for i, v := range want {
+		if argv[i] != v {
+			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
+		}
+	}
+}
+
 func TestPlan_Interactive_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
 	err := New().Plan(context.Background(), codingagents.PlanRequest{
@@ -229,6 +291,45 @@ func TestPlan_Headless(t *testing.T) {
 	}
 }
 
+func TestPlan_Headless_ResumeChatID(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "spec.md")
+	if err := os.WriteFile(target, []byte("# task\nbody"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "spec.plan.md")
+	calls := installStub(t, "  1. step one\n2. step two  \n", 0)
+	rid := "33333333-3333-4333-8333-333333333333"
+	err := New().Plan(context.Background(), codingagents.PlanRequest{
+		TargetPath:   target,
+		Body:         "# task\nbody",
+		Model:        "sonnet-4",
+		OutputPath:   out,
+		Interactive:  false,
+		ResumeChatID: rid,
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	argv := readCalls(t, calls)
+	want := []string{
+		"--resume", rid,
+		"--print",
+		"--output-format", "text",
+		"--mode", "plan",
+		"--model", "sonnet-4",
+		"--workspace", dir,
+	}
+	if len(argv) != len(want)+1 {
+		t.Fatalf("argv = %v", argv)
+	}
+	for i, v := range want {
+		if argv[i] != v {
+			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
+		}
+	}
+}
+
 func TestPlan_Headless_EmptyOutput(t *testing.T) {
 	installStub(t, "   \n  ", 0)
 	err := New().Plan(context.Background(), codingagents.PlanRequest{
@@ -268,6 +369,23 @@ func TestPlan_Scratch(t *testing.T) {
 		t.Fatalf("Plan: %v", err)
 	}
 	want := []string{"--mode", "plan", "--model", "composer-2-fast"}
+	if argv := readCalls(t, calls); !reflect.DeepEqual(argv, want) {
+		t.Fatalf("argv = %v, want %v", argv, want)
+	}
+}
+
+func TestPlan_Scratch_ResumeChatID(t *testing.T) {
+	calls := installStub(t, "", 0)
+	rid := "11111111-1111-4111-9111-111111111111"
+	err := New().Plan(context.Background(), codingagents.PlanRequest{
+		Model:        "composer-2-fast",
+		Interactive:  true,
+		ResumeChatID: rid,
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	want := []string{"--resume", rid, "--mode", "plan", "--model", "composer-2-fast"}
 	if argv := readCalls(t, calls); !reflect.DeepEqual(argv, want) {
 		t.Fatalf("argv = %v, want %v", argv, want)
 	}
@@ -327,6 +445,36 @@ func TestWork_Interactive(t *testing.T) {
 	}
 }
 
+func TestWork_Interactive_ResumeChatID(t *testing.T) {
+	dir := t.TempDir()
+	plan := filepath.Join(dir, "spec.plan.md")
+	if err := os.WriteFile(plan, []byte("1. step one\n2. step two"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls := installStub(t, "", 0)
+	rid := "44444444-4444-4444-8444-444444444444"
+	err := New().Work(context.Background(), codingagents.WorkRequest{
+		PlanPath:     plan,
+		Body:         "1. step one\n2. step two",
+		Model:        "composer-2-fast",
+		Interactive:  true,
+		ResumeChatID: rid,
+	})
+	if err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	argv := readCalls(t, calls)
+	want := []string{"--resume", rid, "--model", "composer-2-fast", "--workspace", dir}
+	if len(argv) != len(want)+1 {
+		t.Fatalf("argv = %v", argv)
+	}
+	for i, v := range want {
+		if argv[i] != v {
+			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
+		}
+	}
+}
+
 func TestWork_Headless(t *testing.T) {
 	dir := t.TempDir()
 	plan := filepath.Join(dir, "spec.plan.md")
@@ -362,6 +510,42 @@ func TestWork_Headless(t *testing.T) {
 	for _, a := range argv {
 		if a == "--mode" {
 			t.Fatalf("headless Work should not pass --mode: argv = %v", argv)
+		}
+	}
+}
+
+func TestWork_Headless_ResumeChatID(t *testing.T) {
+	dir := t.TempDir()
+	plan := filepath.Join(dir, "spec.plan.md")
+	if err := os.WriteFile(plan, []byte("plan body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls := installStub(t, "ok\n", 0)
+	rid := "55555555-5555-4555-8555-555555555555"
+	err := New().Work(context.Background(), codingagents.WorkRequest{
+		PlanPath:     plan,
+		Body:         "plan body",
+		Model:        "sonnet-4",
+		Interactive:  false,
+		ResumeChatID: rid,
+	})
+	if err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	argv := readCalls(t, calls)
+	want := []string{
+		"--resume", rid,
+		"--print",
+		"--output-format", "text",
+		"--model", "sonnet-4",
+		"--workspace", dir,
+	}
+	if len(argv) != len(want)+1 {
+		t.Fatalf("argv = %v", argv)
+	}
+	for i, v := range want {
+		if argv[i] != v {
+			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
 		}
 	}
 }

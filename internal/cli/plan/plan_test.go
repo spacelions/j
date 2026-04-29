@@ -45,11 +45,18 @@ func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
 	return v, ok
 }
 
+// testCursorChatID is the session id the fake `cursor-agent` on PATH
+// prints for `create-chat` (see TestMain), matching what Run stores in
+// Task.ResumeCursor for the Cursor backend.
+const testCursorChatID = "00000000-0000-4000-8000-000000000001"
+
 // TestMain chdir's the entire plan-package test binary into an
 // ephemeral directory so any test that calls Run without an explicit
 // Store doesn't pollute the source tree with a `.j/settings` file
 // when withDefaults lazily opens the default DB. Tests that need
-// hermetic per-test storage call t.Chdir on top of this.
+// hermetic per-test storage call t.Chdir on top of this. It also prepends
+// a minimal `cursor-agent` stub that only implements `create-chat` so
+// `cursor.CreateChatID` used by Run does not require a real install.
 func TestMain(m *testing.M) {
 	tmp, err := os.MkdirTemp("", "plan-test-*")
 	if err != nil {
@@ -57,6 +64,25 @@ func TestMain(m *testing.M) {
 	}
 	defer os.RemoveAll(tmp)
 	if err := os.Chdir(tmp); err != nil {
+		panic(err)
+	}
+	stubDir, err := os.MkdirTemp(tmp, "cursor-path")
+	if err != nil {
+		panic(err)
+	}
+	stub := filepath.Join(stubDir, "cursor-agent")
+	stubScript := `#!/bin/sh
+if [ "$1" = "create-chat" ]; then
+  echo "00000000-0000-4000-8000-000000000001"
+  exit 0
+fi
+echo "cursor-agent test stub: unhandled argv" >&2
+exit 1
+`
+	if err := os.WriteFile(stub, []byte(stubScript), 0o755); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH")); err != nil {
 		panic(err)
 	}
 	os.Exit(m.Run())

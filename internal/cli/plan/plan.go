@@ -15,6 +15,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/agentpick"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/mdfile"
 )
@@ -117,13 +118,15 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 	}
 
 	out := planOutputPath(target)
-	lc := beginPlanTask(opts, agent, model, target, string(body))
+	resumeID := cursorResumeChatID(ctx, opts, agent)
+	lc := beginPlanTask(opts, agent, model, target, string(body), resumeID)
 	planErr := agent.Plan(ctx, codingagents.PlanRequest{
-		TargetPath:  target,
-		Body:        string(body),
-		Model:       model,
-		OutputPath:  out,
-		Interactive: opts.Interactive,
+		TargetPath:   target,
+		Body:         string(body),
+		Model:        model,
+		OutputPath:   out,
+		Interactive:  opts.Interactive,
+		ResumeChatID: resumeID,
 	})
 	var planMD string
 	if planErr == nil {
@@ -154,10 +157,12 @@ func runScratch(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	lc := beginPlanTask(opts, agent, model, "", "")
+	resumeID := cursorResumeChatID(ctx, opts, agent)
+	lc := beginPlanTask(opts, agent, model, "", "", resumeID)
 	planErr := agent.Plan(ctx, codingagents.PlanRequest{
-		Model:       model,
-		Interactive: true,
+		Model:        model,
+		Interactive:  true,
+		ResumeChatID: resumeID,
 	})
 	lc.finishPlan(planErr, "")
 	return planErr
@@ -221,4 +226,19 @@ func (o Options) withDefaults() Options {
 		}
 	}
 	return o
+}
+
+// cursorResumeChatID returns a new Cursor agent chat id for
+// `cursor-agent --resume`, or "" when the planner is not Cursor or
+// `cursor-agent create-chat` fails.
+func cursorResumeChatID(ctx context.Context, opts Options, agent codingagents.Agent) string {
+	if agent.Name() != "cursor" {
+		return ""
+	}
+	id, err := cursor.CreateChatID(ctx)
+	if err != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
+		return ""
+	}
+	return id
 }

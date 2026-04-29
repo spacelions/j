@@ -62,8 +62,9 @@ type Task struct {
 	Status              TaskStatus `json:"status"`
 	InvokedTool         string     `json:"invoked_tool"`
 	InvokedModel        string     `json:"invoked_model"`
-	ResumeCursor        string     `json:"resume_cursor"`
-	Summary             string     `json:"summary"`
+	// ResumeCursor is the Cursor agent chat id for `cursor-agent --resume`.
+	ResumeCursor string `json:"resume_cursor"`
+	Summary      string `json:"summary"`
 
 	PlanBeginAt   *time.Time `json:"plan_begin_at,omitempty"`
 	PlanEndAt     *time.Time `json:"plan_end_at,omitempty"`
