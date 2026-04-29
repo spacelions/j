@@ -104,9 +104,9 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 	t2 := t1.Add(time.Hour)
 
 	tasks := []store.Task{
-		{ID: "ddd-done-old", Status: store.StatusDone, InvokedTool: "cursor", InvokedModel: "gpt-5", Summary: "old one", DoneAt: &t1},
-		{ID: "aaa-done-new", Status: store.StatusDone, InvokedTool: "cursor", InvokedModel: "sonnet-4", Summary: "new one", DoneAt: &t2},
-		{ID: "active-1", Status: store.StatusPlanning, InvokedTool: "cursor", InvokedModel: "sonnet-4", Summary: "draft idea"},
+		{ID: "ddd-done-old", Status: store.StatusDone, InvokedTool: "cursor", InvokedModel: "gpt-5", ResumeCursor: "", Summary: "old one", DoneAt: &t1},
+		{ID: "aaa-done-new", Status: store.StatusDone, InvokedTool: "cursor", InvokedModel: "sonnet-4", ResumeCursor: "/tmp/cursor-ws-aaa", Summary: "new one", DoneAt: &t2},
+		{ID: "active-1", Status: store.StatusPlanning, InvokedTool: "cursor", InvokedModel: "sonnet-4", ResumeCursor: "/tmp/cursor-ws-active", Summary: "draft idea"},
 	}
 	for _, task := range tasks {
 		if err := s.PutTask(task); err != nil {
@@ -127,6 +127,12 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 	}
 	if !strings.HasPrefix(lines[0], "ID") || !strings.Contains(lines[0], "STATUS") {
 		t.Fatalf("missing header: %q", lines[0])
+	}
+	if !strings.Contains(lines[0], "RESUME") {
+		t.Fatalf("header missing RESUME: %q", lines[0])
+	}
+	if !strings.Contains(out, "/tmp/cursor-ws-aaa") || !strings.Contains(out, "/tmp/cursor-ws-active") {
+		t.Fatalf("expected resume paths in output: %q", out)
 	}
 	wantOrder := []string{"active-1", "aaa-done-new", "ddd-done-old"}
 	for i, id := range wantOrder {
@@ -253,6 +259,15 @@ func TestWriteTasks_FlushError(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error from failing writer")
+	}
+}
+
+func TestFormatResumeCursor(t *testing.T) {
+	if got, want := formatResumeCursor(""), "-"; got != want {
+		t.Fatalf("empty: got %q, want %q", got, want)
+	}
+	if got, want := formatResumeCursor("/proj/app"), "/proj/app"; got != want {
+		t.Fatalf("path: got %q, want %q", got, want)
 	}
 }
 

@@ -32,7 +32,10 @@ func New() *cobra.Command {
 		Long: "Reads the per-project task log written by `j plan` and " +
 			"`j work` and prints a stable list to stdout. Active tasks " +
 			"(planning, working, verifying, help) appear first; " +
-			"completed tasks follow, sorted by done_at descending.",
+			"completed tasks follow, sorted by done_at descending. " +
+			"The RESUME column is the workspace directory to use with Cursor " +
+			"agent CLI (e.g. --workspace) to continue that task, or - when " +
+			"not set.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return listTasks(cmd.OutOrStdout())
 		},
@@ -74,19 +77,29 @@ func listTasks(stdout io.Writer) error {
 
 // writeTasks emits the header row plus one row per task to a
 // tabwriter so the columns line up regardless of ID/summary length.
-// Time columns are deliberately omitted for now: callers that want a
-// timestamp can read the raw JSON via bbolt; the listing is meant to
-// be a quick "what's in flight" overview.
+// The RESUME column is Task.ResumeCursor (workspace path for Cursor);
+// an empty value prints as a hyphen. Time columns are omitted; callers
+// that want timestamps can read the raw JSON via bbolt.
 func writeTasks(out io.Writer, tasks []store.Task) error {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "ID\tSTATUS\tTOOL\tMODEL\tSUMMARY"); err != nil {
+	if _, err := fmt.Fprintln(tw, "ID\tSTATUS\tTOOL\tMODEL\tRESUME\tSUMMARY"); err != nil {
 		return err
 	}
 	for _, t := range tasks {
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
-			t.ID, t.Status, t.InvokedTool, t.InvokedModel, t.Summary); err != nil {
+		resume := formatResumeCursor(t.ResumeCursor)
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			t.ID, t.Status, t.InvokedTool, t.InvokedModel, resume, t.Summary); err != nil {
 			return err
 		}
 	}
 	return tw.Flush()
+}
+
+// formatResumeCursor prints the path passed to the Cursor agent as
+// --workspace for this task, or a visible placeholder when unset.
+func formatResumeCursor(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
