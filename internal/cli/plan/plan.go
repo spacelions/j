@@ -159,8 +159,9 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 	if err != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
 	}
+	agentLogPath := filepath.Join(taskDir, agentLogFileName)
 	lc := beginPlanTask(opts, agent, model, taskID, target, string(body), resumeID)
-	planErr := agent.Plan(ctx, codingagents.PlanRequest{
+	pid, planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           target,
 		Body:                   string(body),
 		Model:                  model,
@@ -168,7 +169,16 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		PlanOutputPath:         planPath,
 		Interactive:            *opts.Interactive,
 		ResumeChatID:           resumeID,
+		AgentLogPath:           agentLogPath,
 	})
+
+	if planErr == nil && pid > 0 {
+		lc.recordBackground(pid, agentLogPath)
+		fmt.Fprintf(opts.Stdout,
+			"J: cursor-agent running in background (PID=%d); see .j/tasks/%s/%s\n",
+			pid, taskID, agentLogFileName)
+		return nil
+	}
 
 	var refinedReq, planMD string
 	if planErr == nil {

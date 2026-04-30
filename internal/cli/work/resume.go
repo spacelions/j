@@ -105,7 +105,10 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	body := readBestEffort(planPath)
 
 	lc := beginWorkTaskResume(Options{Stderr: opts.Stderr}, task)
-	workErr := agent.Work(ctx, codingagents.WorkRequest{
+	// Resume is always interactive; the headless background spawn
+	// path never fires here. Discard the returned PID (always 0) so
+	// the orchestrator stays on the synchronous lifecycle.
+	_, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:     planPath,
 		Body:         body,
 		Model:        task.InvokedModel,

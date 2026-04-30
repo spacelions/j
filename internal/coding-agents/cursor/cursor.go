@@ -111,7 +111,12 @@ func (*Agent) CheckLogin(ctx context.Context) error {
 //     branch keeps --mode plan (and does not gain --force/--trust)
 //     because the user can leave plan mode and approve writes
 //     manually in the TUI.
-func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
+//
+// The headless path is fire-and-forget: stdio is redirected to
+// req.AgentLogPath via run.Spawn and the spawned PID is returned so
+// `j plan` can record it for later reaping. The interactive path
+// stays synchronous and returns 0.
+func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.FromFilePath)
 	base := prompts.BuildPlanner(req.FromFilePath, req.Body)
 	prompt := fmt.Sprintf(
@@ -129,9 +134,9 @@ func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
 		}
 		args = append(args, "--mode", "plan", "--model", req.Model, "--workspace", workspace, prompt)
 		if err := run.Run(ctx, Binary, args...); err != nil {
-			return fmt.Errorf("cursor-agent: %w", err)
+			return 0, fmt.Errorf("cursor-agent: %w", err)
 		}
-		return nil
+		return 0, nil
 	}
 
 	var hargs []string
@@ -139,10 +144,11 @@ func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
 		hargs = append(hargs, "--resume", req.ResumeChatID)
 	}
 	hargs = append(hargs, "--print", "--output-format", "text", "--force", "--trust", "--model", req.Model, "--workspace", workspace, prompt)
-	if _, err := run.Output(ctx, Binary, hargs...); err != nil {
-		return fmt.Errorf("cursor-agent: %w", err)
+	pid, err := run.Spawn(ctx, req.AgentLogPath, Binary, hargs...)
+	if err != nil {
+		return 0, fmt.Errorf("cursor-agent: %w", err)
 	}
-	return nil
+	return pid, nil
 }
 
 // Work runs cursor-agent against a previously generated plan markdown.
@@ -154,9 +160,11 @@ func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
 //     initial user message; the user drives the session until cursor
 //     exits.
 //   - Headless: --print --output-format text against the coder prompt,
-//     letting cursor edit files and print a brief summary that we
-//     discard.
-func (*Agent) Work(ctx context.Context, req codingagents.WorkRequest) error {
+//     fire-and-forget. cursor-agent's stdout/stderr are redirected to
+//     req.AgentLogPath via run.Spawn and the spawned PID is returned
+//     so `j work` can record it for later reaping. The interactive
+//     path stays synchronous and returns 0.
+func (*Agent) Work(ctx context.Context, req codingagents.WorkRequest) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.PlanPath)
 	prompt := prompts.BuildCoder(req.PlanPath, req.Body)
 
@@ -167,19 +175,20 @@ func (*Agent) Work(ctx context.Context, req codingagents.WorkRequest) error {
 		}
 		wargs = append(wargs, "--model", req.Model, "--workspace", workspace, prompt)
 		if err := run.Run(ctx, Binary, wargs...); err != nil {
-			return fmt.Errorf("cursor-agent: %w", err)
+			return 0, fmt.Errorf("cursor-agent: %w", err)
 		}
-		return nil
+		return 0, nil
 	}
 
 	pargs := []string{"--print", "--output-format", "text", "--model", req.Model, "--workspace", workspace, prompt}
 	if req.ResumeChatID != "" {
 		pargs = append([]string{"--resume", req.ResumeChatID}, pargs...)
 	}
-	if _, err := run.Output(ctx, Binary, pargs...); err != nil {
-		return fmt.Errorf("cursor-agent: %w", err)
+	pid, err := run.Spawn(ctx, req.AgentLogPath, Binary, pargs...)
+	if err != nil {
+		return 0, fmt.Errorf("cursor-agent: %w", err)
 	}
-	return nil
+	return pid, nil
 }
 
 // parseModels extracts cursor-agent model IDs from --list-models output.

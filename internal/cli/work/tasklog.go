@@ -12,6 +12,12 @@ import (
 	"github.com/spacelions/j/internal/store"
 )
 
+// agentLogFileName is the per-task file that captures stdout/stderr
+// of a fire-and-forget headless cursor-agent child for `j work`. It
+// lives at `<cwd>/.j/tasks/<id>/agent.log`, matching the constant of
+// the same name in the plan package so both flows share one filename.
+const agentLogFileName = "agent.log"
+
 // workLifecycle owns the begin/end task-log writes around a single
 // agent.Work invocation. The struct holds no bbolt handle — every
 // task-log write goes through writeWorkTaskWarn, which opens
@@ -99,6 +105,26 @@ func openLifecycle(opts Options, task store.Task) *workLifecycle {
 	lc := &workLifecycle{stderr: opts.Stderr, task: task}
 	writeWorkTaskWarn(opts.Stderr, task)
 	return lc
+}
+
+// recordBackground stamps the spawned child's PID and the agent log
+// path on the in-memory work task row and re-persists it. It is the
+// counterpart of finishWork for fire-and-forget headless runs: the
+// row stays at status `working` until the reaper in `j tasks`
+// observes the child exited and finalises it.
+//
+// recordBackground sets the closed flag so a defensive finishWork
+// fired by mistake (e.g. via a deferred guard) becomes a silent
+// no-op and does not clobber the background row with `work-done` /
+// `help`.
+func (lc *workLifecycle) recordBackground(pid int, logPath string) {
+	if lc.closed {
+		return
+	}
+	lc.closed = true
+	lc.task.BackgroundPID = pid
+	lc.task.AgentLogPath = logPath
+	writeWorkTaskWarn(lc.stderr, lc.task)
 }
 
 // finishWork stamps work_end_at, picks the terminal status from runErr

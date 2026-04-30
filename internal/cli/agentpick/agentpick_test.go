@@ -103,12 +103,12 @@ func (s *stubAgent) NewResumeID(context.Context) (string, error) {
 	return "", errors.New("agentpick: NewResumeID should not be called")
 }
 
-func (s *stubAgent) Plan(context.Context, codingagents.PlanRequest) error {
-	return errors.New("agentpick: Plan should not be called")
+func (s *stubAgent) Plan(context.Context, codingagents.PlanRequest) (int, error) {
+	return 0, errors.New("agentpick: Plan should not be called")
 }
 
-func (s *stubAgent) Work(context.Context, codingagents.WorkRequest) error {
-	return errors.New("agentpick: Work should not be called")
+func (s *stubAgent) Work(context.Context, codingagents.WorkRequest) (int, error) {
+	return 0, errors.New("agentpick: Work should not be called")
 }
 
 func TestPick_Success(t *testing.T) {

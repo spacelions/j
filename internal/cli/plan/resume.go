@@ -110,7 +110,10 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	resumeTask := planResumeBegin(task)
 	persistTaskWarn(opts.Stderr, resumeTask)
 
-	planErr := agent.Plan(ctx, codingagents.PlanRequest{
+	// Resume is always interactive; the headless background spawn
+	// path never fires here. Discard the returned PID (always 0) so
+	// the orchestrator stays on the synchronous lifecycle.
+	_, planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           requirementsPath,
 		Body:                   body,
 		Model:                  task.InvokedModel,

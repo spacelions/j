@@ -196,6 +196,11 @@ type scriptedAgent struct {
 	resumeID  string
 	resumeErr error
 	workErr   error
+	// workPID, when non-zero and workErr is nil, is returned from
+	// Work to simulate a fire-and-forget headless spawn. The
+	// orchestrator records the value as the task row's
+	// BackgroundPID and skips finishWork.
+	workPID int
 	// workHook, when non-nil, is invoked at the start of Work
 	// before any side effects so tests can assert invariants
 	// (e.g. that no bbolt file lock is held) while the agent is
@@ -240,19 +245,22 @@ func (s *scriptedAgent) NewResumeID(context.Context) (string, error) {
 	return s.resumeID, nil
 }
 
-func (s *scriptedAgent) Plan(context.Context, codingagents.PlanRequest) error {
-	return errors.New("scriptedAgent: Plan should not be called from work tests")
+func (s *scriptedAgent) Plan(context.Context, codingagents.PlanRequest) (int, error) {
+	return 0, errors.New("scriptedAgent: Plan should not be called from work tests")
 }
 
-func (s *scriptedAgent) Work(_ context.Context, req codingagents.WorkRequest) error {
+func (s *scriptedAgent) Work(_ context.Context, req codingagents.WorkRequest) (int, error) {
 	s.worked++
 	s.lastReq = req
 	if s.workHook != nil {
 		if err := s.workHook(req); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return s.workErr
+	if s.workErr != nil {
+		return 0, s.workErr
+	}
+	return s.workPID, nil
 }
 
 // taskFilePath returns the absolute path of a body file (e.g.
@@ -1798,6 +1806,102 @@ func TestRun_FromSettings_NilStore_SettingsOpenFails(t *testing.T) {
 	}
 	if agent.worked != 1 {
 		t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
+	}
+}
+
+// TestRun_BackgroundSpawn_RecordsPID exercises the fire-and-forget
+// headless path for `j work`: the scripted agent returns a positive
+// PID, the orchestrator records it on the task row alongside the
+// agent log path, status stays `working` until reaping, no
+// work_end_at is stamped, and stdout carries the background
+// message.
+func TestRun_BackgroundSpawn_RecordsPID(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedPlanDoneTask(t, "x", "plan body", "")
+	agent := newScriptedAgent()
+	agent.workPID = 31415
+	var stdout bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		TaskID:      id,
+		Interactive: boolPtr(false),
+		Stdout:      &stdout,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{agent},
+		UI:          &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "running in background") {
+		t.Fatalf("stdout = %q, want background message", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "PID=31415") {
+		t.Fatalf("stdout = %q, want PID=31415", stdout.String())
+	}
+	tasks := readTasks(t)
+	if len(tasks) != 1 {
+		t.Fatalf("len(tasks) = %d, want 1", len(tasks))
+	}
+	got := tasks[0]
+	if got.Status != store.StatusWorking {
+		t.Fatalf("Status = %q, want working", got.Status)
+	}
+	if got.BackgroundPID != 31415 {
+		t.Fatalf("BackgroundPID = %d, want 31415", got.BackgroundPID)
+	}
+	if got.AgentLogPath == "" || filepath.Base(got.AgentLogPath) != "agent.log" {
+		t.Fatalf("AgentLogPath = %q, want path ending in agent.log", got.AgentLogPath)
+	}
+	if got.WorkEndAt != nil {
+		t.Fatalf("WorkEndAt should remain nil for background row: %v", got.WorkEndAt)
+	}
+	if agent.lastReq.AgentLogPath != got.AgentLogPath {
+		t.Fatalf("AgentLogPath flowed wrong: req=%q row=%q",
+			agent.lastReq.AgentLogPath, got.AgentLogPath)
+	}
+}
+
+// TestRun_BackgroundSpawn_NewTask_RecordsPID covers the legacy
+// file-import path with a backgrounded headless work run: the new
+// task id is minted by resolveFromFile and then carried through to
+// the agent log path / row.
+func TestRun_BackgroundSpawn_NewTask_RecordsPID(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	plan := writePlan(t, "## plan body")
+	agent := newScriptedAgent()
+	agent.workPID = 27182
+	var stdout bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		FromFile:    plan,
+		Interactive: boolPtr(false),
+		Stdout:      &stdout,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{agent},
+		UI:          &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "PID=27182") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	tasks := readTasks(t)
+	if len(tasks) != 1 {
+		t.Fatalf("len(tasks) = %d", len(tasks))
+	}
+	got := tasks[0]
+	if got.Status != store.StatusWorking {
+		t.Fatalf("Status = %q, want working", got.Status)
+	}
+	if got.BackgroundPID != 27182 {
+		t.Fatalf("BackgroundPID = %d", got.BackgroundPID)
+	}
+	if !strings.Contains(got.AgentLogPath, got.ID) {
+		t.Fatalf("AgentLogPath %q should reference task id %q", got.AgentLogPath, got.ID)
 	}
 }
 

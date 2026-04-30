@@ -194,6 +194,12 @@ type scriptedAgent struct {
 	requirement string
 	planErr     error
 	skipWrite   bool
+	// planPID, when non-zero and planErr is nil, is returned from
+	// Plan to simulate a fire-and-forget headless spawn. The
+	// orchestrator records the value as the task row's
+	// BackgroundPID and skips the synchronous file-read +
+	// finishPlan path.
+	planPID int
 	// planHook, when non-nil, is invoked at the start of Plan
 	// before any side effects so tests can assert invariants
 	// (e.g. that no bbolt file lock is held) while the agent is
@@ -244,20 +250,25 @@ func (s *scriptedAgent) NewResumeID(context.Context) (string, error) {
 // agent's responsibility under the new contract). Tests can opt out of
 // the file-write side effect by setting skipWrite to exercise the
 // orchestrator's "could not read" warnings. planHook, when set, runs
-// first so callers can assert mid-flight invariants.
-func (s *scriptedAgent) Plan(_ context.Context, req codingagents.PlanRequest) error {
+// first so callers can assert mid-flight invariants. When planPID is
+// non-zero the agent returns it as the spawned background PID
+// without writing any artifacts (mirroring a fire-and-forget run).
+func (s *scriptedAgent) Plan(_ context.Context, req codingagents.PlanRequest) (int, error) {
 	s.planned++
 	s.lastReq = req
 	if s.planHook != nil {
 		if err := s.planHook(req); err != nil {
-			return err
+			return 0, err
 		}
 	}
 	if s.planErr != nil {
-		return s.planErr
+		return 0, s.planErr
+	}
+	if s.planPID != 0 {
+		return s.planPID, nil
 	}
 	if s.skipWrite {
-		return nil
+		return 0, nil
 	}
 	req.RequirementsOutputPath = filepath.Clean(req.RequirementsOutputPath)
 	req.PlanOutputPath = filepath.Clean(req.PlanOutputPath)
@@ -266,15 +277,15 @@ func (s *scriptedAgent) Plan(_ context.Context, req codingagents.PlanRequest) er
 		requirement = req.Body
 	}
 	if err := os.WriteFile(req.RequirementsOutputPath, []byte(requirement), 0o644); err != nil {
-		return err
+		return 0, err
 	}
-	return os.WriteFile(req.PlanOutputPath, []byte(s.plan+"\n"), 0o644)
+	return 0, os.WriteFile(req.PlanOutputPath, []byte(s.plan+"\n"), 0o644)
 }
 
 // Work is unused by plan_test but required to satisfy the
 // codingagents.Agent interface, which gained Work alongside Plan.
-func (s *scriptedAgent) Work(context.Context, codingagents.WorkRequest) error {
-	return errors.New("scriptedAgent: Work should not be called from plan tests")
+func (s *scriptedAgent) Work(context.Context, codingagents.WorkRequest) (int, error) {
+	return 0, errors.New("scriptedAgent: Work should not be called from plan tests")
 }
 
 func writeFromFile(t *testing.T, body string) string {
@@ -1477,6 +1488,61 @@ func TestRun_FromSettings_NilStore_SettingsOpenFails(t *testing.T) {
 	}
 	if agent.planned != 1 {
 		t.Fatalf("agent.Plan calls = %d, want 1", agent.planned)
+	}
+}
+
+// TestRun_BackgroundSpawn_RecordsPID exercises the fire-and-forget
+// headless path: the scripted agent returns a positive PID, the
+// orchestrator must record it on the task row alongside the agent
+// log path, status must stay `planning` (the row will only flip to
+// plan-done once `j tasks` reaps the dead PID), no plan_end_at is
+// stamped, and stdout carries the user-facing background message.
+func TestRun_BackgroundSpawn_RecordsPID(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	target := writeFromFile(t, "# spec\nbody")
+	agent := newScriptedAgent()
+	agent.planPID = 42424
+	var stdout bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		FromFile:    target,
+		Interactive: boolPtr(false),
+		Stdout:      &stdout,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{agent},
+		UI:          &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "running in background") {
+		t.Fatalf("stdout = %q, want background message", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "PID=42424") {
+		t.Fatalf("stdout = %q, want PID=42424", stdout.String())
+	}
+	tasks := readTasks(t)
+	if len(tasks) != 1 {
+		t.Fatalf("len(tasks) = %d, want 1", len(tasks))
+	}
+	got := tasks[0]
+	if got.Status != store.StatusPlanning {
+		t.Fatalf("Status = %q, want planning", got.Status)
+	}
+	if got.BackgroundPID != 42424 {
+		t.Fatalf("BackgroundPID = %d, want 42424", got.BackgroundPID)
+	}
+	if got.AgentLogPath == "" || filepath.Base(got.AgentLogPath) != "agent.log" {
+		t.Fatalf("AgentLogPath = %q, want path ending in agent.log", got.AgentLogPath)
+	}
+	if got.PlanEndAt != nil {
+		t.Fatalf("PlanEndAt should remain nil for background row: %v", got.PlanEndAt)
+	}
+	// AgentLogPath was passed through to the agent.
+	if agent.lastReq.AgentLogPath != got.AgentLogPath {
+		t.Fatalf("AgentLogPath flowed wrong: req=%q row=%q",
+			agent.lastReq.AgentLogPath, got.AgentLogPath)
 	}
 }
 
