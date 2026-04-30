@@ -283,6 +283,40 @@ func EnsureTaskDir(id string) (string, error) {
 	return taskDir, nil
 }
 
+// RemoveTaskDir removes `<cwd>/.j/tasks/<id>/` and every artifact
+// inside it. The parent `.j/tasks/` directory must already exist
+// (created by `j init` via EnsureProject); a missing parent surfaces
+// a wrapped fs.ErrNotExist so callers can prompt the user to run
+// init (mirroring EnsureTaskDir). A pre-existing regular file at
+// `.j/tasks` (the legacy schema) returns ErrLegacyTasksFile so the
+// cmd layer can surface a friendly message. The helper is
+// idempotent: a missing per-task directory is treated as a no-op
+// because os.RemoveAll returns nil when the target is absent.
+func RemoveTaskDir(id string) error {
+	if id == "" {
+		return errors.New("store: empty task id")
+	}
+	tasksDir, err := DefaultTasksDir()
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(tasksDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("store: %q missing; run `j init`: %w", tasksDir, err)
+		}
+		return fmt.Errorf("store: stat %q: %w", tasksDir, err)
+	}
+	if !info.IsDir() {
+		return ErrLegacyTasksFile
+	}
+	taskDir := filepath.Join(tasksDir, id)
+	if err := os.RemoveAll(taskDir); err != nil {
+		return fmt.Errorf("store: remove %q: %w", taskDir, err)
+	}
+	return nil
+}
+
 // Open opens the bolt database at path. The parent directory and the
 // file itself must already exist (EnsureProject is the sole creator);
 // a missing path yields a wrapped fs.ErrNotExist so callers can

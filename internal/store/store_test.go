@@ -1218,6 +1218,190 @@ func TestEnsureProject_MkdirTasksDirFails(t *testing.T) {
 	}
 }
 
+// TestRemoveTaskDir_RejectsEmptyID pins the empty-id guard: callers
+// must pass a real id, not "" (otherwise os.RemoveAll would happily
+// delete the entire .j/tasks/ directory).
+func TestRemoveTaskDir_RejectsEmptyID(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := RemoveTaskDir(""); err == nil || !strings.Contains(err.Error(), "empty task id") {
+		t.Fatalf("err = %v, want empty task id error", err)
+	}
+}
+
+// TestRemoveTaskDir_RequiresInitialisedTasksDir pins the
+// missing-parent contract: a fresh cwd (no `.j/tasks/`) yields a
+// wrapped fs.ErrNotExist with the run-init hint.
+func TestRemoveTaskDir_RequiresInitialisedTasksDir(t *testing.T) {
+	t.Chdir(t.TempDir())
+	err := RemoveTaskDir("abc")
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("err = %v, want fs.ErrNotExist", err)
+	}
+	if !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("err = %v, want missing-prereq hint", err)
+	}
+}
+
+// TestRemoveTaskDir_LegacyTasksFile pins the legacy-file path: a
+// regular file at .j/tasks blocks the new layout, surfaced as
+// ErrLegacyTasksFile.
+func TestRemoveTaskDir_LegacyTasksFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jdir := filepath.Join(dir, ".j")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(jdir, "tasks")
+	if err := os.WriteFile(legacy, []byte("legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveTaskDir("abc"); !errors.Is(err, ErrLegacyTasksFile) {
+		t.Fatalf("err = %v, want ErrLegacyTasksFile", err)
+	}
+}
+
+// TestRemoveTaskDir_RemovesNestedTree seeds a per-task directory
+// with sub-files, runs RemoveTaskDir, and asserts the entire tree
+// is gone (the helper must be a recursive RemoveAll, not a single
+// Remove).
+func TestRemoveTaskDir_RemovesNestedTree(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	taskDir, err := EnsureTaskDir("nested")
+	if err != nil {
+		t.Fatalf("EnsureTaskDir: %v", err)
+	}
+	for _, name := range []string{RequirementsFileName, PlanFileName, "extra.txt"} {
+		if err := os.WriteFile(filepath.Join(taskDir, name), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(taskDir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveTaskDir("nested"); err != nil {
+		t.Fatalf("RemoveTaskDir: %v", err)
+	}
+	if _, err := os.Stat(taskDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("task dir should be gone, stat err = %v", err)
+	}
+	tasksDir, err := DefaultTasksDir()
+	if err != nil {
+		t.Fatalf("DefaultTasksDir: %v", err)
+	}
+	if info, err := os.Stat(tasksDir); err != nil || !info.IsDir() {
+		t.Fatalf(".j/tasks parent should remain a dir: err=%v", err)
+	}
+}
+
+// TestRemoveTaskDir_IdempotentSecondCall pins the os.RemoveAll
+// nil-on-missing contract: a second call after a successful delete
+// is a no-op (returns nil) so the cmd layer can re-run safely.
+func TestRemoveTaskDir_IdempotentSecondCall(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	if _, err := EnsureTaskDir("once"); err != nil {
+		t.Fatalf("EnsureTaskDir: %v", err)
+	}
+	if err := RemoveTaskDir("once"); err != nil {
+		t.Fatalf("first RemoveTaskDir: %v", err)
+	}
+	if err := RemoveTaskDir("once"); err != nil {
+		t.Fatalf("second RemoveTaskDir: %v", err)
+	}
+}
+
+// TestRemoveTaskDir_StatError forces a non-NotExist stat error on
+// the .j/tasks path so the wrapped-error branch is covered.
+func TestRemoveTaskDir_StatError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file-mode semantics required")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jdir := filepath.Join(dir, ".j")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(jdir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(jdir, 0o755) })
+	if err := RemoveTaskDir("x"); err == nil {
+		t.Fatal("expected stat error")
+	}
+}
+
+// TestRemoveTaskDir_PropagatesCwdError exercises the DefaultDir
+// propagation branch by removing cwd out from under the helper.
+func TestRemoveTaskDir_PropagatesCwdError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("cwd cannot be removed while in use on windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root may bypass relevant FS errors")
+	}
+	parent := t.TempDir()
+	gone := filepath.Join(parent, "gone")
+	if err := os.Mkdir(gone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(gone)
+	t.Setenv("PWD", "")
+	if err := os.Remove(gone); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if _, err := DefaultDir(); err == nil {
+		t.Skip("os.Getwd unexpectedly succeeded")
+	}
+	if err := RemoveTaskDir("x"); err == nil {
+		t.Fatal("RemoveTaskDir should propagate DefaultDir error")
+	}
+}
+
+// TestRemoveTaskDir_RemoveAllFailure forces os.RemoveAll to fail by
+// chmod'ing the tasks parent to read-only after seeding the per-task
+// directory: removeall cannot unlink children inside an unwritable
+// parent. Skipped on root and Windows (where the chmod has no
+// effect).
+func TestRemoveTaskDir_RemoveAllFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file-mode semantics required")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	if _, err := EnsureTaskDir("locked"); err != nil {
+		t.Fatalf("EnsureTaskDir: %v", err)
+	}
+	tasksDir := filepath.Join(dir, ".j", TasksDirName)
+	if err := os.Chmod(tasksDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tasksDir, 0o755) })
+	err := RemoveTaskDir("locked")
+	if err == nil {
+		t.Fatal("expected RemoveAll to fail under read-only parent")
+	}
+	if !strings.Contains(err.Error(), "remove") {
+		t.Fatalf("err = %v, want remove failure", err)
+	}
+}
+
 // TestEnsureGitignoreEntry_NotJDirIsNoop pins the early-return branch
 // in ensureGitignoreEntry: the helper does nothing for arbitrary
 // paths whose base name is not ".j" so callers using a custom store

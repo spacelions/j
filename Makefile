@@ -38,7 +38,9 @@ coverage:
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+choose[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
 		-e 'internal/cli/initcmd/ui\.go:[0-9]+:[[:space:]]+ConfirmReset[[:space:]]' \
+		-e 'internal/cli/tasks/ui\.go:[0-9]+:[[:space:]]+ConfirmDelete[[:space:]]' \
 		-e 'internal/cli/initcmd/cmd\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
+		-e 'internal/cli/tasks/delete\.go:[0-9]+:[[:space:]]+RunDelete[[:space:]]' \
 		-e 'internal/cli/preflight/preflight\.go:[0-9]+:[[:space:]]+ConfirmInit[[:space:]]' \
 		-e 'internal/cli/preflight/preflight\.go:[0-9]+:[[:space:]]+PreRunE[[:space:]]' \
 		-e 'internal/cli/settings/cmd\.go:[0-9]+:[[:space:]]+withOpenStore[[:space:]]' \
@@ -55,6 +57,7 @@ coverage:
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+EnsureProject[[:space:]]' \
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+ProjectInitialized[[:space:]]' \
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+EnsureTaskDir[[:space:]]' \
+		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+RemoveTaskDir[[:space:]]' \
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+touchBoltFile[[:space:]]' \
 		-e 'internal/store/tasks\.go:[0-9]+:[[:space:]]+PutTask[[:space:]]' \
 		-e 'internal/cli/plan/tasklog\.go:[0-9]+:[[:space:]]+beginPlanTask[[:space:]]' \

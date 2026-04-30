@@ -27,7 +27,7 @@ const emptyMessage = "J: no tasks"
 
 // New returns the `j tasks` cobra command.
 func New() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "tasks",
 		Short: "List planning/work tasks recorded in <cwd>/.j/tasks/",
 		Long: "Reads the per-project task log written by `j plan` and " +
@@ -44,6 +44,8 @@ func New() *cobra.Command {
 			return listTasks(cmd.OutOrStdout())
 		},
 	}
+	cmd.AddCommand(newDeleteCmd())
+	return cmd
 }
 
 // listTasks resolves the default tasks DB path, opens it, decodes

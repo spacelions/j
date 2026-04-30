@@ -369,6 +369,74 @@ func TestListTasks_BoltError(t *testing.T) {
 	}
 }
 
+// TestDeleteTask_RoundTrip pins the happy path: a seeded task can be
+// removed and a follow-up GetTask reports it gone via fs.ErrNotExist.
+func TestDeleteTask_RoundTrip(t *testing.T) {
+	s := openTaskStore(t)
+	if err := s.PutTask(Task{ID: "id-del", Status: StatusPlanDone}); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	if err := s.DeleteTask("id-del"); err != nil {
+		t.Fatalf("DeleteTask: %v", err)
+	}
+	if _, err := s.GetTask("id-del"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("GetTask after delete err = %v, want fs.ErrNotExist", err)
+	}
+}
+
+// TestDeleteTask_MissingBucket surfaces fs.ErrNotExist when no task
+// has ever been written (so the bbolt bucket has not been minted).
+func TestDeleteTask_MissingBucket(t *testing.T) {
+	s := openTaskStore(t)
+	err := s.DeleteTask("nope")
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want fs.ErrNotExist", err)
+	}
+}
+
+// TestDeleteTask_MissingKey covers the absent-key branch: the bucket
+// exists (some other task is stored) but the requested id is not.
+func TestDeleteTask_MissingKey(t *testing.T) {
+	s := openTaskStore(t)
+	if err := s.PutTask(Task{ID: "present", Status: StatusPlanDone}); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	err := s.DeleteTask("absent")
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want fs.ErrNotExist", err)
+	}
+}
+
+// TestDeleteTask_BoltError exercises the underlying bolt error path:
+// a closed DB makes the Update transaction fail.
+func TestDeleteTask_BoltError(t *testing.T) {
+	s := openTaskStore(t)
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := s.DeleteTask("x"); err == nil {
+		t.Fatal("DeleteTask on closed db should error")
+	}
+}
+
+// TestDeleteTask_IdempotentSecondCall pins the requirements doc's
+// "deletion is permanent" rule by re-running DeleteTask: the second
+// call must surface fs.ErrNotExist (not silently succeed) so callers
+// can distinguish a real delete from a no-op.
+func TestDeleteTask_IdempotentSecondCall(t *testing.T) {
+	s := openTaskStore(t)
+	if err := s.PutTask(Task{ID: "id-twice", Status: StatusPlanDone}); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	if err := s.DeleteTask("id-twice"); err != nil {
+		t.Fatalf("first DeleteTask: %v", err)
+	}
+	err := s.DeleteTask("id-twice")
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("second DeleteTask err = %v, want fs.ErrNotExist", err)
+	}
+}
+
 func TestSortTasks_ActiveFirstThenByDoneAtDesc(t *testing.T) {
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	t2 := t1.Add(time.Hour)
