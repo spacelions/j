@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -108,25 +109,32 @@ exit 1
 // many times each prompt was invoked. The zero value picks the markdown
 // source (SourceMarkdown == 0) so existing tests that exercise the
 // markdown flow keep working without explicit setup.
+//
+// pickedFile is the basename returned from PickFromFile. When empty the
+// fake selects options[0] so single-entry pickers "just work" in tests
+// that only care about the rest of the flow. pickFileOptions captures
+// the option slice the orchestrator offered so tests can assert the
+// scan + filter contract end-to-end.
 type scriptedUI struct {
-	source    PlanSource
-	fromFile  string
-	tool      string
-	model     string
-	pickedID  string
-	sourceErr error
-	askErr    error
-	toolErr   error
-	modelErr  error
-	pickErr   error
+	source      PlanSource
+	pickedFile  string
+	tool        string
+	model       string
+	pickedID    string
+	sourceErr   error
+	pickFileErr error
+	toolErr     error
+	modelErr    error
+	pickErr     error
 
-	sourceCalls int
-	askCalls    int
-	toolCalls   int
-	modelCalls  int
-	pickCalls   int
+	sourceCalls   int
+	pickFileCalls int
+	toolCalls     int
+	modelCalls    int
+	pickCalls     int
 
-	pickedTasks []store.Task
+	pickFileOptions []string
+	pickedTasks     []store.Task
 }
 
 func (s *scriptedUI) SelectSource(context.Context) (PlanSource, error) {
@@ -137,12 +145,19 @@ func (s *scriptedUI) SelectSource(context.Context) (PlanSource, error) {
 	return s.source, nil
 }
 
-func (s *scriptedUI) AskFromFile(context.Context) (string, error) {
-	s.askCalls++
-	if s.askErr != nil {
-		return "", s.askErr
+func (s *scriptedUI) PickFromFile(_ context.Context, options []string) (string, error) {
+	s.pickFileCalls++
+	s.pickFileOptions = append([]string(nil), options...)
+	if s.pickFileErr != nil {
+		return "", s.pickFileErr
 	}
-	return s.fromFile, nil
+	if s.pickedFile != "" {
+		return s.pickedFile, nil
+	}
+	if len(options) == 0 {
+		return "", errors.New("scriptedUI: no markdown options")
+	}
+	return options[0], nil
 }
 
 func (s *scriptedUI) SelectTool(_ context.Context, options []string) (string, error) {
@@ -319,8 +334,8 @@ func TestRun_Success_WithFlag(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if ui.askCalls != 0 {
-		t.Fatalf("AskFromFile called %d times, want 0", ui.askCalls)
+	if ui.pickFileCalls != 0 {
+		t.Fatalf("PickFromFile called %d times, want 0", ui.pickFileCalls)
 	}
 	if ui.toolCalls != 1 || ui.modelCalls != 1 {
 		t.Fatalf("tool=%d model=%d", ui.toolCalls, ui.modelCalls)
@@ -419,12 +434,21 @@ func TestRun_AgentDidNotWriteFiles(t *testing.T) {
 	}
 }
 
+// TestRun_PromptsForTarget_WhenFlagMissing exercises the prompted
+// markdown branch end-to-end: chdir into a temp dir, drop a single
+// `spec.md`, and assert the picker received `["spec.md"]` and the
+// chosen entry flowed all the way through to agent.Plan as the
+// `FromFilePath`.
 func TestRun_PromptsForTarget_WhenFlagMissing(t *testing.T) {
-	t.Chdir(t.TempDir())
+	dir := t.TempDir()
+	t.Chdir(dir)
 	mustInit(t)
-	target := writeFromFile(t, "body")
+	target := filepath.Join(dir, "spec.md")
+	if err := os.WriteFile(target, []byte("body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceMarkdown, fromFile: target}
+	ui := &scriptedUI{source: SourceMarkdown}
 
 	err := Run(context.Background(), Options{
 		Stdin:  strings.NewReader(""),
@@ -439,8 +463,15 @@ func TestRun_PromptsForTarget_WhenFlagMissing(t *testing.T) {
 	if ui.sourceCalls != 1 {
 		t.Fatalf("SelectSource called %d times, want 1", ui.sourceCalls)
 	}
-	if ui.askCalls != 1 {
-		t.Fatalf("AskFromFile called %d times, want 1", ui.askCalls)
+	if ui.pickFileCalls != 1 {
+		t.Fatalf("PickFromFile called %d times, want 1", ui.pickFileCalls)
+	}
+	want := []string{"spec.md"}
+	if !reflect.DeepEqual(ui.pickFileOptions, want) {
+		t.Fatalf("PickFromFile options = %v, want %v", ui.pickFileOptions, want)
+	}
+	if agent.lastReq.FromFilePath != target {
+		t.Fatalf("FromFilePath = %q, want %q", agent.lastReq.FromFilePath, target)
 	}
 }
 
@@ -505,7 +536,7 @@ func TestRun_SelectSourceError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "source boom") {
 		t.Fatalf("err = %v", err)
 	}
-	if ui.askCalls != 0 || agent.listed != 0 {
+	if ui.pickFileCalls != 0 || agent.listed != 0 {
 		t.Fatal("nothing past SelectSource should have been touched")
 	}
 }
@@ -582,22 +613,192 @@ func TestRun_NoAgents_AppliesDefaults(t *testing.T) {
 	}
 }
 
-func TestRun_AskFromFileError(t *testing.T) {
-	t.Chdir(t.TempDir())
+// TestRun_PickFromFileError pins the picker error path: a UI that
+// returns from PickFromFile must propagate the error verbatim and
+// must not invoke any agent. The cwd has a single eligible markdown
+// file so the orchestrator does reach the picker (and thus the
+// scripted error) instead of short-circuiting on an empty scan.
+func TestRun_PickFromFileError(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
 	mustInit(t)
+	if err := os.WriteFile(filepath.Join(dir, "spec.md"), []byte("body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	agent := newScriptedAgent()
-	ui := &scriptedUI{askErr: errors.New("ask boom")}
+	ui := &scriptedUI{pickFileErr: errors.New("pick boom")}
 	err := Run(context.Background(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
 		UI:     ui,
 	})
-	if err == nil || !strings.Contains(err.Error(), "ask boom") {
+	if err == nil || !strings.Contains(err.Error(), "pick boom") {
 		t.Fatalf("err = %v", err)
 	}
 	if agent.listed != 0 {
-		t.Fatal("agent should not be invoked when AskFromFile errored")
+		t.Fatal("agent should not be invoked when PickFromFile errored")
+	}
+}
+
+// TestRun_MarkdownPicker_FiltersAndExcludes drives the picker
+// end-to-end with a realistic cwd: two eligible markdown files, two
+// excluded basenames (AGENTS.md / readme.MD), one non-markdown
+// (`draft.txt`), and a subdirectory the scanner must skip. The
+// orchestrator must offer exactly the two eligible basenames in
+// case-insensitive sorted order, and the chosen entry must flow all
+// the way through to agent.Plan as the absolute path of `spec.md`.
+func TestRun_MarkdownPicker_FiltersAndExcludes(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	mustInit(t)
+	for _, name := range []string{
+		"spec.md",
+		"notes.markdown",
+		"AGENTS.md",
+		"readme.MD",
+		"draft.txt",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("body"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "subdir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "subdir", "nested.md"), []byte("body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	agent := newScriptedAgent()
+	ui := &scriptedUI{source: SourceMarkdown, pickedFile: "spec.md"}
+
+	err := Run(context.Background(), Options{
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	wantOptions := []string{"notes.markdown", "spec.md"}
+	if !reflect.DeepEqual(ui.pickFileOptions, wantOptions) {
+		t.Fatalf("PickFromFile options = %v, want %v", ui.pickFileOptions, wantOptions)
+	}
+	wantTarget := filepath.Join(dir, "spec.md")
+	if agent.lastReq.FromFilePath != wantTarget {
+		t.Fatalf("FromFilePath = %q, want %q", agent.lastReq.FromFilePath, wantTarget)
+	}
+	if agent.planned != 1 {
+		t.Fatalf("agent.planned = %d, want 1", agent.planned)
+	}
+}
+
+// TestRun_MarkdownPicker_UnknownSelection covers the defensive
+// byBase miss in pickMarkdownTarget: a UI that returns a basename
+// the orchestrator never offered surfaces a clean error and the
+// agent stays untouched. Triggered via the scriptedUI returning an
+// out-of-band basename; in production the huh selector cannot
+// emit a value outside the supplied options.
+func TestRun_MarkdownPicker_UnknownSelection(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	mustInit(t)
+	if err := os.WriteFile(filepath.Join(dir, "spec.md"), []byte("body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	agent := newScriptedAgent()
+	ui := &scriptedUI{source: SourceMarkdown, pickedFile: "ghost.md"}
+
+	err := Run(context.Background(), Options{
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err == nil || !strings.Contains(err.Error(), "unknown markdown selection") {
+		t.Fatalf("err = %v, want 'unknown markdown selection' error", err)
+	}
+	if agent.planned != 0 {
+		t.Fatalf("agent.planned = %d, want 0", agent.planned)
+	}
+}
+
+// TestRun_MarkdownPicker_ScanError pins the wrap-the-os.ReadDir
+// branch in pickMarkdownTarget. We can't ergonomically hand the
+// orchestrator a missing cwd via t.Chdir (Go re-resolves it), so
+// we point ListInDir at a removed directory by replacing the cwd
+// after mustInit and before Run. The orchestrator must surface a
+// `plan: scan ...` wrap and skip the agent.
+func TestRun_MarkdownPicker_ScanError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("relies on POSIX semantics for a removed cwd")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	mustInit(t)
+	// Removing the cwd directory makes os.ReadDir (and therefore
+	// ListInDir) fail with ENOENT while os.Getwd still succeeds
+	// from the kernel's per-process record on POSIX.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+	agent := newScriptedAgent()
+	ui := &scriptedUI{source: SourceMarkdown}
+	err := Run(context.Background(), Options{
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err == nil {
+		t.Fatal("expected scan error")
+	}
+	if !strings.Contains(err.Error(), "plan: scan") && !strings.Contains(err.Error(), "plan: getwd") {
+		t.Fatalf("err = %v, want scan/getwd wrap", err)
+	}
+	if agent.planned != 0 {
+		t.Fatalf("agent.planned = %d, want 0", agent.planned)
+	}
+}
+
+// TestRun_MarkdownPicker_EmptyDirectory pins the empty-scan branch:
+// a cwd with only an AGENTS.md (which is excluded) must produce a
+// single user-facing error mentioning the cwd, the picker is never
+// invoked, and the agent stays untouched.
+func TestRun_MarkdownPicker_EmptyDirectory(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	mustInit(t)
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	agent := newScriptedAgent()
+	ui := &scriptedUI{source: SourceMarkdown}
+
+	err := Run(context.Background(), Options{
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err == nil || !strings.Contains(err.Error(), "no markdown files") {
+		t.Fatalf("err = %v, want 'no markdown files' error", err)
+	}
+	if !strings.Contains(err.Error(), dir) {
+		t.Fatalf("err = %v, want it to mention cwd %q", err, dir)
+	}
+	if ui.pickFileCalls != 0 {
+		t.Fatalf("PickFromFile called %d times, want 0", ui.pickFileCalls)
+	}
+	if agent.planned != 0 {
+		t.Fatalf("agent.planned = %d, want 0", agent.planned)
 	}
 }
 
