@@ -186,6 +186,26 @@ func (s *Store) GetTask(id string) (Task, error) {
 	return out, nil
 }
 
+// DeleteTask removes the JSON-encoded Task stored under id from
+// BucketTasks. The error wraps fs.ErrNotExist when the bucket is
+// missing or the key is absent so callers (notably `j tasks delete`)
+// can distinguish "no such task" from a transport error and surface
+// the correct user-facing message. Bolt-level failures (closed DB,
+// disk error) propagate verbatim from db.Update; PutTask follows
+// the same convention so the surfacing is uniform.
+func (s *Store) DeleteTask(id string) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(BucketTasks))
+		if b == nil {
+			return fmt.Errorf("store: delete task %q: %w", id, fs.ErrNotExist)
+		}
+		if b.Get([]byte(id)) == nil {
+			return fmt.Errorf("store: delete task %q: %w", id, fs.ErrNotExist)
+		}
+		return b.Delete([]byte(id))
+	})
+}
+
 // ListTasks returns every task stored in BucketTasks. A missing bucket
 // yields an empty slice and a nil error so callers can treat
 // "no tasks yet" identically to "no bucket yet". Decoding errors are
