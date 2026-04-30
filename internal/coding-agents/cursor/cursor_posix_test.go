@@ -278,23 +278,27 @@ func TestPlan_Interactive_RunnerError(t *testing.T) {
 }
 
 // TestPlan_Headless pins the headless argv shape: --print
-// --output-format text --mode plan, plus the save-instruction prompt.
-// The agent is responsible for writing the files; the orchestrator
-// only consumes the captured stdout for warnings.
+// --output-format text --force --trust (no --mode plan), plus the
+// save-instruction prompt. The agent is responsible for writing the
+// files; the orchestrator only consumes the captured stdout for
+// warnings. --mode plan is intentionally absent: it would block the
+// agent's write tool calls in headless mode.
 func TestPlan_Headless(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "spec.md")
 	if err := os.WriteFile(target, []byte("# task\nbody"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	reqOut := filepath.Join(dir, "requirements.md")
+	planOut := filepath.Join(dir, "plan.md")
 	calls := installStub(t, "ok\n", 0)
 
 	err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Body:                   "# task\nbody",
 		Model:                  "sonnet-4",
-		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
-		PlanOutputPath:         filepath.Join(dir, "plan.md"),
+		RequirementsOutputPath: reqOut,
+		PlanOutputPath:         planOut,
 		Interactive:            false,
 	})
 	if err != nil {
@@ -304,7 +308,8 @@ func TestPlan_Headless(t *testing.T) {
 	want := []string{
 		"--print",
 		"--output-format", "text",
-		"--mode", "plan",
+		"--force",
+		"--trust",
 		"--model", "sonnet-4",
 		"--workspace", dir,
 	}
@@ -315,6 +320,21 @@ func TestPlan_Headless(t *testing.T) {
 		if argv[i] != v {
 			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
 		}
+	}
+	for _, a := range argv {
+		if a == "--mode" {
+			t.Fatalf("headless Plan should not pass --mode: argv = %v", argv)
+		}
+	}
+	prompt := argv[len(argv)-1]
+	if !strings.Contains(prompt, reqOut) {
+		t.Fatalf("prompt missing requirements path %q: %q", reqOut, prompt)
+	}
+	if !strings.Contains(prompt, planOut) {
+		t.Fatalf("prompt missing plan path %q: %q", planOut, prompt)
+	}
+	if !strings.Contains(prompt, "Save") {
+		t.Fatalf("prompt missing save instruction: %q", prompt)
 	}
 }
 
@@ -343,7 +363,8 @@ func TestPlan_Headless_ResumeChatID(t *testing.T) {
 		"--resume", rid,
 		"--print",
 		"--output-format", "text",
-		"--mode", "plan",
+		"--force",
+		"--trust",
 		"--model", "sonnet-4",
 		"--workspace", dir,
 	}

@@ -101,9 +101,16 @@ func (*Agent) CheckLogin(ctx context.Context) error {
 //     exiting via a suffix on the prompt. The TUI is allowed to
 //     write files in plan mode for this purpose.
 //   - Headless (req.Interactive == false): --print --output-format text
-//     --mode plan, with the same save-instruction suffix on the
-//     prompt; cursor writes the files via its tool use and the
-//     captured stdout is discarded.
+//     --force --trust --model <m> --workspace <w> <prompt>. We drop
+//     --mode plan here on purpose: per `cursor-agent --help`, plan
+//     mode is read-only and forbids every write tool call, which
+//     blocks the prompt's "save requirements/plan" instructions in
+//     headless mode. --force auto-approves tool calls (no interactive
+//     approval prompts) and --trust skips the workspace trust prompt
+//     (it only takes effect with --print/headless). The interactive
+//     branch keeps --mode plan (and does not gain --force/--trust)
+//     because the user can leave plan mode and approve writes
+//     manually in the TUI.
 func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
 	workspace := codingagents.DefaultWorkspace(req.FromFilePath)
 	base := prompts.BuildPlanner(req.FromFilePath, req.Body)
@@ -131,7 +138,7 @@ func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) error {
 	if req.ResumeChatID != "" {
 		hargs = append(hargs, "--resume", req.ResumeChatID)
 	}
-	hargs = append(hargs, "--print", "--output-format", "text", "--mode", "plan", "--model", req.Model, "--workspace", workspace, prompt)
+	hargs = append(hargs, "--print", "--output-format", "text", "--force", "--trust", "--model", req.Model, "--workspace", workspace, prompt)
 	if _, err := run.Output(ctx, Binary, hargs...); err != nil {
 		return fmt.Errorf("cursor-agent: %w", err)
 	}
