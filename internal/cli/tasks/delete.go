@@ -30,9 +30,11 @@ const abortedMessage = "delete aborted"
 // Tests pass a scripted fake for UI to avoid touching stdin.
 type DeleteOptions struct {
 	// TaskID is the exact bbolt key (Task.ID, a 26-char ULID) of the
-	// row to remove. Empty values are rejected with a wrapped error
-	// before any IO; cobra's MarkFlagRequired covers the "no flag"
-	// case ahead of RunDelete.
+	// row to remove. An empty value triggers the picker fallback
+	// (same selector as `j tasks enter`); when the user aborts the
+	// picker RunDelete returns nil silently. The flag is no longer
+	// MarkFlagRequired so `j tasks delete` without --id reaches the
+	// picker.
 	TaskID string
 	// Yes, when true, skips the confirm-delete prompt and proceeds
 	// to the wipe path. Sourced from the --yes/-y flag and the
@@ -68,12 +70,16 @@ func (o DeleteOptions) withDefaults() DeleteOptions {
 
 // RunDelete executes `j tasks delete`. The state machine is:
 //
-//  1. Reject an empty TaskID (defense in depth; cobra normally
-//     surfaces the missing-flag error first).
-//  2. Open <cwd>/.j/tasks/list.db. GetTask wraps fs.ErrNotExist when
-//     the bucket is missing or the key is absent; in that case
-//     print "J: no task" and return nil (exit 0). Other errors
-//     propagate wrapped.
+//  1. Resolve the target task id. With opts.TaskID set, the bbolt
+//     store is opened and GetTask is queried directly. With it
+//     empty, list.db is consulted (missing or empty -> emptyMessage,
+//     return nil) and the picker UI selects a row; a user-abort
+//     returns nil silently. The same store handle is reused for
+//     the confirm + delete steps so the bbolt lock is acquired
+//     once per invocation.
+//  2. GetTask wraps fs.ErrNotExist when the bucket is missing or
+//     the key is absent; in that case print "J: no task" and
+//     return nil (exit 0). Other errors propagate wrapped.
 //  3. When --yes is unset, render the confirm prompt; on decline
 //     print "delete aborted" and return nil. UI implementations
 //     map huh.ErrUserAborted to (false, nil) so a Ctrl-C is
@@ -90,18 +96,32 @@ func (o DeleteOptions) withDefaults() DeleteOptions {
 // re-acquire it.
 func RunDelete(ctx context.Context, opts DeleteOptions) error {
 	opts = opts.withDefaults()
-	if opts.TaskID == "" {
-		return errors.New("tasks delete: --id is required")
-	}
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		return err
+	}
+	if opts.TaskID == "" {
+		if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
+			fmt.Fprintln(opts.Stdout, emptyMessage)
+			return nil
+		}
 	}
 	s, err := store.Open(path)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = s.Close() }()
+
+	if opts.TaskID == "" {
+		id, ok, err := pickFromStore(ctx, s, opts.UI, opts.Stdout)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
+		}
+		opts.TaskID = id
+	}
 
 	task, err := s.GetTask(opts.TaskID)
 	if err != nil {
@@ -143,7 +163,8 @@ func newDeleteCmd() *cobra.Command {
 		Short: "Delete a task row and its on-disk directory",
 		Long: "Removes a single task from <cwd>/.j/tasks/list.db AND the " +
 			"matching on-disk directory <cwd>/.j/tasks/<id>/. The --id flag is " +
-			"required and must match an existing task ID exactly. Without " +
+			"optional; when omitted a huh selector lets you pick from the " +
+			"existing tasks (same picker as `j tasks enter`). Without " +
 			"--yes, a confirmation prompt is rendered (default Enter/`y` " +
 			"accepts) so you can recognise the row from its summary before " +
 			"committing. Unknown ids print `J: no task` and exit 0.",
@@ -157,9 +178,8 @@ func newDeleteCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("id", "", "Task ID to delete (required)")
+	cmd.Flags().String("id", "", "Task ID to delete (empty triggers the picker)")
 	cmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt and delete immediately")
-	_ = cmd.MarkFlagRequired("id")
 	_ = viper.BindPFlag("tasks.delete.id", cmd.Flags().Lookup("id"))
 	_ = viper.BindPFlag("tasks.delete.yes", cmd.Flags().Lookup("yes"))
 	_ = viper.BindEnv("tasks.delete.id", "TASKS_DELETE_ID")

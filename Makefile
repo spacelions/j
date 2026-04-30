@@ -39,8 +39,10 @@ coverage:
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
 		-e 'internal/cli/initcmd/ui\.go:[0-9]+:[[:space:]]+ConfirmReset[[:space:]]' \
 		-e 'internal/cli/tasks/ui\.go:[0-9]+:[[:space:]]+ConfirmDelete[[:space:]]' \
+		-e 'internal/cli/tasks/ui\.go:[0-9]+:[[:space:]]+PickTask[[:space:]]' \
 		-e 'internal/cli/initcmd/cmd\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
 		-e 'internal/cli/tasks/delete\.go:[0-9]+:[[:space:]]+RunDelete[[:space:]]' \
+		-e 'internal/cli/tasks/enter\.go:[0-9]+:[[:space:]]+RunEnter[[:space:]]' \
 		-e 'internal/cli/preflight/preflight\.go:[0-9]+:[[:space:]]+ConfirmInit[[:space:]]' \
 		-e 'internal/cli/preflight/preflight\.go:[0-9]+:[[:space:]]+PreRunE[[:space:]]' \
 		-e 'internal/cli/settings/cmd\.go:[0-9]+:[[:space:]]+withOpenStore[[:space:]]' \

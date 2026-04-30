@@ -13,22 +13,30 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	bolt "go.etcd.io/bbolt"
 
 	"github.com/spacelions/j/internal/store"
 )
 
-// fakeUI is the scripted ConfirmDelete fake used by the orchestration
-// tests. confirmReturn / confirmErr program the response and calls
-// counts every invocation so tests can assert the prompt fires (or
-// is bypassed by --yes). The lastTaskID field lets tests assert the
-// huh form would have been driven for the right row.
+// fakeUI is the scripted UI fake used by the orchestration tests.
+// confirmReturn / confirmErr program the ConfirmDelete response and
+// calls counts every invocation so tests can assert the prompt
+// fires (or is bypassed by --yes). pickReturn / pickErr program the
+// PickTask response and pickCalls / lastPickedFrom let tests
+// inspect what the picker would have been driven over. The
+// lastTaskID field still pins the confirmed row so the existing
+// happy-path assertions stay terse.
 type fakeUI struct {
-	confirmReturn bool
-	confirmErr    error
-	calls         int
-	lastTaskID    string
+	confirmReturn  bool
+	confirmErr     error
+	calls          int
+	lastTaskID     string
+	pickReturn     string
+	pickErr        error
+	pickCalls      int
+	lastPickedFrom []store.Task
 }
 
 func (u *fakeUI) ConfirmDelete(_ context.Context, task store.Task) (bool, error) {
@@ -38,6 +46,15 @@ func (u *fakeUI) ConfirmDelete(_ context.Context, task store.Task) (bool, error)
 		return false, u.confirmErr
 	}
 	return u.confirmReturn, nil
+}
+
+func (u *fakeUI) PickTask(_ context.Context, tasks []store.Task) (string, error) {
+	u.pickCalls++
+	u.lastPickedFrom = tasks
+	if u.pickErr != nil {
+		return "", u.pickErr
+	}
+	return u.pickReturn, nil
 }
 
 // seedTask writes a Task row into the freshly-initialised tasks DB
@@ -221,21 +238,6 @@ func TestRunDelete_MissingTask_PrintsNoTask(t *testing.T) {
 	}
 }
 
-func TestRunDelete_EmptyTaskID(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
-	err := RunDelete(context.Background(), DeleteOptions{
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		UI:     &fakeUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "--id is required") {
-		t.Fatalf("err = %v, want --id required", err)
-	}
-}
-
 // TestRunDelete_UIErrorPropagates pins the explicit-error branch:
 // when the UI returns a non-nil error (something other than
 // huh.ErrUserAborted, which the implementation collapses into
@@ -391,10 +393,10 @@ func TestRunDelete_RemoveTaskDirError(t *testing.T) {
 	}
 }
 
-// TestNewDeleteCmd_Smoke pins the command shape: registered name,
-// flags, and required marker. The flag-required marker fires when
-// cobra parses argv without --id, exercised in
-// TestNewDeleteCmd_RequiresIDFlag below.
+// TestNewDeleteCmd_Smoke pins the command shape: registered name
+// and flags. The --id flag is no longer MarkFlagRequired (the
+// picker fallback covers the empty-id case) so the test asserts
+// the absence of the required annotation explicitly.
 func TestNewDeleteCmd_Smoke(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
@@ -405,8 +407,12 @@ func TestNewDeleteCmd_Smoke(t *testing.T) {
 	if cmd.Use != "delete" {
 		t.Fatalf("Use = %q, want delete", cmd.Use)
 	}
-	if cmd.Flags().Lookup("id") == nil {
+	idFlag := cmd.Flags().Lookup("id")
+	if idFlag == nil {
 		t.Fatal("--id flag was not registered")
+	}
+	if v, ok := idFlag.Annotations[cobra.BashCompOneRequiredFlag]; ok && len(v) > 0 && v[0] == "true" {
+		t.Fatalf("--id should not be MarkFlagRequired; annotations=%v", idFlag.Annotations)
 	}
 	if cmd.Flags().Lookup("yes") == nil {
 		t.Fatal("--yes flag was not registered")
@@ -416,32 +422,10 @@ func TestNewDeleteCmd_Smoke(t *testing.T) {
 	}
 }
 
-// TestNewDeleteCmd_RequiresIDFlag drives the cobra-wired path with
-// no --id flag and asserts the error mentions the required flag.
-func TestNewDeleteCmd_RequiresIDFlag(t *testing.T) {
-	viper.Reset()
-	t.Cleanup(viper.Reset)
-	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
-	root := New()
-	var stdout, stderr bytes.Buffer
-	root.SetOut(&stdout)
-	root.SetErr(&stderr)
-	root.SetContext(context.Background())
-	root.SetArgs([]string{"delete"})
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("expected error when --id is missing")
-	}
-	if !strings.Contains(err.Error(), "id") {
-		t.Fatalf("err = %v, want id-required error", err)
-	}
-}
-
 // TestNewDeleteCmd_FlagDefaults pins the registered defaults and
-// viper bindings.
+// viper bindings. The --id flag is now optional (no MarkFlagRequired)
+// so the test asserts both the empty default and the absence of the
+// required annotation.
 func TestNewDeleteCmd_FlagDefaults(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
@@ -449,6 +433,9 @@ func TestNewDeleteCmd_FlagDefaults(t *testing.T) {
 	idFlag := cmd.Flags().Lookup("id")
 	if idFlag == nil || idFlag.DefValue != "" {
 		t.Fatalf("--id default = %q, want empty", idFlag.DefValue)
+	}
+	if v, ok := idFlag.Annotations[cobra.BashCompOneRequiredFlag]; ok && len(v) > 0 && v[0] == "true" {
+		t.Fatalf("--id should not be marked required; annotations=%v", idFlag.Annotations)
 	}
 	yesFlag := cmd.Flags().Lookup("yes")
 	if yesFlag == nil || yesFlag.DefValue != "false" {
@@ -535,6 +522,196 @@ func TestDeleteOptions_WithDefaults_KeepsProvidedUI(t *testing.T) {
 	o := DeleteOptions{UI: custom, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard}.withDefaults()
 	if o.UI != custom {
 		t.Errorf("UI = %v, want custom fake", o.UI)
+	}
+}
+
+// TestRunDelete_PickerHappyPath drives the picker fallback end to
+// end: with no --id, the scripted PickTask returns an existing id
+// and ConfirmDelete approves; the row + dir must be gone and stdout
+// must carry the deleted-id marker.
+func TestRunDelete_PickerHappyPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+	taskDir := seedTask(t, "id-pick", "pick me")
+	ui := &fakeUI{pickReturn: "id-pick", confirmReturn: true}
+	var stdout bytes.Buffer
+	err := RunDelete(context.Background(), DeleteOptions{
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("RunDelete: %v", err)
+	}
+	if ui.pickCalls != 1 {
+		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
+	}
+	if len(ui.lastPickedFrom) != 1 || ui.lastPickedFrom[0].ID != "id-pick" {
+		t.Fatalf("PickTask received tasks = %v, want [id-pick]", ui.lastPickedFrom)
+	}
+	if ui.calls != 1 || ui.lastTaskID != "id-pick" {
+		t.Fatalf("ConfirmDelete calls = %d, lastTaskID = %q", ui.calls, ui.lastTaskID)
+	}
+	if taskExists(t, "id-pick") {
+		t.Fatal("task row should be gone after picker delete")
+	}
+	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("task dir should be gone, stat err = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "J: deleted id-pick") {
+		t.Fatalf("stdout = %q, want J: deleted id-pick", stdout.String())
+	}
+}
+
+// TestRunDelete_PickerAbort exercises the cancel signal: PickTask
+// returns ("", nil); RunDelete must short-circuit before touching
+// ConfirmDelete or DeleteTask. Row and dir stay intact.
+func TestRunDelete_PickerAbort(t *testing.T) {
+	t.Chdir(t.TempDir())
+	taskDir := seedTask(t, "id-abort", "keep me")
+	ui := &fakeUI{}
+	var stdout bytes.Buffer
+	err := RunDelete(context.Background(), DeleteOptions{
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("RunDelete: %v", err)
+	}
+	if ui.pickCalls != 1 {
+		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
+	}
+	if ui.calls != 0 {
+		t.Fatalf("ConfirmDelete calls = %d, want 0 on picker abort", ui.calls)
+	}
+	if !taskExists(t, "id-abort") {
+		t.Fatal("task row should remain after picker abort")
+	}
+	if info, err := os.Stat(taskDir); err != nil || !info.IsDir() {
+		t.Fatalf("task dir should remain after picker abort: err=%v", err)
+	}
+	if stdout.String() != "" {
+		t.Fatalf("stdout = %q, want empty on picker abort", stdout.String())
+	}
+}
+
+// TestRunDelete_PickerErrorPropagates pins the error branch: a
+// non-aborted PickTask error must surface to the caller and leave
+// the row + dir intact.
+func TestRunDelete_PickerErrorPropagates(t *testing.T) {
+	t.Chdir(t.TempDir())
+	taskDir := seedTask(t, "id-pick-err", "boom")
+	boom := errors.New("picker boom")
+	ui := &fakeUI{pickErr: boom}
+	err := RunDelete(context.Background(), DeleteOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     ui,
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want %v", err, boom)
+	}
+	if ui.calls != 0 {
+		t.Fatalf("ConfirmDelete calls = %d, want 0 on picker error", ui.calls)
+	}
+	if !taskExists(t, "id-pick-err") {
+		t.Fatal("task row should remain after picker error")
+	}
+	if info, err := os.Stat(taskDir); err != nil || !info.IsDir() {
+		t.Fatalf("task dir should remain after picker error: err=%v", err)
+	}
+}
+
+// TestRunDelete_NoIDMissingDB exercises the "no list.db, no --id"
+// short-circuit: emptyMessage on stdout, no UI invocation, return
+// nil.
+func TestRunDelete_NoIDMissingDB(t *testing.T) {
+	t.Chdir(t.TempDir())
+	ui := &fakeUI{}
+	var stdout bytes.Buffer
+	err := RunDelete(context.Background(), DeleteOptions{
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("RunDelete: %v", err)
+	}
+	if ui.pickCalls != 0 || ui.calls != 0 {
+		t.Fatalf("UI calls = pick=%d, confirm=%d, want both 0", ui.pickCalls, ui.calls)
+	}
+	got := strings.TrimRight(stdout.String(), "\n")
+	if got != emptyMessage {
+		t.Fatalf("stdout = %q, want %q", got, emptyMessage)
+	}
+}
+
+// TestRunDelete_NoIDEmptyBucket exercises the empty-bucket branch:
+// list.db exists but holds no rows. No picker fires; emptyMessage
+// is printed and RunDelete returns nil.
+func TestRunDelete_NoIDEmptyBucket(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	ui := &fakeUI{}
+	var stdout bytes.Buffer
+	err := RunDelete(context.Background(), DeleteOptions{
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("RunDelete: %v", err)
+	}
+	if ui.pickCalls != 0 {
+		t.Fatalf("PickTask calls = %d, want 0 on empty bucket", ui.pickCalls)
+	}
+	got := strings.TrimRight(stdout.String(), "\n")
+	if got != emptyMessage {
+		t.Fatalf("stdout = %q, want %q", got, emptyMessage)
+	}
+}
+
+// TestRunDelete_NoIDListDecodeError plants a non-JSON value into
+// the tasks bucket so ListTasks fails after the picker branch
+// opens the store. The error must propagate; no UI is invoked.
+func TestRunDelete_NoIDListDecodeError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte(store.BucketTasks))
+		if err != nil {
+			return err
+		}
+		return b.Put([]byte("bad"), []byte("not-json"))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ui := &fakeUI{}
+	err = RunDelete(context.Background(), DeleteOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     ui,
+	})
+	if err == nil {
+		t.Fatal("expected ListTasks decode error to propagate")
+	}
+	if ui.pickCalls != 0 {
+		t.Fatalf("PickTask calls = %d, want 0 on list decode error", ui.pickCalls)
 	}
 }
 
