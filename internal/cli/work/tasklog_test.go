@@ -203,6 +203,62 @@ func TestWorkSummary_Fallbacks(t *testing.T) {
 	}
 }
 
+// TestRecordBackground_StampsPIDAndPath drives the happy path of
+// recordBackground for the work flow: the in-memory task row carries
+// the PID and log path, status stays at working, and a stray
+// finishWork is a silent no-op thanks to the closed flag.
+func TestRecordBackground_StampsPIDAndPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	if _, err := store.EnsureTaskDir("seed"); err != nil {
+		t.Fatal(err)
+	}
+	taskID := store.NewTaskID()
+	lc := beginWorkTaskNew(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", taskID, "/tmp/x.plan.md", "", "body", "")
+	lc.recordBackground(54321, "/tmp/agent.log")
+	lc.finishWork(nil)
+	tasks := readTasks(t)
+	if len(tasks) != 1 {
+		t.Fatalf("len(tasks) = %d", len(tasks))
+	}
+	got := tasks[0]
+	if got.Status != store.StatusWorking {
+		t.Fatalf("Status = %q, want working", got.Status)
+	}
+	if got.BackgroundPID != 54321 {
+		t.Fatalf("BackgroundPID = %d", got.BackgroundPID)
+	}
+	if got.AgentLogPath != "/tmp/agent.log" {
+		t.Fatalf("AgentLogPath = %q", got.AgentLogPath)
+	}
+}
+
+// TestRecordBackground_ClosedShortCircuit pins the second-call
+// no-op for `j work`: once finishWork has stamped the row, a
+// subsequent recordBackground does nothing.
+func TestRecordBackground_ClosedShortCircuit(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	if _, err := store.EnsureTaskDir("seed"); err != nil {
+		t.Fatal(err)
+	}
+	taskID := store.NewTaskID()
+	lc := beginWorkTaskNew(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", taskID, "/tmp/x.plan.md", "", "body", "")
+	lc.finishWork(nil)
+	lc.recordBackground(99999, "/tmp/should-not-stick.log")
+	tasks := readTasks(t)
+	if len(tasks) != 1 {
+		t.Fatalf("len(tasks) = %d", len(tasks))
+	}
+	got := tasks[0]
+	if got.Status != store.StatusWorkDone {
+		t.Fatalf("Status = %q, want work-done", got.Status)
+	}
+	if got.BackgroundPID != 0 {
+		t.Fatalf("BackgroundPID = %d, want 0 (closed branch)", got.BackgroundPID)
+	}
+}
+
 func TestFinishWork_Idempotent(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)

@@ -10,6 +10,12 @@ import (
 	"github.com/spacelions/j/internal/store"
 )
 
+// agentLogFileName is the per-task file that captures stdout/stderr
+// of a fire-and-forget headless cursor-agent child. It lives at
+// `<cwd>/.j/tasks/<id>/agent.log` and is written to the task row's
+// AgentLogPath so `j tasks` and the user can find it later.
+const agentLogFileName = "agent.log"
+
 // planLifecycle owns the begin/end task-log writes around a single
 // agent.Plan invocation. The struct holds no bbolt handle — every
 // task-log write goes through persistTaskWarn (defined in resume.go),
@@ -75,6 +81,26 @@ func openTaskLog(stderr io.Writer) (*store.Store, bool) {
 		return nil, false
 	}
 	return s, true
+}
+
+// recordBackground stamps the spawned child's PID and the agent log
+// path on the in-memory task row and re-persists it. It is the
+// counterpart of finishPlan for fire-and-forget headless runs: the
+// row stays at status `planning` until the reaper in `j tasks`
+// observes the child exited and finalises it.
+//
+// recordBackground sets the closed flag so a defensive finishPlan
+// fired by mistake (e.g. via a deferred guard) becomes a silent
+// no-op and does not clobber the background row with `plan-done` /
+// `help`.
+func (lc *planLifecycle) recordBackground(pid int, logPath string) {
+	if lc.closed {
+		return
+	}
+	lc.closed = true
+	lc.task.BackgroundPID = pid
+	lc.task.AgentLogPath = logPath
+	persistTaskWarn(lc.stderr, lc.task)
 }
 
 // finishPlan stamps plan_end_at, decides the terminal status from

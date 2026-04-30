@@ -10,9 +10,77 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 )
+
+// spawnWaitTimeout bounds the polling helpers below. The cursor stub
+// is a short shell script and finishes almost immediately, but a
+// loaded CI machine can still spend several hundred milliseconds
+// between cmd.Start() returning and the child writing its argv to
+// disk. Five seconds is generous enough to avoid flakes without
+// dragging out a happy-path test run.
+const spawnWaitTimeout = 5 * time.Second
+
+// waitForCalls polls callsPath until at least want argv entries are
+// recorded, or the timeout fires. Spawn returns immediately after
+// fork/exec so the child may still be writing its argv when the
+// caller reaches the assertion; this helper bridges that gap without
+// reintroducing a synchronous Wait.
+func waitForCalls(t *testing.T, callsPath string, want int) []string {
+	t.Helper()
+	deadline := time.Now().Add(spawnWaitTimeout)
+	for {
+		argv := readCallsBestEffort(callsPath)
+		if len(argv) >= want {
+			return argv
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timeout waiting for %d argv entries at %s, got %d: %v",
+				want, callsPath, len(argv), argv)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// readCallsBestEffort returns the argv recorded so far at path, with
+// every read error swallowed so the polling loop in waitForCalls can
+// retry. Treats both "file does not exist" and "empty file" as
+// "child has not finished yet" and yields a nil slice.
+func readCallsBestEffort(path string) []string {
+	b, err := os.ReadFile(path)
+	if err != nil || len(b) == 0 {
+		return nil
+	}
+	parts := strings.Split(string(b), "\x00")
+	if parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	return parts
+}
+
+// waitForLog polls logPath until want is found in its contents or the
+// timeout fires. Used to assert the spawned child's stdout/stderr
+// landed in the per-task agent log.
+func waitForLog(t *testing.T, logPath, want string) string {
+	t.Helper()
+	deadline := time.Now().Add(spawnWaitTimeout)
+	for {
+		data, err := os.ReadFile(logPath)
+		if err == nil && strings.Contains(string(data), want) {
+			return string(data)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timeout waiting for %q in %s; last contents %q (err=%v)",
+				want, logPath, data, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
 
 // installStub writes a `cursor-agent` shell script into t.TempDir(),
 // prepends that dir to PATH, and returns the path of the file the
@@ -183,7 +251,8 @@ func TestCheckLogin(t *testing.T) {
 // embedded save instruction in the prompt: the agent is responsible
 // for writing both requirements.md and plan.md. The interactive path
 // also passes `--mode plan` (alongside the headless path) so users get
-// the same plan-mode behaviour in the TUI.
+// the same plan-mode behaviour in the TUI. The interactive Plan stays
+// synchronous and returns pid == 0.
 func TestPlan_Interactive(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "spec.md")
@@ -194,7 +263,7 @@ func TestPlan_Interactive(t *testing.T) {
 	planOut := filepath.Join(dir, "plan.md")
 	calls := installStub(t, "", 0)
 
-	err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Body:                   "# task\nbody",
 		Model:                  "composer-2-fast",
@@ -204,6 +273,9 @@ func TestPlan_Interactive(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
+	}
+	if pid != 0 {
+		t.Fatalf("Plan pid = %d, want 0 for interactive", pid)
 	}
 	argv := readCalls(t, calls)
 	want := []string{"--mode", "plan", "--model", "composer-2-fast", "--workspace", dir}
@@ -238,7 +310,7 @@ func TestPlan_Interactive_ResumeChatID(t *testing.T) {
 	}
 	calls := installStub(t, "", 0)
 	rid := "22222222-2222-4222-8222-222222222222"
-	err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Body:                   "# task\nbody",
 		Model:                  "composer-2-fast",
@@ -249,6 +321,9 @@ func TestPlan_Interactive_ResumeChatID(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
+	}
+	if pid != 0 {
+		t.Fatalf("Plan pid = %d, want 0 for interactive", pid)
 	}
 	argv := readCalls(t, calls)
 	want := []string{"--resume", rid, "--mode", "plan", "--model", "composer-2-fast", "--workspace", dir}
@@ -264,7 +339,7 @@ func TestPlan_Interactive_ResumeChatID(t *testing.T) {
 
 func TestPlan_Interactive_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
-	err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           "/tmp/x.md",
 		Body:                   "x",
 		Model:                  "m",
@@ -275,14 +350,19 @@ func TestPlan_Interactive_RunnerError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cursor-agent") {
 		t.Fatalf("err = %v", err)
 	}
+	if pid != 0 {
+		t.Fatalf("Plan pid = %d, want 0 on error", pid)
+	}
 }
 
 // TestPlan_Headless pins the headless argv shape: --print
 // --output-format text --force --trust (no --mode plan), plus the
-// save-instruction prompt. The agent is responsible for writing the
-// files; the orchestrator only consumes the captured stdout for
-// warnings. --mode plan is intentionally absent: it would block the
-// agent's write tool calls in headless mode.
+// save-instruction prompt. The headless flow is fire-and-forget: the
+// returned pid is positive, the helper does not wait, and the
+// child's stdout/stderr land in the agent log file passed via
+// PlanRequest.AgentLogPath. The same prompt suffix tells cursor to
+// write the artifacts itself; --mode plan is intentionally absent
+// because it would block those writes in headless mode.
 func TestPlan_Headless(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "spec.md")
@@ -291,20 +371,24 @@ func TestPlan_Headless(t *testing.T) {
 	}
 	reqOut := filepath.Join(dir, "requirements.md")
 	planOut := filepath.Join(dir, "plan.md")
+	logPath := filepath.Join(dir, "agent.log")
 	calls := installStub(t, "ok\n", 0)
 
-	err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Body:                   "# task\nbody",
 		Model:                  "sonnet-4",
 		RequirementsOutputPath: reqOut,
 		PlanOutputPath:         planOut,
 		Interactive:            false,
+		AgentLogPath:           logPath,
 	})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	argv := readCalls(t, calls)
+	if pid <= 0 {
+		t.Fatalf("Plan pid = %d, want > 0 for headless background spawn", pid)
+	}
 	want := []string{
 		"--print",
 		"--output-format", "text",
@@ -313,6 +397,7 @@ func TestPlan_Headless(t *testing.T) {
 		"--model", "sonnet-4",
 		"--workspace", dir,
 	}
+	argv := waitForCalls(t, calls, len(want)+1)
 	if len(argv) != len(want)+1 {
 		t.Fatalf("argv = %v", argv)
 	}
@@ -336,6 +421,7 @@ func TestPlan_Headless(t *testing.T) {
 	if !strings.Contains(prompt, "Save") {
 		t.Fatalf("prompt missing save instruction: %q", prompt)
 	}
+	waitForLog(t, logPath, "ok")
 }
 
 func TestPlan_Headless_ResumeChatID(t *testing.T) {
@@ -346,7 +432,7 @@ func TestPlan_Headless_ResumeChatID(t *testing.T) {
 	}
 	calls := installStub(t, "ok\n", 0)
 	rid := "33333333-3333-4333-8333-333333333333"
-	err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Body:                   "# task\nbody",
 		Model:                  "sonnet-4",
@@ -354,11 +440,14 @@ func TestPlan_Headless_ResumeChatID(t *testing.T) {
 		PlanOutputPath:         filepath.Join(dir, "plan.md"),
 		Interactive:            false,
 		ResumeChatID:           rid,
+		AgentLogPath:           filepath.Join(dir, "agent.log"),
 	})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	argv := readCalls(t, calls)
+	if pid <= 0 {
+		t.Fatalf("Plan pid = %d, want > 0", pid)
+	}
 	want := []string{
 		"--resume", rid,
 		"--print",
@@ -368,6 +457,7 @@ func TestPlan_Headless_ResumeChatID(t *testing.T) {
 		"--model", "sonnet-4",
 		"--workspace", dir,
 	}
+	argv := waitForCalls(t, calls, len(want)+1)
 	if len(argv) != len(want)+1 {
 		t.Fatalf("argv = %v", argv)
 	}
@@ -378,18 +468,36 @@ func TestPlan_Headless_ResumeChatID(t *testing.T) {
 	}
 }
 
-func TestPlan_Headless_RunnerError(t *testing.T) {
-	installStub(t, "", 1)
-	err := New().Plan(context.Background(), codingagents.PlanRequest{
+// TestPlan_Headless_SpawnError exercises the Spawn-failure branch in
+// the headless Plan path: AgentLogPath points at an existing
+// directory, which OpenFile rejects, so Spawn returns an error
+// before fork/exec. The wrapped "cursor-agent: ..." message is
+// preserved so the orchestrator surfaces the same shape it always
+// did when the headless runner failed. With Spawn replacing
+// run.Output the child's exit code is no longer observable by the
+// parent, so an installStub-with-exit-1 cannot drive an error here;
+// the directory-as-log scenario stands in.
+func TestPlan_Headless_SpawnError(t *testing.T) {
+	installStub(t, "", 0)
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "agent.log")
+	if err := os.MkdirAll(logPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           "/tmp/x.md",
 		Body:                   "x",
 		Model:                  "m",
 		RequirementsOutputPath: "/tmp/requirements.md",
 		PlanOutputPath:         "/tmp/plan.md",
 		Interactive:            false,
+		AgentLogPath:           logPath,
 	})
 	if err == nil || !strings.Contains(err.Error(), "cursor-agent") {
 		t.Fatalf("err = %v", err)
+	}
+	if pid != 0 {
+		t.Fatalf("Plan pid = %d, want 0 on Spawn error", pid)
 	}
 }
 
@@ -401,7 +509,7 @@ func TestWork_Interactive(t *testing.T) {
 	}
 	calls := installStub(t, "", 0)
 
-	err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
 		PlanPath:    plan,
 		Body:        "1. step one\n2. step two",
 		Model:       "composer-2-fast",
@@ -409,6 +517,9 @@ func TestWork_Interactive(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Work: %v", err)
+	}
+	if pid != 0 {
+		t.Fatalf("Work pid = %d, want 0 for interactive", pid)
 	}
 	argv := readCalls(t, calls)
 	want := []string{"--model", "composer-2-fast", "--workspace", dir}
@@ -444,7 +555,7 @@ func TestWork_Interactive_ResumeChatID(t *testing.T) {
 	}
 	calls := installStub(t, "", 0)
 	rid := "44444444-4444-4444-8444-444444444444"
-	err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
 		PlanPath:     plan,
 		Body:         "1. step one\n2. step two",
 		Model:        "composer-2-fast",
@@ -453,6 +564,9 @@ func TestWork_Interactive_ResumeChatID(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Work: %v", err)
+	}
+	if pid != 0 {
+		t.Fatalf("Work pid = %d, want 0 for interactive", pid)
 	}
 	argv := readCalls(t, calls)
 	want := []string{"--resume", rid, "--model", "composer-2-fast", "--workspace", dir}
@@ -472,24 +586,29 @@ func TestWork_Headless(t *testing.T) {
 	if err := os.WriteFile(plan, []byte("plan body"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	logPath := filepath.Join(dir, "agent.log")
 	calls := installStub(t, "ok\n", 0)
 
-	err := New().Work(context.Background(), codingagents.WorkRequest{
-		PlanPath:    plan,
-		Body:        "plan body",
-		Model:       "sonnet-4",
-		Interactive: false,
+	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+		PlanPath:     plan,
+		Body:         "plan body",
+		Model:        "sonnet-4",
+		Interactive:  false,
+		AgentLogPath: logPath,
 	})
 	if err != nil {
 		t.Fatalf("Work: %v", err)
 	}
-	argv := readCalls(t, calls)
+	if pid <= 0 {
+		t.Fatalf("Work pid = %d, want > 0 for headless background spawn", pid)
+	}
 	want := []string{
 		"--print",
 		"--output-format", "text",
 		"--model", "sonnet-4",
 		"--workspace", dir,
 	}
+	argv := waitForCalls(t, calls, len(want)+1)
 	if len(argv) != len(want)+1 {
 		t.Fatalf("argv = %v", argv)
 	}
@@ -503,6 +622,7 @@ func TestWork_Headless(t *testing.T) {
 			t.Fatalf("headless Work should not pass --mode: argv = %v", argv)
 		}
 	}
+	waitForLog(t, logPath, "ok")
 }
 
 func TestWork_Headless_ResumeChatID(t *testing.T) {
@@ -513,17 +633,20 @@ func TestWork_Headless_ResumeChatID(t *testing.T) {
 	}
 	calls := installStub(t, "ok\n", 0)
 	rid := "55555555-5555-4555-8555-555555555555"
-	err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
 		PlanPath:     plan,
 		Body:         "plan body",
 		Model:        "sonnet-4",
 		Interactive:  false,
 		ResumeChatID: rid,
+		AgentLogPath: filepath.Join(dir, "agent.log"),
 	})
 	if err != nil {
 		t.Fatalf("Work: %v", err)
 	}
-	argv := readCalls(t, calls)
+	if pid <= 0 {
+		t.Fatalf("Work pid = %d, want > 0", pid)
+	}
 	want := []string{
 		"--resume", rid,
 		"--print",
@@ -531,6 +654,7 @@ func TestWork_Headless_ResumeChatID(t *testing.T) {
 		"--model", "sonnet-4",
 		"--workspace", dir,
 	}
+	argv := waitForCalls(t, calls, len(want)+1)
 	if len(argv) != len(want)+1 {
 		t.Fatalf("argv = %v", argv)
 	}
@@ -543,7 +667,7 @@ func TestWork_Headless_ResumeChatID(t *testing.T) {
 
 func TestWork_Interactive_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
-	err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
 		PlanPath:    "/tmp/x.plan.md",
 		Body:        "x",
 		Model:       "m",
@@ -552,17 +676,34 @@ func TestWork_Interactive_RunnerError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cursor-agent") {
 		t.Fatalf("err = %v", err)
 	}
+	if pid != 0 {
+		t.Fatalf("Work pid = %d, want 0 on error", pid)
+	}
 }
 
-func TestWork_Headless_RunnerError(t *testing.T) {
-	installStub(t, "", 1)
-	err := New().Work(context.Background(), codingagents.WorkRequest{
-		PlanPath:    "/tmp/x.plan.md",
-		Body:        "x",
-		Model:       "m",
-		Interactive: false,
+// TestWork_Headless_SpawnError covers the Spawn-failure branch in the
+// headless Work path with the same directory-as-log trick as
+// TestPlan_Headless_SpawnError. With Spawn replacing run.Output the
+// child's exit code is no longer observable, so a stub-exit-1 cannot
+// drive an error and the directory-as-log scenario stands in.
+func TestWork_Headless_SpawnError(t *testing.T) {
+	installStub(t, "", 0)
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "agent.log")
+	if err := os.MkdirAll(logPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+		PlanPath:     "/tmp/x.plan.md",
+		Body:         "x",
+		Model:        "m",
+		Interactive:  false,
+		AgentLogPath: logPath,
 	})
 	if err == nil || !strings.Contains(err.Error(), "cursor-agent") {
 		t.Fatalf("err = %v", err)
+	}
+	if pid != 0 {
+		t.Fatalf("Work pid = %d, want 0 on Spawn error", pid)
 	}
 }

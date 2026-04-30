@@ -52,6 +52,12 @@ func New() *cobra.Command {
 // listTasks runs, but the missing-DB short-circuit is kept for
 // defense in depth (e.g. a unit test that drives the function
 // without going through the cobra wiring).
+//
+// Between ListTasks and SortTasks the helper reaps any background
+// runs whose detached cursor-agent child has exited so the printed
+// rows reflect fresh state. Reaping mutates the bbolt store
+// (best-effort: PutTask errors are warned on stderr) and is opt-in
+// per row: only entries with a non-zero BackgroundPID are touched.
 func listTasks(stdout io.Writer) error {
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
@@ -75,6 +81,11 @@ func listTasks(stdout io.Writer) error {
 		fmt.Fprintln(stdout, emptyMessage)
 		return nil
 	}
+	tasksDir, err := store.DefaultTasksDir()
+	if err != nil {
+		return err
+	}
+	tasks = reapBackgroundTasks(s, os.Stderr, tasksDir, tasks)
 	store.SortTasks(tasks)
 	return writeTasks(stdout, tasks)
 }

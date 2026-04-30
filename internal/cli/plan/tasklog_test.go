@@ -191,6 +191,61 @@ func TestPickSummarySource(t *testing.T) {
 	}
 }
 
+// TestRecordBackground_StampsPIDAndPath drives the happy path of
+// recordBackground: the in-memory task row carries the PID and log
+// path, status stays at planning (foreground would have transitioned
+// it to plan-done), and a stray finishPlan call is a silent no-op
+// thanks to the closed flag.
+func TestRecordBackground_StampsPIDAndPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	taskID := store.NewTaskID()
+	lc := beginPlanTask(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", taskID, "/tmp/x.md", "# heading", "")
+	lc.recordBackground(99887, "/tmp/agent.log")
+	lc.finishPlan(nil, "# heading", "plan", "/tmp/x.md")
+	tasks := readTasks(t)
+	if len(tasks) != 1 {
+		t.Fatalf("len(tasks) = %d", len(tasks))
+	}
+	got := tasks[0]
+	if got.Status != store.StatusPlanning {
+		t.Fatalf("Status = %q, want planning (recordBackground must not flip)", got.Status)
+	}
+	if got.BackgroundPID != 99887 {
+		t.Fatalf("BackgroundPID = %d", got.BackgroundPID)
+	}
+	if got.AgentLogPath != "/tmp/agent.log" {
+		t.Fatalf("AgentLogPath = %q", got.AgentLogPath)
+	}
+}
+
+// TestRecordBackground_ClosedShortCircuit pins the second-call
+// no-op: once a lifecycle has been finalised (closed flag set), a
+// subsequent recordBackground does nothing — no PID stamp, no
+// re-persist.
+func TestRecordBackground_ClosedShortCircuit(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	taskID := store.NewTaskID()
+	lc := beginPlanTask(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", taskID, "/tmp/x.md", "# heading", "")
+	lc.finishPlan(nil, "# heading", "plan", "/tmp/x.md")
+	lc.recordBackground(11111, "/tmp/should-not-stick.log")
+	tasks := readTasks(t)
+	if len(tasks) != 1 {
+		t.Fatalf("len(tasks) = %d", len(tasks))
+	}
+	got := tasks[0]
+	if got.Status != store.StatusPlanDone {
+		t.Fatalf("Status = %q, want plan-done", got.Status)
+	}
+	if got.BackgroundPID != 0 {
+		t.Fatalf("BackgroundPID = %d, want 0 (closed branch)", got.BackgroundPID)
+	}
+	if got.AgentLogPath != "" {
+		t.Fatalf("AgentLogPath = %q, want empty", got.AgentLogPath)
+	}
+}
+
 // TestFinishPlan_Idempotent pins the closed-flag short-circuit so a
 // second finishPlan call is a silent no-op.
 func TestFinishPlan_Idempotent(t *testing.T) {

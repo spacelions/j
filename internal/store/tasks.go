@@ -91,6 +91,20 @@ type Task struct {
 	VerifyBeginAt *time.Time `json:"verify_begin_at,omitempty"`
 	VerifyEndAt   *time.Time `json:"verify_end_at,omitempty"`
 	DoneAt        *time.Time `json:"done_at,omitempty"`
+
+	// BackgroundPID is the OS process id of the detached coding-agent
+	// child spawned for a fire-and-forget headless `j plan` or `j work`
+	// run. It is non-zero only while the row is in flight (planning or
+	// working) and the child has not yet been reaped by `j tasks`.
+	// Foreground (interactive) and resume runs leave it at 0.
+	BackgroundPID int `json:"background_pid,omitempty"`
+	// AgentLogPath is the absolute path of the per-task log file that
+	// captures the spawned child's stdout/stderr (typically
+	// `<cwd>/.j/tasks/<id>/agent.log`). It is set whenever a
+	// background spawn was attempted so users can follow a backgrounded
+	// run; the reaper does not clear it after the row is finalised so
+	// the trailing log remains discoverable.
+	AgentLogPath string `json:"agent_log_path,omitempty"`
 }
 
 // ulidEntropy is the process-local monotonic entropy source feeding

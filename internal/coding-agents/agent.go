@@ -41,14 +41,25 @@ type Agent interface {
 	// agent which still saves the files via its tool use). The
 	// orchestrator reads both files after this returns and reports the
 	// outcome.
-	Plan(ctx context.Context, req PlanRequest) error
+	//
+	// The integer return is the OS process id of a fire-and-forget
+	// background child when the backend opted to spawn one (headless
+	// runs only); 0 means the call ran synchronously and there is
+	// nothing for `j tasks` to reap later. A non-zero PID also means
+	// the orchestrator MUST NOT read the output files yet: the child
+	// is still writing them.
+	Plan(ctx context.Context, req PlanRequest) (int, error)
 
 	// Work runs the agent against an existing plan markdown file. The
 	// agent edits files under the project directly; there is no single
 	// output file the orchestrator can stat. Interactive selects the
 	// agent's TUI; otherwise the agent runs headlessly against the same
 	// prompt and exits when done.
-	Work(ctx context.Context, req WorkRequest) error
+	//
+	// The integer return follows the same convention as Plan: a
+	// non-zero PID means a detached background child was started
+	// (headless only); 0 means synchronous completion.
+	Work(ctx context.Context, req WorkRequest) (int, error)
 }
 
 // PlanRequest is the input to Agent.Plan. The caller pre-reads the
@@ -73,6 +84,13 @@ type PlanRequest struct {
 	PlanOutputPath         string
 	Interactive            bool
 	ResumeChatID           string
+	// AgentLogPath is the absolute path the headless backend MUST
+	// redirect stdout/stderr to when it spawns a fire-and-forget
+	// background child. Empty for interactive runs and for backends
+	// that do not implement background spawning. Backends that do
+	// spawn must create or truncate the file with mode 0o644 inside
+	// their detached spawn helper.
+	AgentLogPath string
 }
 
 // WorkRequest is the input to Agent.Work. The caller pre-reads the plan
@@ -93,4 +111,8 @@ type WorkRequest struct {
 	Model        string
 	Interactive  bool
 	ResumeChatID string
+	// AgentLogPath is the absolute path the headless backend MUST
+	// redirect stdout/stderr to when it spawns a fire-and-forget
+	// background child. Same contract as PlanRequest.AgentLogPath.
+	AgentLogPath string
 }

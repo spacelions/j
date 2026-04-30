@@ -154,13 +154,23 @@ func Run(ctx context.Context, opts Options) (err error) {
 		lc = beginWorkTaskNew(opts, agent, model, res.NewTaskID, res.PlanPath, res.Requirement, res.Body, resumeID)
 	}
 
-	workErr := agent.Work(ctx, codingagents.WorkRequest{
+	taskID := workTaskID(res)
+	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), agentLogFileName)
+	pid, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:     res.PlanPath,
 		Body:         res.Body,
 		Model:        model,
 		Interactive:  *opts.Interactive,
 		ResumeChatID: resumeID,
+		AgentLogPath: agentLogPath,
 	})
+	if workErr == nil && pid > 0 {
+		lc.recordBackground(pid, agentLogPath)
+		fmt.Fprintf(opts.Stdout,
+			"J: cursor-agent running in background (PID=%d); see .j/tasks/%s/%s\n",
+			pid, taskID, agentLogFileName)
+		return nil
+	}
 	lc.finishWork(workErr)
 	if workErr != nil {
 		return workErr
@@ -172,6 +182,17 @@ func Run(ctx context.Context, opts Options) (err error) {
 		fmt.Fprintf(opts.Stdout, "coding against %s\n", res.PlanPath)
 	}
 	return nil
+}
+
+// workTaskID returns the task id (existing or newly minted) that the
+// work flow is operating against. Both the bbolt-sourced reuse path
+// and the legacy file-import path map to a single per-task directory
+// keyed by id; the helper picks whichever the caller has populated.
+func workTaskID(res resolved) string {
+	if res.Existing != nil {
+		return res.Existing.ID
+	}
+	return res.NewTaskID
 }
 
 // resolvePlan implements the precedence: --from-task > --from-file (legacy

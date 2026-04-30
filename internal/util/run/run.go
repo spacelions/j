@@ -11,10 +11,12 @@ package run
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 // Output runs name with args and returns its captured stdout. The wrapped
@@ -50,4 +52,86 @@ func Run(ctx context.Context, name string, args ...string) error {
 		return fmt.Errorf("%s: %w", name, err)
 	}
 	return nil
+}
+
+// Spawn launches name with args as a detached background process and
+// returns the spawned child's PID. The child's stdout and stderr are
+// redirected to logPath (created or truncated, mode 0o644) and stdin
+// is wired to /dev/null so the child cannot block on tty input. On
+// POSIX the child is given a fresh session via setsid (see
+// run_posix.go) so it survives SIGHUP / terminal close like nohup.
+//
+// The returned PID is the OS process id at Start time. Spawn calls
+// cmd.Process.Release so the parent does not retain a Wait state and
+// the child is reparented to init when the parent exits. It is the
+// caller's responsibility to record the PID elsewhere (e.g. on the
+// task row) so a later reaper can poll IsAlive and finalise state.
+//
+// ctx is consulted only by exec.CommandContext for the brief window
+// before Start returns; once the child has been started Spawn does
+// not bind its lifetime to ctx (a fire-and-forget child cannot be
+// safely killed by the parent's context cancellation without
+// re-introducing a Wait dependency, which is the very seam this
+// helper avoids).
+func Spawn(ctx context.Context, logPath, name string, args ...string) (int, error) {
+	if logPath == "" {
+		return 0, errors.New("run: empty log path")
+	}
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return 0, fmt.Errorf("run: open log %q: %w", logPath, err)
+	}
+	defer func() { _ = logFile.Close() }()
+
+	devNull, err := os.OpenFile(os.DevNull, os.O_RDONLY, 0)
+	if err != nil {
+		return 0, fmt.Errorf("run: open /dev/null: %w", err)
+	}
+	defer func() { _ = devNull.Close() }()
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = devNull
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	applyDetachAttrs(cmd)
+	if err := cmd.Start(); err != nil {
+		return 0, fmt.Errorf("%s: %w", name, err)
+	}
+	pid := cmd.Process.Pid
+	if err := cmd.Process.Release(); err != nil {
+		return pid, fmt.Errorf("%s: release: %w", name, err)
+	}
+	return pid, nil
+}
+
+// IsAlive reports whether the OS process identified by pid is still
+// running. It uses os.FindProcess + signal 0 (the standard "no-op"
+// liveness probe on POSIX): an ESRCH / os.ErrProcessDone error means
+// the process is gone. Any other error is conservatively treated as
+// "alive" so a transient permission error does not cause the reaper
+// to declare a still-running child dead.
+//
+// IsAlive returns false for pid <= 0 because the spawn helpers reserve
+// 0 for "synchronous / nothing to reap" and negative ids are illegal.
+func IsAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = proc.Signal(syscall.Signal(0))
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, os.ErrProcessDone) {
+		return false
+	}
+	if errors.Is(err, syscall.ESRCH) {
+		return false
+	}
+	// EPERM means the process exists but is owned by another user
+	// (or we are not allowed to signal it). Treat as alive.
+	return true
 }

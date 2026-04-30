@@ -77,6 +77,8 @@ coverage:
 		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+SelectModel[[:space:]]' \
 		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+choose[[:space:]]' \
 		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
+		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+Spawn[[:space:]]' \
+		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+IsAlive[[:space:]]' \
 		|| true); \
 	below=$$(printf '%s\n' "$$below" | sed '/^$$/d'); \
 	if [ -n "$$below" ]; then \
