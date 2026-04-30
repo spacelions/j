@@ -37,6 +37,20 @@ func TestHuhUI_SelectModel_EmptyOptions(t *testing.T) {
 	}
 }
 
+// TestHuhUI_PickFromFile_EmptyOptions pins that an empty option
+// slice surfaces the shared `choose` validation error rather than
+// trying to render a huh widget without options. The orchestrator
+// short-circuits an empty scan upstream so this branch is defensive,
+// but exercising it keeps the contract uniform with the other
+// pickers.
+func TestHuhUI_PickFromFile_EmptyOptions(t *testing.T) {
+	u := newHuhUI(strings.NewReader(""), io.Discard)
+	_, err := u.PickFromFile(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "no options") {
+		t.Fatalf("err = %v, want 'no options' error", err)
+	}
+}
+
 // TestHuhUI_PickPlanTask_EmptyTasks pins the early-return
 // validation: PickPlanTask refuses an empty slice instead of
 // trying to render a huh widget without options.

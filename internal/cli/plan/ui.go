@@ -20,9 +20,14 @@ type UI interface {
 	// only invoked when no markdown source was supplied via
 	// --from-file or PLAN_FROM_FILE.
 	SelectSource(ctx context.Context) (PlanSource, error)
-	// AskFromFile prompts the user for the markdown source path. It is
-	// invoked after SelectSource returns SourceMarkdown.
-	AskFromFile(ctx context.Context) (string, error)
+	// PickFromFile asks the user to choose one of the markdown files
+	// the orchestrator scanned out of the cwd. The slice is the
+	// pre-sorted, pre-filtered basename list (AGENTS.md / README.md
+	// / hidden files already removed); the chosen basename is
+	// returned verbatim so the orchestrator can map it back to the
+	// matching absolute path. Invoked only after SelectSource
+	// returns SourceMarkdown.
+	PickFromFile(ctx context.Context, options []string) (string, error)
 	SelectTool(ctx context.Context, options []string) (string, error)
 	SelectModel(ctx context.Context, options []string) (string, error)
 	// PickPlanTask asks the user to choose one of the supplied tasks
@@ -54,19 +59,14 @@ func (u *huhUI) SelectSource(ctx context.Context) (PlanSource, error) {
 	return ParseSource(label)
 }
 
-func (u *huhUI) AskFromFile(ctx context.Context) (string, error) {
-	var v string
-	if err := u.run(ctx, huh.NewInput().
-		Title("Markdown file location").
-		Placeholder("/path/to/feature.md").
-		Value(&v)); err != nil {
-		return "", err
-	}
-	v = strings.TrimSpace(v)
-	if v == "" {
-		return "", errors.New("plan: no markdown file location provided")
-	}
-	return v, nil
+// PickFromFile renders the second-level markdown picker. Empty-options
+// validation, filtering / scrolling height, and user-abort propagation
+// are inherited verbatim from the shared `choose` helper so the picker
+// behaves identically to the tool/model/resume selectors. The
+// orchestrator is responsible for filling `options` with the
+// pre-sorted, pre-filtered basenames produced by mdfile.ListInDir.
+func (u *huhUI) PickFromFile(ctx context.Context, options []string) (string, error) {
+	return u.choose(ctx, "Select markdown file", options)
 }
 
 func (u *huhUI) SelectTool(ctx context.Context, options []string) (string, error) {

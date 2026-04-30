@@ -112,16 +112,55 @@ func Run(ctx context.Context, opts Options) (err error) {
 	}
 	switch src {
 	case SourceMarkdown:
-		raw, err := opts.UI.AskFromFile(ctx)
+		target, err := pickMarkdownTarget(ctx, opts)
 		if err != nil {
 			return err
 		}
-		return runMarkdown(ctx, opts, raw)
+		return runMarkdown(ctx, opts, target)
 	case SourceLinear:
 		fmt.Fprintln(opts.Stdout, "plan: linear source is not yet wired up; nothing to do")
 		return nil
 	}
 	return fmt.Errorf("plan: unsupported source %s", src)
+}
+
+// pickMarkdownTarget scans the current working directory for markdown
+// files and asks the UI to choose one. Replaces the legacy free-text
+// prompt: the user can no longer mistype a path, and AGENTS.md /
+// README.md / hidden files / non-`.md` files never appear. An empty
+// scan surfaces a clean error mentioning the cwd so the agent is
+// never invoked. The chosen basename is mapped back to the matching
+// absolute path before being handed to runMarkdown so downstream
+// behaviour (mdfile.Resolve, agent.Plan) is identical to the old
+// typed-input flow.
+func pickMarkdownTarget(ctx context.Context, opts Options) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("plan: getwd: %w", err)
+	}
+	abs, err := mdfile.ListInDir(cwd)
+	if err != nil {
+		return "", fmt.Errorf("plan: scan %s: %w", cwd, err)
+	}
+	if len(abs) == 0 {
+		return "", fmt.Errorf("plan: no markdown files in %s (excluding AGENTS.md/README.md)", cwd)
+	}
+	basenames := make([]string, len(abs))
+	byBase := make(map[string]string, len(abs))
+	for i, p := range abs {
+		base := filepath.Base(p)
+		basenames[i] = base
+		byBase[base] = p
+	}
+	chosen, err := opts.UI.PickFromFile(ctx, basenames)
+	if err != nil {
+		return "", err
+	}
+	target, ok := byBase[chosen]
+	if !ok {
+		return "", fmt.Errorf("plan: unknown markdown selection %q", chosen)
+	}
+	return target, nil
 }
 
 // runMarkdown is the markdown-file flow: resolve and read the source,
