@@ -13,17 +13,19 @@ import (
 )
 
 // workLifecycle owns the begin/end task-log writes around a single
-// agent.Work invocation. A nil store means OpenTaskLog failed (already
-// warned by the store helper) and the per-event updates become silent
-// no-ops; the lifecycle is still safe to call.
+// agent.Work invocation. The struct holds no bbolt handle — every
+// task-log write goes through writeWorkTaskWarn, which opens
+// `<cwd>/.j/tasks/list.db`, writes, and closes within the same call
+// so the bbolt file lock is never held across agent.Work and a
+// concurrent `j tasks` from another shell is not blocked.
 //
-// The struct is constructed with one of beginWorkTaskNew or
-// beginWorkTaskReuse depending on whether the run is a legacy file
-// import (creates a new bbolt row) or a bbolt-sourced run (mutates an
-// existing row in place). finishWork is shared.
+// The struct is constructed with one of beginWorkTaskNew,
+// beginWorkTaskReuse, or beginWorkTaskResume depending on whether the
+// run is a legacy file import (creates a new bbolt row), a
+// bbolt-sourced run (mutates an existing row in place), or a resume.
+// finishWork is shared.
 type workLifecycle struct {
 	stderr io.Writer
-	store  *store.Store
 	task   store.Task
 	closed bool
 }
@@ -87,31 +89,25 @@ func beginWorkTaskResume(opts Options, existing store.Task) *workLifecycle {
 	return openLifecycle(opts, task)
 }
 
-// openLifecycle is the shared helper that opens the task log,
-// best-effort writes the initial row, and returns a workLifecycle
-// suitable for finishWork. Open / put failures warn once and then
-// degrade to a nil-store lifecycle so the orchestrator can still run.
+// openLifecycle is the shared helper that best-effort writes the
+// initial row and returns a workLifecycle suitable for finishWork.
+// The bbolt handle is opened, written to, and closed within
+// writeWorkTaskWarn so the file lock is not held across agent.Work.
 // Pre-flight has already laid down `.j/tasks/list.db`, so the open
 // call is read/write only.
 func openLifecycle(opts Options, task store.Task) *workLifecycle {
 	lc := &workLifecycle{stderr: opts.Stderr, task: task}
-	s, ok := openTaskLog(opts.Stderr)
-	if !ok {
-		return lc
-	}
-	lc.store = s
-	if err := s.PutTask(task); err != nil {
-		fmt.Fprintf(opts.Stderr, "warning: tasks put: %v\n", err)
-	}
+	writeWorkTaskWarn(opts.Stderr, task)
 	return lc
 }
 
 // finishWork stamps work_end_at, picks the terminal status from runErr
 // (work-done on success, help on error), and rewrites the task. The
 // `completed` status (and DoneAt) is reserved for a future `j verify`
-// command; `j work` no longer terminates the lifecycle here. Closing
-// the store is idempotent so callers can safely defer this even when
-// finishWork already ran on the happy path.
+// command; `j work` no longer terminates the lifecycle here. The
+// bbolt store is opened just long enough to write the row and closed
+// before this returns; calling finishWork twice is a silent no-op
+// via the closed flag.
 func (lc *workLifecycle) finishWork(runErr error) {
 	if lc.closed {
 		return
@@ -124,13 +120,25 @@ func (lc *workLifecycle) finishWork(runErr error) {
 	} else {
 		lc.task.Status = store.StatusWorkDone
 	}
-	if lc.store == nil {
+	writeWorkTaskWarn(lc.stderr, lc.task)
+}
+
+// writeWorkTaskWarn opens `<cwd>/.j/tasks/list.db`, writes task, and
+// closes the store. Open and put failures each surface as a single
+// `warning: ...` line on stderr (open via openTaskLog, put inline)
+// and the helper returns; persistence is best-effort by design.
+// Designed to be called twice per work run — once at begin, once at
+// finish — so the bbolt file lock is never held across agent.Work.
+// Mirrors the persistTaskWarn pattern used by `j plan resume`.
+func writeWorkTaskWarn(stderr io.Writer, task store.Task) {
+	s, ok := openTaskLog(stderr)
+	if !ok {
 		return
 	}
-	if err := lc.store.PutTask(lc.task); err != nil {
-		fmt.Fprintf(lc.stderr, "warning: tasks put: %v\n", err)
+	defer func() { _ = s.Close() }()
+	if err := s.PutTask(task); err != nil {
+		fmt.Fprintf(stderr, "warning: tasks put: %v\n", err)
 	}
-	_ = lc.store.Close()
 }
 
 // readRequirementSidecar derives the path to the original requirement

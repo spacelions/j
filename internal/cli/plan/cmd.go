@@ -29,10 +29,13 @@ func New() *cobra.Command {
 			"to execute the plan.",
 		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// Run's withDefaults opens the per-cwd settings DB when
-			// Options.Store is nil and closes it on the way out, so we
-			// don't construct one here. Tests inject their own to keep
-			// the on-disk side effects hermetic.
+			// We do not construct a *store.Store here: Run's
+			// settings helpers open `<cwd>/.j/settings` only for
+			// the duration of each individual read/write so the
+			// bbolt file lock is never held across agent.Plan.
+			// Tests inject their own Store to keep on-disk side
+			// effects hermetic; that path stays a fast in-memory
+			// no-open shortcut inside the helpers.
 			//
 			// Only forward Interactive when the user was explicit
 			// (cobra flag or env var). When unset we leave it nil

@@ -219,8 +219,9 @@ func TestFinishWork_Idempotent(t *testing.T) {
 }
 
 // TestOpenLifecycle_OpenTaskLogFails forces openTaskLog to return
-// ok=false by replacing the post-init list.db file with a directory;
-// finishWork on the resulting nil-store lifecycle is a silent no-op.
+// ok=false by replacing the post-init list.db file with a directory.
+// Both beginWorkTaskNew and finishWork emit a warning and execution
+// continues without panicking.
 func TestOpenLifecycle_OpenTaskLogFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -236,8 +237,8 @@ func TestOpenLifecycle_OpenTaskLogFails(t *testing.T) {
 	}
 	var stderr bytes.Buffer
 	lc := beginWorkTaskNew(Options{Stderr: &stderr}, &scriptedAgent{name: "cursor"}, "m", store.NewTaskID(), "/tmp/x.plan.md", "", "body", "")
-	if lc.store != nil {
-		t.Fatal("store should be nil after open failure")
+	if lc == nil {
+		t.Fatal("beginWorkTaskNew returned nil lifecycle")
 	}
 	lc.finishWork(nil)
 	if !strings.Contains(stderr.String(), "tasks") {
@@ -246,27 +247,14 @@ func TestOpenLifecycle_OpenTaskLogFails(t *testing.T) {
 }
 
 // TestFinishWork_PutErrorWarns drives the finalize-time put warning
-// by injecting a closed store into the lifecycle so PutTask fails.
+// by handing finishWork a task with no ID. openTaskLog succeeds but
+// store.PutTask rejects the empty ID, so writeWorkTaskWarn emits the
+// expected warning.
 func TestFinishWork_PutErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	if _, err := store.EnsureTaskDir("seed"); err != nil {
-		t.Fatal(err)
-	}
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
 	var stderr bytes.Buffer
-	lc := &workLifecycle{stderr: &stderr, store: s, task: store.Task{
-		ID:     store.NewTaskID(),
+	lc := &workLifecycle{stderr: &stderr, task: store.Task{
 		Status: store.StatusWorking,
 	}}
 	lc.finishWork(nil)

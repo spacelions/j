@@ -60,14 +60,12 @@ type Options struct {
 	// tool/model/interactive flag last used (the plan source and the
 	// markdown source path are intentionally NOT persisted). The
 	// orchestrator does not own the lifecycle: callers that supply a
-	// Store keep the lifecycle. When nil, withDefaults opens the
-	// default <cwd>/.j/settings DB and closes it after Run returns.
+	// Store keep the lifecycle. When nil, the helpers below open
+	// `<cwd>/.j/settings` only for the duration of each individual
+	// read/write so the bbolt file lock is never held across the
+	// long-running agent invocation. Tests that supply a Store
+	// directly skip the open/close cycle entirely.
 	Store *store.Store
-
-	// closeStore is set internally by withDefaults when it allocates
-	// the default Store, so Run can close it before returning. Tests
-	// that pass their own Store leave this false.
-	closeStore bool
 }
 
 // Run executes `j plan`. When Options.FromFile is set it goes straight
@@ -80,6 +78,12 @@ type Options struct {
 // nil return so an explicit cancel exits the command cleanly without
 // printing a bogus "cancelled by user" line. Genuine errors keep
 // their original wrapping.
+//
+// The bbolt file lock on `<cwd>/.j/settings` is never held across the
+// agent.Plan call: each settings read/write below opens the DB,
+// performs the operation, and closes before any agent work begins so
+// concurrent `j settings` / `j tasks` invocations are not blocked on
+// the OS file lock.
 func Run(ctx context.Context, opts Options) (err error) {
 	defer func() {
 		if errors.Is(err, huh.ErrUserAborted) {
@@ -87,9 +91,6 @@ func Run(ctx context.Context, opts Options) (err error) {
 		}
 	}()
 	opts = opts.withDefaults()
-	if opts.closeStore && opts.Store != nil {
-		defer func() { _ = opts.Store.Close() }()
-	}
 	if len(opts.Agents) == 0 {
 		return errors.New("plan: no coding agents configured")
 	}
@@ -199,9 +200,14 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 // prompt is intentional). The just-confirmed selection is persisted
 // only on the prompted path: values that came from the store are
 // already there.
+//
+// Settings DB access is short-lived: the bucket is read inside
+// plannerFromSettings and the handle is released before this returns
+// so the agent.Plan call downstream never contends on the bbolt file
+// lock.
 func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
 	if opts.FromSettings {
-		agent, model, err := agentpick.FromStore(ctx, opts.Store, store.BucketPlanner, opts.Agents)
+		agent, model, err := plannerFromSettings(ctx, opts)
 		if err == nil {
 			return agent, model, nil
 		}
@@ -218,6 +224,25 @@ func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, strin
 	return agent, model, nil
 }
 
+// plannerFromSettings reads the planner bucket and returns the chosen
+// tool/model. When opts.Store is non-nil (test injection) it is reused
+// without any open/close cycle. Otherwise this opens
+// `<cwd>/.j/settings` only for the duration of agentpick.FromStore and
+// releases it before returning. A failure to open the settings DB
+// surfaces as ErrNoStoredSelection so the caller falls back to the
+// prompt path the same way an empty bucket would.
+func plannerFromSettings(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
+	if opts.Store != nil {
+		return agentpick.FromStore(ctx, opts.Store, store.BucketPlanner, opts.Agents)
+	}
+	s, ok := openSettingsStore(opts.Stderr)
+	if !ok {
+		return nil, "", agentpick.ErrNoStoredSelection
+	}
+	defer func() { _ = s.Close() }()
+	return agentpick.FromStore(ctx, s, store.BucketPlanner, opts.Agents)
+}
+
 // persistPlannerSelection writes the just-confirmed tool/model and
 // the interactive flag to the planner bucket. The plan source and the
 // markdown source path are intentionally NOT persisted: the user must
@@ -225,7 +250,10 @@ func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, strin
 //
 // Persistence is best-effort: any error is reported to opts.Stderr
 // and otherwise swallowed so plan can keep running. When opts.Store
-// is nil this is a no-op.
+// is non-nil it is used directly (test injection); otherwise this
+// opens `<cwd>/.j/settings` for the duration of the write and
+// closes it immediately so the file lock is not held across the
+// agent invocation.
 func persistPlannerSelection(opts Options, tool, model string) {
 	// opts.Interactive is normally non-nil here: Run resolves it
 	// via resolveInteractive before any selection branch fires.
@@ -237,7 +265,16 @@ func persistPlannerSelection(opts Options, tool, model string) {
 	if opts.Interactive != nil {
 		interactive = *opts.Interactive
 	}
-	store.PersistAgentSelection(opts.Store, opts.Stderr, store.BucketPlanner, tool, model, interactive)
+	if opts.Store != nil {
+		store.PersistAgentSelection(opts.Store, opts.Stderr, store.BucketPlanner, tool, model, interactive)
+		return
+	}
+	s, ok := openSettingsStore(opts.Stderr)
+	if !ok {
+		return
+	}
+	defer func() { _ = s.Close() }()
+	store.PersistAgentSelection(s, opts.Stderr, store.BucketPlanner, tool, model, interactive)
 }
 
 // resolveInteractive applies the documented precedence (explicit >
@@ -249,11 +286,29 @@ func resolveInteractive(opts Options) bool {
 		return *opts.Interactive
 	}
 	if opts.FromSettings {
-		if v, ok := agentpick.StoredInteractive(opts.Store, store.BucketPlanner); ok {
+		if v, ok := storedPlannerInteractive(opts); ok {
 			return v
 		}
 	}
 	return true
+}
+
+// storedPlannerInteractive looks up the planner bucket's `interactive`
+// entry. When opts.Store is non-nil it is reused; otherwise the
+// settings DB is opened and closed solely for this read so the lock
+// is not held across the agent call. A failed open or a missing /
+// unparseable value yields (_, false) so callers fall back to the
+// cobra default.
+func storedPlannerInteractive(opts Options) (bool, bool) {
+	if opts.Store != nil {
+		return agentpick.StoredInteractive(opts.Store, store.BucketPlanner)
+	}
+	s, ok := openSettingsStore(opts.Stderr)
+	if !ok {
+		return false, false
+	}
+	defer func() { _ = s.Close() }()
+	return agentpick.StoredInteractive(s, store.BucketPlanner)
 }
 
 // boolPtr is the package-private companion that lets Run / tests
@@ -273,12 +328,6 @@ func (o Options) withDefaults() Options {
 	}
 	if o.UI == nil {
 		o.UI = newHuhUI(o.Stdin, o.Stderr)
-	}
-	if o.Store == nil {
-		if s, ok := openSettingsStore(o.Stderr); ok {
-			o.Store = s
-			o.closeStore = true
-		}
 	}
 	return o
 }
