@@ -45,6 +45,7 @@ func New() *cobra.Command {
 		},
 	}
 	cmd.AddCommand(newDeleteCmd())
+	cmd.AddCommand(newEnterCmd())
 	return cmd
 }
 
