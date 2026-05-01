@@ -693,6 +693,35 @@ func TestRun_Headless_PropagatesFlag(t *testing.T) {
 	}
 }
 
+// TestRun_ThreadsWorktreeIntoWorkRequest pins R2: the Worktree
+// minted on the task row (or preserved from a pre-existing value)
+// is threaded into the WorkRequest so the coder prompt can carry
+// the worktree-direction line.
+func TestRun_ThreadsWorktreeIntoWorkRequest(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "myproj")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	mustInit(t)
+	id := seedPlanDoneTask(t, "do the thing", "plan body", "")
+	agent := newScriptedAgent()
+	err := Run(context.Background(), Options{
+		TaskID:      id,
+		Interactive: boolPtr(true),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{agent},
+		UI:          &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if agent.lastReq.Worktree != "myproj-do-the-thing" {
+		t.Fatalf("Worktree = %q, want %q", agent.lastReq.Worktree, "myproj-do-the-thing")
+	}
+}
+
 func TestRun_AskFromFileError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)

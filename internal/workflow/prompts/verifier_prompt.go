@@ -14,20 +14,23 @@ import (
 // review rules in a single source of truth across every backend,
 // mirroring how BuildPlanner reuses planner.Instruction and
 // BuildCoder reuses coder.Instruction.
-func BuildVerifier(reqPath, reqBody, planPath, planBody, verifierPlanPath, findingsPath string) string {
-	return fmt.Sprintf(
-		"%s\n\n"+
-			"Requirements (from %q):\n%s\n\n"+
-			"Plan (from %q):\n%s\n\n"+
-			"Save your draft verification plan to %q (overwrite if it exists) "+
-			"and your final findings (with the terminal `VERDICT: PASS` or "+
-			"`VERDICT: FAIL` line) to %q (overwrite if it exists). "+
-			"Then exit.",
-		strings.TrimSpace(verifier.Instruction),
-		reqPath, reqBody,
-		planPath, planBody,
-		verifierPlanPath,
-		findingsPath,
+func BuildVerifier(reqPath, reqBody, planPath, planBody, verifierPlanPath, findingsPath, worktree string) string {
+	return appendVerifierWorktreeLine(
+		fmt.Sprintf(
+			"%s\n\n"+
+				"Requirements (from %q):\n%s\n\n"+
+				"Plan (from %q):\n%s\n\n"+
+				"Save your draft verification plan to %q (overwrite if it exists) "+
+				"and your final findings (with the terminal `VERDICT: PASS` or "+
+				"`VERDICT: FAIL` line) to %q (overwrite if it exists). "+
+				"Then exit.",
+			strings.TrimSpace(verifier.Instruction),
+			reqPath, reqBody,
+			planPath, planBody,
+			verifierPlanPath,
+			findingsPath,
+		),
+		worktree,
 	)
 }
 
@@ -39,18 +42,21 @@ func BuildVerifier(reqPath, reqBody, planPath, planBody, verifierPlanPath, findi
 // — there is no instruction to re-verify from scratch and no
 // embedded verifier.Instruction body, mirroring BuildPlannerResume /
 // BuildCoderResume.
-func BuildVerifierResume(reqPath, reqBody, planPath, planBody string) string {
-	return fmt.Sprintf(
-		"You are resuming a previous verification session. "+
-			"Check what was already done in the previous turn, "+
-			"summarise the prior progress for the user in one short paragraph, "+
-			"and then continue only the verification work that is still outstanding. "+
-			"Do not re-verify from scratch and do not overwrite the saved "+
-			"verifier_plan.md / verifier_findings.md unless new information forces a change.\n\n"+
-			"Requirements (from %q), provided for context only:\n%s\n\n"+
-			"Plan (from %q), provided for context only:\n%s",
-		reqPath, reqBody,
-		planPath, planBody,
+func BuildVerifierResume(reqPath, reqBody, planPath, planBody, worktree string) string {
+	return appendVerifierWorktreeLine(
+		fmt.Sprintf(
+			"You are resuming a previous verification session. "+
+				"Check what was already done in the previous turn, "+
+				"summarise the prior progress for the user in one short paragraph, "+
+				"and then continue only the verification work that is still outstanding. "+
+				"Do not re-verify from scratch and do not overwrite the saved "+
+				"verifier_plan.md / verifier_findings.md unless new information forces a change.\n\n"+
+				"Requirements (from %q), provided for context only:\n%s\n\n"+
+				"Plan (from %q), provided for context only:\n%s",
+			reqPath, reqBody,
+			planPath, planBody,
+		),
+		worktree,
 	)
 }
 
@@ -63,17 +69,38 @@ func BuildVerifierResume(reqPath, reqBody, planPath, planBody string) string {
 // As with the resume builders this does NOT include the full coder
 // instruction body; the resumed session was already seeded with the
 // coding rules on its first run.
-func BuildVerifierFix(planPath, planBody, findingsPath, findingsBody string) string {
+func BuildVerifierFix(planPath, planBody, findingsPath, findingsBody, worktree string) string {
+	return appendWorktreeLine(
+		fmt.Sprintf(
+			"You are resuming a previous coding session. "+
+				"The verifier reviewed your work and reported `VERDICT: FAIL`. "+
+				"Read the findings below and address every listed issue by "+
+				"editing the project files in place. Do not re-plan from scratch, "+
+				"do not edit the verifier's findings file, and keep the change "+
+				"set focused on the reported issues.\n\n"+
+				"Plan (from %q), provided for context only:\n%s\n\n"+
+				"Verifier findings (from %q):\n%s",
+			planPath, planBody,
+			findingsPath, findingsBody,
+		),
+		worktree,
+	)
+}
+
+// appendVerifierWorktreeLine returns prompt unchanged when worktree
+// is empty and otherwise appends a single trailing line telling the
+// verifier which git worktree to inspect. The phrasing is intentionally
+// different from appendWorktreeLine in coder_prompt.go: the verifier
+// does not create worktrees, it only resolves them via
+// `git worktree list` from the repository root.
+func appendVerifierWorktreeLine(prompt, worktree string) string {
+	if worktree == "" {
+		return prompt
+	}
 	return fmt.Sprintf(
-		"You are resuming a previous coding session. "+
-			"The verifier reviewed your work and reported `VERDICT: FAIL`. "+
-			"Read the findings below and address every listed issue by "+
-			"editing the project files in place. Do not re-plan from scratch, "+
-			"do not edit the verifier's findings file, and keep the change "+
-			"set focused on the reported issues.\n\n"+
-			"Plan (from %q), provided for context only:\n%s\n\n"+
-			"Verifier findings (from %q):\n%s",
-		planPath, planBody,
-		findingsPath, findingsBody,
+		"%s\n\nVerify the code in the git worktree named %q "+
+			"(run `git worktree list` from the repository root to "+
+			"find its absolute path).",
+		prompt, worktree,
 	)
 }

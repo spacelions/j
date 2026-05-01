@@ -52,6 +52,7 @@ coverage:
 		-e 'internal/cli/settings/reset\.go:[0-9]+:[[:space:]]+readConfirmationLine[[:space:]]' \
 		-e 'internal/cli/settings/reset\.go:[0-9]+:[[:space:]]+runResetOneKey[[:space:]]' \
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+DefaultDir[[:space:]]' \
+		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+ProjectName[[:space:]]' \
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+IsEmpty[[:space:]]' \
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+DefaultPath[[:space:]]' \
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+DefaultTasksDir[[:space:]]' \

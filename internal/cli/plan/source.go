@@ -25,13 +25,13 @@ const (
 // SourceLabels lists the user-facing labels in display order. Keeping
 // them adjacent to the parser guarantees the picker and parser can
 // never disagree.
-var SourceLabels = []string{"markdown file", "linear"}
+var SourceLabels = []string{"markdown", "linear"}
 
 // String returns the user-facing label for the source.
 func (s PlanSource) String() string {
 	switch s {
 	case SourceMarkdown:
-		return "markdown file"
+		return "markdown"
 	case SourceLinear:
 		return "linear"
 	default:
@@ -39,10 +39,13 @@ func (s PlanSource) String() string {
 	}
 }
 
-// ParseSource maps a user-facing label back to its typed enum.
+// ParseSource maps a user-facing label back to its typed enum. The
+// previous "markdown file" spelling is intentionally rejected: a
+// stale config surfaces a clear "unknown source" error instead of
+// silently working.
 func ParseSource(label string) (PlanSource, error) {
 	switch label {
-	case "markdown file":
+	case "markdown":
 		return SourceMarkdown, nil
 	case "linear":
 		return SourceLinear, nil

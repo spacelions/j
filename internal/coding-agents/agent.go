@@ -146,6 +146,13 @@ type WorkRequest struct {
 	// today's first-run / resume behaviour. Used by `j verify`'s
 	// bounded fix loop after a verifier turn returned VERDICT: FAIL.
 	FixFindings string
+	// Worktree, when non-empty, is the bare git-worktree name the
+	// coder should operate against. The backend threads it into the
+	// prompt builders so the coder knows which worktree to `cd`
+	// into (creating it via `git worktree add` if it does not yet
+	// exist). Empty preserves the pre-R2 behaviour: the coder
+	// operates against the main checkout. The value is NOT a path.
+	Worktree string
 	// AgentLogPath is the absolute path the headless backend MUST
 	// redirect stdout/stderr to when it spawns a fire-and-forget
 	// background child. Same contract as PlanRequest.AgentLogPath.
@@ -178,6 +185,13 @@ type VerifyRequest struct {
 	Interactive                bool
 	Resume                     bool
 	ResumeChatID               string
+	// Worktree, when non-empty, is the bare git-worktree name the
+	// verifier should target. The backend threads it into the
+	// verifier prompt so the agent can `git worktree list` the name
+	// from the repository root and verify the code inside that
+	// worktree. Empty preserves the pre-R3 behaviour: the verifier
+	// inspects the main checkout. The value is NOT a path.
+	Worktree string
 	// AgentLogPath is the absolute path the headless backend MUST
 	// redirect stdout/stderr to when it spawns a fire-and-forget
 	// background child. Same contract as PlanRequest.AgentLogPath.

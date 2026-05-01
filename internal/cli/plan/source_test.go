@@ -10,7 +10,7 @@ func TestPlanSource_String(t *testing.T) {
 		s    PlanSource
 		want string
 	}{
-		{SourceMarkdown, "markdown file"},
+		{SourceMarkdown, "markdown"},
 		{SourceLinear, "linear"},
 	}
 	for _, tc := range cases {
@@ -28,7 +28,7 @@ func TestParseSource(t *testing.T) {
 		in   string
 		want PlanSource
 	}{
-		{"markdown file", SourceMarkdown},
+		{"markdown", SourceMarkdown},
 		{"linear", SourceLinear},
 	}
 	for _, tc := range cases {
@@ -46,6 +46,12 @@ func TestParseSource(t *testing.T) {
 	}
 	if _, err := ParseSource("from scratch"); err == nil {
 		t.Error("ParseSource should reject the removed scratch label")
+	}
+	// The previous "markdown file" spelling is rejected explicitly
+	// so a stale config surfaces a clear "unknown source" error
+	// rather than silently continuing to work.
+	if _, err := ParseSource("markdown file"); err == nil {
+		t.Error("ParseSource should reject the old markdown-file label")
 	}
 }
 

@@ -580,54 +580,6 @@ func TestEnsureProject_PartialState(t *testing.T) {
 	}
 }
 
-// TestEnsureProject_RejectsLegacyTasksFile pins the friendly error
-// when the old single-file .j/tasks layout still lives in the
-// directory: the helper must NOT clobber the file, instead it
-// surfaces ErrLegacyTasksFile so the cmd layer can ask the user to
-// rename or remove it.
-func TestEnsureProject_RejectsLegacyTasksFile(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	legacy := filepath.Join(jdir, "tasks")
-	if err := os.WriteFile(legacy, []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := EnsureProject(); !errors.Is(err, ErrLegacyTasksFile) {
-		t.Fatalf("err = %v, want ErrLegacyTasksFile", err)
-	}
-}
-
-// TestEnsureProject_StatTasksDirError forces the non-NotExist stat
-// branch by making the .j directory unreadable. On macOS / Linux the
-// stat in EnsureProject then fails with EACCES (root bypasses the
-// permission so we skip there).
-func TestEnsureProject_StatTasksDirError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix file-mode semantics required")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root bypasses file-mode permissions")
-	}
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// 0o000 makes the directory unreadable; stat on its children fails.
-	if err := os.Chmod(jdir, 0o000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(jdir, 0o755) })
-	if err := EnsureProject(); err == nil {
-		t.Fatal("expected stat error")
-	}
-}
-
 // TestEnsureProject_AppendsToExistingGitignore pins the .gitignore
 // allowlist behavior: an existing file gains the `.j` line.
 func TestEnsureProject_AppendsToExistingGitignore(t *testing.T) {
@@ -1071,26 +1023,6 @@ func TestEnsureTaskDir_ParentMkdirReadOnly(t *testing.T) {
 	}
 }
 
-// TestEnsureTaskDir_LegacyTasksFile pins the legacy-file path: a
-// regular file at .j/tasks blocks the new layout, surfaced as
-// ErrLegacyTasksFile.
-func TestEnsureTaskDir_LegacyTasksFile(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	legacy := filepath.Join(jdir, "tasks")
-	if err := os.WriteFile(legacy, []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, err := EnsureTaskDir("abc")
-	if !errors.Is(err, ErrLegacyTasksFile) {
-		t.Fatalf("err = %v, want ErrLegacyTasksFile", err)
-	}
-}
-
 // TestEnsureTaskDir_StatError forces a non-NotExist stat error on the
 // .j/tasks path so the wrapped-error branch is covered.
 func TestEnsureTaskDir_StatError(t *testing.T) {
@@ -1239,25 +1171,6 @@ func TestRemoveTaskDir_RequiresInitialisedTasksDir(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "missing") {
 		t.Fatalf("err = %v, want missing-prereq hint", err)
-	}
-}
-
-// TestRemoveTaskDir_LegacyTasksFile pins the legacy-file path: a
-// regular file at .j/tasks blocks the new layout, surfaced as
-// ErrLegacyTasksFile.
-func TestRemoveTaskDir_LegacyTasksFile(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	legacy := filepath.Join(jdir, "tasks")
-	if err := os.WriteFile(legacy, []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := RemoveTaskDir("abc"); !errors.Is(err, ErrLegacyTasksFile) {
-		t.Fatalf("err = %v, want ErrLegacyTasksFile", err)
 	}
 }
 

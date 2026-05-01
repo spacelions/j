@@ -861,8 +861,19 @@ func TestWork_FixFindings_BeatsResume(t *testing.T) {
 // be embedded along with the requirements / plan / output paths;
 // --mode plan is intentionally absent because the verifier needs to
 // edit verifier_*.md and (on FAIL) project files.
+//
+// Unlike Plan/Work, Verify runs with `--workspace <project-root>` so
+// the verifier can `git worktree list` from the repo root; the test
+// chdirs into dir before the call and asserts the workspace lands on
+// the canonicalised cwd (which equals dir on most systems, modulo
+// symlink resolution on macOS where /var -> /private/var).
 func TestVerify_Interactive(t *testing.T) {
 	dir := t.TempDir()
+	t.Chdir(dir)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
 	reqPath := filepath.Join(dir, "requirements.md")
 	if err := os.WriteFile(reqPath, []byte("# req\nbody"), 0o600); err != nil {
 		t.Fatal(err)
@@ -884,6 +895,7 @@ func TestVerify_Interactive(t *testing.T) {
 		VerifierFindingsOutputPath: findingsPath,
 		Model:                      "composer-2-fast",
 		Interactive:                true,
+		Worktree:                   "j-verify-task",
 	})
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
@@ -892,7 +904,7 @@ func TestVerify_Interactive(t *testing.T) {
 		t.Fatalf("Verify pid = %d, want 0 for interactive", pid)
 	}
 	argv := readCalls(t, calls)
-	want := []string{"--model", "composer-2-fast", "--workspace", dir}
+	want := []string{"--model", "composer-2-fast", "--workspace", cwd}
 	if len(argv) != len(want)+1 {
 		t.Fatalf("argv = %v", argv)
 	}
@@ -912,7 +924,7 @@ func TestVerify_Interactive(t *testing.T) {
 	if !strings.Contains(prompt, strings.TrimSpace(verifier.Instruction)) {
 		t.Fatalf("prompt missing verifier.Instruction: %q", prompt)
 	}
-	for _, want := range []string{reqPath, "# req", planPath, "1. step", verifierPlan, findingsPath, "VERDICT: PASS", "VERDICT: FAIL"} {
+	for _, want := range []string{reqPath, "# req", planPath, "1. step", verifierPlan, findingsPath, "VERDICT: PASS", "VERDICT: FAIL", "j-verify-task", "git worktree list"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q: %q", want, prompt)
 		}
@@ -922,8 +934,15 @@ func TestVerify_Interactive(t *testing.T) {
 // TestVerify_Interactive_ResumeChatID pins the --resume <id> arg
 // shape on the interactive Verify path, mirroring
 // TestPlan_Interactive_ResumeChatID / TestWork_Interactive_ResumeChatID.
+// Workspace is asserted against the canonicalised cwd, same rule as
+// TestVerify_Interactive.
 func TestVerify_Interactive_ResumeChatID(t *testing.T) {
 	dir := t.TempDir()
+	t.Chdir(dir)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
 	findingsPath := filepath.Join(dir, "verifier_findings.md")
 	calls := installStub(t, "", 0)
 	rid := "88888888-8888-4888-8888-888888888888"
@@ -944,7 +963,7 @@ func TestVerify_Interactive_ResumeChatID(t *testing.T) {
 		t.Fatalf("Verify pid = %d, want 0 for interactive", pid)
 	}
 	argv := readCalls(t, calls)
-	want := []string{"--resume", rid, "--model", "composer-2-fast", "--workspace", dir}
+	want := []string{"--resume", rid, "--model", "composer-2-fast", "--workspace", cwd}
 	if len(argv) != len(want)+1 {
 		t.Fatalf("argv = %v", argv)
 	}
@@ -1024,8 +1043,15 @@ func TestVerify_Interactive_RunnerError(t *testing.T) {
 // TestVerify_Headless pins the headless flag set: --print
 // --output-format text --force --trust, the workspace, the model,
 // and the prompt suffix. --mode plan is intentionally absent.
+// Workspace is the canonicalised cwd (set via t.Chdir), not the
+// per-task dir: `j verify` must run from the project root.
 func TestVerify_Headless(t *testing.T) {
 	dir := t.TempDir()
+	t.Chdir(dir)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
 	findingsPath := filepath.Join(dir, "verifier_findings.md")
 	logPath := filepath.Join(dir, "agent.log")
 	calls := installStub(t, "ok\n", 0)
@@ -1053,7 +1079,7 @@ func TestVerify_Headless(t *testing.T) {
 		"--force",
 		"--trust",
 		"--model", "sonnet-4",
-		"--workspace", dir,
+		"--workspace", cwd,
 	}
 	argv := waitForCalls(t, calls, len(want)+1)
 	if len(argv) != len(want)+1 {
@@ -1073,9 +1099,15 @@ func TestVerify_Headless(t *testing.T) {
 }
 
 // TestVerify_Headless_ResumeChatID pins the --resume <id> argv shape
-// on the headless Verify path.
+// on the headless Verify path. Workspace is the canonicalised cwd,
+// same rule as TestVerify_Headless.
 func TestVerify_Headless_ResumeChatID(t *testing.T) {
 	dir := t.TempDir()
+	t.Chdir(dir)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
 	findingsPath := filepath.Join(dir, "verifier_findings.md")
 	calls := installStub(t, "ok\n", 0)
 	rid := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -1103,7 +1135,7 @@ func TestVerify_Headless_ResumeChatID(t *testing.T) {
 		"--force",
 		"--trust",
 		"--model", "sonnet-4",
-		"--workspace", dir,
+		"--workspace", cwd,
 	}
 	argv := waitForCalls(t, calls, len(want)+1)
 	if len(argv) != len(want)+1 {

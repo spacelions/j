@@ -318,3 +318,132 @@ func TestFinishWork_PutErrorWarns(t *testing.T) {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
+
+// TestBeginWorkTaskNew_MintsWorktreeName pins the R2 contract on the
+// legacy-import path: an empty Worktree is populated via
+// store.WorktreeNameFor using the cwd basename and the task summary.
+func TestBeginWorkTaskNew_MintsWorktreeName(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "myproj")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	mustInit(t)
+	taskID := store.NewTaskID()
+	lc := beginWorkTaskNew(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "m", taskID, "/tmp/x.plan.md", "# do the thing", "body", "")
+	lc.finishWork(nil)
+	tasks := readTasks(t)
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %+v", tasks)
+	}
+	if tasks[0].Worktree != "myproj-do-the-thing" {
+		t.Fatalf("Worktree = %q, want %q", tasks[0].Worktree, "myproj-do-the-thing")
+	}
+}
+
+// TestBeginWorkTaskReuse_MintsWorktreeWhenEmpty pins the R2 contract
+// on the bbolt-sourced reuse path: an empty Worktree on the existing
+// row is populated during the reuse transition.
+func TestBeginWorkTaskReuse_MintsWorktreeWhenEmpty(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "myproj")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	mustInit(t)
+	id := seedPlanDoneTask(t, "hello world", "plan", "")
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	if existing.Worktree != "" {
+		t.Fatalf("seed task already has worktree %q; test setup bug", existing.Worktree)
+	}
+	lc := beginWorkTaskReuse(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "m", existing, "cursor")
+	lc.finishWork(nil)
+	tasks := readTasks(t)
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %+v", tasks)
+	}
+	// seedPlanDoneTask stores the first argument verbatim as Summary;
+	// "hello world" slugifies to "hello-world".
+	if tasks[0].Worktree != "myproj-hello-world" {
+		t.Fatalf("Worktree = %q, want %q", tasks[0].Worktree, "myproj-hello-world")
+	}
+}
+
+// TestBeginWorkTaskReuse_PreservesPreExistingWorktree pins the
+// preserve-existing-value branch of fillWorktree: a pre-populated
+// Worktree on the bbolt row survives the reuse transition untouched.
+func TestBeginWorkTaskReuse_PreservesPreExistingWorktree(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedPlanDoneTask(t, "hello", "plan", "")
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	existing.Worktree = "manual-override"
+	lc := beginWorkTaskReuse(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "m", existing, "cursor")
+	lc.finishWork(nil)
+	tasks := readTasks(t)
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %+v", tasks)
+	}
+	if tasks[0].Worktree != "manual-override" {
+		t.Fatalf("Worktree = %q, want %q", tasks[0].Worktree, "manual-override")
+	}
+}
+
+// TestBeginWorkTaskResume_LeavesWorktreeAlone pins the resume path:
+// even an empty Worktree stays empty (resume never re-mints) so a
+// pre-R2 task falls through to the verifier's main-checkout
+// fallback, avoiding a forced migration.
+func TestBeginWorkTaskResume_LeavesWorktreeAlone(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedPlanDoneTask(t, "hello", "plan", "")
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	if existing.Worktree != "" {
+		t.Fatalf("seed task already has worktree %q; test setup bug", existing.Worktree)
+	}
+	lc := beginWorkTaskResume(Options{Stderr: io.Discard}, existing)
+	lc.finishWork(nil)
+	tasks := readTasks(t)
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %+v", tasks)
+	}
+	if tasks[0].Worktree != "" {
+		t.Fatalf("Worktree = %q, want empty (resume leaves it alone)", tasks[0].Worktree)
+	}
+}

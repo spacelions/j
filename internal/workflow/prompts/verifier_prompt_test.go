@@ -16,7 +16,7 @@ func TestBuildVerifier(t *testing.T) {
 		verifierPlanPath = "/tmp/.j/tasks/abc/verifier_plan.md"
 		findingsPath     = "/tmp/.j/tasks/abc/verifier_findings.md"
 	)
-	got := BuildVerifier(reqPath, reqBody, planPath, planBody, verifierPlanPath, findingsPath)
+	got := BuildVerifier(reqPath, reqBody, planPath, planBody, verifierPlanPath, findingsPath, "")
 
 	if !strings.Contains(got, strings.TrimSpace(verifier.Instruction)) {
 		t.Fatalf("prompt missing verifier.Instruction: %q", got)
@@ -31,6 +31,9 @@ func TestBuildVerifier(t *testing.T) {
 			t.Fatalf("prompt missing %q: %q", want, got)
 		}
 	}
+	if strings.Contains(strings.ToLower(got), "git worktree") {
+		t.Fatalf("empty worktree should not emit worktree line: %q", got)
+	}
 }
 
 // TestBuildVerifier_TrimsLeadingWhitespace pins the same trim
@@ -38,9 +41,23 @@ func TestBuildVerifier(t *testing.T) {
 // verifier.Instruction must not bleed leading whitespace into the
 // composed prompt.
 func TestBuildVerifier_TrimsLeadingWhitespace(t *testing.T) {
-	got := BuildVerifier("r.md", "r", "p.md", "p", "vp.md", "vf.md")
+	got := BuildVerifier("r.md", "r", "p.md", "p", "vp.md", "vf.md", "")
 	if strings.HasPrefix(got, "\n") || strings.HasPrefix(got, " ") {
 		t.Fatalf("prompt should not start with whitespace: %q", got[:10])
+	}
+}
+
+// TestBuildVerifier_WithWorktree pins the worktree-direction suffix
+// on the first-run verifier prompt: the trailing line names the
+// worktree verbatim and mentions `git worktree list` so the verifier
+// knows how to resolve the absolute path.
+func TestBuildVerifier_WithWorktree(t *testing.T) {
+	got := BuildVerifier("r.md", "r", "p.md", "p", "vp.md", "vf.md", "j-my-task")
+	if !strings.Contains(got, "j-my-task") {
+		t.Fatalf("worktree prompt missing worktree name: %q", got)
+	}
+	if !strings.Contains(got, "git worktree list") {
+		t.Fatalf("worktree prompt missing `git worktree list` hint: %q", got)
 	}
 }
 
@@ -51,7 +68,7 @@ func TestBuildVerifierResume(t *testing.T) {
 		planPath = "/tmp/.j/tasks/abc/plan.md"
 		planBody = "plan body"
 	)
-	got := BuildVerifierResume(reqPath, reqBody, planPath, planBody)
+	got := BuildVerifierResume(reqPath, reqBody, planPath, planBody, "")
 	if got == "" {
 		t.Fatal("BuildVerifierResume returned empty string")
 	}
@@ -74,8 +91,23 @@ func TestBuildVerifierResume(t *testing.T) {
 			t.Fatalf("resume prompt should not include %q: %q", banned, got)
 		}
 	}
-	if got == BuildVerifier(reqPath, reqBody, planPath, planBody, "vp.md", "vf.md") {
+	if got == BuildVerifier(reqPath, reqBody, planPath, planBody, "vp.md", "vf.md", "") {
 		t.Fatal("resume prompt should differ from BuildVerifier output")
+	}
+	if strings.Contains(strings.ToLower(got), "git worktree") {
+		t.Fatalf("empty worktree should not emit worktree line: %q", got)
+	}
+}
+
+// TestBuildVerifierResume_WithWorktree pins the worktree-direction
+// suffix on the resume path, mirroring TestBuildVerifier_WithWorktree.
+func TestBuildVerifierResume_WithWorktree(t *testing.T) {
+	got := BuildVerifierResume("r.md", "r", "p.md", "p", "j-my-task")
+	if !strings.Contains(got, "j-my-task") {
+		t.Fatalf("resume worktree prompt missing worktree name: %q", got)
+	}
+	if !strings.Contains(got, "git worktree list") {
+		t.Fatalf("resume worktree prompt missing `git worktree list` hint: %q", got)
 	}
 }
 
@@ -86,7 +118,7 @@ func TestBuildVerifierFix(t *testing.T) {
 		findingsPath = "/tmp/.j/tasks/abc/verifier_findings.md"
 		findingsBody = "- missing test\nVERDICT: FAIL"
 	)
-	got := BuildVerifierFix(planPath, planBody, findingsPath, findingsBody)
+	got := BuildVerifierFix(planPath, planBody, findingsPath, findingsBody, "")
 	if got == "" {
 		t.Fatal("BuildVerifierFix returned empty string")
 	}
@@ -109,5 +141,22 @@ func TestBuildVerifierFix(t *testing.T) {
 		if !strings.Contains(got, "Do not re-plan") {
 			t.Fatalf("fix prompt should explicitly forbid re-planning: %q", got)
 		}
+	}
+	if strings.Contains(strings.ToLower(got), "git worktree") {
+		t.Fatalf("empty worktree should not emit worktree line: %q", got)
+	}
+}
+
+// TestBuildVerifierFix_WithWorktree pins the worktree-direction suffix
+// on the fix-findings coder prompt; BuildVerifierFix shares
+// appendWorktreeLine with BuildCoder so the hint mentions
+// `git worktree add`, not `git worktree list`.
+func TestBuildVerifierFix_WithWorktree(t *testing.T) {
+	got := BuildVerifierFix("p.md", "p", "vf.md", "body", "j-my-task")
+	if !strings.Contains(got, "j-my-task") {
+		t.Fatalf("fix worktree prompt missing worktree name: %q", got)
+	}
+	if !strings.Contains(got, "git worktree add") {
+		t.Fatalf("fix worktree prompt missing `git worktree add` hint: %q", got)
 	}
 }

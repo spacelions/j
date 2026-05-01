@@ -301,6 +301,7 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, coderAgent 
 			Interactive:                *opts.Interactive,
 			Resume:                     i > 0,
 			ResumeChatID:               resumeID,
+			Worktree:                   res.Task.Worktree,
 			AgentLogPath:               agentLogPath,
 		}
 		if _, err := verifierAgent.Verify(ctx, req); err != nil {
@@ -326,6 +327,7 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, coderAgent 
 			ResumeChatID: res.Task.WorkResumeCursor,
 			Resume:       true,
 			FixFindings:  findingsBody,
+			Worktree:     res.Task.Worktree,
 			AgentLogPath: agentLogPath,
 		}
 		if _, err := coderAgent.Work(ctx, workReq); err != nil {

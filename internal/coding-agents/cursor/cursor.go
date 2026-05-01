@@ -222,15 +222,16 @@ func buildPlanPrompt(req codingagents.PlanRequest) string {
 // outer verify loop wants the previous coder session to address a
 // concrete set of verifier findings without re-planning. Resume
 // runs are next; first-run falls through to the full coder
-// instruction.
+// instruction. Every branch threads req.Worktree through so the
+// prompt carries the worktree-direction line when the task has one.
 func buildWorkPrompt(req codingagents.WorkRequest) string {
 	if req.FixFindings != "" {
-		return prompts.BuildVerifierFix(req.PlanPath, req.Body, "verifier_findings.md", req.FixFindings)
+		return prompts.BuildVerifierFix(req.PlanPath, req.Body, "verifier_findings.md", req.FixFindings, req.Worktree)
 	}
 	if req.Resume {
-		return prompts.BuildCoderResume(req.PlanPath, req.Body)
+		return prompts.BuildCoderResume(req.PlanPath, req.Body, req.Worktree)
 	}
-	return prompts.BuildCoder(req.PlanPath, req.Body)
+	return prompts.BuildCoder(req.PlanPath, req.Body, req.Worktree)
 }
 
 // Verify runs cursor-agent against the requirements + plan pair. The
@@ -247,8 +248,15 @@ func buildWorkPrompt(req codingagents.WorkRequest) string {
 //     the verifier prompt, fire-and-forget. Same headless flag set
 //     as Work; --mode plan is intentionally absent for the same
 //     reason: the verifier needs write access to its output files.
+//
+// Unlike Plan and Work, Verify runs with `--workspace <project-root>`
+// (not `.j/tasks/<id>/`): the verifier inspects the worktree named
+// in req.Worktree via `git worktree list`, which only works from the
+// repository's main checkout. Plan and Work still use
+// DefaultWorkspace because they want the self-contained per-task
+// folder.
 func (*Agent) Verify(ctx context.Context, req codingagents.VerifyRequest) (int, error) {
-	workspace := codingagents.DefaultWorkspace(req.VerifierFindingsOutputPath)
+	workspace := codingagents.ProjectRootWorkspace()
 	prompt := buildVerifyPrompt(req)
 
 	if req.Interactive {
@@ -277,14 +285,17 @@ func (*Agent) Verify(ctx context.Context, req codingagents.VerifyRequest) (int, 
 // buildVerifyPrompt picks the right verifier prompt for req. Resume
 // runs switch to the resume-only template; first-run uses the full
 // verifier instruction with the save-plan / save-findings suffix.
+// Both branches thread req.Worktree through so the prompt carries a
+// worktree-direction line when the task has one.
 func buildVerifyPrompt(req codingagents.VerifyRequest) string {
 	if req.Resume {
-		return prompts.BuildVerifierResume(req.RequirementsPath, req.RequirementsBody, req.PlanPath, req.PlanBody)
+		return prompts.BuildVerifierResume(req.RequirementsPath, req.RequirementsBody, req.PlanPath, req.PlanBody, req.Worktree)
 	}
 	return prompts.BuildVerifier(
 		req.RequirementsPath, req.RequirementsBody,
 		req.PlanPath, req.PlanBody,
 		req.VerifierPlanOutputPath, req.VerifierFindingsOutputPath,
+		req.Worktree,
 	)
 }
 

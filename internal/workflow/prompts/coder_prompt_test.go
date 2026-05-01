@@ -8,7 +8,7 @@ import (
 )
 
 func TestBuildCoder(t *testing.T) {
-	got := BuildCoder("/tmp/feature.plan.md", "1. step one\n2. step two")
+	got := BuildCoder("/tmp/feature.plan.md", "1. step one\n2. step two", "")
 
 	if !strings.Contains(got, strings.TrimSpace(coder.Instruction)) {
 		t.Fatalf("prompt missing coder.Instruction: %q", got)
@@ -19,6 +19,9 @@ func TestBuildCoder(t *testing.T) {
 	if !strings.Contains(got, "1. step one") {
 		t.Fatalf("prompt missing body: %q", got)
 	}
+	if strings.Contains(strings.ToLower(got), "git worktree") {
+		t.Fatalf("empty worktree should not emit worktree line: %q", got)
+	}
 }
 
 // TestBuildCoder_TrimsLeadingTrailingWhitespace confirms that excess
@@ -26,9 +29,22 @@ func TestBuildCoder(t *testing.T) {
 // into the rendered prompt — the coder.Instruction value is trimmed
 // before composition.
 func TestBuildCoder_TrimsLeadingTrailingWhitespace(t *testing.T) {
-	got := BuildCoder("p.md", "x")
+	got := BuildCoder("p.md", "x", "")
 	if strings.HasPrefix(got, "\n") || strings.HasPrefix(got, " ") {
 		t.Fatalf("prompt should not start with whitespace: %q", got[:10])
+	}
+}
+
+// TestBuildCoder_WithWorktree pins the worktree-direction suffix
+// appended on a non-empty worktree: the trailing line names the
+// worktree verbatim and keeps the create-via-git-worktree-add hint.
+func TestBuildCoder_WithWorktree(t *testing.T) {
+	got := BuildCoder("p.md", "body", "j-my-task")
+	if !strings.Contains(got, "j-my-task") {
+		t.Fatalf("worktree prompt missing worktree name: %q", got)
+	}
+	if !strings.Contains(got, "git worktree add") {
+		t.Fatalf("worktree prompt missing `git worktree add` hint: %q", got)
 	}
 }
 
@@ -38,7 +54,7 @@ func TestBuildCoder_TrimsLeadingTrailingWhitespace(t *testing.T) {
 func TestBuildCoderResume(t *testing.T) {
 	const planPath = "/tmp/feature.plan.md"
 	const body = "1. step one\n2. step two"
-	got := BuildCoderResume(planPath, body)
+	got := BuildCoderResume(planPath, body, "")
 	if got == "" {
 		t.Fatal("BuildCoderResume returned empty string")
 	}
@@ -57,7 +73,22 @@ func TestBuildCoderResume(t *testing.T) {
 	if strings.Contains(got, strings.TrimSpace(coder.Instruction)) {
 		t.Fatalf("resume prompt should NOT include coder.Instruction: %q", got)
 	}
-	if got == BuildCoder(planPath, body) {
+	if got == BuildCoder(planPath, body, "") {
 		t.Fatal("resume prompt should differ from BuildCoder output")
+	}
+	if strings.Contains(strings.ToLower(got), "git worktree") {
+		t.Fatalf("empty worktree should not emit worktree line: %q", got)
+	}
+}
+
+// TestBuildCoderResume_WithWorktree pins the worktree-direction suffix
+// on the resume path, mirroring TestBuildCoder_WithWorktree.
+func TestBuildCoderResume_WithWorktree(t *testing.T) {
+	got := BuildCoderResume("p.md", "body", "j-my-task")
+	if !strings.Contains(got, "j-my-task") {
+		t.Fatalf("resume worktree prompt missing worktree name: %q", got)
+	}
+	if !strings.Contains(got, "git worktree add") {
+		t.Fatalf("resume worktree prompt missing `git worktree add` hint: %q", got)
 	}
 }
