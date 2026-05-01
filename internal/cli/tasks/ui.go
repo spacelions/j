@@ -83,7 +83,6 @@ func (u *huhUI) PickTask(ctx context.Context, tasks []store.Task) (string, error
 			Title("Select a task").
 			Options(huh.NewOptions(labels...)...).
 			Filtering(true).
-			Height(12).
 			Value(&chosen),
 	)).WithInput(u.in).WithOutput(u.out).WithTheme(uitheme.Theme()).RunWithContext(ctx)
 	if errors.Is(err, huh.ErrUserAborted) {

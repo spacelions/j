@@ -119,7 +119,6 @@ func (u *huhUI) choose(ctx context.Context, title string, options []string) (str
 		Title(title).
 		Options(huh.NewOptions(options...)...).
 		Filtering(true).
-		Height(12).
 		Value(&v)); err != nil {
 		return "", err
 	}
