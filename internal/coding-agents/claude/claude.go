@@ -1,0 +1,248 @@
+// Package claude implements the codingagents.Agent backed by the local
+// claude CLI (Anthropic's Claude Code). It is the second concrete
+// backend alongside internal/coding-agents/cursor and is wired into
+// the same picker shown by `j plan / j work / j verify`.
+package claude
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/google/uuid"
+
+	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/util/run"
+	"github.com/spacelions/j/internal/workflow/prompts"
+)
+
+// Binary is the claude executable name.
+const Binary = "claude"
+
+// defaultModels is the picker list shown for `j plan / j work / j verify`.
+// Claude has no `--list-models` equivalent so we surface the stable set
+// of latest-model aliases the CLI accepts via `--model`. Users who want
+// to pin a specific full id (e.g. `claude-opus-4-7`) can record it via
+// `j settings set model <id>`.
+var defaultModels = []string{"opus", "sonnet", "haiku"}
+
+// Agent is a Claude-backed coder. It is stateless: every method shells
+// out to the real claude binary on PATH via the run package's
+// package-level helpers. Tests drive it with a stub binary on PATH
+// rather than an injected runner (see AGENTS.md "no test seams" rule).
+type Agent struct{}
+
+// New returns a Claude agent that shells out to the claude CLI.
+func New() *Agent { return &Agent{} }
+
+// Name implements codingagents.Agent.
+func (*Agent) Name() string { return "claude" }
+
+// NewResumeID mints a fresh UUID locally. Claude has no `create-chat`
+// command (sessions are minted server-side on the first call to claude
+// when `--session-id <uuid>` is supplied), so we generate the id here
+// and let Plan/Work/Verify decide whether to register it via
+// `--session-id` (first run) or thread it through `--resume <id>`
+// (resume run).
+func (*Agent) NewResumeID(_ context.Context) (string, error) {
+	return uuid.New().String(), nil
+}
+
+// ListModels returns the static latest-model alias set the picker
+// shows. It does not shell out: the claude CLI has no `--list-models`
+// command and the set is small and stable.
+func (*Agent) ListModels(_ context.Context) ([]string, error) {
+	out := make([]string, len(defaultModels))
+	copy(out, defaultModels)
+	return out, nil
+}
+
+// CheckLogin verifies the user is signed in to claude. The CLI's
+// `auth status` subcommand prints JSON by default with a `loggedIn`
+// boolean field. A non-zero exit, unparseable output, or
+// `loggedIn=false` all surface a remediation hint pointing at
+// `claude auth login`.
+func (*Agent) CheckLogin(ctx context.Context) error {
+	out, err := run.Output(ctx, Binary, "auth", "status")
+	if err != nil {
+		return fmt.Errorf("claude auth status failed: %w (run 'claude auth login')", err)
+	}
+	var status struct {
+		LoggedIn bool `json:"loggedIn"`
+	}
+	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &status); jsonErr != nil {
+		return errors.New("claude reports not logged in; run 'claude auth login'")
+	}
+	if !status.LoggedIn {
+		return errors.New("claude reports not logged in; run 'claude auth login'")
+	}
+	return nil
+}
+
+// Plan runs claude against req. Two flavours are supported:
+//
+//   - Interactive (req.Interactive == true): launch claude's TUI with
+//     `--permission-mode plan` and ask claude to save both files
+//     before exiting via a suffix on the prompt. The TUI is allowed
+//     to leave plan mode and approve writes manually.
+//   - Headless (req.Interactive == false): `--print --output-format text
+//     --dangerously-skip-permissions --model <m>`. We drop
+//     `--permission-mode plan` here on purpose: plan mode is read-only
+//     and would forbid every write tool call, blocking the prompt's
+//     "save requirements/plan" instructions.
+//     `--dangerously-skip-permissions` auto-approves tool calls and
+//     skips the workspace-trust prompt; combined they make the
+//     headless run actually complete without stalling.
+//
+// cmd.Dir is set to the per-task workspace dir so claude's CLAUDE.md
+// auto-discovery and tool scope land where the user expects.
+func (a *Agent) Plan(ctx context.Context, req codingagents.PlanRequest) (int, error) {
+	workspace := codingagents.DefaultWorkspace(req.FromFilePath)
+	prompt := buildPlanPrompt(req)
+
+	if req.Interactive {
+		args := append(sessionArgs(req.ResumeChatID, req.Resume), "--permission-mode", "plan", "--model", req.Model, prompt)
+		if err := run.RunIn(ctx, workspace, Binary, args...); err != nil {
+			return 0, fmt.Errorf("claude: %w", err)
+		}
+		return 0, nil
+	}
+
+	hargs := append(sessionArgs(req.ResumeChatID, req.Resume),
+		"--print", "--output-format", "text", "--dangerously-skip-permissions", "--model", req.Model, prompt)
+	pid, err := run.SpawnIn(ctx, workspace, req.AgentLogPath, Binary, hargs...)
+	if err != nil {
+		return 0, fmt.Errorf("claude: %w", err)
+	}
+	return pid, nil
+}
+
+// Work runs claude against a previously generated plan markdown. The
+// agent edits files directly so we do not pass `--permission-mode
+// plan`. Two flavours mirror Plan:
+//
+//   - Interactive: launch claude's TUI with the coder prompt as the
+//     initial user message; the user drives the session.
+//   - Headless: `--print --output-format text --dangerously-skip-permissions
+//     --model <m>`, fire-and-forget. claude's stdout/stderr are
+//     redirected to req.AgentLogPath via run.SpawnIn and the spawned
+//     PID is returned so `j work` can record it for later reaping.
+func (a *Agent) Work(ctx context.Context, req codingagents.WorkRequest) (int, error) {
+	workspace := codingagents.DefaultWorkspace(req.PlanPath)
+	prompt := buildWorkPrompt(req)
+
+	if req.Interactive {
+		args := append(sessionArgs(req.ResumeChatID, req.Resume), "--model", req.Model, prompt)
+		if err := run.RunIn(ctx, workspace, Binary, args...); err != nil {
+			return 0, fmt.Errorf("claude: %w", err)
+		}
+		return 0, nil
+	}
+
+	pargs := append(sessionArgs(req.ResumeChatID, req.Resume),
+		"--print", "--output-format", "text", "--dangerously-skip-permissions", "--model", req.Model, prompt)
+	pid, err := run.SpawnIn(ctx, workspace, req.AgentLogPath, Binary, pargs...)
+	if err != nil {
+		return 0, fmt.Errorf("claude: %w", err)
+	}
+	return pid, nil
+}
+
+// Verify runs claude against the requirements + plan pair. Mirrors
+// cursor's Verify: cmd.Dir is the project root (so the verifier can
+// `git worktree list` from there) rather than the per-task dir, and
+// `--permission-mode plan` is intentionally absent because the
+// verifier needs to write verifier_plan.md / verifier_findings.md
+// (and edit project files on FAIL).
+func (a *Agent) Verify(ctx context.Context, req codingagents.VerifyRequest) (int, error) {
+	workspace := codingagents.ProjectRootWorkspace()
+	prompt := buildVerifyPrompt(req)
+
+	if req.Interactive {
+		args := append(sessionArgs(req.ResumeChatID, req.Resume), "--model", req.Model, prompt)
+		if err := run.RunIn(ctx, workspace, Binary, args...); err != nil {
+			return 0, fmt.Errorf("claude: %w", err)
+		}
+		return 0, nil
+	}
+
+	pargs := append(sessionArgs(req.ResumeChatID, req.Resume),
+		"--print", "--output-format", "text", "--dangerously-skip-permissions", "--model", req.Model, prompt)
+	pid, err := run.SpawnIn(ctx, workspace, req.AgentLogPath, Binary, pargs...)
+	if err != nil {
+		return 0, fmt.Errorf("claude: %w", err)
+	}
+	return pid, nil
+}
+
+// sessionArgs returns the leading argv segment that threads the
+// orchestrator's session id into claude. Empty id yields a nil slice
+// (claude picks its own session id). When resume is true the id is
+// passed via `--resume`; otherwise via `--session-id` so the new
+// server-side session is bound to that uuid for later resume.
+func sessionArgs(id string, resume bool) []string {
+	if id == "" {
+		return nil
+	}
+	if resume {
+		return []string{"--resume", id}
+	}
+	return []string{"--session-id", id}
+}
+
+// buildPlanPrompt picks the right planner prompt for req. Mirrors the
+// cursor backend: a fresh run composes the planner instruction plus
+// the "save requirements / save plan / then exit" suffix; a resume
+// run switches to the resume-only template that asks the previous
+// session to inspect / report / continue without overwriting the
+// saved markdown. The non-resume suffix also pins the requirements.md
+// "first line is a one-line summary" rule so `j tasks` does not
+// surface the literal `# Requirements` heading as the task summary.
+func buildPlanPrompt(req codingagents.PlanRequest) string {
+	if req.Resume {
+		return prompts.BuildPlannerResume(req.FromFilePath, req.Body)
+	}
+	base := prompts.BuildPlanner(req.FromFilePath, req.Body)
+	return fmt.Sprintf(
+		"%s\n\nDuring this session you may clarify the requirements with the user. Before exiting:\n"+
+			"1. Save the (possibly refined) requirements summary to %q (overwrite if it exists). "+
+			"The first line of this file MUST be a concise one-line summary of the user task — "+
+			"do NOT use `# Requirements` (or any other heading) as the first line; "+
+			"subsequent sections may use any structure you prefer.\n"+
+			"2. Save the plan to %q (overwrite if it exists).\n"+
+			"Then exit.",
+		base, req.RequirementsOutputPath, req.PlanOutputPath,
+	)
+}
+
+// buildWorkPrompt picks the right coder prompt for req. The
+// fix-findings branch wins first (a non-empty FixFindings means the
+// outer verify loop wants the previous coder session to address a
+// concrete set of verifier findings without re-planning), then
+// resume, then first-run.
+func buildWorkPrompt(req codingagents.WorkRequest) string {
+	if req.FixFindings != "" {
+		return prompts.BuildVerifierFix(req.PlanPath, req.Body, "verifier_findings.md", req.FixFindings, req.Worktree)
+	}
+	if req.Resume {
+		return prompts.BuildCoderResume(req.PlanPath, req.Body, req.Worktree)
+	}
+	return prompts.BuildCoder(req.PlanPath, req.Body, req.Worktree)
+}
+
+// buildVerifyPrompt picks the right verifier prompt for req. Resume
+// runs switch to the resume-only template; first-run uses the full
+// verifier instruction with the save-plan / save-findings suffix.
+func buildVerifyPrompt(req codingagents.VerifyRequest) string {
+	if req.Resume {
+		return prompts.BuildVerifierResume(req.RequirementsPath, req.RequirementsBody, req.PlanPath, req.PlanBody, req.Worktree)
+	}
+	return prompts.BuildVerifier(
+		req.RequirementsPath, req.RequirementsBody,
+		req.PlanPath, req.PlanBody,
+		req.VerifierPlanOutputPath, req.VerifierFindingsOutputPath,
+		req.Worktree,
+	)
+}

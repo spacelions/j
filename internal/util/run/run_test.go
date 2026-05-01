@@ -165,6 +165,89 @@ func TestIsAlive_LiveAndDead(t *testing.T) {
 	}
 }
 
+// TestRunIn_Success_PlumbsCwd asserts RunIn sets cmd.Dir on the
+// child: pwd inside a temp dir prints that dir on stdout, which the
+// child writes to a file (Run inherits the parent's stdout but the
+// test runs in `go test` so stdout is captured; instead the child
+// records cwd to a file via shell redirection).
+func TestRunIn_Success_PlumbsCwd(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "cwd.txt")
+	if err := RunIn(context.Background(), dir, "sh", "-c", "pwd > "+out); err != nil {
+		t.Fatalf("RunIn: %v", err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read cwd file: %v", err)
+	}
+	want, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		want = dir
+	}
+	gotResolved, err := filepath.EvalSymlinks(strings.TrimSpace(string(got)))
+	if err != nil {
+		gotResolved = strings.TrimSpace(string(got))
+	}
+	if gotResolved != want {
+		t.Fatalf("cwd = %q, want %q", gotResolved, want)
+	}
+}
+
+// TestRunIn_EmptyDir_InheritsParentCwd pins the empty-dir branch:
+// passing "" leaves cmd.Dir empty so the child inherits the parent's
+// CWD (the same behaviour as Run).
+func TestRunIn_EmptyDir_InheritsParentCwd(t *testing.T) {
+	if err := RunIn(context.Background(), "", "true"); err != nil {
+		t.Fatalf("RunIn: %v", err)
+	}
+}
+
+// TestSpawnIn_PlumbsCwd asserts SpawnIn sets cmd.Dir on the spawned
+// child. The child writes pwd to the log path, which the parent
+// polls for the expected directory.
+func TestSpawnIn_PlumbsCwd(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "out.log")
+	pid, err := SpawnIn(context.Background(), dir, logPath, "sh", "-c", "pwd")
+	if err != nil {
+		t.Fatalf("SpawnIn: %v", err)
+	}
+	if pid <= 0 {
+		t.Fatalf("pid = %d, want > 0", pid)
+	}
+	want, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		want = dir
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		data, readErr := os.ReadFile(logPath)
+		if readErr == nil && len(strings.TrimSpace(string(data))) > 0 {
+			got, evalErr := filepath.EvalSymlinks(strings.TrimSpace(string(data)))
+			if evalErr != nil {
+				got = strings.TrimSpace(string(data))
+			}
+			if got != want {
+				t.Fatalf("cwd = %q, want %q", got, want)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timeout: log = %q (err=%v)", data, readErr)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestSpawnIn_EmptyLogPath pins the empty-log-path guard, mirroring
+// TestSpawn_EmptyLogPath.
+func TestSpawnIn_EmptyLogPath(t *testing.T) {
+	_, err := SpawnIn(context.Background(), "", "", "true")
+	if err == nil || !strings.Contains(err.Error(), "empty log path") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 // TestIsAlive_NonPositive covers the pid <= 0 short-circuit.
 func TestIsAlive_NonPositive(t *testing.T) {
 	if IsAlive(0) {

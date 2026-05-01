@@ -15,6 +15,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/store"
 )
@@ -22,7 +23,7 @@ import (
 // ResumeOptions configures RunResume. Stdin/Stdout/Stderr default to
 // the process streams; UI defaults to the huh implementation; Agents
 // must be supplied by the caller (the cobra wiring injects
-// `[]codingagents.Agent{cursor.New()}`, tests inject scripted ones).
+// `[]codingagents.Agent{cursor.New(), claude.New()}`, tests inject scripted ones).
 //
 // TaskID short-circuits the selector: when non-empty Run loads that
 // task directly. Otherwise Run lists every task whose
@@ -238,7 +239,7 @@ func newResumeCmd() *cobra.Command {
 				Stdin:  cmd.InOrStdin(),
 				Stdout: cmd.OutOrStdout(),
 				Stderr: cmd.ErrOrStderr(),
-				Agents: []codingagents.Agent{cursor.New()},
+				Agents: []codingagents.Agent{cursor.New(), claude.New()},
 			})
 		},
 	}
