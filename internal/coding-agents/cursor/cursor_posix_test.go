@@ -549,7 +549,7 @@ func TestWork_Interactive(t *testing.T) {
 	if !strings.Contains(prompt, plan) {
 		t.Fatalf("prompt missing plan path %q: %q", plan, prompt)
 	}
-	for _, banned := range []string{"--print", "--mode", "--output-format"} {
+	for _, banned := range []string{"--print", "--mode", "--output-format", "--force", "--trust"} {
 		for _, a := range argv {
 			if a == banned {
 				t.Fatalf("interactive Work should not pass %q: argv = %v", banned, argv)
@@ -616,6 +616,8 @@ func TestWork_Headless(t *testing.T) {
 	want := []string{
 		"--print",
 		"--output-format", "text",
+		"--force",
+		"--trust",
 		"--model", "sonnet-4",
 		"--workspace", dir,
 	}
@@ -662,6 +664,8 @@ func TestWork_Headless_ResumeChatID(t *testing.T) {
 		"--resume", rid,
 		"--print",
 		"--output-format", "text",
+		"--force",
+		"--trust",
 		"--model", "sonnet-4",
 		"--workspace", dir,
 	}

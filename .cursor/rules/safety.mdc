@@ -1,0 +1,87 @@
+---
+description: Forbid destructive shell commands
+alwaysApply: true
+---
+
+# Safety: forbidden shell commands
+
+Cursor runs in this repo with auto-approve enabled in headless mode (`j work`
+passes `--force --trust` to `cursor-agent`), so any tool call that would
+otherwise pop an approval prompt now executes silently. To keep that safe, the
+agent MUST refuse to execute the commands listed below and instead surface
+them in chat for the user to confirm. This rule applies to BOTH headless and
+interactive sessions — interactive cursor users still benefit from a hard
+refuse-list for catastrophic commands.
+
+## Forbidden commands — refuse and ask the user
+
+Refuse to run, and ask the user before doing anything close to these:
+
+- **Recursive force-deletes**: `rm -rf`, `rm -rf /`, `rm -rf ~`, `rm -rf .`,
+  `rm -rf ..`, or any `rm -r{f,}` / `rm -fr` against `/`, `~`, `.`, `..`,
+  `$HOME`, or any path outside the current task directory. This includes
+  `find ... -delete`, `find ... -exec rm`, and other recursive-force delete
+  idioms that escape the task scope.
+- **Force-pushing protected branches**: `git push --force` /
+  `git push --force-with-lease` / `git push -f` against `main`, `master`,
+  `develop`, `release/*`, or any protected branch. Never force-push a branch
+  you do not own.
+- **History-rewriting on shared branches**: `git reset --hard` on a branch
+  that has been pushed, `git clean -fdx`, `git clean -fdX`, `git rebase -i`,
+  `git filter-branch`, `git filter-repo`, `git push --mirror`, or any
+  history rewrite on a shared branch.
+- **Privilege escalation**: `sudo` anything, `su -`, `doas`, `pkexec`, or
+  any other root-elevation. The agent should never run as root.
+- **Permission/ownership rewrites**: `chmod -R 777`, `chmod -R 000`,
+  `chown -R` against paths outside the task scope, `setfacl -R`, or any
+  recursive permission/owner change that touches `/`, `~`, `/etc`, `/var`,
+  `/usr`, or system paths.
+- **Raw device writes**: `dd if=... of=/dev/...`, `dd of=/dev/sd*`,
+  `dd of=/dev/disk*`, `mkfs.*` (`mkfs.ext4`, `mkfs.xfs`, `mkfs.fat`, ...),
+  `fdisk`, `parted`, `wipefs`, `shred` against block devices, or any raw
+  write to `/dev/sd*`, `/dev/nvme*`, `/dev/disk*`, `/dev/mmcblk*`.
+- **Fork bombs and resource-exhaustion gags**: `:(){ :|:& };:`, infinite
+  background-spawn loops, `yes > /dev/sda`, etc.
+- **Piping remote scripts straight into a shell**: `curl ... | sh`,
+  `curl ... | bash`, `wget ... | sh`, `wget -qO- ... | bash`,
+  `iwr ... | iex`, `Invoke-WebRequest ... | Invoke-Expression`, or any
+  variant that downloads code and executes it without inspection.
+- **Killing init / signalling PID 1**: `kill -9 1`, `kill -KILL 1`,
+  `killall -9`, `killall -KILL`, `pkill -9 -1`, or any signal aimed at
+  PID 1 / init / launchd / systemd.
+- **Database destructives without a `WHERE`**: `DROP TABLE`, `DROP DATABASE`,
+  `DROP SCHEMA`, `TRUNCATE`, `DELETE FROM <table>` without a `WHERE`
+  clause, `UPDATE <table> SET ...` without a `WHERE` clause, or any
+  schema/data-mutating SQL that is not narrowly scoped.
+- **Cloud / IaC destructives**: `aws s3 rm --recursive`,
+  `aws s3 rb --force`, `aws ec2 terminate-instances`,
+  `aws rds delete-db-instance`, `gcloud ... delete`, `az ... delete`,
+  `terraform destroy`, `terraform destroy -auto-approve`,
+  `terraform apply -auto-approve` against production state,
+  `kubectl delete ns <ns>`, `kubectl delete --all`,
+  `kubectl drain --force --delete-emptydir-data`, `helm uninstall`
+  against shared releases, or any other multi-resource cloud-side delete.
+- **Package publishing**: `npm publish`, `yarn publish`, `pnpm publish`,
+  `pip upload`, `twine upload`, `cargo publish`, `gem push`,
+  `mvn deploy`, `gradle publish`, `dotnet nuget push`, `gh release create`,
+  or any registry push. The agent must never publish on the user's behalf.
+- **Mutating user-wide git config**: `git config --global ...`,
+  `git config --system ...`, edits to `~/.gitconfig`, `/etc/gitconfig`,
+  or `~/.config/git/config`. Repo-local `git config --local` is fine
+  when scoped to this repository.
+- **`eval` / `bash -c` on untrusted strings**: `eval "$..."` on data
+  pulled from the network, the user's clipboard, or AI output;
+  `bash -c "$..."`, `sh -c "$..."`, `zsh -c "$..."`, `python -c "$..."`,
+  `node -e "$..."` etc. invoked on untrusted strings. If the agent
+  generated the string itself it must paste the literal command for the
+  user to read before executing.
+
+## When in doubt
+
+Stop. Print the proposed command verbatim in chat, explain what it would
+do and which files / hosts / resources it would touch, and wait for the
+user to confirm before executing. This applies to BOTH headless cursor
+sessions (where `--force` would otherwise auto-approve every tool call)
+and interactive sessions (where the user might fat-finger Enter on an
+approval prompt). Refusing and asking is always the safe default; the
+user can always re-run the command themselves if they really want it.
