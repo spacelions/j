@@ -1,8 +1,10 @@
 // Package settings implements the `j settings` subcommand. It owns
 // the on-disk bbolt database under `<cwd>/.j/settings`. Listing is
 // done with plain `j settings`. Values are set with
-// `j settings set bucket.key=value` and cleared with
-// `j settings reset` (all) or `j settings reset bucket.key`.
+// `j settings set bucket.key=value [bucket.key=value ...]` (e.g.
+// `j settings set planner.tool=cursor planner.model=opus`) and
+// cleared with `j settings reset` (all) or
+// `j settings reset bucket.key`.
 package settings
 
 import (

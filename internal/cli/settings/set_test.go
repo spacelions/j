@@ -129,6 +129,112 @@ func TestSet_PostInitWritesValue(t *testing.T) {
 	}
 }
 
+// TestSet_MultiplePairs verifies that two valid pairs are written in
+// order and that both lines appear in stdout.
+func TestSet_MultiplePairs(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	out, err := runSetArgs(t, "set", "planner.tool=cursor", "planner.model=opus")
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	first := strings.Index(out, "set planner.tool = cursor")
+	second := strings.Index(out, "set planner.model = opus")
+	if first < 0 || second < 0 {
+		t.Fatalf("stdout = %q, want both set lines", out)
+	}
+	if first > second {
+		t.Fatalf("stdout = %q, want first pair printed before second", out)
+	}
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	for _, want := range []struct{ k, v string }{
+		{"tool", "cursor"},
+		{"model", "opus"},
+	} {
+		got, ok, err := s.Get("planner", want.k)
+		if err != nil {
+			t.Fatalf("Get(%s): %v", want.k, err)
+		}
+		if !ok {
+			t.Fatalf("Get(planner.%s): missing", want.k)
+		}
+		if got != want.v {
+			t.Fatalf("planner.%s = %q, want %q", want.k, got, want.v)
+		}
+	}
+}
+
+// TestSet_MultipleParseErrorBeforeWrites confirms that a parse error
+// on any arg aborts the whole batch: no good pair is written, even
+// the ones that appeared before the bad arg.
+func TestSet_MultipleParseErrorBeforeWrites(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	_, err := runSetArgs(t, "set", "a.b=1", "bad-no-equals", "c.d=2")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "missing '='") {
+		t.Fatalf("err = %v, want missing '='", err)
+	}
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	for _, c := range []struct{ bucket, key string }{
+		{"a", "b"},
+		{"c", "d"},
+	} {
+		if _, ok, err := s.Get(c.bucket, c.key); err != nil {
+			t.Fatalf("Get(%s.%s): %v", c.bucket, c.key, err)
+		} else if ok {
+			t.Fatalf("Get(%s.%s): unexpectedly present, batch should have aborted before any write", c.bucket, c.key)
+		}
+	}
+}
+
+// TestSet_DuplicateKeyLastWins confirms that when the same key is
+// listed twice, the second assignment overwrites the first.
+func TestSet_DuplicateKeyLastWins(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	if _, err := runSetArgs(t, "set", "a.b=1", "a.b=2"); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	got, ok, err := s.Get("a", "b")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !ok {
+		t.Fatal("Get(a.b): missing")
+	}
+	if got != "2" {
+		t.Fatalf("a.b = %q, want %q", got, "2")
+	}
+}
+
 func runSetArgs(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	cmd := New()
