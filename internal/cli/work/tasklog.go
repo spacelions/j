@@ -31,6 +31,10 @@ type workLifecycle struct {
 // `--from-file` import. The caller has already minted the task id and
 // staged the plan markdown into <cwd>/.j/tasks/<id>/plan.md (and
 // optionally requirements.md). This helper just stamps the bbolt row.
+//
+// Worktree is minted via store.WorktreeNameFor so the coder and the
+// verifier share one rule; callers that pre-populate Worktree (none
+// today — `j plan` does not set it) still have their value preserved.
 func beginWorkTaskNew(opts Options, agent codingagents.Agent, model, taskID, planPath, requirement, planBody, workResumeChatID string) *workLifecycle {
 	begin := time.Now().UTC()
 	task := store.Task{
@@ -42,6 +46,7 @@ func beginWorkTaskNew(opts Options, agent codingagents.Agent, model, taskID, pla
 		Summary:          tasklog.FromPlanAndRequirement(requirement, planBody, planPath),
 		WorkBeginAt:      &begin,
 	}
+	fillWorktree(&task)
 	return openLifecycle(opts, task)
 }
 
@@ -49,6 +54,11 @@ func beginWorkTaskNew(opts Options, agent codingagents.Agent, model, taskID, pla
 // `working`, stamp work_begin_at, clear stale work_end_at / done_at
 // from a previous failed run, and record the latest tool/model and
 // resume cursor for the work phase. Plan-phase fields are preserved.
+//
+// A pre-existing Worktree on `existing` is kept verbatim (so manual
+// edits persist); an empty one is populated via store.WorktreeNameFor
+// so rows that pre-date the field still gain a meaningful name on
+// their first bbolt-sourced `j work`.
 func beginWorkTaskReuse(opts Options, agent codingagents.Agent, model string, existing store.Task, workResumeChatID string) *workLifecycle {
 	begin := time.Now().UTC()
 	task := existing
@@ -59,6 +69,7 @@ func beginWorkTaskReuse(opts Options, agent codingagents.Agent, model string, ex
 	task.WorkBeginAt = &begin
 	task.WorkEndAt = nil
 	task.DoneAt = nil
+	fillWorktree(&task)
 	return openLifecycle(opts, task)
 }
 
@@ -96,6 +107,20 @@ func openLifecycle(opts Options, task store.Task) *workLifecycle {
 	lc := &workLifecycle{stderr: opts.Stderr, task: task}
 	tasklog.PersistWarn(opts.Stderr, task)
 	return lc
+}
+
+// fillWorktree populates task.Worktree via store.WorktreeNameFor when
+// it is empty, leaving a pre-existing value untouched. A ProjectName
+// lookup failure (cwd removed while the process runs) is treated as
+// "no project slug" so the helper still mints a task-only slug
+// instead of bailing: `j work` has more important things to do than
+// surface a hard error for a cosmetic worktree label.
+func fillWorktree(task *store.Task) {
+	if task.Worktree != "" {
+		return
+	}
+	project, _ := store.ProjectName()
+	task.Worktree = store.WorktreeNameFor(project, *task)
 }
 
 // recordBackground stamps the spawned child's PID and the agent log

@@ -163,6 +163,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 		Model:        model,
 		Interactive:  *opts.Interactive,
 		ResumeChatID: resumeID,
+		Worktree:     lc.task.Worktree,
 		AgentLogPath: agentLogPath,
 	})
 	if workErr == nil && pid > 0 {

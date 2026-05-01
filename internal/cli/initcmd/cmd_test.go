@@ -191,26 +191,6 @@ func TestRun_PartialState_FillsMissingArtifacts(t *testing.T) {
 	fileExists(t, filepath.Join(dir, ".j", store.TasksDirName, store.TasksDBName))
 }
 
-func TestRun_LegacyTasksFile_SurfacesError(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	err := Run(context.Background(), Options{
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		UI:     &scriptedUI{},
-	})
-	if !errors.Is(err, store.ErrLegacyTasksFile) {
-		t.Fatalf("err = %v, want ErrLegacyTasksFile", err)
-	}
-}
-
 func TestRun_UIError(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)

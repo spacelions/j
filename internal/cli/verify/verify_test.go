@@ -463,6 +463,61 @@ func TestRun_FailThenPass(t *testing.T) {
 	}
 }
 
+// TestRun_ThreadsWorktreeIntoRequests pins R2/R3: a task seeded with
+// a non-empty Worktree pushes that value into every VerifyRequest
+// and into the coder fix WorkRequest, so both prompts can carry the
+// worktree-direction line.
+func TestRun_ThreadsWorktreeIntoRequests(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedWorkDoneTask(t, "summary", "plan body", "# req")
+	// Overwrite the seeded row to add a Worktree value.
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task.Worktree = "j-my-task"
+	if err := s.PutTask(task); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+
+	agent := newScriptedAgent()
+	agent.verifyVerdicts = []string{"FAIL", "PASS"}
+
+	err = Run(context.Background(), Options{
+		TaskID:        id,
+		Interactive:   boolPtr(true),
+		MaxIterations: 3,
+		Stdout:        io.Discard,
+		Stderr:        io.Discard,
+		Agents:        []codingagents.Agent{agent},
+		UI:            &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for i, req := range agent.verifiedReqs {
+		if req.Worktree != "j-my-task" {
+			t.Fatalf("verifiedReqs[%d].Worktree = %q, want %q", i, req.Worktree, "j-my-task")
+		}
+	}
+	if len(agent.workedReqs) != 1 {
+		t.Fatalf("worked calls = %d, want 1", len(agent.workedReqs))
+	}
+	if agent.workedReqs[0].Worktree != "j-my-task" {
+		t.Fatalf("workedReqs[0].Worktree = %q, want %q", agent.workedReqs[0].Worktree, "j-my-task")
+	}
+}
+
 // TestRun_LoopExhausted pins the no-retries terminal state: every
 // verifier turn returns FAIL and the loop runs out, finalising the
 // task as `verify-done` (DoneAt stays nil).

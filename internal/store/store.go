@@ -65,14 +65,6 @@ const PlanFileName = "plan.md"
 // j tasks summary derivation read it.
 const RequirementsFileName = "requirements.md"
 
-// ErrLegacyTasksFile is returned by EnsureProject and EnsureTaskDir
-// when the path `<cwd>/.j/tasks` exists as a regular file rather than
-// a directory. That layout corresponds to the previous bbolt-only
-// schema; the new schema uses `<cwd>/.j/tasks/` as a directory and
-// stores the bbolt file inside it as `list.db`. Callers should
-// surface a clear "rename or remove the legacy file" message.
-var ErrLegacyTasksFile = errors.New("store: found legacy .j/tasks regular file; rename or remove it before continuing")
-
 // openTimeout bounds how long we'll wait for a file lock when opening
 // the bolt DB. A short timeout keeps tests responsive and surfaces
 // concurrent-access bugs quickly.
@@ -103,6 +95,22 @@ func DefaultDir() (string, error) {
 		return "", fmt.Errorf("store: resolve cwd abs: %w", err)
 	}
 	return filepath.Join(abs, dirName), nil
+}
+
+// ProjectName returns the basename of the current working directory.
+// It is the single rule used by WorktreeNameFor so every call site —
+// `j work`, tests, any future caller — derives the project slug
+// from the same source. A non-nil error only surfaces when os.Getwd
+// itself fails (e.g. the current directory was removed while the
+// process is running); the caller decides whether to treat that as
+// fatal or silently fall back to an empty project slug (fillWorktree
+// does the latter so a cosmetic worktree label never blocks `j work`).
+func ProjectName() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("store: resolve cwd: %w", err)
+	}
+	return filepath.Base(cwd), nil
 }
 
 // DefaultPath returns the absolute path to the default settings DB
@@ -160,13 +168,6 @@ func EnsureProject() error {
 		return fmt.Errorf("store: mkdir %q: %w", jDir, err)
 	}
 	tasksDir := filepath.Join(jDir, TasksDirName)
-	if info, statErr := os.Stat(tasksDir); statErr == nil {
-		if !info.IsDir() {
-			return ErrLegacyTasksFile
-		}
-	} else if !errors.Is(statErr, fs.ErrNotExist) {
-		return fmt.Errorf("store: stat %q: %w", tasksDir, statErr)
-	}
 	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
 		return fmt.Errorf("store: mkdir %q: %w", tasksDir, err)
 	}
@@ -260,9 +261,7 @@ func pathHasKind(path string, isDir bool) (bool, error) {
 // returns its absolute path. The parent `.j/tasks/` directory must
 // already exist (created by `j init` via EnsureProject); a missing
 // parent surfaces a wrapped fs.ErrNotExist so callers can prompt the
-// user to run init. A pre-existing regular file at `.j/tasks` (the
-// legacy schema) returns ErrLegacyTasksFile so the cmd layer can
-// surface a friendly message.
+// user to run init.
 func EnsureTaskDir(id string) (string, error) {
 	if id == "" {
 		return "", errors.New("store: empty task id")
@@ -271,15 +270,11 @@ func EnsureTaskDir(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	info, err := os.Stat(tasksDir)
-	if err != nil {
+	if _, err := os.Stat(tasksDir); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", fmt.Errorf("store: %q missing; run `j init`: %w", tasksDir, err)
 		}
 		return "", fmt.Errorf("store: stat %q: %w", tasksDir, err)
-	}
-	if !info.IsDir() {
-		return "", ErrLegacyTasksFile
 	}
 	taskDir := filepath.Join(tasksDir, id)
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
@@ -292,11 +287,9 @@ func EnsureTaskDir(id string) (string, error) {
 // inside it. The parent `.j/tasks/` directory must already exist
 // (created by `j init` via EnsureProject); a missing parent surfaces
 // a wrapped fs.ErrNotExist so callers can prompt the user to run
-// init (mirroring EnsureTaskDir). A pre-existing regular file at
-// `.j/tasks` (the legacy schema) returns ErrLegacyTasksFile so the
-// cmd layer can surface a friendly message. The helper is
-// idempotent: a missing per-task directory is treated as a no-op
-// because os.RemoveAll returns nil when the target is absent.
+// init (mirroring EnsureTaskDir). The helper is idempotent: a
+// missing per-task directory is treated as a no-op because
+// os.RemoveAll returns nil when the target is absent.
 func RemoveTaskDir(id string) error {
 	if id == "" {
 		return errors.New("store: empty task id")
@@ -305,15 +298,11 @@ func RemoveTaskDir(id string) error {
 	if err != nil {
 		return err
 	}
-	info, err := os.Stat(tasksDir)
-	if err != nil {
+	if _, err := os.Stat(tasksDir); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("store: %q missing; run `j init`: %w", tasksDir, err)
 		}
 		return fmt.Errorf("store: stat %q: %w", tasksDir, err)
-	}
-	if !info.IsDir() {
-		return ErrLegacyTasksFile
 	}
 	taskDir := filepath.Join(tasksDir, id)
 	if err := os.RemoveAll(taskDir); err != nil {

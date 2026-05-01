@@ -11,12 +11,19 @@ import (
 // markdown body. Reusing coder.Instruction keeps the coding rules in a
 // single source of truth across every backend, mirroring how
 // BuildPlanner reuses planner.Instruction for the planning prompt.
-func BuildCoder(planPath, body string) string {
-	return fmt.Sprintf(
-		"%s\n\nPlan (from %q):\n%s",
-		strings.TrimSpace(coder.Instruction),
-		planPath,
-		body,
+//
+// A non-empty worktree appends a single trailing line telling the
+// coder which git worktree to use for this task; an empty worktree
+// leaves the prompt unchanged so the coder behaves as before.
+func BuildCoder(planPath, body, worktree string) string {
+	return appendWorktreeLine(
+		fmt.Sprintf(
+			"%s\n\nPlan (from %q):\n%s",
+			strings.TrimSpace(coder.Instruction),
+			planPath,
+			body,
+		),
+		worktree,
 	)
 }
 
@@ -28,16 +35,37 @@ func BuildCoder(planPath, body string) string {
 //
 // As with BuildPlannerResume, this builder does NOT include
 // coder.Instruction; the first-run BuildCoder already seeded the
-// session with the full coding rules.
-func BuildCoderResume(planPath, body string) string {
+// session with the full coding rules. A non-empty worktree appends
+// the same worktree-direction line as BuildCoder.
+func BuildCoderResume(planPath, body, worktree string) string {
+	return appendWorktreeLine(
+		fmt.Sprintf(
+			"You are resuming a previous coding session. "+
+				"Check what was already implemented in the previous turn, "+
+				"summarise the prior progress for the user in one short paragraph, "+
+				"and then continue only the work that is still outstanding. "+
+				"Do not re-implement from scratch.\n\n"+
+				"Plan (from %q), provided for context only:\n%s",
+			planPath,
+			body,
+		),
+		worktree,
+	)
+}
+
+// appendWorktreeLine returns prompt unchanged when worktree is empty
+// and otherwise appends a single trailing line telling the coder /
+// verifier which git worktree to operate against. Centralising the
+// phrasing in one helper keeps BuildCoder / BuildCoderResume /
+// BuildVerifierFix byte-identical on the suffix so prompt tests can
+// assert the same substring uniformly.
+func appendWorktreeLine(prompt, worktree string) string {
+	if worktree == "" {
+		return prompt
+	}
 	return fmt.Sprintf(
-		"You are resuming a previous coding session. "+
-			"Check what was already implemented in the previous turn, "+
-			"summarise the prior progress for the user in one short paragraph, "+
-			"and then continue only the work that is still outstanding. "+
-			"Do not re-implement from scratch.\n\n"+
-			"Plan (from %q), provided for context only:\n%s",
-		planPath,
-		body,
+		"%s\n\nUse the git worktree named %q for this task; "+
+			"create it via `git worktree add` if it does not yet exist.",
+		prompt, worktree,
 	)
 }
