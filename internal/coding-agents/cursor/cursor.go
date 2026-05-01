@@ -151,12 +151,19 @@ func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) (int, erro
 //
 //   - Interactive: launch cursor's TUI with the coder prompt as the
 //     initial user message; the user drives the session until cursor
-//     exits.
-//   - Headless: --print --output-format text against the coder prompt,
-//     fire-and-forget. cursor-agent's stdout/stderr are redirected to
-//     req.AgentLogPath via run.Spawn and the spawned PID is returned
-//     so `j work` can record it for later reaping. The interactive
-//     path stays synchronous and returns 0.
+//     exits. The interactive branch does not gain --force/--trust
+//     because the user can approve tool calls and the workspace
+//     trust prompt manually in the TUI.
+//   - Headless: --print --output-format text --force --trust against
+//     the coder prompt, fire-and-forget. --force auto-approves tool
+//     calls (no interactive approval prompts) and --trust skips the
+//     workspace trust prompt (it only takes effect with
+//     --print/headless); together they make `j work` against cursor
+//     actually run end-to-end without stalling on prompts.
+//     cursor-agent's stdout/stderr are redirected to req.AgentLogPath
+//     via run.Spawn and the spawned PID is returned so `j work` can
+//     record it for later reaping. The interactive path stays
+//     synchronous and returns 0.
 func (*Agent) Work(ctx context.Context, req codingagents.WorkRequest) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.PlanPath)
 	prompt := buildWorkPrompt(req)
@@ -173,7 +180,7 @@ func (*Agent) Work(ctx context.Context, req codingagents.WorkRequest) (int, erro
 		return 0, nil
 	}
 
-	pargs := []string{"--print", "--output-format", "text", "--model", req.Model, "--workspace", workspace, prompt}
+	pargs := []string{"--print", "--output-format", "text", "--force", "--trust", "--model", req.Model, "--workspace", workspace, prompt}
 	if req.ResumeChatID != "" {
 		pargs = append([]string{"--resume", req.ResumeChatID}, pargs...)
 	}
