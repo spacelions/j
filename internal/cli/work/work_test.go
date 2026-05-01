@@ -363,7 +363,7 @@ func TestRun_ByTaskID_Success(t *testing.T) {
 	if agent.worked != 1 {
 		t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
 	}
-	if !strings.Contains(stdout.String(), "coding against task "+id) {
+	if !strings.Contains(stdout.String(), "J: coding on task "+id) {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 	tasks := readTasks(t)
@@ -614,7 +614,7 @@ func TestRun_FromFile_LegacyImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "coding against ") {
+	if !strings.Contains(stdout.String(), "J: coding on ") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 	tasks := readTasks(t)
@@ -894,7 +894,7 @@ func TestRun_AgentWorkError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "agent boom") {
 		t.Fatalf("err = %v", err)
 	}
-	if strings.Contains(stdout.String(), "coding against") {
+	if strings.Contains(stdout.String(), "J: coding on") {
 		t.Fatalf("stdout should not announce success on Work error: %q", stdout.String())
 	}
 	tasks := readTasks(t)
