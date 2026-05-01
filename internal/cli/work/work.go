@@ -177,9 +177,9 @@ func Run(ctx context.Context, opts Options) (err error) {
 	}
 
 	if res.Existing != nil {
-		fmt.Fprintf(opts.Stdout, "coding against task %s\n", res.Existing.ID)
+		fmt.Fprintf(opts.Stdout, "J: coding on task %s\n", res.Existing.ID)
 	} else {
-		fmt.Fprintf(opts.Stdout, "coding against %s\n", res.PlanPath)
+		fmt.Fprintf(opts.Stdout, "J: coding on %s\n", res.PlanPath)
 	}
 	return nil
 }
