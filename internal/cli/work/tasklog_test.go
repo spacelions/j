@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -144,65 +143,6 @@ func TestFinishWork_ErrorPath(t *testing.T) {
 	}
 }
 
-func TestReadRequirementSidecar_Variants(t *testing.T) {
-	dir := t.TempDir()
-	plan := filepath.Join(dir, "spec.plan.md")
-	if err := os.WriteFile(plan, []byte("plan"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := readRequirementSidecar(plan); got != "" {
-		t.Fatalf("missing sidecar = %q, want empty", got)
-	}
-	requirement := filepath.Join(dir, "spec.md")
-	if err := os.WriteFile(requirement, []byte("req"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := readRequirementSidecar(plan); got != "req" {
-		t.Fatalf("present sidecar = %q, want req", got)
-	}
-	if got := readRequirementSidecar(""); got != "" {
-		t.Fatalf("empty path = %q", got)
-	}
-	// A bare ".plan.md" path: stem is empty after stripping; the
-	// helper must return "" instead of resolving to "<dir>/.md".
-	if got := readRequirementSidecar(filepath.Join(dir, ".plan.md")); got != "" {
-		t.Fatalf("empty stem = %q", got)
-	}
-}
-
-// TestReadRequirementSidecar_CandidateEqualsPlan covers the
-// "candidate == planPath" guard: when a non-conventional plan name
-// would resolve to itself as the requirement we must not loop on
-// reading the same file. We use a plan name that does NOT end in
-// `.plan.md` so the trim leaves the stem alone and the candidate
-// becomes identical to the input.
-func TestReadRequirementSidecar_CandidateEqualsPlan(t *testing.T) {
-	dir := t.TempDir()
-	bare := filepath.Join(dir, "spec.md")
-	if err := os.WriteFile(bare, []byte("body"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := readRequirementSidecar(bare); got != "" {
-		t.Fatalf("self-sidecar = %q, want empty", got)
-	}
-}
-
-func TestWorkSummary_Fallbacks(t *testing.T) {
-	cases := []struct {
-		req, plan, planPath, want string
-	}{
-		{"# req heading\nbody", "## plan", "/tmp/x.plan.md", "req heading"},
-		{"", "## plan heading", "/tmp/x.plan.md", "plan heading"},
-		{"", "", "/tmp/x.plan.md", "x.plan.md"},
-		{"", "", "", ""},
-	}
-	for _, c := range cases {
-		if got := workSummary(c.req, c.plan, c.planPath); got != c.want {
-			t.Fatalf("workSummary(%q,%q,%q) = %q, want %q", c.req, c.plan, c.planPath, got, c.want)
-		}
-	}
-}
-
 // TestRecordBackground_StampsPIDAndPath drives the happy path of
 // recordBackground for the work flow: the in-memory task row carries
 // the PID and log path, status stays at working, and a stray
@@ -303,9 +243,9 @@ func TestOpenLifecycle_OpenTaskLogFails(t *testing.T) {
 }
 
 // TestFinishWork_PutErrorWarns drives the finalize-time put warning
-// by handing finishWork a task with no ID. openTaskLog succeeds but
-// store.PutTask rejects the empty ID, so writeWorkTaskWarn emits the
-// expected warning.
+// by handing finishWork a task with no ID. tasklog.OpenTaskLog
+// succeeds but store.PutTask rejects the empty ID, so
+// tasklog.PersistWarn emits the expected warning.
 func TestFinishWork_PutErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)

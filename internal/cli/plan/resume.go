@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/store"
@@ -108,7 +109,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	body := readBestEffort(requirementsPath)
 
 	resumeTask := planResumeBegin(task)
-	persistTaskWarn(opts.Stderr, resumeTask)
+	tasklog.PersistWarn(opts.Stderr, resumeTask)
 
 	// Resume is always interactive; the headless background spawn
 	// path never fires here. Discard the returned PID (always 0) so
@@ -129,7 +130,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		refinedReq = readBestEffortWarn(opts.Stderr, requirementsPath)
 		planMD = readBestEffortWarn(opts.Stderr, planPath)
 	}
-	persistTaskWarn(opts.Stderr, planResumeFinish(resumeTask, planErr, refinedReq, planMD, requirementsPath))
+	tasklog.PersistWarn(opts.Stderr, planResumeFinish(resumeTask, planErr, refinedReq, planMD, requirementsPath))
 	if planErr != nil {
 		return planErr
 	}
@@ -177,7 +178,7 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 // "task %q not found" wrapping the way callers expect; an empty
 // cursor becomes "task %q has no plan session".
 func resolveResumeByID(stderr io.Writer, id string) (store.Task, bool, error) {
-	s, ok := openTaskLog(stderr)
+	s, ok := tasklog.OpenTaskLog(stderr)
 	if !ok {
 		return store.Task{}, false, errors.New("J: tasks database unavailable")
 	}
@@ -202,7 +203,7 @@ func resolveResumeByID(stderr io.Writer, id string) (store.Task, bool, error) {
 // returned so the agent invocation downstream does not contend on
 // the file lock.
 func listResumableTasks(stderr io.Writer) ([]store.Task, error) {
-	s, ok := openTaskLog(stderr)
+	s, ok := tasklog.OpenTaskLog(stderr)
 	if !ok {
 		return nil, errors.New("J: tasks database unavailable")
 	}
@@ -289,25 +290,8 @@ func planResumeFinish(task store.Task, runErr error, refinedRequirements, planMa
 		return task
 	}
 	task.Status = store.StatusPlanDone
-	task.Summary = planSummary(pickSummarySource(refinedRequirements, planMarkdown), target)
+	task.Summary = tasklog.Summary(tasklog.PickSource(refinedRequirements, planMarkdown), target)
 	return task
-}
-
-// persistTaskWarn opens the task log, PutTask's the row, and closes
-// the store; any failure surfaces a single "warning: ..." line on
-// stderr exactly the way `beginPlanTask` does. Designed to be
-// called twice in RunResume — once for the planning marker and
-// once for the terminal state — so the agent never sees the bbolt
-// file lock held.
-func persistTaskWarn(stderr io.Writer, task store.Task) {
-	s, ok := openTaskLog(stderr)
-	if !ok {
-		return
-	}
-	defer func() { _ = s.Close() }()
-	if err := s.PutTask(task); err != nil {
-		fmt.Fprintf(stderr, "warning: tasks put: %v\n", err)
-	}
 }
 
 // newResumeCmd builds the `j plan resume` cobra subcommand. It

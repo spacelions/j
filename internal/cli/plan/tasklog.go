@@ -1,27 +1,20 @@
 package plan
 
 import (
-	"fmt"
 	"io"
-	"path/filepath"
 	"time"
 
+	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 )
 
-// agentLogFileName is the per-task file that captures stdout/stderr
-// of a fire-and-forget headless cursor-agent child. It lives at
-// `<cwd>/.j/tasks/<id>/agent.log` and is written to the task row's
-// AgentLogPath so `j tasks` and the user can find it later.
-const agentLogFileName = "agent.log"
-
 // planLifecycle owns the begin/end task-log writes around a single
 // agent.Plan invocation. The struct holds no bbolt handle — every
-// task-log write goes through persistTaskWarn (defined in resume.go),
-// which opens `<cwd>/.j/tasks/list.db`, writes, and closes within the
-// same call so the bbolt file lock is never held across agent.Plan
-// and a concurrent `j tasks` from another shell is not blocked. The
+// task-log write goes through tasklog.PersistWarn, which opens
+// `<cwd>/.j/tasks/list.db`, writes, and closes within the same
+// call so the bbolt file lock is never held across agent.Plan and
+// a concurrent `j tasks` from another shell is not blocked. The
 // lifecycle is constructed with beginPlanTask and finalised with
 // finishPlan; callers pair them with a defer so the task is always
 // written even when agent.Plan panics.
@@ -54,33 +47,12 @@ func beginPlanTask(opts Options, agent codingagents.Agent, model, taskID, target
 		InvokedTool:      agent.Name(),
 		InvokedModel:     model,
 		PlanResumeCursor: planResumeChatID,
-		Summary:          planSummary(requirement, target),
+		Summary:          tasklog.Summary(requirement, target),
 		PlanBeginAt:      &begin,
 	}
 	lc := &planLifecycle{stderr: opts.Stderr, task: task}
-	persistTaskWarn(opts.Stderr, task)
+	tasklog.PersistWarn(opts.Stderr, task)
 	return lc
-}
-
-// openTaskLog opens `<cwd>/.j/tasks/list.db` for the plan lifecycle.
-// Like openSettingsStore in plan.go this is the post-init replacement
-// for store.OpenTaskLog: pre-flight ensures the file exists, so any
-// failure here surfaces as a single "warning: ..." line on stderr.
-// Callers that just want the open-write-close pattern should use
-// persistTaskWarn instead. Both helpers share the same shape so a
-// future consolidation does not break callers.
-func openTaskLog(stderr io.Writer) (*store.Store, bool) {
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
-		return nil, false
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
-		return nil, false
-	}
-	return s, true
 }
 
 // recordBackground stamps the spawned child's PID and the agent log
@@ -100,7 +72,7 @@ func (lc *planLifecycle) recordBackground(pid int, logPath string) {
 	lc.closed = true
 	lc.task.BackgroundPID = pid
 	lc.task.AgentLogPath = logPath
-	persistTaskWarn(lc.stderr, lc.task)
+	tasklog.PersistWarn(lc.stderr, lc.task)
 }
 
 // finishPlan stamps plan_end_at, decides the terminal status from
@@ -122,35 +94,7 @@ func (lc *planLifecycle) finishPlan(runErr error, refinedRequirements, planMarkd
 		lc.task.Status = store.StatusHelp
 	} else {
 		lc.task.Status = store.StatusPlanDone
-		lc.task.Summary = planSummary(pickSummarySource(refinedRequirements, planMarkdown), target)
+		lc.task.Summary = tasklog.Summary(tasklog.PickSource(refinedRequirements, planMarkdown), target)
 	}
-	persistTaskWarn(lc.stderr, lc.task)
-}
-
-// pickSummarySource returns whichever of the refined requirements or
-// the plan body has a usable first non-empty line, preferring the
-// requirements summary because that is the document the agent rewrote
-// to capture user intent. Both empty falls through to the file
-// basename in planSummary.
-func pickSummarySource(refinedRequirements, planMarkdown string) string {
-	if store.SummarizeMarkdown(refinedRequirements) != "" {
-		return refinedRequirements
-	}
-	return planMarkdown
-}
-
-// planSummary picks a one-line summary in this order:
-//  1. first non-empty line of the requirement / plan markdown,
-//  2. the requirement file basename when the body was unreadable.
-//
-// Truncation is delegated to store.SummarizeMarkdown for the body
-// path; the basename path is short by construction.
-func planSummary(requirement, target string) string {
-	if s := store.SummarizeMarkdown(requirement); s != "" {
-		return s
-	}
-	if target != "" {
-		return filepath.Base(target)
-	}
-	return ""
+	tasklog.PersistWarn(lc.stderr, lc.task)
 }

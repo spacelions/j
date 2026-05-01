@@ -1,28 +1,19 @@
 package work
 
 import (
-	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
+	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 )
 
-// agentLogFileName is the per-task file that captures stdout/stderr
-// of a fire-and-forget headless cursor-agent child for `j work`. It
-// lives at `<cwd>/.j/tasks/<id>/agent.log`, matching the constant of
-// the same name in the plan package so both flows share one filename.
-const agentLogFileName = "agent.log"
-
 // workLifecycle owns the begin/end task-log writes around a single
 // agent.Work invocation. The struct holds no bbolt handle — every
-// task-log write goes through writeWorkTaskWarn, which opens
-// `<cwd>/.j/tasks/list.db`, writes, and closes within the same call
-// so the bbolt file lock is never held across agent.Work and a
+// task-log write goes through tasklog.PersistWarn, which opens
+// `<cwd>/.j/tasks/list.db`, writes, and closes within the same
+// call so the bbolt file lock is never held across agent.Work and a
 // concurrent `j tasks` from another shell is not blocked.
 //
 // The struct is constructed with one of beginWorkTaskNew,
@@ -48,7 +39,7 @@ func beginWorkTaskNew(opts Options, agent codingagents.Agent, model, taskID, pla
 		InvokedTool:      agent.Name(),
 		InvokedModel:     model,
 		WorkResumeCursor: workResumeChatID,
-		Summary:          workSummary(requirement, planBody, planPath),
+		Summary:          tasklog.FromPlanAndRequirement(requirement, planBody, planPath),
 		WorkBeginAt:      &begin,
 	}
 	return openLifecycle(opts, task)
@@ -98,12 +89,12 @@ func beginWorkTaskResume(opts Options, existing store.Task) *workLifecycle {
 // openLifecycle is the shared helper that best-effort writes the
 // initial row and returns a workLifecycle suitable for finishWork.
 // The bbolt handle is opened, written to, and closed within
-// writeWorkTaskWarn so the file lock is not held across agent.Work.
-// Pre-flight has already laid down `.j/tasks/list.db`, so the open
-// call is read/write only.
+// tasklog.PersistWarn so the file lock is not held across
+// agent.Work. Pre-flight has already laid down `.j/tasks/list.db`,
+// so the open call is read/write only.
 func openLifecycle(opts Options, task store.Task) *workLifecycle {
 	lc := &workLifecycle{stderr: opts.Stderr, task: task}
-	writeWorkTaskWarn(opts.Stderr, task)
+	tasklog.PersistWarn(opts.Stderr, task)
 	return lc
 }
 
@@ -124,7 +115,7 @@ func (lc *workLifecycle) recordBackground(pid int, logPath string) {
 	lc.closed = true
 	lc.task.BackgroundPID = pid
 	lc.task.AgentLogPath = logPath
-	writeWorkTaskWarn(lc.stderr, lc.task)
+	tasklog.PersistWarn(lc.stderr, lc.task)
 }
 
 // finishWork stamps work_end_at, picks the terminal status from runErr
@@ -146,67 +137,5 @@ func (lc *workLifecycle) finishWork(runErr error) {
 	} else {
 		lc.task.Status = store.StatusWorkDone
 	}
-	writeWorkTaskWarn(lc.stderr, lc.task)
-}
-
-// writeWorkTaskWarn opens `<cwd>/.j/tasks/list.db`, writes task, and
-// closes the store. Open and put failures each surface as a single
-// `warning: ...` line on stderr (open via openTaskLog, put inline)
-// and the helper returns; persistence is best-effort by design.
-// Designed to be called twice per work run — once at begin, once at
-// finish — so the bbolt file lock is never held across agent.Work.
-// Mirrors the persistTaskWarn pattern used by `j plan resume`.
-func writeWorkTaskWarn(stderr io.Writer, task store.Task) {
-	s, ok := openTaskLog(stderr)
-	if !ok {
-		return
-	}
-	defer func() { _ = s.Close() }()
-	if err := s.PutTask(task); err != nil {
-		fmt.Fprintf(stderr, "warning: tasks put: %v\n", err)
-	}
-}
-
-// readRequirementSidecar derives the path to the original requirement
-// markdown from a plan path produced by `j plan`'s legacy
-// `<dir>/<stem>.plan.md` convention and returns its contents when
-// readable. When the plan path does not follow this convention, or
-// the sidecar file does not exist / cannot be read, an empty string
-// is returned so the caller falls back to the plan body for the
-// summary.
-func readRequirementSidecar(planPath string) string {
-	if planPath == "" {
-		return ""
-	}
-	base := filepath.Base(planPath)
-	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	stem = strings.TrimSuffix(stem, ".plan")
-	if stem == "" {
-		return ""
-	}
-	candidate := filepath.Join(filepath.Dir(planPath), stem+".md")
-	if candidate == planPath {
-		return ""
-	}
-	data, err := os.ReadFile(candidate)
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}
-
-// workSummary mirrors planSummary's precedence so the column lines up
-// across plan- and work-initiated tasks: requirement first, plan body
-// second, file basename last.
-func workSummary(requirement, planBody, planPath string) string {
-	if s := store.SummarizeMarkdown(requirement); s != "" {
-		return s
-	}
-	if s := store.SummarizeMarkdown(planBody); s != "" {
-		return s
-	}
-	if planPath != "" {
-		return filepath.Base(planPath)
-	}
-	return ""
+	tasklog.PersistWarn(lc.stderr, lc.task)
 }

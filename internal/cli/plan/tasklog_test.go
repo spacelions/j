@@ -155,42 +155,6 @@ func TestRun_Markdown_AgentSkippedWrite(t *testing.T) {
 	}
 }
 
-// TestPlanSummary_Fallbacks pins the secondary branch in planSummary
-// (basename) without going through the full Run flow. The empty case
-// now returns the empty string because scratch is gone.
-func TestPlanSummary_Fallbacks(t *testing.T) {
-	cases := []struct {
-		req, target, want string
-	}{
-		{"# heading\nbody", "/tmp/spec.md", "heading"},
-		{"", "/tmp/spec.md", "spec.md"},
-		{"", "", ""},
-	}
-	for _, c := range cases {
-		if got := planSummary(c.req, c.target); got != c.want {
-			t.Fatalf("planSummary(%q,%q) = %q, want %q", c.req, c.target, got, c.want)
-		}
-	}
-}
-
-// TestPickSummarySource picks whichever of refined-requirements / plan
-// markdown yields a non-empty summary, preferring requirements.
-func TestPickSummarySource(t *testing.T) {
-	cases := []struct {
-		req, plan, want string
-	}{
-		{"# refined", "# pa", "# refined"},
-		{"", "# pa", "# pa"},
-		{"", "", ""},
-	}
-	for _, c := range cases {
-		got := pickSummarySource(c.req, c.plan)
-		if got != c.want {
-			t.Fatalf("pickSummarySource(%q,%q) = %q, want %q", c.req, c.plan, got, c.want)
-		}
-	}
-}
-
 // TestRecordBackground_StampsPIDAndPath drives the happy path of
 // recordBackground: the in-memory task row carries the PID and log
 // path, status stays at planning (foreground would have transitioned
@@ -262,9 +226,9 @@ func TestFinishPlan_Idempotent(t *testing.T) {
 
 // TestFinishPlan_PutErrorWarns drives the "tasks put" warning branch
 // inside finishPlan by feeding a task with no ID through the
-// lifecycle. openTaskLog succeeds (the .j layout is initialised), but
-// store.PutTask rejects the empty ID, so persistTaskWarn emits the
-// expected warning.
+// lifecycle. tasklog.OpenTaskLog succeeds (the .j layout is
+// initialised), but store.PutTask rejects the empty ID, so
+// tasklog.PersistWarn emits the expected warning.
 func TestFinishPlan_PutErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)

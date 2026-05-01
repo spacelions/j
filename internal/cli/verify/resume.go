@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/store"
@@ -174,7 +175,7 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 // "task %q not found" wrapping; an empty cursor becomes
 // "task %q has no verify session".
 func resolveResumeByID(stderr io.Writer, id string) (store.Task, bool, error) {
-	s, ok := openTaskLog(stderr)
+	s, ok := tasklog.OpenTaskLog(stderr)
 	if !ok {
 		return store.Task{}, false, errors.New("J: tasks database unavailable")
 	}
@@ -197,7 +198,7 @@ func resolveResumeByID(stderr io.Writer, id string) (store.Task, bool, error) {
 // store.SortTasks. validateForVerify is intentionally NOT applied
 // here: resume is permissive by design.
 func listResumableTasks(stderr io.Writer) ([]store.Task, error) {
-	s, ok := openTaskLog(stderr)
+	s, ok := tasklog.OpenTaskLog(stderr)
 	if !ok {
 		return nil, errors.New("J: tasks database unavailable")
 	}

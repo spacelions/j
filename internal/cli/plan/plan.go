@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/spacelions/j/internal/cli/agentpick"
+	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/mdfile"
@@ -198,7 +199,7 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 	if err != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
 	}
-	agentLogPath := filepath.Join(taskDir, agentLogFileName)
+	agentLogPath := filepath.Join(taskDir, tasklog.AgentLogFileName)
 	lc := beginPlanTask(opts, agent, model, taskID, target, string(body), resumeID)
 	pid, planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           target,
@@ -215,7 +216,7 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		lc.recordBackground(pid, agentLogPath)
 		fmt.Fprintf(opts.Stdout,
 			"J: cursor-agent running in background (PID=%d); see .j/tasks/%s/%s\n",
-			pid, taskID, agentLogFileName)
+			pid, taskID, tasklog.AgentLogFileName)
 		return nil
 	}
 

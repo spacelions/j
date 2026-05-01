@@ -577,40 +577,6 @@ func TestPlanResumeFinish_StatusBranches(t *testing.T) {
 	}
 }
 
-// TestPersistTaskWarn_OpenFailure forces openTaskLog to fail by
-// parking a regular file at .j/tasks; persistTaskWarn must be a
-// silent no-op (the warning is emitted by openTaskLog itself).
-func TestPersistTaskWarn_OpenFailure(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var stderr bytes.Buffer
-	persistTaskWarn(&stderr, store.Task{ID: "x", Status: store.StatusPlanDone})
-	// openTaskLog warns once, persistTaskWarn does not crash.
-	if !strings.Contains(stderr.String(), "tasks") {
-		t.Fatalf("stderr = %q, want tasks warning from openTaskLog", stderr.String())
-	}
-}
-
-// TestPersistTaskWarn_PutError opens then closes the store so the
-// subsequent PutTask inside persistTaskWarn fails; the warning
-// must surface on stderr.
-func TestPersistTaskWarn_PutError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	var stderr bytes.Buffer
-	// Bad task (empty id) makes PutTask fail without touching bbolt.
-	persistTaskWarn(&stderr, store.Task{Status: store.StatusPlanDone})
-	if !strings.Contains(stderr.String(), "tasks put") {
-		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
-	}
-}
 
 // TestNewResumeCmd_FromTaskFlowsToViper mirrors
 // TestNew_FromTaskFlowsToViper for the resume cobra child: setting
