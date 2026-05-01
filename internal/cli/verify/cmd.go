@@ -8,6 +8,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/preflight"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 )
 
@@ -49,7 +50,7 @@ func New() *cobra.Command {
 				Stdin:         cmd.InOrStdin(),
 				Stdout:        cmd.OutOrStdout(),
 				Stderr:        cmd.ErrOrStderr(),
-				Agents:        []codingagents.Agent{cursor.New()},
+				Agents:        []codingagents.Agent{cursor.New(), claude.New()},
 			})
 		},
 	}

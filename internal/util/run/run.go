@@ -44,7 +44,16 @@ func Output(ctx context.Context, name string, args ...string) (string, error) {
 // process so an interactive TUI can render. It blocks until the child
 // exits and wraps the exit error with name for context.
 func Run(ctx context.Context, name string, args ...string) error {
+	return RunIn(ctx, "", name, args...)
+}
+
+// RunIn is Run with an explicit working directory. Used by backends
+// whose CLI has no `--workspace`-style flag (e.g. claude) so the
+// workspace concept maps onto the child's CWD via cmd.Dir. An empty
+// dir inherits the parent's CWD, matching exec.Cmd's default.
+func RunIn(ctx context.Context, dir, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -74,6 +83,14 @@ func Run(ctx context.Context, name string, args ...string) error {
 // re-introducing a Wait dependency, which is the very seam this
 // helper avoids).
 func Spawn(ctx context.Context, logPath, name string, args ...string) (int, error) {
+	return SpawnIn(ctx, "", logPath, name, args...)
+}
+
+// SpawnIn is Spawn with an explicit working directory. Used by backends
+// whose CLI has no `--workspace`-style flag (e.g. claude) so the
+// workspace concept maps onto the child's CWD via cmd.Dir. An empty
+// dir inherits the parent's CWD, matching exec.Cmd's default.
+func SpawnIn(ctx context.Context, dir, logPath, name string, args ...string) (int, error) {
 	if logPath == "" {
 		return 0, errors.New("run: empty log path")
 	}
@@ -90,6 +107,7 @@ func Spawn(ctx context.Context, logPath, name string, args ...string) (int, erro
 	defer func() { _ = devNull.Close() }()
 
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
 	cmd.Stdin = devNull
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
