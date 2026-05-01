@@ -11,28 +11,38 @@ import (
 
 func newSetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "set [bucket.key=value]",
-		Short: "Set a value under bucket.key in the local settings database",
-		Args:  cobra.ExactArgs(1),
+		Use:   "set <bucket.key=value> [bucket.key=value ...]",
+		Short: "Set one or more values under bucket.key in the local settings database",
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			return runSet(c, args)
 		},
 	}
 }
 
+type setEntry struct {
+	bucket, key, value string
+}
+
 func runSet(cmd *cobra.Command, args []string) error {
-	bucket, key, value, err := parseKeyValue(args[0])
-	if err != nil {
-		return err
+	entries := make([]setEntry, 0, len(args))
+	for _, arg := range args {
+		bucket, key, value, err := parseKeyValue(arg)
+		if err != nil {
+			return err
+		}
+		entries = append(entries, setEntry{bucket: bucket, key: key, value: value})
 	}
 	return withOpenStore(func(_ string, s *store.Store) error {
-		if err := s.EnsureBucket(bucket); err != nil {
-			return err
+		for _, e := range entries {
+			if err := s.EnsureBucket(e.bucket); err != nil {
+				return err
+			}
+			if err := s.Put(e.bucket, e.key, e.value); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "set %s.%s = %s\n", e.bucket, e.key, e.value)
 		}
-		if err := s.Put(bucket, key, value); err != nil {
-			return err
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "set %s.%s = %s\n", bucket, key, value)
 		return nil
 	})
 }
