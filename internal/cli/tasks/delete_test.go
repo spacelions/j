@@ -99,6 +99,115 @@ func seedTask(t *testing.T, id, summary string) string {
 	return taskDir
 }
 
+// seedTaskWithWorktree is like seedTask but sets Task.Worktree for
+// git worktree integration tests.
+func seedTaskWithWorktree(t *testing.T, id, summary, worktree string) string {
+	t.Helper()
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatalf("DefaultTasksDBPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := s.PutTask(store.Task{
+		ID:           id,
+		Status:       store.StatusPlanDone,
+		InvokedTool:  "cursor",
+		InvokedModel: "sonnet-4",
+		Summary:      summary,
+		Worktree:     worktree,
+	}); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	taskDir, err := store.EnsureTaskDir(id)
+	if err != nil {
+		t.Fatalf("EnsureTaskDir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(taskDir, store.RequirementsFileName),
+		[]byte("# "+summary+"\nbody"), 0o644); err != nil {
+		t.Fatalf("write requirements: %v", err)
+	}
+	return taskDir
+}
+
+// installGitTestStub writes a `git` executable into a fresh directory,
+// prepends that directory to PATH, and wires GIT_STUB_LOG so each
+// argv is logged as one pipe-separated line per invocation.
+func installGitTestStub(t *testing.T, logFile string) {
+	t.Helper()
+	stubDir := t.TempDir()
+	stubPath := filepath.Join(stubDir, "git")
+	script := `#!/bin/sh
+if [ -n "${GIT_STUB_LOG:-}" ]; then
+  _first=1
+  for _a in "$@"; do
+    if [ "$_first" = 1 ]; then
+      printf '%s' "$_a" >>"$GIT_STUB_LOG"
+      _first=0
+    else
+      printf '|%s' "$_a" >>"$GIT_STUB_LOG"
+    fi
+  done
+  printf '\n' >>"$GIT_STUB_LOG"
+fi
+if [ "$1" = "worktree" ] && [ "$2" = "list" ] && [ "$3" = "--porcelain" ]; then
+  _ex="${GIT_STUB_LIST_EXIT:-0}"
+  if [ "$_ex" != "0" ]; then
+    echo "git: worktree list failed" >&2
+    exit "$_ex"
+  fi
+  if [ -z "${GIT_STUB_LIST_FILE:-}" ]; then
+    echo "git stub: GIT_STUB_LIST_FILE unset" >&2
+    exit 1
+  fi
+  cat "$GIT_STUB_LIST_FILE"
+  exit 0
+fi
+if [ "$1" = "worktree" ] && [ "$2" = "remove" ] && [ "$3" = "--force" ]; then
+  _ex="${GIT_STUB_REMOVE_EXIT:-0}"
+  if [ "$_ex" != "0" ]; then
+    echo "git: worktree remove failed" >&2
+    exit "$_ex"
+  fi
+  exit 0
+fi
+echo "git stub: unexpected argv" >&2
+exit 1
+`
+	if err := os.WriteFile(stubPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write git stub: %v", err)
+	}
+	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GIT_STUB_LOG", logFile)
+}
+
+func readGitStubLogLines(t *testing.T, logFile string) []string {
+	t.Helper()
+	b, err := os.ReadFile(logFile)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		t.Fatalf("read stub log: %v", err)
+	}
+	var lines []string
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
 // taskExists reopens the bbolt DB and reports whether GetTask
 // returns the row (true), reports fs.ErrNotExist (false), or fails
 // (test failure). Callers use this after RunDelete to assert the
@@ -403,6 +512,9 @@ func TestNewDeleteCmd_Smoke(t *testing.T) {
 	cmd := newDeleteCmd()
 	if cmd == nil {
 		t.Fatal("newDeleteCmd returned nil")
+	}
+	if !strings.Contains(cmd.Long, "git worktree remove") || !strings.Contains(cmd.Long, "git worktree list") {
+		t.Fatalf("Long should document worktree cleanup: %q", cmd.Long)
 	}
 	if cmd.Use != "delete" {
 		t.Fatalf("Use = %q, want delete", cmd.Use)
@@ -715,3 +827,385 @@ func TestRunDelete_NoIDListDecodeError(t *testing.T) {
 	}
 }
 
+func TestRunDelete_RemovesWorktreeOnConfirm(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git stub requires POSIX /bin/sh")
+	}
+	t.Chdir(t.TempDir())
+	logFile := filepath.Join(t.TempDir(), "git-stub.log")
+	installGitTestStub(t, logFile)
+	listFile := filepath.Join(t.TempDir(), "porcelain.txt")
+	porcelain := "worktree /tmp/projects/j-wt-happy\nHEAD 7f4a9c2\nbranch refs/heads/main\n"
+	if err := os.WriteFile(listFile, []byte(porcelain), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_STUB_LIST_FILE", listFile)
+	taskDir := seedTaskWithWorktree(t, "id-wt-ok", "wt delete", "j-wt-happy")
+	var stdout, stderr bytes.Buffer
+	err := RunDelete(context.Background(), DeleteOptions{
+		TaskID: "id-wt-ok",
+		Yes:    true,
+		Stdout: &stdout,
+		Stderr: &stderr,
+		UI:     &fakeUI{},
+	})
+	if err != nil {
+		t.Fatalf("RunDelete: %v", err)
+	}
+	lines := readGitStubLogLines(t, logFile)
+	if len(lines) != 2 {
+		t.Fatalf("git stub invocations = %d (%v), want 2", len(lines), lines)
+	}
+	if want := "worktree|list|--porcelain"; lines[0] != want {
+		t.Fatalf("first git argv = %q, want %q", lines[0], want)
+	}
+	if want := "worktree|remove|--force|/tmp/projects/j-wt-happy"; lines[1] != want {
+		t.Fatalf("second git argv = %q, want %q", lines[1], want)
+	}
+	if taskExists(t, "id-wt-ok") {
+		t.Fatal("task row should be gone")
+	}
+	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("task dir should be gone: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "J: deleted id-wt-ok") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if strings.Contains(stderr.String(), "warning: worktree remove:") {
+		t.Fatalf("unexpected stderr warning: %q", stderr.String())
+	}
+}
+
+func TestRunDelete_EmptyWorktree_SkipsGit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git stub requires POSIX /bin/sh")
+	}
+	t.Chdir(t.TempDir())
+	logFile := filepath.Join(t.TempDir(), "git-stub.log")
+	installGitTestStub(t, logFile)
+	listFile := filepath.Join(t.TempDir(), "porcelain.txt")
+	if err := os.WriteFile(listFile, []byte("worktree /x\nHEAD a\n\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_STUB_LIST_FILE", listFile)
+	taskDir := seedTask(t, "id-no-wt", "no worktree field")
+	var stdout bytes.Buffer
+	err := RunDelete(context.Background(), DeleteOptions{
+		TaskID: "id-no-wt",
+		Yes:    true,
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		UI:     &fakeUI{},
+	})
+	if err != nil {
+		t.Fatalf("RunDelete: %v", err)
+	}
+	if lines := readGitStubLogLines(t, logFile); len(lines) != 0 {
+		t.Fatalf("git should not run with empty Worktree, got log: %v", lines)
+	}
+	if taskExists(t, "id-no-wt") {
+		t.Fatal("task row should be gone")
+	}
+	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("task dir should be gone: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "J: deleted id-no-wt") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunDelete_WorktreeNotListed_NoRemove(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git stub requires POSIX /bin/sh")
+	}
+	t.Chdir(t.TempDir())
+	logFile := filepath.Join(t.TempDir(), "git-stub.log")
+	installGitTestStub(t, logFile)
+	listFile := filepath.Join(t.TempDir(), "porcelain.txt")
+	porcelain := "worktree /other/wt-name\nHEAD abc\nbranch refs/heads/unrelated\n\n"
+	if err := os.WriteFile(listFile, []byte(porcelain), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_STUB_LIST_FILE", listFile)
+	taskDir := seedTaskWithWorktree(t, "id-missing-wt", "ghost wt", "not-in-list")
+	var stdout bytes.Buffer
+	err := RunDelete(context.Background(), DeleteOptions{
+		TaskID: "id-missing-wt",
+		Yes:    true,
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		UI:     &fakeUI{},
+	})
+	if err != nil {
+		t.Fatalf("RunDelete: %v", err)
+	}
+	lines := readGitStubLogLines(t, logFile)
+	if len(lines) != 1 || lines[0] != "worktree|list|--porcelain" {
+		t.Fatalf("git log = %v, want single list invocation", lines)
+	}
+	if taskExists(t, "id-missing-wt") {
+		t.Fatal("task row should be gone")
+	}
+	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("task dir should be gone: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "J: deleted id-missing-wt") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunDelete_MultipleMatches_PicksFirstAndWarns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git stub requires POSIX /bin/sh")
+	}
+	t.Chdir(t.TempDir())
+	logFile := filepath.Join(t.TempDir(), "git-stub.log")
+	installGitTestStub(t, logFile)
+	listFile := filepath.Join(t.TempDir(), "porcelain.txt")
+	porcelain := "" +
+		"worktree /alpha/dup-wt\nHEAD aaaaaaa\nbranch refs/heads/b1\n\n" +
+		"worktree /beta/dup-wt\nHEAD bbbbbbb\nbranch refs/heads/b2\n\n"
+	if err := os.WriteFile(listFile, []byte(porcelain), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_STUB_LIST_FILE", listFile)
+	taskDir := seedTaskWithWorktree(t, "id-dup", "dup basename", "dup-wt")
+	var stdout, stderr bytes.Buffer
+	err := RunDelete(context.Background(), DeleteOptions{
+		TaskID: "id-dup",
+		Yes:    true,
+		Stdout: &stdout,
+		Stderr: &stderr,
+		UI:     &fakeUI{},
+	})
+	if err != nil {
+		t.Fatalf("RunDelete: %v", err)
+	}
+	lines := readGitStubLogLines(t, logFile)
+	if len(lines) != 2 {
+		t.Fatalf("git stub invocations = %d (%v), want 2", len(lines), lines)
+	}
+	if want := "worktree|remove|--force|/alpha/dup-wt"; lines[1] != want {
+		t.Fatalf("remove argv = %q, want %q", lines[1], want)
+	}
+	if !strings.Contains(stderr.String(), "warning: worktree remove:") ||
+		!strings.Contains(stderr.String(), "multiple worktrees matched") {
+		t.Fatalf("stderr = %q, want multiple-match warning", stderr.String())
+	}
+	if taskExists(t, "id-dup") {
+		t.Fatal("task row should be gone")
+	}
+	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("task dir should be gone: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "J: deleted id-dup") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunDelete_ListFails_WarnsAndContinues(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git stub requires POSIX /bin/sh")
+	}
+	t.Chdir(t.TempDir())
+	logFile := filepath.Join(t.TempDir(), "git-stub.log")
+	installGitTestStub(t, logFile)
+	listFile := filepath.Join(t.TempDir(), "porcelain.txt")
+	if err := os.WriteFile(listFile, []byte("ignored\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_STUB_LIST_FILE", listFile)
+	t.Setenv("GIT_STUB_LIST_EXIT", "1")
+	taskDir := seedTaskWithWorktree(t, "id-list-fail", "list fail", "any-wt")
+	var stdout, stderr bytes.Buffer
+	err := RunDelete(context.Background(), DeleteOptions{
+		TaskID: "id-list-fail",
+		Yes:    true,
+		Stdout: &stdout,
+		Stderr: &stderr,
+		UI:     &fakeUI{},
+	})
+	if err != nil {
+		t.Fatalf("RunDelete: %v", err)
+	}
+	lines := readGitStubLogLines(t, logFile)
+	if len(lines) != 1 || lines[0] != "worktree|list|--porcelain" {
+		t.Fatalf("git log = %v, want single list", lines)
+	}
+	if !strings.Contains(stderr.String(), "warning: worktree remove:") {
+		t.Fatalf("stderr = %q, want warning prefix", stderr.String())
+	}
+	if taskExists(t, "id-list-fail") {
+		t.Fatal("task row should be gone")
+	}
+	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("task dir should be gone: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "J: deleted id-list-fail") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunDelete_RemoveFails_WarnsAndContinues(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git stub requires POSIX /bin/sh")
+	}
+	t.Chdir(t.TempDir())
+	logFile := filepath.Join(t.TempDir(), "git-stub.log")
+	installGitTestStub(t, logFile)
+	listFile := filepath.Join(t.TempDir(), "porcelain.txt")
+	porcelain := "worktree /z/wt-rm-fail\nHEAD abc\nbranch refs/heads/main\n"
+	if err := os.WriteFile(listFile, []byte(porcelain), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_STUB_LIST_FILE", listFile)
+	t.Setenv("GIT_STUB_REMOVE_EXIT", "1")
+	taskDir := seedTaskWithWorktree(t, "id-rm-git", "remove fail", "wt-rm-fail")
+	var stdout, stderr bytes.Buffer
+	err := RunDelete(context.Background(), DeleteOptions{
+		TaskID: "id-rm-git",
+		Yes:    true,
+		Stdout: &stdout,
+		Stderr: &stderr,
+		UI:     &fakeUI{},
+	})
+	if err != nil {
+		t.Fatalf("RunDelete: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "warning: worktree remove:") {
+		t.Fatalf("stderr = %q, want warning prefix", stderr.String())
+	}
+	if taskExists(t, "id-rm-git") {
+		t.Fatal("task row should be gone")
+	}
+	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("task dir should be gone: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "J: deleted id-rm-git") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunDelete_GitMissing_WarnsAndContinues(t *testing.T) {
+	t.Chdir(t.TempDir())
+	emptyPath := filepath.Join(t.TempDir(), "no-binaries")
+	if err := os.MkdirAll(emptyPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", emptyPath)
+	taskDir := seedTaskWithWorktree(t, "id-no-git", "no git", "wt-x")
+	var stdout, stderr bytes.Buffer
+	err := RunDelete(context.Background(), DeleteOptions{
+		TaskID: "id-no-git",
+		Yes:    true,
+		Stdout: &stdout,
+		Stderr: &stderr,
+		UI:     &fakeUI{},
+	})
+	if err != nil {
+		t.Fatalf("RunDelete: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "warning: worktree remove:") {
+		t.Fatalf("stderr = %q, want warning prefix", stderr.String())
+	}
+	if taskExists(t, "id-no-git") {
+		t.Fatal("task row should be gone")
+	}
+	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("task dir should be gone: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "J: deleted id-no-git") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunDelete_BranchMatchFallback(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git stub requires POSIX /bin/sh")
+	}
+	t.Chdir(t.TempDir())
+	logFile := filepath.Join(t.TempDir(), "git-stub.log")
+	installGitTestStub(t, logFile)
+	listFile := filepath.Join(t.TempDir(), "porcelain.txt")
+	porcelain := "worktree /weird/path/not-the-slug\nHEAD abc\nbranch refs/heads/branch-slug\n"
+	if err := os.WriteFile(listFile, []byte(porcelain), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_STUB_LIST_FILE", listFile)
+	taskDir := seedTaskWithWorktree(t, "id-br", "branch match", "branch-slug")
+	var stdout bytes.Buffer
+	err := RunDelete(context.Background(), DeleteOptions{
+		TaskID: "id-br",
+		Yes:    true,
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		UI:     &fakeUI{},
+	})
+	if err != nil {
+		t.Fatalf("RunDelete: %v", err)
+	}
+	lines := readGitStubLogLines(t, logFile)
+	if len(lines) != 2 {
+		t.Fatalf("git stub invocations = %d (%v), want 2", len(lines), lines)
+	}
+	if want := "worktree|remove|--force|/weird/path/not-the-slug"; lines[1] != want {
+		t.Fatalf("remove argv = %q, want %q", lines[1], want)
+	}
+	if taskExists(t, "id-br") {
+		t.Fatal("task row should be gone")
+	}
+	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("task dir should be gone: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "J: deleted id-br") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestParseWorktreeListPorcelain(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		input string
+		want  []worktreeRecord
+	}{
+		{
+			name:  "empty",
+			input: "",
+			want:  nil,
+		},
+		{
+			name:  "single",
+			input: "worktree /foo/bar\nHEAD abc\nbranch refs/heads/main\n",
+			want: []worktreeRecord{
+				{path: "/foo/bar", branch: "refs/heads/main"},
+			},
+		},
+		{
+			name:  "two_records",
+			input: "worktree /a\nbranch refs/heads/x\n\nworktree /b\n\n",
+			want: []worktreeRecord{
+				{path: "/a", branch: "refs/heads/x"},
+				{path: "/b", branch: ""},
+			},
+		},
+		{
+			name:  "orphan_line_before_worktree",
+			input: "prunable gitdir\n\nworktree /z\n\n",
+			want:  []worktreeRecord{{path: "/z", branch: ""}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseWorktreeListPorcelain(tc.input)
+			if len(got) != len(tc.want) {
+				t.Fatalf("len = %d, want %d (got %+v)", len(got), len(tc.want), got)
+			}
+			for i := range tc.want {
+				if got[i].path != tc.want[i].path || got[i].branch != tc.want[i].branch {
+					t.Fatalf("[%d] = %+v, want %+v", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
