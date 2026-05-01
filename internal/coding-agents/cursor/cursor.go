@@ -217,14 +217,75 @@ func buildPlanPrompt(req codingagents.PlanRequest) string {
 	)
 }
 
-// buildWorkPrompt picks the right coder prompt for req. Resume runs
-// switch to the resume-only template; first-run uses the existing
-// full coder instruction.
+// buildWorkPrompt picks the right coder prompt for req. The
+// fix-findings branch wins first: a non-empty FixFindings means the
+// outer verify loop wants the previous coder session to address a
+// concrete set of verifier findings without re-planning. Resume
+// runs are next; first-run falls through to the full coder
+// instruction.
 func buildWorkPrompt(req codingagents.WorkRequest) string {
+	if req.FixFindings != "" {
+		return prompts.BuildVerifierFix(req.PlanPath, req.Body, "verifier_findings.md", req.FixFindings)
+	}
 	if req.Resume {
 		return prompts.BuildCoderResume(req.PlanPath, req.Body)
 	}
 	return prompts.BuildCoder(req.PlanPath, req.Body)
+}
+
+// Verify runs cursor-agent against the requirements + plan pair. The
+// agent saves the draft verifier plan and the findings markdown
+// before exiting; the orchestrator reads the findings afterwards to
+// derive the VERDICT verdict. Two flavours mirror Plan / Work:
+//
+//   - Interactive: launch cursor's TUI without --mode plan. The
+//     verifier must edit verifier_plan.md / verifier_findings.md
+//     and (on FAIL) project files, so plan mode would block those
+//     writes. The interactive branch does not gain --force/--trust;
+//     the user can approve writes manually in the TUI.
+//   - Headless: --print --output-format text --force --trust against
+//     the verifier prompt, fire-and-forget. Same headless flag set
+//     as Work; --mode plan is intentionally absent for the same
+//     reason: the verifier needs write access to its output files.
+func (*Agent) Verify(ctx context.Context, req codingagents.VerifyRequest) (int, error) {
+	workspace := codingagents.DefaultWorkspace(req.VerifierFindingsOutputPath)
+	prompt := buildVerifyPrompt(req)
+
+	if req.Interactive {
+		var args []string
+		if req.ResumeChatID != "" {
+			args = append(args, "--resume", req.ResumeChatID)
+		}
+		args = append(args, "--model", req.Model, "--workspace", workspace, prompt)
+		if err := run.Run(ctx, Binary, args...); err != nil {
+			return 0, fmt.Errorf("cursor-agent: %w", err)
+		}
+		return 0, nil
+	}
+
+	pargs := []string{"--print", "--output-format", "text", "--force", "--trust", "--model", req.Model, "--workspace", workspace, prompt}
+	if req.ResumeChatID != "" {
+		pargs = append([]string{"--resume", req.ResumeChatID}, pargs...)
+	}
+	pid, err := run.Spawn(ctx, req.AgentLogPath, Binary, pargs...)
+	if err != nil {
+		return 0, fmt.Errorf("cursor-agent: %w", err)
+	}
+	return pid, nil
+}
+
+// buildVerifyPrompt picks the right verifier prompt for req. Resume
+// runs switch to the resume-only template; first-run uses the full
+// verifier instruction with the save-plan / save-findings suffix.
+func buildVerifyPrompt(req codingagents.VerifyRequest) string {
+	if req.Resume {
+		return prompts.BuildVerifierResume(req.RequirementsPath, req.RequirementsBody, req.PlanPath, req.PlanBody)
+	}
+	return prompts.BuildVerifier(
+		req.RequirementsPath, req.RequirementsBody,
+		req.PlanPath, req.PlanBody,
+		req.VerifierPlanOutputPath, req.VerifierFindingsOutputPath,
+	)
 }
 
 // parseModels extracts cursor-agent model IDs from --list-models output.

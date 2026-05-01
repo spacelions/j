@@ -15,6 +15,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/workflow/agents/coder"
 	"github.com/spacelions/j/internal/workflow/agents/planner"
+	"github.com/spacelions/j/internal/workflow/agents/verifier"
 )
 
 // spawnWaitTimeout bounds the polling helpers below. The cursor stub
@@ -777,6 +778,367 @@ func TestPlan_Interactive_Resume(t *testing.T) {
 		if strings.Contains(prompt, banned) {
 			t.Fatalf("resume prompt should not include %q: %q", banned, prompt)
 		}
+	}
+}
+
+// TestWork_Interactive_FixFindings pins the fix-findings branch in
+// buildWorkPrompt: a non-empty WorkRequest.FixFindings switches the
+// composed prompt to BuildVerifierFix, which embeds the supplied
+// findings body alongside the plan and explicitly forbids
+// re-planning. The argv shape is unchanged from a regular
+// interactive Work call.
+func TestWork_Interactive_FixFindings(t *testing.T) {
+	dir := t.TempDir()
+	plan := filepath.Join(dir, "spec.plan.md")
+	if err := os.WriteFile(plan, []byte("1. step one"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls := installStub(t, "", 0)
+
+	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+		PlanPath:    plan,
+		Body:        "1. step one",
+		Model:       "composer-2-fast",
+		Interactive: true,
+		FixFindings: "- missing tests for X\nVERDICT: FAIL",
+	})
+	if err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	if pid != 0 {
+		t.Fatalf("Work pid = %d, want 0 for interactive", pid)
+	}
+	argv := readCalls(t, calls)
+	prompt := argv[len(argv)-1]
+	for _, want := range []string{"missing tests for X", "VERDICT: FAIL", plan, "verifier_findings.md"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("fix prompt missing %q: %q", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, strings.TrimSpace(coder.Instruction)) {
+		t.Fatalf("fix prompt should not include coder.Instruction: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Do not re-plan") {
+		t.Fatalf("fix prompt missing re-plan guard: %q", prompt)
+	}
+}
+
+// TestWork_FixFindings_BeatsResume pins precedence in
+// buildWorkPrompt: when both FixFindings and Resume are set, the
+// fix branch wins so the coder receives the actionable findings
+// rather than a generic resume cue.
+func TestWork_FixFindings_BeatsResume(t *testing.T) {
+	dir := t.TempDir()
+	plan := filepath.Join(dir, "spec.plan.md")
+	if err := os.WriteFile(plan, []byte("1. step"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls := installStub(t, "", 0)
+	_, err := New().Work(context.Background(), codingagents.WorkRequest{
+		PlanPath:    plan,
+		Body:        "1. step",
+		Model:       "m",
+		Interactive: true,
+		Resume:      true,
+		FixFindings: "- specific finding",
+	})
+	if err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	argv := readCalls(t, calls)
+	prompt := argv[len(argv)-1]
+	if !strings.Contains(prompt, "specific finding") {
+		t.Fatalf("fix prompt missing findings body: %q", prompt)
+	}
+	if strings.Contains(strings.ToLower(prompt), "resuming a previous coding session.") &&
+		!strings.Contains(prompt, "VERDICT: FAIL") {
+		t.Fatalf("expected fix prompt, got resume prompt: %q", prompt)
+	}
+}
+
+// TestVerify_Interactive pins the interactive flow's argv shape and
+// embedded prompt for `j verify`. The verifier.Instruction body must
+// be embedded along with the requirements / plan / output paths;
+// --mode plan is intentionally absent because the verifier needs to
+// edit verifier_*.md and (on FAIL) project files.
+func TestVerify_Interactive(t *testing.T) {
+	dir := t.TempDir()
+	reqPath := filepath.Join(dir, "requirements.md")
+	if err := os.WriteFile(reqPath, []byte("# req\nbody"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	planPath := filepath.Join(dir, "plan.md")
+	if err := os.WriteFile(planPath, []byte("1. step"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	verifierPlan := filepath.Join(dir, "verifier_plan.md")
+	findingsPath := filepath.Join(dir, "verifier_findings.md")
+	calls := installStub(t, "", 0)
+
+	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+		RequirementsPath:           reqPath,
+		RequirementsBody:           "# req\nbody",
+		PlanPath:                   planPath,
+		PlanBody:                   "1. step",
+		VerifierPlanOutputPath:     verifierPlan,
+		VerifierFindingsOutputPath: findingsPath,
+		Model:                      "composer-2-fast",
+		Interactive:                true,
+	})
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if pid != 0 {
+		t.Fatalf("Verify pid = %d, want 0 for interactive", pid)
+	}
+	argv := readCalls(t, calls)
+	want := []string{"--model", "composer-2-fast", "--workspace", dir}
+	if len(argv) != len(want)+1 {
+		t.Fatalf("argv = %v", argv)
+	}
+	for i, v := range want {
+		if argv[i] != v {
+			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
+		}
+	}
+	for _, banned := range []string{"--print", "--mode", "--output-format", "--force", "--trust"} {
+		for _, a := range argv {
+			if a == banned {
+				t.Fatalf("interactive Verify should not pass %q: argv = %v", banned, argv)
+			}
+		}
+	}
+	prompt := argv[len(argv)-1]
+	if !strings.Contains(prompt, strings.TrimSpace(verifier.Instruction)) {
+		t.Fatalf("prompt missing verifier.Instruction: %q", prompt)
+	}
+	for _, want := range []string{reqPath, "# req", planPath, "1. step", verifierPlan, findingsPath, "VERDICT: PASS", "VERDICT: FAIL"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q: %q", want, prompt)
+		}
+	}
+}
+
+// TestVerify_Interactive_ResumeChatID pins the --resume <id> arg
+// shape on the interactive Verify path, mirroring
+// TestPlan_Interactive_ResumeChatID / TestWork_Interactive_ResumeChatID.
+func TestVerify_Interactive_ResumeChatID(t *testing.T) {
+	dir := t.TempDir()
+	findingsPath := filepath.Join(dir, "verifier_findings.md")
+	calls := installStub(t, "", 0)
+	rid := "88888888-8888-4888-8888-888888888888"
+
+	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+		RequirementsPath:           filepath.Join(dir, "requirements.md"),
+		PlanPath:                   filepath.Join(dir, "plan.md"),
+		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
+		VerifierFindingsOutputPath: findingsPath,
+		Model:                      "composer-2-fast",
+		Interactive:                true,
+		ResumeChatID:               rid,
+	})
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if pid != 0 {
+		t.Fatalf("Verify pid = %d, want 0 for interactive", pid)
+	}
+	argv := readCalls(t, calls)
+	want := []string{"--resume", rid, "--model", "composer-2-fast", "--workspace", dir}
+	if len(argv) != len(want)+1 {
+		t.Fatalf("argv = %v", argv)
+	}
+	for i, v := range want {
+		if argv[i] != v {
+			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
+		}
+	}
+}
+
+// TestVerify_Interactive_Resume pins the resume prompt path: argv
+// carries --resume <id>, the prompt mentions previous/check/continue
+// and does NOT include verifier.Instruction or the save-suffix.
+func TestVerify_Interactive_Resume(t *testing.T) {
+	dir := t.TempDir()
+	findingsPath := filepath.Join(dir, "verifier_findings.md")
+	calls := installStub(t, "", 0)
+	rid := "99999999-9999-4999-8999-999999999999"
+
+	_, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+		RequirementsPath:           filepath.Join(dir, "requirements.md"),
+		RequirementsBody:           "# req",
+		PlanPath:                   filepath.Join(dir, "plan.md"),
+		PlanBody:                   "plan body",
+		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
+		VerifierFindingsOutputPath: findingsPath,
+		Model:                      "m",
+		Interactive:                true,
+		ResumeChatID:               rid,
+		Resume:                     true,
+	})
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	argv := readCalls(t, calls)
+	if argv[0] != "--resume" || argv[1] != rid {
+		t.Fatalf("argv missing --resume %q: %v", rid, argv)
+	}
+	prompt := argv[len(argv)-1]
+	lower := strings.ToLower(prompt)
+	for _, marker := range []string{"previous", "check", "continue"} {
+		if !strings.Contains(lower, marker) {
+			t.Fatalf("resume prompt missing %q: %q", marker, prompt)
+		}
+	}
+	if strings.Contains(prompt, strings.TrimSpace(verifier.Instruction)) {
+		t.Fatalf("resume prompt should not include verifier.Instruction: %q", prompt)
+	}
+	for _, banned := range []string{"Save", "Then exit."} {
+		if strings.Contains(prompt, banned) {
+			t.Fatalf("resume prompt should not include %q: %q", banned, prompt)
+		}
+	}
+}
+
+// TestVerify_Interactive_RunnerError exercises the run.Run error
+// path in Verify (interactive branch), mirroring
+// TestPlan_Interactive_RunnerError / TestWork_Interactive_RunnerError.
+func TestVerify_Interactive_RunnerError(t *testing.T) {
+	installStub(t, "", 1)
+	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+		RequirementsPath:           "/tmp/req.md",
+		PlanPath:                   "/tmp/plan.md",
+		VerifierPlanOutputPath:     "/tmp/verifier_plan.md",
+		VerifierFindingsOutputPath: "/tmp/verifier_findings.md",
+		Model:                      "m",
+		Interactive:                true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "cursor-agent") {
+		t.Fatalf("err = %v", err)
+	}
+	if pid != 0 {
+		t.Fatalf("Verify pid = %d, want 0 on error", pid)
+	}
+}
+
+// TestVerify_Headless pins the headless flag set: --print
+// --output-format text --force --trust, the workspace, the model,
+// and the prompt suffix. --mode plan is intentionally absent.
+func TestVerify_Headless(t *testing.T) {
+	dir := t.TempDir()
+	findingsPath := filepath.Join(dir, "verifier_findings.md")
+	logPath := filepath.Join(dir, "agent.log")
+	calls := installStub(t, "ok\n", 0)
+
+	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+		RequirementsPath:           filepath.Join(dir, "requirements.md"),
+		RequirementsBody:           "# req",
+		PlanPath:                   filepath.Join(dir, "plan.md"),
+		PlanBody:                   "plan body",
+		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
+		VerifierFindingsOutputPath: findingsPath,
+		Model:                      "sonnet-4",
+		Interactive:                false,
+		AgentLogPath:               logPath,
+	})
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if pid <= 0 {
+		t.Fatalf("Verify pid = %d, want > 0 for headless background spawn", pid)
+	}
+	want := []string{
+		"--print",
+		"--output-format", "text",
+		"--force",
+		"--trust",
+		"--model", "sonnet-4",
+		"--workspace", dir,
+	}
+	argv := waitForCalls(t, calls, len(want)+1)
+	if len(argv) != len(want)+1 {
+		t.Fatalf("argv = %v", argv)
+	}
+	for i, v := range want {
+		if argv[i] != v {
+			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
+		}
+	}
+	for _, a := range argv {
+		if a == "--mode" {
+			t.Fatalf("headless Verify should not pass --mode: argv = %v", argv)
+		}
+	}
+	waitForLog(t, logPath, "ok")
+}
+
+// TestVerify_Headless_ResumeChatID pins the --resume <id> argv shape
+// on the headless Verify path.
+func TestVerify_Headless_ResumeChatID(t *testing.T) {
+	dir := t.TempDir()
+	findingsPath := filepath.Join(dir, "verifier_findings.md")
+	calls := installStub(t, "ok\n", 0)
+	rid := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+
+	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+		RequirementsPath:           filepath.Join(dir, "requirements.md"),
+		PlanPath:                   filepath.Join(dir, "plan.md"),
+		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
+		VerifierFindingsOutputPath: findingsPath,
+		Model:                      "sonnet-4",
+		Interactive:                false,
+		ResumeChatID:               rid,
+		AgentLogPath:               filepath.Join(dir, "agent.log"),
+	})
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if pid <= 0 {
+		t.Fatalf("Verify pid = %d, want > 0", pid)
+	}
+	want := []string{
+		"--resume", rid,
+		"--print",
+		"--output-format", "text",
+		"--force",
+		"--trust",
+		"--model", "sonnet-4",
+		"--workspace", dir,
+	}
+	argv := waitForCalls(t, calls, len(want)+1)
+	if len(argv) != len(want)+1 {
+		t.Fatalf("argv = %v", argv)
+	}
+	for i, v := range want {
+		if argv[i] != v {
+			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
+		}
+	}
+}
+
+// TestVerify_Headless_SpawnError exercises the Spawn-failure branch
+// on the headless Verify path with the directory-as-log trick.
+func TestVerify_Headless_SpawnError(t *testing.T) {
+	installStub(t, "", 0)
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "agent.log")
+	if err := os.MkdirAll(logPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+		RequirementsPath:           "/tmp/req.md",
+		PlanPath:                   "/tmp/plan.md",
+		VerifierPlanOutputPath:     "/tmp/verifier_plan.md",
+		VerifierFindingsOutputPath: "/tmp/verifier_findings.md",
+		Model:                      "m",
+		Interactive:                false,
+		AgentLogPath:               logPath,
+	})
+	if err == nil || !strings.Contains(err.Error(), "cursor-agent") {
+		t.Fatalf("err = %v", err)
+	}
+	if pid != 0 {
+		t.Fatalf("Verify pid = %d, want 0 on Spawn error", pid)
 	}
 }
 

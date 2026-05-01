@@ -90,6 +90,20 @@ coverage:
 		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+SelectModel[[:space:]]' \
 		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+choose[[:space:]]' \
 		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
+		-e 'internal/cli/verify/cmd\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
+		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+openSettingsStore[[:space:]]' \
+		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+openTaskLog[[:space:]]' \
+		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+resolveByTaskID[[:space:]]' \
+		-e 'internal/cli/verify/resume\.go:[0-9]+:[[:space:]]+RunResume[[:space:]]' \
+		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+AskFromFile[[:space:]]' \
+		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+PickWorkDoneTask[[:space:]]' \
+		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+PickVerifyTask[[:space:]]' \
+		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+SelectTool[[:space:]]' \
+		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+SelectModel[[:space:]]' \
+		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+pickTask[[:space:]]' \
+		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+choose[[:space:]]' \
+		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
+		-e 'internal/cli/verify/tasklog\.go:[0-9]+:[[:space:]]+beginVerifyTask[[:space:]]' \
 		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+Spawn[[:space:]]' \
 		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+IsAlive[[:space:]]' \
 		-e 'internal/util/mdfile/mdfile\.go:[0-9]+:[[:space:]]+ListInDir[[:space:]]' \

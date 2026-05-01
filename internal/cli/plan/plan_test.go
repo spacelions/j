@@ -303,6 +303,13 @@ func (s *scriptedAgent) Work(context.Context, codingagents.WorkRequest) (int, er
 	return 0, errors.New("scriptedAgent: Work should not be called from plan tests")
 }
 
+// Verify is unused by plan_test but required to satisfy the
+// codingagents.Agent interface, which gained Verify alongside Plan
+// and Work for the planner / coder / verifier loop.
+func (s *scriptedAgent) Verify(context.Context, codingagents.VerifyRequest) (int, error) {
+	return 0, errors.New("scriptedAgent: Verify should not be called from plan tests")
+}
+
 func writeFromFile(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()

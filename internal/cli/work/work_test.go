@@ -115,14 +115,14 @@ type scriptedUI struct {
 	toolErr      error
 	modelErr     error
 
-	askCalls         int
-	pickCalls        int
-	pickResumeCalls  int
-	toolCalls        int
-	modelCalls       int
+	askCalls        int
+	pickCalls       int
+	pickResumeCalls int
+	toolCalls       int
+	modelCalls      int
 
-	pickedTasks       []store.Task
-	pickResumedTasks  []store.Task
+	pickedTasks      []store.Task
+	pickResumedTasks []store.Task
 }
 
 func (s *scriptedUI) AskFromFile(context.Context) (string, error) {
@@ -261,6 +261,10 @@ func (s *scriptedAgent) Work(_ context.Context, req codingagents.WorkRequest) (i
 		return 0, s.workErr
 	}
 	return s.workPID, nil
+}
+
+func (s *scriptedAgent) Verify(context.Context, codingagents.VerifyRequest) (int, error) {
+	return 0, errors.New("scriptedAgent: Verify should not be called from work tests")
 }
 
 // taskFilePath returns the absolute path of a body file (e.g.

@@ -1,0 +1,248 @@
+package verify
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+
+	"github.com/charmbracelet/huh"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+
+	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/store"
+)
+
+// ResumeOptions configures RunResume. Stdin/Stdout/Stderr default to
+// the process streams; UI defaults to the huh implementation; Agents
+// must be supplied by the caller (the cobra wiring injects
+// `[]codingagents.Agent{cursor.New()}`, tests inject scripted ones).
+//
+// TaskID short-circuits the selector: when non-empty Run loads that
+// task directly. Otherwise Run lists every task whose
+// VerifyResumeCursor is non-empty (any status — explicitly NOT the
+// validateForVerify allowlist), prints
+// "J: there are no resumable verify sessions" if the slice is
+// empty, auto-selects the single eligible row when there is exactly
+// one, and asks UI.PickVerifyTask when there are multiple.
+type ResumeOptions struct {
+	// TaskID is the optional `--from-task <id>` selector. When set
+	// it skips the picker entirely and resumes the named task.
+	TaskID string
+
+	Stdin  io.Reader
+	Stdout io.Writer
+	Stderr io.Writer
+
+	Agents []codingagents.Agent
+	UI     UI
+}
+
+func (o ResumeOptions) withDefaults() ResumeOptions {
+	if o.Stdin == nil {
+		o.Stdin = os.Stdin
+	}
+	if o.Stdout == nil {
+		o.Stdout = os.Stdout
+	}
+	if o.Stderr == nil {
+		o.Stderr = os.Stderr
+	}
+	if o.UI == nil {
+		o.UI = newHuhUI(o.Stdin, o.Stderr)
+	}
+	return o
+}
+
+// RunResume implements `j verify resume`. The lifecycle mirrors
+// `j verify --from-task` reuse with three key differences: the
+// task's existing VerifyResumeCursor is reused (no fresh
+// NewResumeID), the original VerifyBeginAt is preserved, and the
+// eligibility filter is permissive — any task with a non-empty
+// VerifyResumeCursor qualifies, regardless of status.
+//
+// A user-abort in the resume picker (huh.ErrUserAborted) is
+// translated to a nil return by the deferred guard below so cancel
+// exits cleanly without surfacing a "cancelled by user" line.
+func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
+	defer func() {
+		if errors.Is(err, huh.ErrUserAborted) {
+			err = nil
+		}
+	}()
+	opts = opts.withDefaults()
+	if len(opts.Agents) == 0 {
+		return errors.New("J: no coding agents configured")
+	}
+
+	task, ok, err := resolveResumeTask(ctx, opts)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		fmt.Fprintln(opts.Stdout, "J: there are no resumable verify sessions")
+		return nil
+	}
+
+	agent, ok := lookupResumeAgent(opts.Agents, task.InvokedTool)
+	if !ok {
+		return fmt.Errorf("J: unknown tool %q", task.InvokedTool)
+	}
+
+	tasksDir, err := store.DefaultTasksDir()
+	if err != nil {
+		return err
+	}
+	taskDir := filepath.Join(tasksDir, task.ID)
+	planPath := filepath.Join(taskDir, store.PlanFileName)
+	requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
+	verifierPlanPath := filepath.Join(taskDir, store.VerifierPlanFileName)
+	findingsPath := filepath.Join(taskDir, store.VerifierFindingsFileName)
+
+	planBody := readBestEffort(planPath)
+	requirementsBody := readBestEffort(requirementsPath)
+	previousFindings := readBestEffort(findingsPath)
+
+	lc := beginVerifyTaskResume(Options{Stderr: opts.Stderr}, task)
+	// Resume is always interactive; the headless background spawn
+	// path never fires here. Discard the returned PID (always 0)
+	// so the orchestrator stays on the synchronous lifecycle.
+	_, runErr := agent.Verify(ctx, codingagents.VerifyRequest{
+		RequirementsPath:           requirementsPath,
+		RequirementsBody:           requirementsBody,
+		PlanPath:                   planPath,
+		PlanBody:                   planBody,
+		VerifierPlanOutputPath:     verifierPlanPath,
+		VerifierFindingsOutputPath: findingsPath,
+		PreviousFindings:           previousFindings,
+		Model:                      task.InvokedModel,
+		Interactive:                true,
+		ResumeChatID:               task.VerifyResumeCursor,
+		Resume:                     true,
+	})
+	outcome := outcomeNoRetries
+	if runErr == nil && parseVerdict(findingsPath) == "PASS" {
+		outcome = outcomeSuccess
+	}
+	lc.finishVerify(outcome, runErr)
+	if runErr != nil {
+		return runErr
+	}
+
+	fmt.Fprintf(opts.Stdout, "J: verify resume on task %s\n", task.ID)
+	return nil
+}
+
+// resolveResumeTask runs the --from-task / picker / single-task
+// short-circuit flow and returns the chosen task. The bool result
+// is false (with nil error) when no eligible tasks exist; callers
+// should print the "no resumable verify sessions" line and return
+// nil.
+func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, bool, error) {
+	if opts.TaskID != "" {
+		return resolveResumeByID(opts.Stderr, opts.TaskID)
+	}
+	tasks, err := listResumableTasks(opts.Stderr)
+	if err != nil {
+		return store.Task{}, false, err
+	}
+	switch len(tasks) {
+	case 0:
+		return store.Task{}, false, nil
+	case 1:
+		return tasks[0], true, nil
+	}
+	chosen, err := opts.UI.PickVerifyTask(ctx, tasks)
+	if err != nil {
+		return store.Task{}, false, err
+	}
+	for _, t := range tasks {
+		if t.ID == chosen {
+			return t, true, nil
+		}
+	}
+	return store.Task{}, false, fmt.Errorf("J: task %q not found", chosen)
+}
+
+// resolveResumeByID loads the named task and validates it has a
+// non-empty VerifyResumeCursor. fs.ErrNotExist becomes the friendly
+// "task %q not found" wrapping; an empty cursor becomes
+// "task %q has no verify session".
+func resolveResumeByID(stderr io.Writer, id string) (store.Task, bool, error) {
+	s, ok := openTaskLog(stderr)
+	if !ok {
+		return store.Task{}, false, errors.New("J: tasks database unavailable")
+	}
+	defer func() { _ = s.Close() }()
+	task, err := s.GetTask(id)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return store.Task{}, false, fmt.Errorf("J: task %q not found", id)
+		}
+		return store.Task{}, false, err
+	}
+	if task.VerifyResumeCursor == "" {
+		return store.Task{}, false, fmt.Errorf("J: task %q has no verify session", id)
+	}
+	return task, true, nil
+}
+
+// listResumableTasks returns every task with a non-empty
+// VerifyResumeCursor regardless of status, sorted via
+// store.SortTasks. validateForVerify is intentionally NOT applied
+// here: resume is permissive by design.
+func listResumableTasks(stderr io.Writer) ([]store.Task, error) {
+	s, ok := openTaskLog(stderr)
+	if !ok {
+		return nil, errors.New("J: tasks database unavailable")
+	}
+	defer func() { _ = s.Close() }()
+	all, err := s.ListTasks()
+	if err != nil {
+		return nil, err
+	}
+	store.SortTasks(all)
+	out := all[:0]
+	for _, t := range all {
+		if t.VerifyResumeCursor != "" {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+// newResumeCmd builds the `j verify resume` cobra subcommand.
+//
+// viper.BindPFlag and viper.BindEnv only fail when their input is
+// nil or empty — programmer errors that this function does not
+// produce — so their returned errors are intentionally discarded.
+func newResumeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "resume",
+		Short: "Resume a previously started verify session",
+		Long: "Lists tasks whose verify session is non-empty and resumes the chosen one " +
+			"in interactive mode using the tool/model recorded on the task row. " +
+			"Pass --from-task <id> (or VERIFY_RESUME_FROM_TASK) to skip the picker. " +
+			"With no eligible sessions, prints `J: there are no resumable verify sessions` " +
+			"and exits 0. The eligibility filter is intentionally permissive: tasks " +
+			"in any status are resumable as long as their verify_resume_cursor is non-empty.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return RunResume(cmd.Context(), ResumeOptions{
+				TaskID: viper.GetString("verify.resume.from_task"),
+				Stdin:  cmd.InOrStdin(),
+				Stdout: cmd.OutOrStdout(),
+				Stderr: cmd.ErrOrStderr(),
+				Agents: []codingagents.Agent{cursor.New()},
+			})
+		},
+	}
+	cmd.Flags().String("from-task", "", "Resume the named task without showing the picker")
+	_ = viper.BindPFlag("verify.resume.from_task", cmd.Flags().Lookup("from-task"))
+	_ = viper.BindEnv("verify.resume.from_task", "VERIFY_RESUME_FROM_TASK")
+	return cmd
+}
