@@ -13,6 +13,13 @@ import (
 	"github.com/spacelions/j/internal/store"
 )
 
+// errEmptyFromFile is returned by AskFromFile when the user submits
+// an empty / whitespace-only path. The literal is package-private so
+// unit tests can pin its message via Error() without introducing a
+// runtime seam — production callers compare with errors.Is on the
+// sentinel rather than the string.
+var errEmptyFromFile = errors.New("J: no markdown provided")
+
 // UI lets the work orchestrator ask the user questions. The default
 // implementation renders huh prompts on the terminal; tests substitute
 // a scripted fake to avoid touching stdin.
@@ -60,7 +67,7 @@ func (u *huhUI) AskFromFile(ctx context.Context) (string, error) {
 	}
 	v = strings.TrimSpace(v)
 	if v == "" {
-		return "", errors.New("work: no plan markdown file location provided")
+		return "", errEmptyFromFile
 	}
 	return v, nil
 }

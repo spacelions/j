@@ -56,3 +56,13 @@ func TestHuhUI_PickWorkTask_EmptyTasks(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// TestErrEmptyFromFile_Message pins the user-facing string of the
+// AskFromFile empty-input branch (AC#1 / AC#5a). The message is
+// asserted via the package-private sentinel rather than running
+// huh against stdin so the assertion is hermetic.
+func TestErrEmptyFromFile_Message(t *testing.T) {
+	if got := errEmptyFromFile.Error(); got != "J: no markdown provided" {
+		t.Fatalf("errEmptyFromFile.Error() = %q, want %q", got, "J: no markdown provided")
+	}
+}

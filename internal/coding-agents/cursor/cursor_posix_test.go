@@ -13,6 +13,8 @@ import (
 	"time"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/workflow/agents/coder"
+	"github.com/spacelions/j/internal/workflow/agents/planner"
 )
 
 // spawnWaitTimeout bounds the polling helpers below. The cursor stub
@@ -299,6 +301,15 @@ func TestPlan_Interactive(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "Save") {
 		t.Fatalf("prompt missing save instruction: %q", prompt)
+	}
+	// AC#4 / AC#5: the non-resume save instruction must require
+	// requirements.md to begin with a one-line summary and forbid
+	// the literal `# Requirements` heading on line 1.
+	if !strings.Contains(prompt, "one-line summary") {
+		t.Fatalf("prompt missing one-line summary requirement: %q", prompt)
+	}
+	if !strings.Contains(prompt, "# Requirements") {
+		t.Fatalf("prompt missing forbidden-heading reminder: %q", prompt)
 	}
 }
 
@@ -705,5 +716,113 @@ func TestWork_Headless_SpawnError(t *testing.T) {
 	}
 	if pid != 0 {
 		t.Fatalf("Work pid = %d, want 0 on Spawn error", pid)
+	}
+}
+
+// TestPlan_Interactive_Resume pins AC#2 / AC#5c for the planner side.
+// With Resume=true and a ResumeChatID set, argv must carry
+// `--resume <id>`, the prompt must include the resume-marker words
+// (previous / check / continue), and it must NOT include either the
+// non-resume planner instruction body or the
+// `Save ... Then exit.` save suffix.
+func TestPlan_Interactive_Resume(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "spec.md")
+	if err := os.WriteFile(target, []byte("# task\nbody"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls := installStub(t, "", 0)
+	rid := "66666666-6666-4666-8666-666666666666"
+	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+		FromFilePath:           target,
+		Body:                   "# task\nbody",
+		Model:                  "composer-2-fast",
+		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
+		PlanOutputPath:         filepath.Join(dir, "plan.md"),
+		Interactive:            true,
+		ResumeChatID:           rid,
+		Resume:                 true,
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if pid != 0 {
+		t.Fatalf("Plan pid = %d, want 0 for interactive", pid)
+	}
+	argv := readCalls(t, calls)
+	want := []string{"--resume", rid, "--mode", "plan", "--model", "composer-2-fast", "--workspace", dir}
+	if len(argv) != len(want)+1 {
+		t.Fatalf("argv = %v", argv)
+	}
+	for i, v := range want {
+		if argv[i] != v {
+			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
+		}
+	}
+	prompt := argv[len(argv)-1]
+	lower := strings.ToLower(prompt)
+	for _, marker := range []string{"previous", "check", "continue"} {
+		if !strings.Contains(lower, marker) {
+			t.Fatalf("resume prompt missing %q: %q", marker, prompt)
+		}
+	}
+	if strings.Contains(prompt, strings.TrimSpace(planner.Instruction)) {
+		t.Fatalf("resume prompt should not include planner.Instruction: %q", prompt)
+	}
+	for _, banned := range []string{"Save", "Then exit."} {
+		if strings.Contains(prompt, banned) {
+			t.Fatalf("resume prompt should not include %q: %q", banned, prompt)
+		}
+	}
+}
+
+// TestWork_Interactive_Resume mirrors TestPlan_Interactive_Resume for
+// the coder side (AC#2 / AC#5c).
+func TestWork_Interactive_Resume(t *testing.T) {
+	dir := t.TempDir()
+	plan := filepath.Join(dir, "spec.plan.md")
+	if err := os.WriteFile(plan, []byte("1. step one\n2. step two"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls := installStub(t, "", 0)
+	rid := "77777777-7777-4777-8777-777777777777"
+	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+		PlanPath:     plan,
+		Body:         "1. step one\n2. step two",
+		Model:        "composer-2-fast",
+		Interactive:  true,
+		ResumeChatID: rid,
+		Resume:       true,
+	})
+	if err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	if pid != 0 {
+		t.Fatalf("Work pid = %d, want 0 for interactive", pid)
+	}
+	argv := readCalls(t, calls)
+	want := []string{"--resume", rid, "--model", "composer-2-fast", "--workspace", dir}
+	if len(argv) != len(want)+1 {
+		t.Fatalf("argv = %v", argv)
+	}
+	for i, v := range want {
+		if argv[i] != v {
+			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
+		}
+	}
+	prompt := argv[len(argv)-1]
+	lower := strings.ToLower(prompt)
+	for _, marker := range []string{"previous", "check", "continue"} {
+		if !strings.Contains(lower, marker) {
+			t.Fatalf("resume prompt missing %q: %q", marker, prompt)
+		}
+	}
+	if strings.Contains(prompt, strings.TrimSpace(coder.Instruction)) {
+		t.Fatalf("resume prompt should not include coder.Instruction: %q", prompt)
+	}
+	for _, banned := range []string{"Save", "Then exit."} {
+		if strings.Contains(prompt, banned) {
+			t.Fatalf("resume prompt should not include %q: %q", banned, prompt)
+		}
 	}
 }

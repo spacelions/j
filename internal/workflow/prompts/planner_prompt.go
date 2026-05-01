@@ -24,3 +24,28 @@ func BuildPlanner(targetPath, body string) string {
 		body,
 	)
 }
+
+// BuildPlannerResume composes the resume-only planner prompt: it asks
+// the agent to inspect the previous session, check what was already
+// done, summarise it for the user, and continue only what is still
+// outstanding. The original requirement markdown path and body are
+// embedded for context only — there is no instruction to re-plan from
+// scratch and no instruction to save requirements.md / plan.md, so
+// resumed cursor sessions stop overwriting the prior artifacts.
+//
+// Crucially this builder does NOT include planner.Instruction; that
+// belongs to the first-run BuildPlanner which seeds the session, not
+// to the resume turn that picks up where the agent already left off.
+func BuildPlannerResume(targetPath, body string) string {
+	return fmt.Sprintf(
+		"You are resuming a previous planning session. "+
+			"Check what was already done in the previous turn, "+
+			"summarise the prior progress for the user in one short paragraph, "+
+			"and then continue only the work that is still outstanding. "+
+			"Do not re-plan from scratch and do not overwrite the saved "+
+			"requirements.md / plan.md unless new information forces a change.\n\n"+
+			"Original user request (from %q), provided for context only:\n%s",
+		targetPath,
+		body,
+	)
+}
