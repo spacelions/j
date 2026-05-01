@@ -876,22 +876,93 @@ func TestRunDelete_RemovesWorktreeOnConfirm(t *testing.T) {
 	}
 }
 
-func TestRunDelete_EmptyWorktree_SkipsGit(t *testing.T) {
+// TestRunDelete_EmptyWorktree_FallsBackToComputedName covers the
+// legacy-row path: task.Worktree is empty (e.g. row created before
+// the persisted-worktree feature), but the on-disk worktree exists
+// under the deterministic slug WorktreeNameFor(project, task). The
+// fallback recomputes that slug from cwd basename + summary and the
+// `git worktree remove --force` runs against the matching path.
+func TestRunDelete_EmptyWorktree_FallsBackToComputedName(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("git stub requires POSIX /bin/sh")
 	}
-	t.Chdir(t.TempDir())
+	projectDir := filepath.Join(t.TempDir(), "myproj")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("mkdir projectDir: %v", err)
+	}
+	t.Chdir(projectDir)
 	logFile := filepath.Join(t.TempDir(), "git-stub.log")
 	installGitTestStub(t, logFile)
 	listFile := filepath.Join(t.TempDir(), "porcelain.txt")
-	if err := os.WriteFile(listFile, []byte("worktree /x\nHEAD a\n\n"), 0o644); err != nil {
+	// Computed slug for project "myproj" + summary "do the thing"
+	// is "myproj-do-the-thing". The porcelain entry's basename
+	// matches that slug so the basename match path fires.
+	porcelain := "worktree /tmp/wts/myproj-do-the-thing\nHEAD abc\nbranch refs/heads/feat\n\n"
+	if err := os.WriteFile(listFile, []byte(porcelain), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GIT_STUB_LIST_FILE", listFile)
-	taskDir := seedTask(t, "id-no-wt", "no worktree field")
+	taskDir := seedTask(t, "id-fallback", "do the thing")
+	var stdout, stderr bytes.Buffer
+	err := RunDelete(context.Background(), DeleteOptions{
+		TaskID: "id-fallback",
+		Yes:    true,
+		Stdout: &stdout,
+		Stderr: &stderr,
+		UI:     &fakeUI{},
+	})
+	if err != nil {
+		t.Fatalf("RunDelete: %v", err)
+	}
+	lines := readGitStubLogLines(t, logFile)
+	if len(lines) != 2 {
+		t.Fatalf("git stub invocations = %d (%v), want 2", len(lines), lines)
+	}
+	if want := "worktree|list|--porcelain"; lines[0] != want {
+		t.Fatalf("first git argv = %q, want %q", lines[0], want)
+	}
+	if want := "worktree|remove|--force|/tmp/wts/myproj-do-the-thing"; lines[1] != want {
+		t.Fatalf("second git argv = %q, want %q", lines[1], want)
+	}
+	if taskExists(t, "id-fallback") {
+		t.Fatal("task row should be gone")
+	}
+	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("task dir should be gone: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "J: deleted id-fallback") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if strings.Contains(stderr.String(), "warning: worktree remove:") {
+		t.Fatalf("unexpected stderr warning: %q", stderr.String())
+	}
+}
+
+// TestRunDelete_EmptyWorktree_NoComputedMatch_NoRemove confirms that
+// when task.Worktree is empty AND the computed slug doesn't match any
+// listed worktree, the lookup runs but no `worktree remove` is
+// invoked. The row + dir are still deleted.
+func TestRunDelete_EmptyWorktree_NoComputedMatch_NoRemove(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("git stub requires POSIX /bin/sh")
+	}
+	projectDir := filepath.Join(t.TempDir(), "myproj")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("mkdir projectDir: %v", err)
+	}
+	t.Chdir(projectDir)
+	logFile := filepath.Join(t.TempDir(), "git-stub.log")
+	installGitTestStub(t, logFile)
+	listFile := filepath.Join(t.TempDir(), "porcelain.txt")
+	porcelain := "worktree /unrelated/wt\nHEAD abc\nbranch refs/heads/other\n\n"
+	if err := os.WriteFile(listFile, []byte(porcelain), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_STUB_LIST_FILE", listFile)
+	taskDir := seedTask(t, "id-no-match", "no worktree field")
 	var stdout bytes.Buffer
 	err := RunDelete(context.Background(), DeleteOptions{
-		TaskID: "id-no-wt",
+		TaskID: "id-no-match",
 		Yes:    true,
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -900,16 +971,17 @@ func TestRunDelete_EmptyWorktree_SkipsGit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunDelete: %v", err)
 	}
-	if lines := readGitStubLogLines(t, logFile); len(lines) != 0 {
-		t.Fatalf("git should not run with empty Worktree, got log: %v", lines)
+	lines := readGitStubLogLines(t, logFile)
+	if len(lines) != 1 || lines[0] != "worktree|list|--porcelain" {
+		t.Fatalf("git log = %v, want single list invocation", lines)
 	}
-	if taskExists(t, "id-no-wt") {
+	if taskExists(t, "id-no-match") {
 		t.Fatal("task row should be gone")
 	}
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "J: deleted id-no-wt") {
+	if !strings.Contains(stdout.String(), "J: deleted id-no-match") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
