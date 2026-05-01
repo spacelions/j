@@ -63,7 +63,7 @@ coverage:
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+touchBoltFile[[:space:]]' \
 		-e 'internal/store/tasks\.go:[0-9]+:[[:space:]]+PutTask[[:space:]]' \
 		-e 'internal/cli/plan/tasklog\.go:[0-9]+:[[:space:]]+beginPlanTask[[:space:]]' \
-		-e 'internal/cli/plan/tasklog\.go:[0-9]+:[[:space:]]+openTaskLog[[:space:]]' \
+		-e 'internal/cli/tasklog/store\.go:[0-9]+:[[:space:]]+OpenTaskLog[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+cursorResumeChatID[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+openSettingsStore[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+pickMarkdownTarget[[:space:]]' \
@@ -75,7 +75,6 @@ coverage:
 		-e 'internal/cli/work/tasklog\.go:[0-9]+:[[:space:]]+beginWorkTask[[:space:]]' \
 		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+cursorResumeChatID[[:space:]]' \
 		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+openSettingsStore[[:space:]]' \
-		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+openTaskLog[[:space:]]' \
 		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+resolveByTaskID[[:space:]]' \
 		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+resolveFromFile[[:space:]]' \
 		-e 'internal/cli/work/cmd\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
@@ -92,7 +91,6 @@ coverage:
 		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
 		-e 'internal/cli/verify/cmd\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
 		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+openSettingsStore[[:space:]]' \
-		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+openTaskLog[[:space:]]' \
 		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+resolveByTaskID[[:space:]]' \
 		-e 'internal/cli/verify/resume\.go:[0-9]+:[[:space:]]+RunResume[[:space:]]' \
 		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+AskFromFile[[:space:]]' \

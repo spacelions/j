@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/spacelions/j/internal/cli/agentpick"
+	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/mdfile"
@@ -155,7 +156,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 	}
 
 	taskID := workTaskID(res)
-	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), agentLogFileName)
+	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), tasklog.AgentLogFileName)
 	pid, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:     res.PlanPath,
 		Body:         res.Body,
@@ -168,7 +169,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 		lc.recordBackground(pid, agentLogPath)
 		fmt.Fprintf(opts.Stdout,
 			"J: cursor-agent running in background (PID=%d); see .j/tasks/%s/%s\n",
-			pid, taskID, agentLogFileName)
+			pid, taskID, tasklog.AgentLogFileName)
 		return nil
 	}
 	lc.finishWork(workErr)
@@ -233,7 +234,7 @@ func resolvePlan(ctx context.Context, opts Options) (resolved, error) {
 // the row) so we derive paths via filepath.Join instead of round-
 // tripping through the path helpers and their Getwd error returns.
 func resolveByTaskID(opts Options, id string) (resolved, error) {
-	s, ok := openTaskLog(opts.Stderr)
+	s, ok := tasklog.OpenTaskLog(opts.Stderr)
 	if !ok {
 		return resolved{}, errors.New("work: tasks db unavailable")
 	}
@@ -280,7 +281,7 @@ func resolveFromFile(opts Options, raw string) (resolved, error) {
 	if err != nil {
 		return resolved{}, fmt.Errorf("work: read plan: %w", err)
 	}
-	requirement := readRequirementSidecar(src)
+	requirement := tasklog.ReadRequirementSidecar(src)
 
 	id := store.NewTaskID()
 	dir, err := store.EnsureTaskDir(id)
@@ -309,7 +310,7 @@ func resolveFromFile(opts Options, raw string) (resolved, error) {
 // the most recent first (SortTasks already groups active first; we
 // filter here so the UI picker only shows actionable rows).
 func listPlanDoneTasks(opts Options) ([]store.Task, error) {
-	s, ok := openTaskLog(opts.Stderr)
+	s, ok := tasklog.OpenTaskLog(opts.Stderr)
 	if !ok {
 		return nil, errors.New("work: tasks db unavailable")
 	}
@@ -499,25 +500,6 @@ func openSettingsStore(stderr io.Writer) (*store.Store, bool) {
 	s, err := store.Open(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "warning: settings db: %v\n", err)
-		return nil, false
-	}
-	return s, true
-}
-
-// openTaskLog opens `<cwd>/.j/tasks/list.db` for the work flow. Like
-// openSettingsStore this is the post-init replacement for
-// store.OpenTaskLog: pre-flight ensures the file exists, so any
-// failure here is reported once on stderr. Callers that just want
-// the open-write-close pattern should use writeWorkTaskWarn instead.
-func openTaskLog(stderr io.Writer) (*store.Store, bool) {
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
-		return nil, false
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
 		return nil, false
 	}
 	return s, true

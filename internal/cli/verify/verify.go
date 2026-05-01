@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/spacelions/j/internal/cli/agentpick"
+	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 )
@@ -190,7 +191,7 @@ func resolveTask(ctx context.Context, opts Options) (resolved, error) {
 // requirements). The id is trusted (it came from a previous
 // EnsureTaskDir call that staged the row).
 func resolveByTaskID(opts Options, id string) (resolved, error) {
-	s, ok := openTaskLog(opts.Stderr)
+	s, ok := tasklog.OpenTaskLog(opts.Stderr)
 	if !ok {
 		return resolved{}, errors.New("verify: tasks db unavailable")
 	}
@@ -234,7 +235,7 @@ func resolveByTaskID(opts Options, id string) (resolved, error) {
 // sorted via store.SortTasks so the picker shows the active-then-
 // most-recent order users see in `j tasks`.
 func listVerifiableTasks(opts Options) ([]store.Task, error) {
-	s, ok := openTaskLog(opts.Stderr)
+	s, ok := tasklog.OpenTaskLog(opts.Stderr)
 	if !ok {
 		return nil, errors.New("verify: tasks db unavailable")
 	}
@@ -287,7 +288,7 @@ func validateForVerify(t store.Task) error {
 // verifier with Resume=true so the prior verification context is
 // reused.
 func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, coderAgent codingagents.Agent, model, resumeID string, res resolved) (verifyOutcome, error) {
-	agentLogPath := filepath.Join(res.TaskDir, agentLogFileName)
+	agentLogPath := filepath.Join(res.TaskDir, tasklog.AgentLogFileName)
 	for i := 0; i < opts.MaxIterations; i++ {
 		req := codingagents.VerifyRequest{
 			RequirementsPath:           res.RequirementsPath,
@@ -505,22 +506,6 @@ func openSettingsStore(stderr io.Writer) (*store.Store, bool) {
 	s, err := store.Open(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "warning: settings db: %v\n", err)
-		return nil, false
-	}
-	return s, true
-}
-
-// openTaskLog opens `<cwd>/.j/tasks/list.db` for the verify flow.
-// Mirrors openTaskLog in `j work`.
-func openTaskLog(stderr io.Writer) (*store.Store, bool) {
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
-		return nil, false
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
 		return nil, false
 	}
 	return s, true

@@ -1,20 +1,13 @@
 package verify
 
 import (
-	"fmt"
 	"io"
 	"time"
 
+	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 )
-
-// agentLogFileName is the per-task file that captures stdout/stderr
-// of a fire-and-forget headless cursor-agent child for `j verify`.
-// It lives at `<cwd>/.j/tasks/<id>/agent.log`, matching the constant
-// of the same name in the work / plan packages so all flows share a
-// single filename.
-const agentLogFileName = "agent.log"
 
 // verifyOutcome enumerates the terminal results of runVerifyLoop.
 // success → finalize as `completed` with DoneAt stamped; noRetries
@@ -36,7 +29,7 @@ const (
 // verifyLifecycle owns the begin/end task-log writes around a
 // single `j verify` invocation. Mirrors workLifecycle in `j work`:
 // the struct holds no bbolt handle — every task-log write goes
-// through writeVerifyTaskWarn, which opens, writes, and closes
+// through tasklog.PersistWarn, which opens, writes, and closes
 // within a single call so the bbolt file lock is never held across
 // agent.Verify and a concurrent `j tasks` from another shell is not
 // blocked.
@@ -91,11 +84,11 @@ func beginVerifyTaskResume(opts Options, existing store.Task) *verifyLifecycle {
 // openLifecycle is the shared helper that best-effort writes the
 // initial row and returns a verifyLifecycle suitable for
 // finishVerify. The bbolt handle is opened, written to, and closed
-// within writeVerifyTaskWarn so the file lock is not held across
+// within tasklog.PersistWarn so the file lock is not held across
 // agent.Verify.
 func openLifecycle(opts Options, task store.Task) *verifyLifecycle {
 	lc := &verifyLifecycle{stderr: opts.Stderr, task: task}
-	writeVerifyTaskWarn(opts.Stderr, task)
+	tasklog.PersistWarn(opts.Stderr, task)
 	return lc
 }
 
@@ -111,7 +104,7 @@ func (lc *verifyLifecycle) recordBackground(pid int, logPath string) {
 	lc.closed = true
 	lc.task.BackgroundPID = pid
 	lc.task.AgentLogPath = logPath
-	writeVerifyTaskWarn(lc.stderr, lc.task)
+	tasklog.PersistWarn(lc.stderr, lc.task)
 }
 
 // finishVerify stamps verify_end_at, picks the terminal status from
@@ -139,18 +132,5 @@ func (lc *verifyLifecycle) finishVerify(outcome verifyOutcome, runErr error) {
 	default:
 		lc.task.Status = store.StatusVerifyDone
 	}
-	writeVerifyTaskWarn(lc.stderr, lc.task)
-}
-
-// writeVerifyTaskWarn opens `<cwd>/.j/tasks/list.db`, writes task,
-// and closes the store. Mirrors writeWorkTaskWarn in `j work`.
-func writeVerifyTaskWarn(stderr io.Writer, task store.Task) {
-	s, ok := openTaskLog(stderr)
-	if !ok {
-		return
-	}
-	defer func() { _ = s.Close() }()
-	if err := s.PutTask(task); err != nil {
-		fmt.Fprintf(stderr, "warning: tasks put: %v\n", err)
-	}
+	tasklog.PersistWarn(lc.stderr, lc.task)
 }
