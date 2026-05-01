@@ -21,6 +21,17 @@ import (
 // reader in `j tasks`.
 const BucketTasks = "tasks"
 
+// VerifierPlanFileName is the filename of the verifier's draft
+// verification plan stored under `<cwd>/.j/tasks/<id>/`. Written by
+// `j verify` (via the agent's tool calls) and read by `j tasks`
+// summary derivation.
+const VerifierPlanFileName = "verifier_plan.md"
+
+// VerifierFindingsFileName is the filename of the verifier's findings
+// markdown stored under `<cwd>/.j/tasks/<id>/`. Its last non-empty
+// line is parsed by the orchestrator into a PASS/FAIL verdict.
+const VerifierFindingsFileName = "verifier_findings.md"
+
 // summaryMaxRunes is the upper bound applied to Task.Summary in
 // SummarizeMarkdown. Eighty runes fits a typical terminal column even
 // after the ID/status/tool/model prefix, and pinning the value keeps

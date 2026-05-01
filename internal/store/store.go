@@ -32,6 +32,11 @@ const BucketPlanner = "planner"
 // most-recently-selected tool/model/interactive flag.
 const BucketCoder = "coder"
 
+// BucketVerifier is the bucket used by `j verify` to record the
+// most-recently-selected tool/model/interactive flag, mirroring
+// BucketPlanner / BucketCoder.
+const BucketVerifier = "verifier"
+
 // dirName is the on-disk folder that holds the settings DB. It lives
 // under the current working directory so each project gets its own
 // state.

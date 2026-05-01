@@ -60,6 +60,21 @@ type Agent interface {
 	// non-zero PID means a detached background child was started
 	// (headless only); 0 means synchronous completion.
 	Work(ctx context.Context, req WorkRequest) (int, error)
+
+	// Verify runs the agent against an existing requirements + plan
+	// markdown pair, producing a verifier_plan.md and a verifier
+	// findings markdown whose terminal line is exactly "VERDICT: PASS"
+	// or "VERDICT: FAIL" inside the per-task workspace. On FAIL the
+	// agent edits project files itself to address the findings before
+	// exiting so the orchestrator can re-run the verifier turn after
+	// a coder-resume fix loop. The agent is responsible for writing
+	// req.VerifierPlanOutputPath and req.VerifierFindingsOutputPath
+	// before exiting; the orchestrator reads the findings afterwards.
+	//
+	// The integer return follows the same convention as Plan / Work:
+	// a non-zero PID means a detached background child was started
+	// (headless only); 0 means synchronous completion.
+	Verify(ctx context.Context, req VerifyRequest) (int, error)
 }
 
 // PlanRequest is the input to Agent.Plan. The caller pre-reads the
@@ -124,6 +139,45 @@ type WorkRequest struct {
 	// done, summarise it for the user, and continue only the
 	// outstanding work. Independent of ResumeChatID.
 	Resume bool
+	// FixFindings, when non-empty, asks the backend to use a
+	// fix-only coder prompt that points the previous session at the
+	// supplied verifier findings markdown body and asks it to
+	// address every listed item without re-planning. Empty preserves
+	// today's first-run / resume behaviour. Used by `j verify`'s
+	// bounded fix loop after a verifier turn returned VERDICT: FAIL.
+	FixFindings string
+	// AgentLogPath is the absolute path the headless backend MUST
+	// redirect stdout/stderr to when it spawns a fire-and-forget
+	// background child. Same contract as PlanRequest.AgentLogPath.
+	AgentLogPath string
+}
+
+// VerifyRequest is the input to Agent.Verify. The caller pre-reads the
+// requirement and plan markdown bodies so the agent can choose how to
+// embed or attach them without re-stating the files. The verifier
+// writes its plan and findings markdown to the supplied output paths
+// inside `<cwd>/.j/tasks/<id>/`; the orchestrator reads the findings
+// afterwards to derive the VERDICT line.
+//
+// PreviousFindings, when non-empty, is the body of the prior
+// verifier_findings.md from an earlier loop iteration; the verifier
+// uses it as context only (e.g. to confirm the listed issues were
+// addressed) and is still expected to overwrite the findings file
+// with a fresh terminal verdict. ResumeChatID, when set, is the value
+// previously returned by Agent.NewResumeID; backends that have no
+// notion of resume ignore it.
+type VerifyRequest struct {
+	RequirementsPath           string
+	RequirementsBody           string
+	PlanPath                   string
+	PlanBody                   string
+	VerifierPlanOutputPath     string
+	VerifierFindingsOutputPath string
+	PreviousFindings           string
+	Model                      string
+	Interactive                bool
+	Resume                     bool
+	ResumeChatID               string
 	// AgentLogPath is the absolute path the headless backend MUST
 	// redirect stdout/stderr to when it spawns a fire-and-forget
 	// background child. Same contract as PlanRequest.AgentLogPath.

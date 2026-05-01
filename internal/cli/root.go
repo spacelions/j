@@ -14,6 +14,7 @@ import (
 	"github.com/spacelions/j/internal/cli/run"
 	"github.com/spacelions/j/internal/cli/settings"
 	"github.com/spacelions/j/internal/cli/tasks"
+	"github.com/spacelions/j/internal/cli/verify"
 	"github.com/spacelions/j/internal/cli/web"
 	"github.com/spacelions/j/internal/cli/work"
 	"github.com/spacelions/j/internal/config"
@@ -38,6 +39,7 @@ func Execute() int {
 		web.New(),
 		plan.New(),
 		work.New(),
+		verify.New(),
 		settings.New(),
 		tasks.New(),
 		initcmd.New(),

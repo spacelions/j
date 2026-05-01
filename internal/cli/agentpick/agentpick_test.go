@@ -37,10 +37,10 @@ type scriptedUI struct {
 	toolErr  error
 	modelErr error
 
-	toolCalls   int
-	modelCalls  int
-	lastTools   []string
-	lastModels  []string
+	toolCalls  int
+	modelCalls int
+	lastTools  []string
+	lastModels []string
 }
 
 func (s *scriptedUI) SelectTool(_ context.Context, options []string) (string, error) {
@@ -109,6 +109,10 @@ func (s *stubAgent) Plan(context.Context, codingagents.PlanRequest) (int, error)
 
 func (s *stubAgent) Work(context.Context, codingagents.WorkRequest) (int, error) {
 	return 0, errors.New("agentpick: Work should not be called")
+}
+
+func (s *stubAgent) Verify(context.Context, codingagents.VerifyRequest) (int, error) {
+	return 0, errors.New("agentpick: Verify should not be called")
 }
 
 func TestPick_Success(t *testing.T) {
