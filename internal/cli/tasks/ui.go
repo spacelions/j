@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -57,7 +58,7 @@ func (u *huhUI) ConfirmDelete(ctx context.Context, task store.Task) (bool, error
 			Affirmative("yes").
 			Negative("no").
 			Value(&v),
-	)).WithInput(u.in).WithOutput(u.out).RunWithContext(ctx)
+	)).WithInput(u.in).WithOutput(u.out).WithTheme(uitheme.Theme()).RunWithContext(ctx)
 	if errors.Is(err, huh.ErrUserAborted) {
 		return false, nil
 	}
@@ -84,7 +85,7 @@ func (u *huhUI) PickTask(ctx context.Context, tasks []store.Task) (string, error
 			Filtering(true).
 			Height(12).
 			Value(&chosen),
-	)).WithInput(u.in).WithOutput(u.out).RunWithContext(ctx)
+	)).WithInput(u.in).WithOutput(u.out).WithTheme(uitheme.Theme()).RunWithContext(ctx)
 	if errors.Is(err, huh.ErrUserAborted) {
 		return "", nil
 	}
