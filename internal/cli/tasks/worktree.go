@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/run"
 )
 
@@ -52,12 +53,23 @@ func parseWorktreeListPorcelain(output string) []worktreeRecord {
 }
 
 // removeTaskWorktree runs `git worktree list --porcelain`, finds a
-// worktree whose directory basename or checked-out branch matches
-// name, then runs `git worktree remove --force` on that path. Any git
-// failure or ambiguity is reported as a single stderr line prefixed
-// `warning: worktree remove: ` without aborting the caller. An empty
-// name is a no-op.
-func removeTaskWorktree(ctx context.Context, stderr io.Writer, name string) {
+// worktree whose directory basename or checked-out branch matches the
+// task's recorded name, then runs `git worktree remove --force` on
+// that path. When task.Worktree is empty (legacy rows that pre-date
+// the persisted-worktree feature, or any row that never reached
+// `j work`) the lookup falls back to store.WorktreeNameFor(project,
+// task) — the same deterministic slug the coder prompt instructs the
+// agent to use for `git worktree add`, so the on-disk basename is
+// recoverable from project + summary alone. Any git failure or
+// ambiguity is reported as a single stderr line prefixed `warning:
+// worktree remove: ` without aborting the caller. A still-empty name
+// after the fallback is a no-op.
+func removeTaskWorktree(ctx context.Context, stderr io.Writer, task store.Task) {
+	name := task.Worktree
+	if name == "" {
+		project, _ := store.ProjectName()
+		name = store.WorktreeNameFor(project, task)
+	}
 	if name == "" {
 		return
 	}

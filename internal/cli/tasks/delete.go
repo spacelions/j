@@ -85,10 +85,13 @@ func (o DeleteOptions) withDefaults() DeleteOptions {
 //     map huh.ErrUserAborted to (false, nil) so a Ctrl-C is
 //     indistinguishable from an explicit decline.
 //  4. On confirm, removeTaskWorktree removes the task's recorded git
-//     worktree (when non-empty) via `git worktree remove --force`,
-//     matching `git worktree list --porcelain` by directory basename
-//     or by refs/heads/<name>. Failures print a single stderr warning
-//     and do not abort the delete.
+//     worktree via `git worktree remove --force`, matching
+//     `git worktree list --porcelain` by directory basename or by
+//     refs/heads/<name>. When task.Worktree is empty (legacy rows or
+//     rows that never went through `j work`) the lookup falls back to
+//     store.WorktreeNameFor(project, task) so the deterministic slug
+//     used by the coder prompt is still tried. Failures print a
+//     single stderr warning and do not abort the delete.
 //  5. DeleteTask removes the bbolt row.
 //  6. RemoveTaskDir deletes <cwd>/.j/tasks/<id>/ recursively. The
 //     bbolt file lives at <tasksDir>/list.db, a sibling of the
@@ -146,7 +149,7 @@ func RunDelete(ctx context.Context, opts DeleteOptions) error {
 			return nil
 		}
 	}
-	removeTaskWorktree(ctx, opts.Stderr, task.Worktree)
+	removeTaskWorktree(ctx, opts.Stderr, task)
 	if err := s.DeleteTask(opts.TaskID); err != nil {
 		return fmt.Errorf("tasks delete: %w", err)
 	}
@@ -169,15 +172,20 @@ func newDeleteCmd() *cobra.Command {
 		Short: "Delete a task row, its linked git worktree, and its on-disk directory",
 		Long: "Removes a single task from <cwd>/.j/tasks/list.db, deletes the " +
 			"matching on-disk directory <cwd>/.j/tasks/<id>/, and removes the " +
-			"git worktree named on the task row (when set) with " +
-			"`git worktree remove --force` after locating it via " +
-			"`git worktree list --porcelain`. Worktree removal failures print " +
-			"a warning to stderr but still delete the database row and task " +
-			"directory. The --id flag is optional; when omitted a huh selector " +
-			"lets you pick from the existing tasks (same picker as `j tasks enter`). " +
-			"Without --yes, a confirmation prompt is rendered (default Enter/`y` " +
-			"accepts) so you can recognise the row from its summary before " +
-			"committing. Unknown ids print `J: no task` and exit 0.",
+			"git worktree named on the task row with `git worktree remove " +
+			"--force` after locating it via `git worktree list --porcelain`. " +
+			"Rows that never recorded a worktree name (legacy rows from before " +
+			"the persisted-worktree feature, or rows that never reached `j " +
+			"work`) fall back to the deterministic slug derived from the " +
+			"project basename and task summary, so the on-disk worktree is " +
+			"still cleaned up when the agent followed the standard naming. " +
+			"Worktree removal failures print a warning to stderr but still " +
+			"delete the database row and task directory. The --id flag is " +
+			"optional; when omitted a huh selector lets you pick from the " +
+			"existing tasks (same picker as `j tasks enter`). Without --yes, " +
+			"a confirmation prompt is rendered (default Enter/`y` accepts) so " +
+			"you can recognise the row from its summary before committing. " +
+			"Unknown ids print `J: no task` and exit 0.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return RunDelete(cmd.Context(), DeleteOptions{
 				TaskID: viper.GetString("tasks.delete.id"),
