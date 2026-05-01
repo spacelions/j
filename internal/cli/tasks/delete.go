@@ -84,12 +84,17 @@ func (o DeleteOptions) withDefaults() DeleteOptions {
 //     print "delete aborted" and return nil. UI implementations
 //     map huh.ErrUserAborted to (false, nil) so a Ctrl-C is
 //     indistinguishable from an explicit decline.
-//  4. On confirm, DeleteTask removes the bbolt row.
-//  5. RemoveTaskDir deletes <cwd>/.j/tasks/<id>/ recursively. The
+//  4. On confirm, removeTaskWorktree removes the task's recorded git
+//     worktree (when non-empty) via `git worktree remove --force`,
+//     matching `git worktree list --porcelain` by directory basename
+//     or by refs/heads/<name>. Failures print a single stderr warning
+//     and do not abort the delete.
+//  5. DeleteTask removes the bbolt row.
+//  6. RemoveTaskDir deletes <cwd>/.j/tasks/<id>/ recursively. The
 //     bbolt file lives at <tasksDir>/list.db, a sibling of the
 //     per-task directory, so RemoveTaskDir can run while the
 //     store handle is still open.
-//  6. On success, print "J: deleted <id>" and return nil.
+//  7. On success, print "J: deleted <id>" and return nil.
 //
 // The store is closed via defer so every return path releases the
 // bbolt file lock before the next `j tasks` invocation tries to
@@ -141,6 +146,7 @@ func RunDelete(ctx context.Context, opts DeleteOptions) error {
 			return nil
 		}
 	}
+	removeTaskWorktree(ctx, opts.Stderr, task.Worktree)
 	if err := s.DeleteTask(opts.TaskID); err != nil {
 		return fmt.Errorf("tasks delete: %w", err)
 	}
@@ -160,12 +166,16 @@ func RunDelete(ctx context.Context, opts DeleteOptions) error {
 func newDeleteCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete",
-		Short: "Delete a task row and its on-disk directory",
-		Long: "Removes a single task from <cwd>/.j/tasks/list.db AND the " +
-			"matching on-disk directory <cwd>/.j/tasks/<id>/. The --id flag is " +
-			"optional; when omitted a huh selector lets you pick from the " +
-			"existing tasks (same picker as `j tasks enter`). Without " +
-			"--yes, a confirmation prompt is rendered (default Enter/`y` " +
+		Short: "Delete a task row, its linked git worktree, and its on-disk directory",
+		Long: "Removes a single task from <cwd>/.j/tasks/list.db, deletes the " +
+			"matching on-disk directory <cwd>/.j/tasks/<id>/, and removes the " +
+			"git worktree named on the task row (when set) with " +
+			"`git worktree remove --force` after locating it via " +
+			"`git worktree list --porcelain`. Worktree removal failures print " +
+			"a warning to stderr but still delete the database row and task " +
+			"directory. The --id flag is optional; when omitted a huh selector " +
+			"lets you pick from the existing tasks (same picker as `j tasks enter`). " +
+			"Without --yes, a confirmation prompt is rendered (default Enter/`y` " +
 			"accepts) so you can recognise the row from its summary before " +
 			"committing. Unknown ids print `J: no task` and exit 0.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
