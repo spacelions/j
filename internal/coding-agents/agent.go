@@ -84,6 +84,13 @@ type PlanRequest struct {
 	PlanOutputPath         string
 	Interactive            bool
 	ResumeChatID           string
+	// Resume, when true, asks the backend to use its resume-only
+	// prompt template: skip the full planner instruction body and
+	// the save-from-scratch suffix and instead tell the previous
+	// session to inspect what was already done, summarise it for
+	// the user, and continue only the outstanding work. Independent
+	// of ResumeChatID, which still threads the backend's session id.
+	Resume bool
 	// AgentLogPath is the absolute path the headless backend MUST
 	// redirect stdout/stderr to when it spawns a fire-and-forget
 	// background child. Empty for interactive runs and for backends
@@ -111,6 +118,12 @@ type WorkRequest struct {
 	Model        string
 	Interactive  bool
 	ResumeChatID string
+	// Resume, when true, asks the backend to use its resume-only
+	// prompt template: skip the full coder instruction body and
+	// instead tell the previous session to inspect what was already
+	// done, summarise it for the user, and continue only the
+	// outstanding work. Independent of ResumeChatID.
+	Resume bool
 	// AgentLogPath is the absolute path the headless backend MUST
 	// redirect stdout/stderr to when it spawns a fire-and-forget
 	// background child. Same contract as PlanRequest.AgentLogPath.

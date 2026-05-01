@@ -134,6 +134,9 @@ func TestRunResume_FromTaskHappyPath(t *testing.T) {
 	if agent.lastReq.ResumeChatID != "abc" {
 		t.Fatalf("ResumeChatID = %q, want abc", agent.lastReq.ResumeChatID)
 	}
+	if !agent.lastReq.Resume {
+		t.Fatalf("Resume should be true on resume: %+v", agent.lastReq)
+	}
 	if agent.lastReq.Model != "sonnet-4" {
 		t.Fatalf("Model = %q, want sonnet-4", agent.lastReq.Model)
 	}

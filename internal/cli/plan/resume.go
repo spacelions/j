@@ -121,6 +121,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		PlanOutputPath:         planPath,
 		Interactive:            true,
 		ResumeChatID:           task.PlanResumeCursor,
+		Resume:                 true,
 	})
 
 	var refinedReq, planMD string

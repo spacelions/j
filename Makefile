@@ -66,6 +66,11 @@ coverage:
 		-e 'internal/cli/plan/tasklog\.go:[0-9]+:[[:space:]]+openTaskLog[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+cursorResumeChatID[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+openSettingsStore[[:space:]]' \
+		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+pickMarkdownTarget[[:space:]]' \
+		-e 'internal/cli/plan/cmd\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
+		-e 'internal/cli/plan/resume\.go:[0-9]+:[[:space:]]+RunResume[[:space:]]' \
+		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+PickPlanTask[[:space:]]' \
+		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+PickFromFile[[:space:]]' \
 		-e 'internal/coding-agents/cursor/cursor\.go:[0-9]+:[[:space:]]+CreateChatID[[:space:]]' \
 		-e 'internal/cli/work/tasklog\.go:[0-9]+:[[:space:]]+beginWorkTask[[:space:]]' \
 		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+cursorResumeChatID[[:space:]]' \
@@ -73,6 +78,9 @@ coverage:
 		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+openTaskLog[[:space:]]' \
 		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+resolveByTaskID[[:space:]]' \
 		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+resolveFromFile[[:space:]]' \
+		-e 'internal/cli/work/cmd\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
+		-e 'internal/cli/work/resume\.go:[0-9]+:[[:space:]]+RunResume[[:space:]]' \
+		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+pickTask[[:space:]]' \
 		-e 'internal/cli/tasks/cmd\.go:[0-9]+:[[:space:]]+listTasks[[:space:]]' \
 		-e 'internal/cli/tasks/cmd\.go:[0-9]+:[[:space:]]+writeTasks[[:space:]]' \
 		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+AskTarget[[:space:]]' \
@@ -84,6 +92,7 @@ coverage:
 		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
 		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+Spawn[[:space:]]' \
 		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+IsAlive[[:space:]]' \
+		-e 'internal/util/mdfile/mdfile\.go:[0-9]+:[[:space:]]+ListInDir[[:space:]]' \
 		|| true); \
 	below=$$(printf '%s\n' "$$below" | sed '/^$$/d'); \
 	if [ -n "$$below" ]; then \

@@ -114,6 +114,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		Model:        task.InvokedModel,
 		Interactive:  true,
 		ResumeChatID: task.WorkResumeCursor,
+		Resume:       true,
 	})
 	lc.finishWork(workErr)
 	if workErr != nil {

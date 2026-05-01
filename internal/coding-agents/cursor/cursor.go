@@ -118,14 +118,7 @@ func (*Agent) CheckLogin(ctx context.Context) error {
 // stays synchronous and returns 0.
 func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.FromFilePath)
-	base := prompts.BuildPlanner(req.FromFilePath, req.Body)
-	prompt := fmt.Sprintf(
-		"%s\n\nDuring this session you may clarify the requirements with the user. Before exiting:\n"+
-			"1. Save the (possibly refined) requirements summary to %q (overwrite if it exists).\n"+
-			"2. Save the plan to %q (overwrite if it exists).\n"+
-			"Then exit.",
-		base, req.RequirementsOutputPath, req.PlanOutputPath,
-	)
+	prompt := buildPlanPrompt(req)
 
 	if req.Interactive {
 		var args []string
@@ -166,7 +159,7 @@ func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) (int, erro
 //     path stays synchronous and returns 0.
 func (*Agent) Work(ctx context.Context, req codingagents.WorkRequest) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.PlanPath)
-	prompt := prompts.BuildCoder(req.PlanPath, req.Body)
+	prompt := buildWorkPrompt(req)
 
 	if req.Interactive {
 		var wargs []string
@@ -189,6 +182,42 @@ func (*Agent) Work(ctx context.Context, req codingagents.WorkRequest) (int, erro
 		return 0, fmt.Errorf("cursor-agent: %w", err)
 	}
 	return pid, nil
+}
+
+// buildPlanPrompt picks the right planner prompt for req. On a fresh
+// run it composes the full planner instruction and the
+// "save requirements / save plan / then exit" suffix; on a resume run
+// it switches to the resume-only template that asks the previous
+// cursor session to inspect / report / continue without overwriting
+// the saved markdown. The non-resume suffix also pins the
+// requirements.md "first line is a one-line summary" rule so
+// `j tasks` no longer surfaces the literal heading "Requirements" as a
+// task summary.
+func buildPlanPrompt(req codingagents.PlanRequest) string {
+	if req.Resume {
+		return prompts.BuildPlannerResume(req.FromFilePath, req.Body)
+	}
+	base := prompts.BuildPlanner(req.FromFilePath, req.Body)
+	return fmt.Sprintf(
+		"%s\n\nDuring this session you may clarify the requirements with the user. Before exiting:\n"+
+			"1. Save the (possibly refined) requirements summary to %q (overwrite if it exists). "+
+			"The first line of this file MUST be a concise one-line summary of the user task — "+
+			"do NOT use `# Requirements` (or any other heading) as the first line; "+
+			"subsequent sections may use any structure you prefer.\n"+
+			"2. Save the plan to %q (overwrite if it exists).\n"+
+			"Then exit.",
+		base, req.RequirementsOutputPath, req.PlanOutputPath,
+	)
+}
+
+// buildWorkPrompt picks the right coder prompt for req. Resume runs
+// switch to the resume-only template; first-run uses the existing
+// full coder instruction.
+func buildWorkPrompt(req codingagents.WorkRequest) string {
+	if req.Resume {
+		return prompts.BuildCoderResume(req.PlanPath, req.Body)
+	}
+	return prompts.BuildCoder(req.PlanPath, req.Body)
 }
 
 // parseModels extracts cursor-agent model IDs from --list-models output.

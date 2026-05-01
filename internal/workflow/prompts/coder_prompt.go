@@ -19,3 +19,25 @@ func BuildCoder(planPath, body string) string {
 		body,
 	)
 }
+
+// BuildCoderResume composes the resume-only coder prompt: the agent
+// inspects the previous session, checks what was already implemented,
+// summarises it for the user, and continues only the outstanding
+// work. The plan path and body are embedded for context — there is
+// no instruction to re-implement from scratch.
+//
+// As with BuildPlannerResume, this builder does NOT include
+// coder.Instruction; the first-run BuildCoder already seeded the
+// session with the full coding rules.
+func BuildCoderResume(planPath, body string) string {
+	return fmt.Sprintf(
+		"You are resuming a previous coding session. "+
+			"Check what was already implemented in the previous turn, "+
+			"summarise the prior progress for the user in one short paragraph, "+
+			"and then continue only the work that is still outstanding. "+
+			"Do not re-implement from scratch.\n\n"+
+			"Plan (from %q), provided for context only:\n%s",
+		planPath,
+		body,
+	)
+}
