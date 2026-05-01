@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/config"
 	"github.com/spacelions/j/internal/store"
 )
@@ -71,7 +72,7 @@ func (u *huhUI) ConfirmInit(ctx context.Context) (bool, error) {
 			Affirmative("yes").
 			Negative("no").
 			Value(&v),
-	)).WithInput(u.in).WithOutput(u.out).RunWithContext(ctx)
+	)).WithInput(u.in).WithOutput(u.out).WithTheme(uitheme.Theme()).RunWithContext(ctx)
 	if errors.Is(err, huh.ErrUserAborted) {
 		return false, nil
 	}

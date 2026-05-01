@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+
+	"github.com/spacelions/j/internal/cli/uitheme"
 )
 
 // UI lets `j init` ask the user whether to wipe an existing layout.
@@ -41,7 +43,7 @@ func (u *huhUI) ConfirmReset(ctx context.Context) (bool, error) {
 			Affirmative("yes").
 			Negative("no").
 			Value(&v),
-	)).WithInput(u.in).WithOutput(u.out).RunWithContext(ctx)
+	)).WithInput(u.in).WithOutput(u.out).WithTheme(uitheme.Theme()).RunWithContext(ctx)
 	if errors.Is(err, huh.ErrUserAborted) {
 		return false, nil
 	}

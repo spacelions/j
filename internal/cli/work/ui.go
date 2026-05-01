@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -139,6 +140,7 @@ func (u *huhUI) run(ctx context.Context, field huh.Field) error {
 	err := huh.NewForm(huh.NewGroup(field)).
 		WithInput(u.in).
 		WithOutput(u.out).
+		WithTheme(uitheme.Theme()).
 		RunWithContext(ctx)
 	if errors.Is(err, huh.ErrUserAborted) {
 		return huh.ErrUserAborted
