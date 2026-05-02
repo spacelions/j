@@ -16,10 +16,16 @@ import (
 // BuildPlanner composes the planner's shared instruction with the
 // user's markdown task. Reusing planner.Instruction keeps the planning
 // rules in a single source of truth across every backend.
-func BuildPlanner(targetPath, body string) string {
+//
+// mustread, when non-empty, is rendered as a bulleted "Before
+// starting, read these project files…" block between the instruction
+// and the user request. An empty / nil mustread leaves the prompt
+// byte-identical to the pre-mustread output.
+func BuildPlanner(targetPath, body string, mustread []string) string {
 	return fmt.Sprintf(
-		"%s\n\nUser request (from %q):\n%s",
+		"%s%s\n\nUser request (from %q):\n%s",
 		strings.TrimSpace(planner.Instruction),
+		mustreadSuffix(mustread),
 		targetPath,
 		body,
 	)

@@ -37,6 +37,12 @@ const BucketCoder = "coder"
 // BucketPlanner / BucketCoder.
 const BucketVerifier = "verifier"
 
+// BucketProject holds project-wide settings that aren't tied to a
+// single role (planner / coder / verifier). The first key under it is
+// "mustread", a `;`-separated list of files every agent should read
+// before starting.
+const BucketProject = "project"
+
 // dirName is the on-disk folder that holds the settings DB. It lives
 // under the current working directory so each project gets its own
 // state.

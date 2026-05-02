@@ -17,6 +17,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // testCursorChatID is the `cursor-agent create-chat` id from the
@@ -87,9 +88,7 @@ func openTestStore(t *testing.T) *store.Store {
 // pre-init contract is satisfied. Idempotent.
 func mustInit(t *testing.T) {
 	t.Helper()
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 }
 
 func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {

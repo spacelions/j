@@ -14,16 +14,17 @@ import (
 // review rules in a single source of truth across every backend,
 // mirroring how BuildPlanner reuses planner.Instruction and
 // BuildCoder reuses coder.Instruction.
-func BuildVerifier(reqPath, reqBody, planPath, planBody, verifierPlanPath, findingsPath, worktree string) string {
+func BuildVerifier(reqPath, reqBody, planPath, planBody, verifierPlanPath, findingsPath, worktree string, mustread []string) string {
 	return appendVerifierWorktreeLine(
 		fmt.Sprintf(
-			"%s\n\n"+
+			"%s%s\n\n"+
 				"Requirements (from %q):\n%s\n\n"+
 				"Plan (from %q):\n%s\n\n"+
 				"and your final findings (with the terminal `VERDICT: PASS` or "+
 				"`VERDICT: FAIL` line) to %q (overwrite if it exists). "+
 				"Then exit.",
 			strings.TrimSpace(verifier.Instruction),
+			mustreadSuffix(mustread),
 			reqPath, reqBody,
 			planPath, planBody,
 			findingsPath,

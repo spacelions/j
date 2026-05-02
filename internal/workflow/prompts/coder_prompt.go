@@ -15,11 +15,16 @@ import (
 // A non-empty worktree appends a single trailing line telling the
 // coder which git worktree to use for this task; an empty worktree
 // leaves the prompt unchanged so the coder behaves as before.
-func BuildCoder(planPath, body, worktree string) string {
+//
+// mustread, when non-empty, is rendered as a bulleted "Before
+// starting, read these project files…" block between the instruction
+// and the plan. An empty / nil mustread leaves the prompt unchanged.
+func BuildCoder(planPath, body, worktree string, mustread []string) string {
 	return appendWorktreeLine(
 		fmt.Sprintf(
-			"%s\n\nPlan (from %q):\n%s",
+			"%s%s\n\nPlan (from %q):\n%s",
 			strings.TrimSpace(coder.Instruction),
+			mustreadSuffix(mustread),
 			planPath,
 			body,
 		),

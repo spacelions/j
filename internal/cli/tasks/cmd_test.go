@@ -13,6 +13,7 @@ import (
 	bolt "go.etcd.io/bbolt"
 
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // TestMain chdirs the test binary into a temp dir so each test starts
@@ -67,9 +68,7 @@ func openTasksDB(t *testing.T) *store.Store {
 // with the init prompt). Idempotent.
 func mustInit(t *testing.T) {
 	t.Helper()
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 }
 
 func TestNew_Smoke(t *testing.T) {

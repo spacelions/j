@@ -113,6 +113,12 @@ type PlanRequest struct {
 	// spawn must create or truncate the file with mode 0o644 inside
 	// their detached spawn helper.
 	AgentLogPath string
+	// Mustread is the project-wide list of files every agent must
+	// read before starting (sourced from the project.mustread
+	// setting). Backends thread it into the first-run planner prompt
+	// builder; resume runs ignore it. Empty preserves byte-identical
+	// pre-mustread output.
+	Mustread []string
 }
 
 // WorkRequest is the input to Agent.Work. The caller pre-reads the plan
@@ -157,6 +163,10 @@ type WorkRequest struct {
 	// redirect stdout/stderr to when it spawns a fire-and-forget
 	// background child. Same contract as PlanRequest.AgentLogPath.
 	AgentLogPath string
+	// Mustread is the project-wide must-read list (see
+	// PlanRequest.Mustread). Threaded into the first-run coder
+	// prompt only; resume / fix runs ignore it.
+	Mustread []string
 }
 
 // VerifyRequest is the input to Agent.Verify. The caller pre-reads the
@@ -196,4 +206,8 @@ type VerifyRequest struct {
 	// redirect stdout/stderr to when it spawns a fire-and-forget
 	// background child. Same contract as PlanRequest.AgentLogPath.
 	AgentLogPath string
+	// Mustread is the project-wide must-read list (see
+	// PlanRequest.Mustread). Threaded into the first-run verifier
+	// prompt only; resume runs ignore it.
+	Mustread []string
 }

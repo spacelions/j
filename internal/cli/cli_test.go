@@ -10,6 +10,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/settings"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // TestMain chdir's the entire cli-package test binary into an
@@ -41,9 +42,7 @@ func resetGlobals(t *testing.T) {
 // Idempotent.
 func mustInit(t *testing.T) {
 	t.Helper()
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 	t.Cleanup(func() {
 		jDir, err := store.DefaultDir()
 		if err != nil {

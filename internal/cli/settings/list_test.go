@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 func runSettingsArgs(t *testing.T, args ...string) (string, string, error) {
@@ -41,9 +42,7 @@ func runListBare(t *testing.T) (string, error) {
 // with the init prompt). Idempotent.
 func mustInit(t *testing.T) {
 	t.Helper()
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 }
 
 // TestList_MissingDB pins the defense-in-depth branch in runList: a
@@ -61,6 +60,9 @@ func TestList_MissingDB(t *testing.T) {
 	}
 }
 
+// TestList_EmptyDB pins the listing after mustInit: the only row is
+// the project.mustread placeholder seeded by preflight; otherwise the
+// store is empty.
 func TestList_EmptyDB(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -69,8 +71,8 @@ func TestList_EmptyDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(out, "no settings stored") {
-		t.Fatalf("stdout = %q, want no settings", out)
+	if out != "project.mustread = \n" {
+		t.Fatalf("stdout = %q, want only project.mustread placeholder", out)
 	}
 }
 
@@ -118,6 +120,7 @@ func TestList_PrintsSortedEntries(t *testing.T) {
 		"coder.tool = cursor\n" +
 		"planner.model = sonnet-4\n" +
 		"planner.tool = cursor\n" +
+		"project.mustread = \n" +
 		"zeta.k = v\n"
 	if out != want {
 		t.Fatalf("stdout = %q, want %q", out, want)
@@ -161,9 +164,13 @@ func TestList_StatNonENOENT(t *testing.T) {
 
 // TestList_OnlyEmptyBuckets prints the same as missing keys: a DB
 // with only empty bucket names still lists no KVs, IsEmpty is true.
+// Bypasses the cobra preflight (which would otherwise seed
+// project.mustread and pollute the "only empty buckets" premise).
 func TestList_OnlyEmptyBuckets(t *testing.T) {
 	t.Chdir(t.TempDir())
-	mustInit(t)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
 	path, err := store.DefaultPath()
 	if err != nil {
 		t.Fatal(err)
@@ -178,9 +185,9 @@ func TestList_OnlyEmptyBuckets(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	out, _, err := runSettingsArgs(t)
+	out, err := runListBare(t)
 	if err != nil {
-		t.Fatalf("Execute: %v", err)
+		t.Fatalf("runList: %v", err)
 	}
 	if !strings.Contains(out, "no settings stored") {
 		t.Fatalf("stdout = %q, want no settings", out)

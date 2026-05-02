@@ -8,7 +8,7 @@ import (
 )
 
 func TestBuildCoder(t *testing.T) {
-	got := BuildCoder("/tmp/feature.plan.md", "1. step one\n2. step two", "")
+	got := BuildCoder("/tmp/feature.plan.md", "1. step one\n2. step two", "", nil)
 
 	if !strings.Contains(got, strings.TrimSpace(coder.Instruction)) {
 		t.Fatalf("prompt missing coder.Instruction: %q", got)
@@ -22,6 +22,29 @@ func TestBuildCoder(t *testing.T) {
 	if strings.Contains(strings.ToLower(got), "git worktree") {
 		t.Fatalf("empty worktree should not emit worktree line: %q", got)
 	}
+	if strings.Contains(got, "Before starting, read these project files") {
+		t.Fatalf("prompt should not include must-read block when nil: %q", got)
+	}
+}
+
+// TestBuildCoder_WithMustread pins the bulleted must-read block on the
+// coder prompt: it appears once, preserves case, and sits between the
+// coder instruction and the plan body.
+func TestBuildCoder_WithMustread(t *testing.T) {
+	got := BuildCoder("/tmp/feature.plan.md", "body", "", []string{"AGENTS.md", "CLAUDE.md"})
+	const header = "Before starting, read these project files for required context:"
+	if strings.Count(got, header) != 1 {
+		t.Fatalf("must-read header should appear exactly once: %q", got)
+	}
+	if !strings.Contains(got, "- AGENTS.md") || !strings.Contains(got, "- CLAUDE.md") {
+		t.Fatalf("must-read block missing entries: %q", got)
+	}
+	if strings.Contains(got, "- agents.md") || strings.Contains(got, "- claude.md") {
+		t.Fatalf("must-read block lowercased entries: %q", got)
+	}
+	if strings.Index(got, header) > strings.Index(got, "Plan (from") {
+		t.Fatalf("must-read block must precede plan: %q", got)
+	}
 }
 
 // TestBuildCoder_TrimsLeadingTrailingWhitespace confirms that excess
@@ -29,7 +52,7 @@ func TestBuildCoder(t *testing.T) {
 // into the rendered prompt — the coder.Instruction value is trimmed
 // before composition.
 func TestBuildCoder_TrimsLeadingTrailingWhitespace(t *testing.T) {
-	got := BuildCoder("p.md", "x", "")
+	got := BuildCoder("p.md", "x", "", nil)
 	if strings.HasPrefix(got, "\n") || strings.HasPrefix(got, " ") {
 		t.Fatalf("prompt should not start with whitespace: %q", got[:10])
 	}
@@ -39,7 +62,7 @@ func TestBuildCoder_TrimsLeadingTrailingWhitespace(t *testing.T) {
 // appended on a non-empty worktree: the trailing line names the
 // worktree verbatim and keeps the create-via-git-worktree-add hint.
 func TestBuildCoder_WithWorktree(t *testing.T) {
-	got := BuildCoder("p.md", "body", "j-my-task")
+	got := BuildCoder("p.md", "body", "j-my-task", nil)
 	if !strings.Contains(got, "j-my-task") {
 		t.Fatalf("worktree prompt missing worktree name: %q", got)
 	}
@@ -73,7 +96,7 @@ func TestBuildCoderResume(t *testing.T) {
 	if strings.Contains(got, strings.TrimSpace(coder.Instruction)) {
 		t.Fatalf("resume prompt should NOT include coder.Instruction: %q", got)
 	}
-	if got == BuildCoder(planPath, body, "") {
+	if got == BuildCoder(planPath, body, "", nil) {
 		t.Fatal("resume prompt should differ from BuildCoder output")
 	}
 	if strings.Contains(strings.ToLower(got), "git worktree") {

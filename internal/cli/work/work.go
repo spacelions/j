@@ -20,6 +20,7 @@ import (
 	"github.com/spacelions/j/internal/cli/agentpick"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/mustread"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/mdfile"
 )
@@ -157,6 +158,10 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 	taskID := workTaskID(res)
 	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), tasklog.AgentLogFileName)
+	mustreadFiles, mustreadErr := mustread.LoadFromDefault()
+	if mustreadErr != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustreadErr)
+	}
 	pid, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:     res.PlanPath,
 		Body:         res.Body,
@@ -165,6 +170,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 		ResumeChatID: resumeID,
 		Worktree:     lc.task.Worktree,
 		AgentLogPath: agentLogPath,
+		Mustread:     mustreadFiles,
 	})
 	if workErr == nil && pid > 0 {
 		lc.recordBackground(pid, agentLogPath)

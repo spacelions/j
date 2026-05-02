@@ -19,6 +19,7 @@ import (
 	"github.com/spacelions/j/internal/cli/agentpick"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/mustread"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/mdfile"
 )
@@ -200,6 +201,10 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
 	}
 	agentLogPath := filepath.Join(taskDir, tasklog.AgentLogFileName)
+	mustreadFiles, mustreadErr := mustread.LoadFromDefault()
+	if mustreadErr != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustreadErr)
+	}
 	lc := beginPlanTask(opts, agent, model, taskID, target, string(body), resumeID)
 	pid, planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           target,
@@ -210,6 +215,7 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		Interactive:            *opts.Interactive,
 		ResumeChatID:           resumeID,
 		AgentLogPath:           agentLogPath,
+		Mustread:               mustreadFiles,
 	})
 
 	if planErr == nil && pid > 0 {

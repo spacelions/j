@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // spawnSleepingChild forks a `sleep 10` and returns its PID so a
@@ -38,9 +39,7 @@ func spawnSleepingChild(t *testing.T) int {
 func openTestStore(t *testing.T) *store.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatalf("DefaultTasksDBPath: %v", err)
