@@ -60,9 +60,9 @@ func TestList_MissingDB(t *testing.T) {
 	}
 }
 
-// TestList_EmptyDB pins the listing after mustInit: the only row is
-// the project.mustread placeholder seeded by preflight; otherwise the
-// store is empty.
+// TestList_EmptyDB pins the listing after mustInit: the only seeded
+// row is the project.mustread placeholder; the four known sections
+// always render in fixed order even when empty.
 func TestList_EmptyDB(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -71,8 +71,16 @@ func TestList_EmptyDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if out != "project.mustread = \n" {
-		t.Fatalf("stdout = %q, want only project.mustread placeholder", out)
+	want := "[project]\n" +
+		"  mustread = \n" +
+		"\n" +
+		"[planner]\n" +
+		"\n" +
+		"[coder]\n" +
+		"\n" +
+		"[verifier]\n"
+	if out != want {
+		t.Fatalf("stdout = %q, want %q", out, want)
 	}
 }
 
@@ -115,13 +123,22 @@ func TestList_PrintsSortedEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	want := "coder.interactive = false\n" +
-		"coder.model = gpt-5\n" +
-		"coder.tool = cursor\n" +
-		"planner.model = sonnet-4\n" +
-		"planner.tool = cursor\n" +
-		"project.mustread = \n" +
-		"zeta.k = v\n"
+	want := "[project]\n" +
+		"  mustread = \n" +
+		"\n" +
+		"[planner]\n" +
+		"  model = sonnet-4\n" +
+		"  tool = cursor\n" +
+		"\n" +
+		"[coder]\n" +
+		"  interactive = false\n" +
+		"  model = gpt-5\n" +
+		"  tool = cursor\n" +
+		"\n" +
+		"[verifier]\n" +
+		"\n" +
+		"[zeta]\n" +
+		"  k = v\n"
 	if out != want {
 		t.Fatalf("stdout = %q, want %q", out, want)
 	}
@@ -162,8 +179,9 @@ func TestList_StatNonENOENT(t *testing.T) {
 	}
 }
 
-// TestList_OnlyEmptyBuckets prints the same as missing keys: a DB
-// with only empty bucket names still lists no KVs, IsEmpty is true.
+// TestList_OnlyEmptyBuckets verifies the unknown-empty-bucket skip:
+// a DB whose only bucket is empty and unknown renders just the four
+// known section headers, with no entries and no [ghost] section.
 // Bypasses the cobra preflight (which would otherwise seed
 // project.mustread and pollute the "only empty buckets" premise).
 func TestList_OnlyEmptyBuckets(t *testing.T) {
@@ -189,7 +207,14 @@ func TestList_OnlyEmptyBuckets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runList: %v", err)
 	}
-	if !strings.Contains(out, "no settings stored") {
-		t.Fatalf("stdout = %q, want no settings", out)
+	want := "[project]\n" +
+		"\n" +
+		"[planner]\n" +
+		"\n" +
+		"[coder]\n" +
+		"\n" +
+		"[verifier]\n"
+	if out != want {
+		t.Fatalf("stdout = %q, want %q", out, want)
 	}
 }

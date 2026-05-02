@@ -12,4 +12,12 @@ Expected:
   - Stdout of `set` contains, in order, the lines:
       `set a.b = 1`
       `set c.d = 2`
-  - The `j settings` listing contains both `a.b = 1` and `c.d = 2`.
+  - The `j settings` listing renders the four known sections first
+    (`[project]`, `[planner]`, `[coder]`, `[verifier]`) and then
+    appends the two unknown buckets in alphabetical order:
+
+        [a]
+          b = 1
+        
+        [c]
+          d = 2

@@ -10,4 +10,8 @@ Steps:
 Expected:
   - The `set` invocation exits with code 0.
   - Stdout contains the line `set planner.tool = cursor`.
-  - The `j settings` listing contains `planner.tool = cursor`.
+  - The `j settings` listing renders the `[planner]` section with
+    a single row `  tool = cursor`:
+
+        [planner]
+          tool = cursor

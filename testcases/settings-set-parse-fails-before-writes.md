@@ -11,6 +11,18 @@ Steps:
 Expected:
   - The first command exits non-zero and prints an error mentioning
     `"bad-no-equals"` and `missing '='`.
-  - The `j settings` listing prints exactly `project.mustread = `
-    (the row seeded by `--mustread=`) — neither `a.b` nor `c.d`
-    appears, confirming the batch aborted before any `Put` ran.
+  - The `j settings` listing renders the four known sections, with
+    `[project]` carrying only the seeded row `  mustread = ` and the
+    other three sections empty:
+
+        [project]
+          mustread = 
+        
+        [planner]
+        
+        [coder]
+        
+        [verifier]
+
+  - Neither `[a]` nor `[c]` appears anywhere in the listing,
+    confirming the batch aborted before any `Put` ran.

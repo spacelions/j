@@ -9,7 +9,19 @@ Steps:
 
 Expected:
   - Exit code 0.
-  - Stdout is exactly: `project.mustread = ` followed by a newline —
-    the only row a `--mustread=` initialisation seeds. The
-    "no settings stored" branch is unreachable from a cobra-driven
+  - Stdout renders the four known sections in TOML order, with the only
+    seeded row (`mustread = `) under `[project]`:
+
+        [project]
+          mustread = 
+        
+        [planner]
+        
+        [coder]
+        
+        [verifier]
+
+  - There is exactly one blank line between sections and NO trailing
+    blank line after `[verifier]`.
+  - The "no settings stored" branch is unreachable from a cobra-driven
     init now that preflight always persists at least one row.

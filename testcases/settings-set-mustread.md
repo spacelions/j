@@ -15,9 +15,9 @@ Steps:
 
 Expected:
   - Each `set` invocation exits with code 0.
-  - The first `j settings` listing contains the row
-    `project.mustread = AGENTS.md;CLAUDE.md` exactly (case preserved,
-    semicolon-delimited).
-  - The second `j settings` listing contains
-    `project.mustread = AGENTS.md` (the previous value is overwritten,
-    not appended).
+  - The first `j settings` listing renders, under the `[project]`
+    section header, the row `  mustread = AGENTS.md;CLAUDE.md`
+    exactly (case preserved, semicolon-delimited, two-space indent).
+  - The second `j settings` listing renders, under `[project]`,
+    the row `  mustread = AGENTS.md` (the previous value is
+    overwritten, not appended).

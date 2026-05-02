@@ -11,6 +11,16 @@ import (
 	"github.com/spacelions/j/internal/store"
 )
 
+// knownSectionOrder fixes the display order for the planner/coder/verifier
+// pipeline plus the project bucket. These four sections always render even
+// when empty so the layout is predictable.
+var knownSectionOrder = []string{
+	store.BucketProject,
+	store.BucketPlanner,
+	store.BucketCoder,
+	store.BucketVerifier,
+}
+
 func runList(cmd *cobra.Command) error {
 	path, err := store.DefaultPath()
 	if err != nil {
@@ -25,26 +35,37 @@ func runList(cmd *cobra.Command) error {
 	}
 
 	return withOpenStore(func(_ string, s *store.Store) error {
-		empty, err := s.IsEmpty()
-		if err != nil {
-			return err
-		}
-		if empty {
-			fmt.Fprintln(cmd.OutOrStdout(), "no settings stored")
-			return nil
-		}
 		buckets, err := s.ListBuckets()
 		if err != nil {
 			return err
 		}
-		out := cmd.OutOrStdout()
+		known := map[string]bool{}
+		for _, b := range knownSectionOrder {
+			known[b] = true
+		}
+		sections := append([]string{}, knownSectionOrder...)
 		for _, b := range buckets {
+			if !known[b] {
+				sections = append(sections, b)
+			}
+		}
+		out := cmd.OutOrStdout()
+		first := true
+		for _, b := range sections {
 			entries, err := s.List(b)
 			if err != nil {
 				return err
 			}
+			if !known[b] && len(entries) == 0 {
+				continue
+			}
+			if !first {
+				fmt.Fprintln(out)
+			}
+			first = false
+			fmt.Fprintf(out, "[%s]\n", b)
 			for _, kv := range entries {
-				fmt.Fprintf(out, "%s.%s = %s\n", b, kv.Key, kv.Value)
+				fmt.Fprintf(out, "  %s = %s\n", kv.Key, kv.Value)
 			}
 		}
 		return nil

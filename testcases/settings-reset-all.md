@@ -23,7 +23,8 @@ Steps (interactive variant — MANUAL, requires a TTY):
     prompt appears on stdin (line-based: type `y` and Enter to accept,
     anything else to abort).
     - Type `n` and Enter: exit 0, stdout reports `reset aborted`,
-      `.j/` still exists, `j settings` still shows `plan.tool=cursor`.
+      `.j/` still exists, `j settings` still shows the `[plan]`
+      section with a `  tool = cursor` row.
     - Re-init, set the key again, run `reset` again, this time type
       `y` and Enter: exit 0, stdout reports `removed <abs-path>`,
       `.j/` is gone.

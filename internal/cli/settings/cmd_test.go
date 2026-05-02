@@ -34,7 +34,8 @@ func TestNew_Smoke(t *testing.T) {
 
 // TestNew_BareSettingsRunsList exercises the parent RunE: plain
 // `j settings` is the list path. After mustInit the DB carries only
-// the project.mustread placeholder seeded by preflight.
+// the project.mustread placeholder seeded by preflight, but the four
+// known section headers always render in fixed order.
 func TestNew_BareSettingsRunsList(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -47,7 +48,15 @@ func TestNew_BareSettingsRunsList(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if stdout.String() != "project.mustread = \n" {
-		t.Fatalf("stdout = %q, want only project.mustread placeholder", stdout.String())
+	want := "[project]\n" +
+		"  mustread = \n" +
+		"\n" +
+		"[planner]\n" +
+		"\n" +
+		"[coder]\n" +
+		"\n" +
+		"[verifier]\n"
+	if stdout.String() != want {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 	}
 }

@@ -12,5 +12,10 @@ Expected:
   - Stdout shows two confirmation lines, in order:
       `set dup.k = 1`
       `set dup.k = 2`
-  - The `j settings` listing shows `dup.k = 2` (the second write
-    overwrote the first; no special error for duplicates).
+  - The `j settings` listing renders the unknown `dup` bucket as a
+    single section after the four known sections, with the row
+    `  k = 2` (the second write overwrote the first; no special error
+    for duplicates):
+
+        [dup]
+          k = 2

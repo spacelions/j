@@ -17,9 +17,10 @@ Expected:
   - The second `j tasks` run does NOT re-prompt — empty value with
     `set=true` skips the question per the requirement
     "if user leaves it blank, then it is `mustread=`".
-  - The `j settings` listing contains a row that reads exactly
-    `project.mustread = ` (key present, value empty). The trailing
-    space is significant: the rendering is `<key> = <value>`, and an
+  - The `j settings` listing renders, under the `[project]` section
+    header, a row that reads exactly `  mustread = ` (two-space
+    indent, key present, value empty). The trailing space is
+    significant: the rendering is `  <key> = <value>`, and an
     empty value yields no characters after `= `.
 
 Manual: yes (drives the huh input form).

@@ -11,6 +11,12 @@ Steps:
 
 Expected:
   - The `reset plan.tool` invocation exits with code 0.
-  - The final `j settings` listing does NOT contain `plan.tool` but
-    DOES still contain `plan.model=sonnet-4` (single-key reset must
-    leave the rest of the bucket intact).
+  - The final `j settings` listing renders the unknown `plan` bucket
+    as a single section after the four known sections, containing
+    only `  model = sonnet-4` (single-key reset must leave the rest
+    of the bucket intact):
+
+        [plan]
+          model = sonnet-4
+
+  - No `tool` row appears under `[plan]`.
