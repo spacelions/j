@@ -14,10 +14,11 @@ Steps:
     "Files every agent must read first" prompt fires.
 
 Expected:
-  - Directory 1: `j settings` lists
-    `project.mustread = AGENTS.md;CLAUDE.md` (case-preserved).
-  - Directory 2: `j settings` lists `project.mustread = ` (empty
-    value persisted) and the listing contains exactly that one row.
+  - Directory 1: `j settings` renders `[project]` with the row
+    `  mustread = AGENTS.md;CLAUDE.md` (case-preserved).
+  - Directory 2: `j settings` renders `[project]` with the row
+    `  mustread = ` (empty value persisted); `[planner]`, `[coder]`,
+    and `[verifier]` render as empty section headers.
   - Directory 3: the preflight prompt fires for `j settings` because
     `--mustread` was not passed; the flag is opt-in.
 

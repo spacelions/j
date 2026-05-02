@@ -17,7 +17,7 @@ Expected:
   - The first `j tasks` invocation prompts for must-read once.
   - The second `j tasks` invocation does NOT re-prompt — the
     persisted value short-circuits the preflight check.
-  - The `j settings` listing contains
-    `project.mustread = AGENTS.md;CLAUDE.md`.
+  - The `j settings` listing renders, under the `[project]` section
+    header, the row `  mustread = AGENTS.md;CLAUDE.md`.
 
 Manual: yes (drives the huh input form).

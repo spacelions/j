@@ -14,7 +14,15 @@ Expected:
     line such as `set plan.tool=cursor` (or similar; the exact wording
     is whatever `j settings set` prints — exit code 0 is the
     load-bearing assertion).
-  - The first `j settings` listing contains `plan.tool` and the value
-    `cursor`.
-  - The second `j settings` listing contains BOTH `plan.tool=cursor`
-    AND `plan.model=sonnet-4` (one row per key).
+  - Listings render in TOML form: a `[plan]` header followed by
+    indented `key = value` rows for the unknown `plan` bucket, appended
+    after the four known sections (`[project]`, `[planner]`, `[coder]`,
+    `[verifier]`).
+  - The first `j settings` listing contains the `[plan]` section with
+    a row `  tool = cursor`.
+  - The second `j settings` listing contains the `[plan]` section with
+    BOTH rows in alphabetical key order:
+
+        [plan]
+          model = sonnet-4
+          tool = cursor

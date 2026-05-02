@@ -9,8 +9,8 @@ Steps:
 
 Expected:
   - The set invocation exits with code 0.
-  - The listing contains the row
-    `project.mustread = AGENTS.md;ClAuDe.MD` EXACTLY — no
+  - The listing renders, under the `[project]` section header, the
+    row `  mustread = AGENTS.md;ClAuDe.MD` EXACTLY — no
     lowercasing, no case folding. The bucket name `project` and the
-    key `mustread` are also case-sensitive: a listing row spelled
-    `Project.mustread` or `project.MustRead` is a failure.
+    key `mustread` are also case-sensitive: a header spelled
+    `[Project]` or a key spelled `MustRead` is a failure.
