@@ -149,13 +149,13 @@ func (*Agent) Plan(ctx context.Context, req codingagents.PlanRequest) (int, erro
 // pass --mode plan and we do not capture stdout for a file write. Two
 // flavours are supported:
 //
-//   - Interactive: launch cursor's TUI with the coder prompt as the
+//   - Interactive: launch cursor's TUI with the worker prompt as the
 //     initial user message; the user drives the session until cursor
 //     exits. The interactive branch does not gain --force/--trust
 //     because the user can approve tool calls and the workspace
 //     trust prompt manually in the TUI.
 //   - Headless: --print --output-format text --force --trust against
-//     the coder prompt, fire-and-forget. --force auto-approves tool
+//     the worker prompt, fire-and-forget. --force auto-approves tool
 //     calls (no interactive approval prompts) and --trust skips the
 //     workspace trust prompt (it only takes effect with
 //     --print/headless); together they make `j work` against cursor
@@ -217,11 +217,11 @@ func buildPlanPrompt(req codingagents.PlanRequest) string {
 	)
 }
 
-// buildWorkPrompt picks the right coder prompt for req. The
+// buildWorkPrompt picks the right worker prompt for req. The
 // fix-findings branch wins first: a non-empty FixFindings means the
-// outer verify loop wants the previous coder session to address a
+// outer verify loop wants the previous worker session to address a
 // concrete set of verifier findings without re-planning. Resume
-// runs are next; first-run falls through to the full coder
+// runs are next; first-run falls through to the full worker
 // instruction. Every branch threads req.Worktree through so the
 // prompt carries the worktree-direction line when the task has one.
 func buildWorkPrompt(req codingagents.WorkRequest) string {
@@ -229,9 +229,9 @@ func buildWorkPrompt(req codingagents.WorkRequest) string {
 		return prompts.BuildVerifierFix(req.PlanPath, req.Body, "verifier_findings.md", req.FixFindings, req.Worktree)
 	}
 	if req.Resume {
-		return prompts.BuildCoderResume(req.PlanPath, req.Body, req.Worktree)
+		return prompts.BuildWorkerResume(req.PlanPath, req.Body, req.Worktree)
 	}
-	return prompts.BuildCoder(req.PlanPath, req.Body, req.Worktree, req.Mustread)
+	return prompts.BuildWorker(req.PlanPath, req.Body, req.Worktree, req.Mustread)
 }
 
 // Verify runs cursor-agent against the requirements + plan pair. The

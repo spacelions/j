@@ -18,10 +18,10 @@ Expected:
     
     [planner]
     
-    [coder]
+    [worker]
     
     [verifier]
 
   - There must be NO trailing blank line after `[verifier]` (the bytes
     after the final newline of `[verifier]` are EOF, not another `\n`).
-  - The known-section order is fixed: project → planner → coder → verifier.
+  - The known-section order is fixed: project → planner → worker → verifier.

@@ -20,7 +20,7 @@ func New() *cobra.Command {
 		Use:   "settings",
 		Short: "List, set, or reset local j settings",
 		Long: "Manages the on-disk settings database used by `j` to persist user " +
-			"preferences (e.g. the planner or coder tool/model last selected). The DB " +
+			"preferences (e.g. the planner or worker tool/model last selected). The DB " +
 			"lives at <cwd>/.j/settings. The file is created by `j init`; the " +
 			"settings subcommands assume it already exists (a missing file makes the " +
 			"shared pre-flight prompt the user to run init).",

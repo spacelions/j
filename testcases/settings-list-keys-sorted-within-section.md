@@ -3,15 +3,15 @@ Prerequisites:
   - `cd` into a fresh empty directory and run `./bin/j init --yes --must-read=`.
 
 Steps:
-  - Run `./bin/j settings set coder.tool=cursor coder.model=gpt-5 coder.interactive=false`.
+  - Run `./bin/j settings set worker.tool=cursor worker.model=gpt-5 worker.interactive=false`.
   - Run `./bin/j settings`.
 
 Expected:
   - Exit code 0.
-  - Inside `[coder]`, keys appear in strict alphabetical order regardless
+  - Inside `[worker]`, keys appear in strict alphabetical order regardless
     of the insertion order on the `set` command line:
 
-    [coder]
+    [worker]
       interactive = false
       model = gpt-5
       tool = cursor

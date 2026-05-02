@@ -20,7 +20,7 @@ Expected:
       model = opus
       tool = cursor
     
-    [coder]
+    [worker]
     
     [verifier]
 

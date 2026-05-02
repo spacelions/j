@@ -368,7 +368,7 @@ func seedWorkDoneTask(t *testing.T, summary, planBody, requirementBody string) s
 // TestRun_PassOnFirstIteration pins the happy path: the verifier
 // writes VERDICT: PASS on its first turn, the orchestrator
 // finalises the task as `completed` with DoneAt stamped, and the
-// coder is never invoked.
+// worker is never invoked.
 func TestRun_PassOnFirstIteration(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -421,7 +421,7 @@ func TestRun_PassOnFirstIteration(t *testing.T) {
 }
 
 // TestRun_FailThenPass exercises the bounded loop convergence: the
-// first verifier turn returns FAIL, the coder fix turn runs with
+// first verifier turn returns FAIL, the worker fix turn runs with
 // the findings populated, and the second verifier turn returns
 // PASS. The task ends as `completed`.
 func TestRun_FailThenPass(t *testing.T) {
@@ -451,13 +451,13 @@ func TestRun_FailThenPass(t *testing.T) {
 	}
 	work := agent.workedReqs[0]
 	if !work.Resume {
-		t.Fatalf("coder fix turn should set Resume=true: %+v", work)
+		t.Fatalf("worker fix turn should set Resume=true: %+v", work)
 	}
 	if !strings.Contains(work.FixFindings, "VERDICT: FAIL") {
 		t.Fatalf("FixFindings missing FAIL line: %q", work.FixFindings)
 	}
 	if work.ResumeChatID != "seed-work-cursor" {
-		t.Fatalf("coder fix turn should reuse seeded WorkResumeCursor, got %q", work.ResumeChatID)
+		t.Fatalf("worker fix turn should reuse seeded WorkResumeCursor, got %q", work.ResumeChatID)
 	}
 	// The second verify turn must Resume so the previous
 	// verifier session is reused.
@@ -472,7 +472,7 @@ func TestRun_FailThenPass(t *testing.T) {
 
 // TestRun_ThreadsWorktreeIntoRequests pins R2/R3: a task seeded with
 // a non-empty Worktree pushes that value into every VerifyRequest
-// and into the coder fix WorkRequest, so both prompts can carry the
+// and into the worker fix WorkRequest, so both prompts can carry the
 // worktree-direction line.
 func TestRun_ThreadsWorktreeIntoRequests(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -568,7 +568,7 @@ func TestRun_LoopExhausted(t *testing.T) {
 
 // TestRun_MaxIterations1 disables the loop: the verifier runs once
 // and a FAIL terminates the task as verify-done without invoking
-// the coder.
+// the worker.
 func TestRun_MaxIterations1(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -627,16 +627,16 @@ func TestRun_VerifierError(t *testing.T) {
 	}
 }
 
-// TestRun_CoderFixError exercises the error path during the coder
-// fix turn: verify returns FAIL, coder errors out, the lifecycle
+// TestRun_WorkerFixError exercises the error path during the worker
+// fix turn: verify returns FAIL, worker errors out, the lifecycle
 // records `help`.
-func TestRun_CoderFixError(t *testing.T) {
+func TestRun_WorkerFixError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan body", "")
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"FAIL", "PASS"}
-	agent.workErr = errors.New("coder boom")
+	agent.workErr = errors.New("worker boom")
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
@@ -647,7 +647,7 @@ func TestRun_CoderFixError(t *testing.T) {
 		Agents:        []codingagents.Agent{agent},
 		UI:            &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "coder boom") {
+	if err == nil || !strings.Contains(err.Error(), "worker boom") {
 		t.Fatalf("err = %v", err)
 	}
 	tasks := readTasks(t)

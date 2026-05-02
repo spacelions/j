@@ -90,7 +90,7 @@ type Task struct {
 	InvokedTool  string     `json:"invoked_tool"`
 	InvokedModel string     `json:"invoked_model"`
 	// Worktree is the bare git-worktree name (no slashes, no path)
-	// the coder and verifier should operate against for this task.
+	// the worker and verifier should operate against for this task.
 	// It is minted by `j work` on first run via WorktreeNameFor and
 	// then preserved on every subsequent transition. Empty for
 	// tasks worked before the field was introduced; downstream

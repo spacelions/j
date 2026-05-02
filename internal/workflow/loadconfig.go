@@ -28,7 +28,7 @@ type Config struct {
 	APIKey string
 	// Model is the Gemini model name (e.g. "gemini-2.5-flash").
 	Model string
-	// MaxIterations bounds the coder/verifier loop.
+	// MaxIterations bounds the worker/verifier loop.
 	MaxIterations uint
 }
 

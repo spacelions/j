@@ -32,7 +32,7 @@ type workLifecycle struct {
 // staged the plan markdown into <cwd>/.j/tasks/<id>/plan.md (and
 // optionally requirements.md). This helper just stamps the bbolt row.
 //
-// Worktree is minted via store.WorktreeNameFor so the coder and the
+// Worktree is minted via store.WorktreeNameFor so the worker and the
 // verifier share one rule; callers that pre-populate Worktree (none
 // today — `j plan` does not set it) still have their value preserved.
 func beginWorkTaskNew(opts Options, agent codingagents.Agent, model, taskID, planPath, requirement, planBody, workResumeChatID string) *workLifecycle {

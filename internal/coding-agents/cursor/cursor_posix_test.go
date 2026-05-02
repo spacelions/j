@@ -13,9 +13,9 @@ import (
 	"time"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/workflow/agents/coder"
 	"github.com/spacelions/j/internal/workflow/agents/planner"
 	"github.com/spacelions/j/internal/workflow/agents/verifier"
+	"github.com/spacelions/j/internal/workflow/agents/worker"
 )
 
 // spawnWaitTimeout bounds the polling helpers below. The cursor stub
@@ -815,8 +815,8 @@ func TestWork_Interactive_FixFindings(t *testing.T) {
 			t.Fatalf("fix prompt missing %q: %q", want, prompt)
 		}
 	}
-	if strings.Contains(prompt, strings.TrimSpace(coder.Instruction)) {
-		t.Fatalf("fix prompt should not include coder.Instruction: %q", prompt)
+	if strings.Contains(prompt, strings.TrimSpace(worker.Instruction)) {
+		t.Fatalf("fix prompt should not include worker.Instruction: %q", prompt)
 	}
 	if !strings.Contains(prompt, "Do not re-plan") {
 		t.Fatalf("fix prompt missing re-plan guard: %q", prompt)
@@ -825,7 +825,7 @@ func TestWork_Interactive_FixFindings(t *testing.T) {
 
 // TestWork_FixFindings_BeatsResume pins precedence in
 // buildWorkPrompt: when both FixFindings and Resume are set, the
-// fix branch wins so the coder receives the actionable findings
+// fix branch wins so the worker receives the actionable findings
 // rather than a generic resume cue.
 func TestWork_FixFindings_BeatsResume(t *testing.T) {
 	dir := t.TempDir()
@@ -1178,7 +1178,7 @@ func TestVerify_Headless_SpawnError(t *testing.T) {
 }
 
 // TestWork_Interactive_Resume mirrors TestPlan_Interactive_Resume for
-// the coder side (AC#2 / AC#5c).
+// the worker side (AC#2 / AC#5c).
 func TestWork_Interactive_Resume(t *testing.T) {
 	dir := t.TempDir()
 	plan := filepath.Join(dir, "spec.plan.md")
@@ -1218,8 +1218,8 @@ func TestWork_Interactive_Resume(t *testing.T) {
 			t.Fatalf("resume prompt missing %q: %q", marker, prompt)
 		}
 	}
-	if strings.Contains(prompt, strings.TrimSpace(coder.Instruction)) {
-		t.Fatalf("resume prompt should not include coder.Instruction: %q", prompt)
+	if strings.Contains(prompt, strings.TrimSpace(worker.Instruction)) {
+		t.Fatalf("resume prompt should not include worker.Instruction: %q", prompt)
 	}
 	for _, banned := range []string{"Save", "Then exit."} {
 		if strings.Contains(prompt, banned) {

@@ -10,7 +10,7 @@ Steps:
 Expected:
   - Exit code 0.
   - The four known sections appear FIRST, in fixed order (`[project]`,
-    `[planner]`, `[coder]`, `[verifier]`).
+    `[planner]`, `[worker]`, `[verifier]`).
   - The two unknown buckets appear AFTER `[verifier]`, in alphabetical
     order: `[alpha]` before `[zeta]`.
   - Stdout (modulo the seeded `mustread = `) is:
@@ -20,7 +20,7 @@ Expected:
     
     [planner]
     
-    [coder]
+    [worker]
     
     [verifier]
     

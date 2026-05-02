@@ -1,5 +1,5 @@
-// Package verifier defines the verifier sub-agent of the planner/coder/verifier
-// workflow. It reviews the coder's output against the plan and writes a short
+// Package verifier defines the verifier sub-agent of the planner/worker/verifier
+// workflow. It reviews the worker's output against the plan and writes a short
 // verdict under the transient state key "temp:review".
 package verifier
 
@@ -28,7 +28,7 @@ func New(m model.LLM) (agent.Agent, error) {
 	return llmagent.New(llmagent.Config{
 		Name:        Name,
 		Model:       m,
-		Description: "Reviews the coder's output against the plan and returns a concise verdict.",
+		Description: "Reviews the worker's output against the plan and returns a concise verdict.",
 		Instruction: Instruction,
 		OutputKey:   OutputKey,
 	})

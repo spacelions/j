@@ -16,11 +16,11 @@ func TestPersistAgentSelection_NilStore(t *testing.T) {
 
 func TestPersistAgentSelection_HappyPath(t *testing.T) {
 	s := openInTemp(t)
-	if err := s.EnsureBucket(BucketCoder); err != nil {
+	if err := s.EnsureBucket(BucketWorker); err != nil {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	PersistAgentSelection(s, &stderr, BucketCoder, "cursor", "sonnet-4", false)
+	PersistAgentSelection(s, &stderr, BucketWorker, "cursor", "sonnet-4", false)
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
@@ -29,7 +29,7 @@ func TestPersistAgentSelection_HappyPath(t *testing.T) {
 		"model":       "sonnet-4",
 		"interactive": "false",
 	} {
-		got, ok, err := s.Get(BucketCoder, k)
+		got, ok, err := s.Get(BucketWorker, k)
 		if err != nil || !ok || got != want {
 			t.Fatalf("Get(%s) = (%q,%v,%v) want %q", k, got, ok, err, want)
 		}

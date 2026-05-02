@@ -4,26 +4,26 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/spacelions/j/internal/workflow/agents/coder"
+	"github.com/spacelions/j/internal/workflow/agents/worker"
 )
 
-// BuildCoder composes the coder's shared instruction with a plan
-// markdown body. Reusing coder.Instruction keeps the coding rules in a
+// BuildWorker composes the worker's shared instruction with a plan
+// markdown body. Reusing worker.Instruction keeps the coding rules in a
 // single source of truth across every backend, mirroring how
 // BuildPlanner reuses planner.Instruction for the planning prompt.
 //
 // A non-empty worktree appends a single trailing line telling the
-// coder which git worktree to use for this task; an empty worktree
-// leaves the prompt unchanged so the coder behaves as before.
+// worker which git worktree to use for this task; an empty worktree
+// leaves the prompt unchanged so the worker behaves as before.
 //
 // mustread, when non-empty, is rendered as a bulleted "Before
 // starting, read these project files…" block between the instruction
 // and the plan. An empty / nil mustread leaves the prompt unchanged.
-func BuildCoder(planPath, body, worktree string, mustread []string) string {
+func BuildWorker(planPath, body, worktree string, mustread []string) string {
 	return appendWorktreeLine(
 		fmt.Sprintf(
 			"%s%s\n\nPlan (from %q):\n%s",
-			strings.TrimSpace(coder.Instruction),
+			strings.TrimSpace(worker.Instruction),
 			mustreadSuffix(mustread),
 			planPath,
 			body,
@@ -32,17 +32,17 @@ func BuildCoder(planPath, body, worktree string, mustread []string) string {
 	)
 }
 
-// BuildCoderResume composes the resume-only coder prompt: the agent
+// BuildWorkerResume composes the resume-only worker prompt: the agent
 // inspects the previous session, checks what was already implemented,
 // summarises it for the user, and continues only the outstanding
 // work. The plan path and body are embedded for context — there is
 // no instruction to re-implement from scratch.
 //
 // As with BuildPlannerResume, this builder does NOT include
-// coder.Instruction; the first-run BuildCoder already seeded the
+// worker.Instruction; the first-run BuildWorker already seeded the
 // session with the full coding rules. A non-empty worktree appends
-// the same worktree-direction line as BuildCoder.
-func BuildCoderResume(planPath, body, worktree string) string {
+// the same worktree-direction line as BuildWorker.
+func BuildWorkerResume(planPath, body, worktree string) string {
 	return appendWorktreeLine(
 		fmt.Sprintf(
 			"You are resuming a previous coding session. "+
@@ -59,9 +59,9 @@ func BuildCoderResume(planPath, body, worktree string) string {
 }
 
 // appendWorktreeLine returns prompt unchanged when worktree is empty
-// and otherwise appends a single trailing line telling the coder /
+// and otherwise appends a single trailing line telling the worker /
 // verifier which git worktree to operate against. Centralising the
-// phrasing in one helper keeps BuildCoder / BuildCoderResume /
+// phrasing in one helper keeps BuildWorker / BuildWorkerResume /
 // BuildVerifierFix byte-identical on the suffix so prompt tests can
 // assert the same substring uniformly.
 func appendWorktreeLine(prompt, worktree string) string {

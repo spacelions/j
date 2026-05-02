@@ -349,17 +349,17 @@ func TestFromStore_StoreReadError(t *testing.T) {
 }
 
 func TestFromStore_HappyPath(t *testing.T) {
-	s := openTestStore(t, store.BucketCoder)
-	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+	s := openTestStore(t, store.BucketWorker)
+	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := s.Put(store.BucketCoder, "model", "gpt-5"); err != nil {
+	if err := s.Put(store.BucketWorker, "model", "gpt-5"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 	cursor := newStubAgent("cursor", "sonnet-4", "gpt-5")
 	codex := newStubAgent("codex", "o4")
 
-	agent, model, err := FromStore(context.Background(), s, store.BucketCoder, []codingagents.Agent{codex, cursor})
+	agent, model, err := FromStore(context.Background(), s, store.BucketWorker, []codingagents.Agent{codex, cursor})
 	if err != nil {
 		t.Fatalf("FromStore: %v", err)
 	}
@@ -412,7 +412,7 @@ func TestFromStore_DoesNotPersist(t *testing.T) {
 // returns (false, false) when no store is configured, so callers
 // can pipe Options.Store straight in without a nil check.
 func TestStoredInteractive_NilStore(t *testing.T) {
-	v, ok := StoredInteractive(nil, store.BucketCoder)
+	v, ok := StoredInteractive(nil, store.BucketWorker)
 	if v || ok {
 		t.Fatalf("StoredInteractive(nil) = (%v, %v), want (false, false)", v, ok)
 	}
@@ -421,8 +421,8 @@ func TestStoredInteractive_NilStore(t *testing.T) {
 // TestStoredInteractive_Missing covers the bucket-exists-but-no-key
 // branch: ok must be false and v must be the zero value.
 func TestStoredInteractive_Missing(t *testing.T) {
-	s := openTestStore(t, store.BucketCoder)
-	v, ok := StoredInteractive(s, store.BucketCoder)
+	s := openTestStore(t, store.BucketWorker)
+	v, ok := StoredInteractive(s, store.BucketWorker)
 	if v || ok {
 		t.Fatalf("StoredInteractive(missing) = (%v, %v), want (false, false)", v, ok)
 	}
@@ -431,11 +431,11 @@ func TestStoredInteractive_Missing(t *testing.T) {
 // TestStoredInteractive_Empty asserts that an empty stored value is
 // treated as "not set" so callers fall back to the cobra default.
 func TestStoredInteractive_Empty(t *testing.T) {
-	s := openTestStore(t, store.BucketCoder)
-	if err := s.Put(store.BucketCoder, "interactive", ""); err != nil {
+	s := openTestStore(t, store.BucketWorker)
+	if err := s.Put(store.BucketWorker, "interactive", ""); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	v, ok := StoredInteractive(s, store.BucketCoder)
+	v, ok := StoredInteractive(s, store.BucketWorker)
 	if v || ok {
 		t.Fatalf("StoredInteractive(empty) = (%v, %v), want (false, false)", v, ok)
 	}
@@ -445,11 +445,11 @@ func TestStoredInteractive_Empty(t *testing.T) {
 // (e.g. corruption) collapses to the not-set sentinel so we never
 // surface a parse error to the caller.
 func TestStoredInteractive_Unparseable(t *testing.T) {
-	s := openTestStore(t, store.BucketCoder)
-	if err := s.Put(store.BucketCoder, "interactive", "garbage"); err != nil {
+	s := openTestStore(t, store.BucketWorker)
+	if err := s.Put(store.BucketWorker, "interactive", "garbage"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	v, ok := StoredInteractive(s, store.BucketCoder)
+	v, ok := StoredInteractive(s, store.BucketWorker)
 	if v || ok {
 		t.Fatalf("StoredInteractive(garbage) = (%v, %v), want (false, false)", v, ok)
 	}
@@ -484,11 +484,11 @@ func TestStoredInteractive_False(t *testing.T) {
 // surfaces the failure and StoredInteractive returns the
 // not-set sentinel rather than propagating the error.
 func TestStoredInteractive_GetError(t *testing.T) {
-	s := openTestStore(t, store.BucketCoder)
+	s := openTestStore(t, store.BucketWorker)
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	v, ok := StoredInteractive(s, store.BucketCoder)
+	v, ok := StoredInteractive(s, store.BucketWorker)
 	if v || ok {
 		t.Fatalf("StoredInteractive(closed) = (%v, %v), want (false, false)", v, ok)
 	}
@@ -541,13 +541,13 @@ func TestResolve_ToolOnly_FillsModelFromStore(t *testing.T) {
 
 // TestResolve_ModelOnly_FillsToolFromStore is the symmetric case.
 func TestResolve_ModelOnly_FillsToolFromStore(t *testing.T) {
-	s := openTestStore(t, store.BucketCoder)
-	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+	s := openTestStore(t, store.BucketWorker)
+	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	agent, model, err := Resolve(context.Background(), s, store.BucketCoder, []codingagents.Agent{cursor}, "", "opus")
+	agent, model, err := Resolve(context.Background(), s, store.BucketWorker, []codingagents.Agent{cursor}, "", "opus")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -590,7 +590,7 @@ func TestResolve_ModelOnly_EmptyBucket(t *testing.T) {
 }
 
 // TestResolve_BothEmpty signals to the caller (selectPlanner /
-// selectCoder / selectVerifier) that no override was requested so it
+// selectWorker / selectVerifier) that no override was requested so it
 // can fall through to FromStore / Pick.
 func TestResolve_BothEmpty(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")

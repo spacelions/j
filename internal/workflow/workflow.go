@@ -1,6 +1,6 @@
-// Package workflow wires the Google ADK launcher and a planner/coder/verifier
+// Package workflow wires the Google ADK launcher and a planner/worker/verifier
 // workflow: a SequentialAgent that first runs a planner, then a LoopAgent that
-// iterates an inner SequentialAgent of coder -> verifier up to maxIterations.
+// iterates an inner SequentialAgent of worker -> verifier up to maxIterations.
 //
 // v1 has no ADK tools on any sub-agent. Because an LLM sub-agent without tools
 // cannot easily set ctx.Actions().Escalate, the loop exits only when the
@@ -22,12 +22,12 @@ import (
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/genai"
 
-	"github.com/spacelions/j/internal/workflow/agents/coder"
 	"github.com/spacelions/j/internal/workflow/agents/planner"
 	"github.com/spacelions/j/internal/workflow/agents/verifier"
+	"github.com/spacelions/j/internal/workflow/agents/worker"
 )
 
-// Run builds the planner/coder/verifier workflow and executes the ADK
+// Run builds the planner/worker/verifier workflow and executes the ADK
 // universal launcher. The cfg carries the runtime knobs (API key, model,
 // iterations); launcherArgs are passed straight to the launcher parser
 // (nil/empty for console, or "web" "api" "webui" for the local web stack).
@@ -42,9 +42,9 @@ func Run(ctx context.Context, cfg Config, launcherArgs []string) error {
 		return fmt.Errorf("workflow: planner: %w", err)
 	}
 
-	c, err := coder.New(m)
+	w, err := worker.New(m)
 	if err != nil {
-		return fmt.Errorf("workflow: coder: %w", err)
+		return fmt.Errorf("workflow: worker: %w", err)
 	}
 
 	vfr, err := verifier.New(m)
@@ -55,8 +55,8 @@ func Run(ctx context.Context, cfg Config, launcherArgs []string) error {
 	innerBody, err := sequentialagent.New(sequentialagent.Config{
 		AgentConfig: agent.Config{
 			Name:        "code_verify_body",
-			Description: "Single coder -> verifier pass; one iteration of the outer loop.",
-			SubAgents:   []agent.Agent{c, vfr},
+			Description: "Single worker -> verifier pass; one iteration of the outer loop.",
+			SubAgents:   []agent.Agent{w, vfr},
 		},
 	})
 	if err != nil {
@@ -67,7 +67,7 @@ func Run(ctx context.Context, cfg Config, launcherArgs []string) error {
 		MaxIterations: cfg.MaxIterations,
 		AgentConfig: agent.Config{
 			Name:        "code_verify_loop",
-			Description: "Iterates coder -> verifier up to a fixed number of passes.",
+			Description: "Iterates worker -> verifier up to a fixed number of passes.",
 			SubAgents:   []agent.Agent{innerBody},
 		},
 	})
@@ -77,8 +77,8 @@ func Run(ctx context.Context, cfg Config, launcherArgs []string) error {
 
 	root, err := sequentialagent.New(sequentialagent.Config{
 		AgentConfig: agent.Config{
-			Name:        "planner_coder_verifier",
-			Description: "Runs the planner once, then loops coder -> verifier.",
+			Name:        "planner_worker_verifier",
+			Description: "Runs the planner once, then loops worker -> verifier.",
 			SubAgents:   []agent.Agent{p, loop},
 		},
 	})

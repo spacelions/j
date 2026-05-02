@@ -13,7 +13,7 @@ import (
 // verifier_findings.md). Reusing verifier.Instruction keeps the
 // review rules in a single source of truth across every backend,
 // mirroring how BuildPlanner reuses planner.Instruction and
-// BuildCoder reuses coder.Instruction.
+// BuildWorker reuses worker.Instruction.
 func BuildVerifier(reqPath, reqBody, planPath, planBody, verifierPlanPath, findingsPath, worktree string, mustread []string) string {
 	return appendVerifierWorktreeLine(
 		fmt.Sprintf(
@@ -40,7 +40,7 @@ func BuildVerifier(reqPath, reqBody, planPath, planBody, verifierPlanPath, findi
 // requirement / plan paths and bodies are embedded for context only
 // — there is no instruction to re-verify from scratch and no
 // embedded verifier.Instruction body, mirroring BuildPlannerResume /
-// BuildCoderResume.
+// BuildWorkerResume.
 func BuildVerifierResume(reqPath, reqBody, planPath, planBody, worktree string) string {
 	return appendVerifierWorktreeLine(
 		fmt.Sprintf(
@@ -59,13 +59,13 @@ func BuildVerifierResume(reqPath, reqBody, planPath, planBody, worktree string) 
 	)
 }
 
-// BuildVerifierFix composes the coder-side fix prompt used when the
+// BuildVerifierFix composes the worker-side fix prompt used when the
 // outer verify loop has observed a `VERDICT: FAIL` from the verifier
-// and wants the previous coder session to address the listed
+// and wants the previous worker session to address the listed
 // findings without re-planning. The plan path and body are embedded
 // for context, the findings path and body provide the action items.
 //
-// As with the resume builders this does NOT include the full coder
+// As with the resume builders this does NOT include the full worker
 // instruction body; the resumed session was already seeded with the
 // coding rules on its first run.
 func BuildVerifierFix(planPath, planBody, findingsPath, findingsBody, worktree string) string {
@@ -89,7 +89,7 @@ func BuildVerifierFix(planPath, planBody, findingsPath, findingsBody, worktree s
 // appendVerifierWorktreeLine returns prompt unchanged when worktree
 // is empty and otherwise appends a single trailing line telling the
 // verifier which git worktree to inspect. The phrasing is intentionally
-// different from appendWorktreeLine in coder_prompt.go: the verifier
+// different from appendWorktreeLine in worker_prompt.go: the verifier
 // does not create worktrees, it only resolves them via
 // `git worktree list` from the repository root.
 func appendVerifierWorktreeLine(prompt, worktree string) string {

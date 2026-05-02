@@ -1,4 +1,4 @@
-// Package planner defines the planner sub-agent of the planner/coder/verifier
+// Package planner defines the planner sub-agent of the planner/worker/verifier
 // workflow. It reads the user's request and emits a concrete, ordered
 // implementation plan under the state key "plan".
 package planner

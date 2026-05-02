@@ -1,10 +1,10 @@
 // Package verify implements the `j verify` subcommand. It resolves a
 // work-done task to verify, prompts the user for a verifier agent /
 // model, verifies that backend is signed in, and runs a bounded
-// fix-loop alternating verifier turns with coder-resume turns until
+// fix-loop alternating verifier turns with worker-resume turns until
 // the verifier writes `VERDICT: PASS` to verifier_findings.md or the
 // iteration cap is exhausted. The verifier writes verifier_plan.md
-// and verifier_findings.md inside `<cwd>/.j/tasks/<id>/`; the coder
+// and verifier_findings.md inside `<cwd>/.j/tasks/<id>/`; the worker
 // edits project files in place when fixing findings.
 package verify
 
@@ -56,7 +56,7 @@ type Options struct {
 	Tool  string
 	Model string
 
-	// MaxIterations bounds the verifier / coder-fix loop. Zero or
+	// MaxIterations bounds the verifier / worker-fix loop. Zero or
 	// negative values fall back to defaultMaxIterations so callers
 	// that build Options{} with a literal still get a sane bound.
 	MaxIterations int
@@ -141,17 +141,17 @@ func Run(ctx context.Context, opts Options) (err error) {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
 	}
 
-	// The coder agent for the fix loop must match the tool the
+	// The worker agent for the fix loop must match the tool the
 	// task was originally worked with so the resume cursor lines
 	// up. lookupResumeAgent resolves it; a missing entry surfaces
 	// as a clean error.
-	coderAgent, ok := lookupResumeAgent(opts.Agents, res.Task.InvokedTool)
+	workerAgent, ok := lookupResumeAgent(opts.Agents, res.Task.InvokedTool)
 	if !ok {
 		return fmt.Errorf("J: unknown tool %q (recorded on task %s)", res.Task.InvokedTool, res.Task.ID)
 	}
 
 	lc := beginVerifyTask(opts, verifierAgent, model, res.Task, resumeID)
-	outcome, runErr := runVerifyLoop(ctx, opts, verifierAgent, coderAgent, model, resumeID, res)
+	outcome, runErr := runVerifyLoop(ctx, opts, verifierAgent, workerAgent, model, resumeID, res)
 	lc.finishVerify(outcome, runErr)
 	if runErr != nil {
 		return runErr
@@ -281,17 +281,17 @@ func validateForVerify(t store.Task) error {
 	return fmt.Errorf("verify: task %s has unsupported status %q", t.ID, t.Status)
 }
 
-// runVerifyLoop alternates verifier turns with coder-resume fix
+// runVerifyLoop alternates verifier turns with worker-resume fix
 // turns until the verifier writes VERDICT: PASS to findingsPath or
 // MaxIterations is exhausted. Errors from either agent abort the
 // loop and surface up to Run, which finishes the row as `help`.
 //
 // The body and verdict-on-FAIL semantics mirror the plan flowchart
 // exactly: turn 1 always runs the verifier; subsequent iterations
-// resume the coder with FixFindings populated, then re-run the
+// resume the worker with FixFindings populated, then re-run the
 // verifier with Resume=true so the prior verification context is
 // reused.
-func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, coderAgent codingagents.Agent, model, resumeID string, res resolved) (verifyOutcome, error) {
+func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent codingagents.Agent, model, resumeID string, res resolved) (verifyOutcome, error) {
 	agentLogPath := filepath.Join(res.TaskDir, tasklog.AgentLogFileName)
 	mustreadFiles, mustreadErr := mustread.LoadFromDefault()
 	if mustreadErr != nil {
@@ -323,7 +323,7 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, coderAgent 
 		}
 		// On FAIL we still need to keep iterating: break out
 		// when the next loop turn would fall off the
-		// MaxIterations cliff so we don't run a coder fix
+		// MaxIterations cliff so we don't run a worker fix
 		// turn whose verifier counterpart has nowhere to go.
 		if i+1 >= opts.MaxIterations {
 			break
@@ -340,7 +340,7 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, coderAgent 
 			Worktree:     res.Task.Worktree,
 			AgentLogPath: agentLogPath,
 		}
-		if _, err := coderAgent.Work(ctx, workReq); err != nil {
+		if _, err := workerAgent.Work(ctx, workReq); err != nil {
 			return outcomeNoRetries, err
 		}
 	}
@@ -374,7 +374,7 @@ func parseVerdict(path string) string {
 }
 
 // selectVerifier is the single chokepoint for choosing the verifier
-// tool/model. Mirrors selectCoder in `j work`. Precedence:
+// tool/model. Mirrors selectWorker in `j work`. Precedence:
 //  1. explicit --tool / --model → agentpick.Resolve fills the missing
 //     half from the verifier bucket; bucket is NOT written.
 //  2. populated verifier bucket → agentpick.FromStore reuses it.
@@ -408,7 +408,7 @@ func selectVerifier(ctx context.Context, opts Options) (codingagents.Agent, stri
 
 // verifierResolveExplicit reads the verifier bucket only to fill the
 // missing half of the user-supplied --tool / --model pair. Mirrors
-// coderResolveExplicit in `j work`.
+// workerResolveExplicit in `j work`.
 func verifierResolveExplicit(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
 	if opts.Store != nil {
 		return agentpick.Resolve(ctx, opts.Store, store.BucketVerifier, opts.Agents, opts.Tool, opts.Model)
@@ -422,7 +422,7 @@ func verifierResolveExplicit(ctx context.Context, opts Options) (codingagents.Ag
 }
 
 // verifierFromStore reads the verifier bucket and returns the
-// chosen tool/model. Mirrors coderFromStore in `j work`.
+// chosen tool/model. Mirrors workerFromStore in `j work`.
 func verifierFromStore(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
 	if opts.Store != nil {
 		return agentpick.FromStore(ctx, opts.Store, store.BucketVerifier, opts.Agents)
@@ -437,7 +437,7 @@ func verifierFromStore(ctx context.Context, opts Options) (codingagents.Agent, s
 
 // persistVerifierSelection writes the just-confirmed tool/model and
 // the interactive flag to the verifier bucket. Mirrors
-// persistCoderSelection in `j work`.
+// persistWorkerSelection in `j work`.
 func persistVerifierSelection(opts Options, tool, model string) {
 	interactive := true
 	if opts.Interactive != nil {
@@ -468,7 +468,7 @@ func resolveInteractive(opts Options) bool {
 }
 
 // storedVerifierInteractive looks up the verifier bucket's
-// `interactive` entry. Mirrors storedCoderInteractive in `j work`.
+// `interactive` entry. Mirrors storedWorkerInteractive in `j work`.
 func storedVerifierInteractive(opts Options) (bool, bool) {
 	if opts.Store != nil {
 		return agentpick.StoredInteractive(opts.Store, store.BucketVerifier)

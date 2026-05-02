@@ -58,7 +58,7 @@ func parseWorktreeListPorcelain(output string) []worktreeRecord {
 // that path. When task.Worktree is empty (legacy rows that pre-date
 // the persisted-worktree feature, or any row that never reached
 // `j work`) the lookup falls back to store.WorktreeNameFor(project,
-// task) — the same deterministic slug the coder prompt instructs the
+// task) — the same deterministic slug the worker prompt instructs the
 // agent to use for `git worktree add`, so the on-disk basename is
 // recoverable from project + summary alone. Any git failure or
 // ambiguity is reported as a single stderr line prefixed `warning:

@@ -16,7 +16,7 @@ Expected:
     load-bearing assertion).
   - Listings render in TOML form: a `[plan]` header followed by
     indented `key = value` rows for the unknown `plan` bucket, appended
-    after the four known sections (`[project]`, `[planner]`, `[coder]`,
+    after the four known sections (`[project]`, `[planner]`, `[worker]`,
     `[verifier]`).
   - The first `j settings` listing contains the `[plan]` section with
     a row `  tool = cursor`.

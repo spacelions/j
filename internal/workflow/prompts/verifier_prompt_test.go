@@ -63,7 +63,7 @@ func TestBuildVerifier_WithMustread(t *testing.T) {
 }
 
 // TestBuildVerifier_TrimsLeadingWhitespace pins the same trim
-// invariant exercised by the planner/coder prompts: the embedded
+// invariant exercised by the planner/worker prompts: the embedded
 // verifier.Instruction must not bleed leading whitespace into the
 // composed prompt.
 func TestBuildVerifier_TrimsLeadingWhitespace(t *testing.T) {
@@ -174,8 +174,8 @@ func TestBuildVerifierFix(t *testing.T) {
 }
 
 // TestBuildVerifierFix_WithWorktree pins the worktree-direction suffix
-// on the fix-findings coder prompt; BuildVerifierFix shares
-// appendWorktreeLine with BuildCoder so the hint mentions
+// on the fix-findings worker prompt; BuildVerifierFix shares
+// appendWorktreeLine with BuildWorker so the hint mentions
 // `git worktree add`, not `git worktree list`.
 func TestBuildVerifierFix_WithWorktree(t *testing.T) {
 	got := BuildVerifierFix("p.md", "p", "vf.md", "body", "j-my-task")

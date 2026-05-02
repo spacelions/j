@@ -76,7 +76,7 @@ func TestList_EmptyDB(t *testing.T) {
 		"\n" +
 		"[planner]\n" +
 		"\n" +
-		"[coder]\n" +
+		"[worker]\n" +
 		"\n" +
 		"[verifier]\n"
 	if out != want {
@@ -108,7 +108,7 @@ func TestList_PrintsSortedEntries(t *testing.T) {
 		"model":       "gpt-5",
 		"interactive": "false",
 	} {
-		if err := s.Put(store.BucketCoder, k, v); err != nil {
+		if err := s.Put(store.BucketWorker, k, v); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -130,7 +130,7 @@ func TestList_PrintsSortedEntries(t *testing.T) {
 		"  model = sonnet-4\n" +
 		"  tool = cursor\n" +
 		"\n" +
-		"[coder]\n" +
+		"[worker]\n" +
 		"  interactive = false\n" +
 		"  model = gpt-5\n" +
 		"  tool = cursor\n" +
@@ -258,7 +258,7 @@ func TestList_OnlyEmptyBuckets(t *testing.T) {
 		"\n" +
 		"[planner]\n" +
 		"\n" +
-		"[coder]\n" +
+		"[worker]\n" +
 		"\n" +
 		"[verifier]\n"
 	if out != want {

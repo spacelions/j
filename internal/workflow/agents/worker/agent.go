@@ -1,7 +1,7 @@
-// Package coder defines the coder sub-agent of the planner/coder/verifier
+// Package worker defines the worker sub-agent of the planner/worker/verifier
 // workflow. It produces code from the plan (state key "plan") and any prior
 // verifier feedback (state key "temp:review"), writing results under "code".
-package coder
+package worker
 
 import (
 	_ "embed"
@@ -11,7 +11,7 @@ import (
 	"google.golang.org/adk/model"
 )
 
-// Instruction is the embedded instruction.md used as the coder system
+// Instruction is the embedded instruction.md used as the worker system
 // prompt. Exported so other backends can reuse the same coding rules
 // without duplicating the file.
 //
@@ -19,11 +19,11 @@ import (
 var Instruction string
 
 const (
-	Name      = "coder"
+	Name      = "worker"
 	OutputKey = "code"
 )
 
-// New returns a coder agent backed by the provided LLM.
+// New returns a worker agent backed by the provided LLM.
 func New(m model.LLM) (agent.Agent, error) {
 	return llmagent.New(llmagent.Config{
 		Name:        Name,
