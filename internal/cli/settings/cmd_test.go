@@ -53,7 +53,7 @@ func TestNew_BareSettingsRunsList(t *testing.T) {
 		"\n" +
 		"[planner]\n" +
 		"\n" +
-		"[coder]\n" +
+		"[worker]\n" +
 		"\n" +
 		"[verifier]\n"
 	if stdout.String() != want {

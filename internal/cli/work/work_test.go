@@ -62,7 +62,7 @@ exit 1
 }
 
 // openTestStore returns a fresh *store.Store rooted in t.TempDir() with
-// the coder bucket pre-created.
+// the worker bucket pre-created.
 func openTestStore(t *testing.T) *store.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
@@ -75,7 +75,7 @@ func openTestStore(t *testing.T) *store.Store {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if err := s.EnsureBucket(store.BucketCoder); err != nil {
+	if err := s.EnsureBucket(store.BucketWorker); err != nil {
 		t.Fatalf("EnsureBucket: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
@@ -93,7 +93,7 @@ func mustInit(t *testing.T) {
 
 func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
 	t.Helper()
-	v, ok, err := s.Get(store.BucketCoder, key)
+	v, ok, err := s.Get(store.BucketWorker, key)
 	if err != nil {
 		t.Fatalf("Get %s: %v", key, err)
 	}
@@ -702,7 +702,7 @@ func TestRun_Headless_PropagatesFlag(t *testing.T) {
 
 // TestRun_ThreadsWorktreeIntoWorkRequest pins R2: the Worktree
 // minted on the task row (or preserved from a pre-existing value)
-// is threaded into the WorkRequest so the coder prompt can carry
+// is threaded into the WorkRequest so the worker prompt can carry
 // the worktree-direction line.
 func TestRun_ThreadsWorktreeIntoWorkRequest(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "myproj")
@@ -988,11 +988,11 @@ func TestRun_UnknownToolFromUI(t *testing.T) {
 	}
 }
 
-// TestRun_PersistsCoderSelection drives a successful work run with a
-// real *store.Store and asserts the coder bucket holds tool/model/
+// TestRun_PersistsWorkerSelection drives a successful work run with a
+// real *store.Store and asserts the worker bucket holds tool/model/
 // interactive only — the work source (plan path) must stay
 // unpersisted so the user is prompted for it every run.
-func TestRun_PersistsCoderSelection(t *testing.T) {
+func TestRun_PersistsWorkerSelection(t *testing.T) {
 	s := openTestStore(t)
 	id := seedPlanDoneTask(t, "x", "body", "")
 	agent := newScriptedAgent()
@@ -1017,17 +1017,17 @@ func TestRun_PersistsCoderSelection(t *testing.T) {
 	for k, v := range want {
 		got, ok := mustGet(t, s, k)
 		if !ok || got != v {
-			t.Fatalf("coder.%s = %q (ok=%v), want %q", k, got, ok, v)
+			t.Fatalf("worker.%s = %q (ok=%v), want %q", k, got, ok, v)
 		}
 	}
 	for _, forbidden := range []string{"target", "source", "plan", "from_file", "task"} {
 		if _, ok := mustGet(t, s, forbidden); ok {
-			t.Fatalf("coder.%s should not be persisted", forbidden)
+			t.Fatalf("worker.%s should not be persisted", forbidden)
 		}
 	}
 }
 
-// TestRun_LoginFailure_DoesNotPersist confirms the coder bucket is
+// TestRun_LoginFailure_DoesNotPersist confirms the worker bucket is
 // untouched when login fails (we only persist after agentpick.Pick
 // returns successfully).
 func TestRun_LoginFailure_DoesNotPersist(t *testing.T) {
@@ -1047,12 +1047,12 @@ func TestRun_LoginFailure_DoesNotPersist(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected login error")
 	}
-	entries, listErr := s.List(store.BucketCoder)
+	entries, listErr := s.List(store.BucketWorker)
 	if listErr != nil {
 		t.Fatal(listErr)
 	}
 	if len(entries) != 0 {
-		t.Fatalf("coder bucket should be empty: %v", entries)
+		t.Fatalf("worker bucket should be empty: %v", entries)
 	}
 }
 
@@ -1060,7 +1060,7 @@ func TestRun_LoginFailure_DoesNotPersist(t *testing.T) {
 // case for the user-cancel path through agentpick.Pick. With the
 // abort-to-nil contract, Run returns no error on cancel; the
 // invariant the test guards is that nothing was persisted to the
-// coder bucket because Pick was never confirmed.
+// worker bucket because Pick was never confirmed.
 func TestRun_SelectionCancelled_DoesNotPersist(t *testing.T) {
 	s := openTestStore(t)
 	id := seedPlanDoneTask(t, "x", "body", "")
@@ -1077,12 +1077,12 @@ func TestRun_SelectionCancelled_DoesNotPersist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
 	}
-	entries, listErr := s.List(store.BucketCoder)
+	entries, listErr := s.List(store.BucketWorker)
 	if listErr != nil {
 		t.Fatal(listErr)
 	}
 	if len(entries) != 0 {
-		t.Fatalf("coder bucket should be empty: %v", entries)
+		t.Fatalf("worker bucket should be empty: %v", entries)
 	}
 }
 
@@ -1117,7 +1117,7 @@ func TestRun_StoreWriteError_WarnsAndContinues(t *testing.T) {
 }
 
 // TestRun_StoreReadError_Surfaces pins the new contract for a
-// broken settings DB: when reading the coder bucket fails for a
+// broken settings DB: when reading the worker bucket fails for a
 // non-sentinel reason, Run aborts before invoking the agent.
 func TestRun_StoreReadError_Surfaces(t *testing.T) {
 	s := openTestStore(t)
@@ -1135,7 +1135,7 @@ func TestRun_StoreReadError_Surfaces(t *testing.T) {
 		UI:     &scriptedUI{},
 		Store:  s,
 	})
-	if err == nil || !strings.Contains(err.Error(), "agentpick: read coder") {
+	if err == nil || !strings.Contains(err.Error(), "agentpick: read worker") {
 		t.Fatalf("err = %v, want wrapped read error", err)
 	}
 	if agent.worked != 0 {
@@ -1144,18 +1144,18 @@ func TestRun_StoreReadError_Surfaces(t *testing.T) {
 }
 
 // TestRun_FromStore_PopulatedStore_SkipsPrompts is the work
-// counterpart of the plan test: a populated coder bucket must
+// counterpart of the plan test: a populated worker bucket must
 // short-circuit the prompts and route the stored model into the
 // WorkRequest. The bucket is left untouched (no rewrite).
 func TestRun_FromStore_PopulatedStore_SkipsPrompts(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := s.Put(store.BucketCoder, "model", "gpt-5"); err != nil {
+	if err := s.Put(store.BucketWorker, "model", "gpt-5"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := s.Put(store.BucketCoder, "interactive", "true"); err != nil {
+	if err := s.Put(store.BucketWorker, "interactive", "true"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 	id := seedPlanDoneTask(t, "x", "body", "")
@@ -1187,7 +1187,7 @@ func TestRun_FromStore_PopulatedStore_SkipsPrompts(t *testing.T) {
 	if agent.lastReq.Model != "gpt-5" {
 		t.Fatalf("model = %q, want gpt-5", agent.lastReq.Model)
 	}
-	entries, err := s.List(store.BucketCoder)
+	entries, err := s.List(store.BucketWorker)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -1197,7 +1197,7 @@ func TestRun_FromStore_PopulatedStore_SkipsPrompts(t *testing.T) {
 	}
 	want := []string{"interactive", "model", "tool"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("coder keys = %v, want %v", got, want)
+		t.Fatalf("worker keys = %v, want %v", got, want)
 	}
 	if strings.Contains(stderr.String(), "Choose your favourite:") {
 		t.Fatalf("stderr should not warn when store is populated: %q", stderr.String())
@@ -1230,13 +1230,13 @@ func TestRun_FromStore_EmptyStore_FallsBackToPrompt(t *testing.T) {
 		t.Fatalf("stderr should warn about fallback: %q", stderr.String())
 	}
 	if v, ok := mustGet(t, s, "tool"); !ok || v != "cursor" {
-		t.Fatalf("coder.tool = %q (ok=%v), want cursor", v, ok)
+		t.Fatalf("worker.tool = %q (ok=%v), want cursor", v, ok)
 	}
 }
 
 // TestRun_ExplicitTool_SkipsPersistence asserts the new --tool /
 // --model contract: when both flags are supplied, Run resolves via
-// agentpick.Resolve, runs the chosen agent, and leaves the coder
+// agentpick.Resolve, runs the chosen agent, and leaves the worker
 // bucket untouched.
 func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	s := openTestStore(t)
@@ -1263,23 +1263,23 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	if agent.lastReq.Model != "opus" {
 		t.Fatalf("model = %q, want opus", agent.lastReq.Model)
 	}
-	entries, err := s.List(store.BucketCoder)
+	entries, err := s.List(store.BucketWorker)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	if len(entries) != 0 {
-		t.Fatalf("coder bucket should be untouched, got %d entries", len(entries))
+		t.Fatalf("worker bucket should be untouched, got %d entries", len(entries))
 	}
 }
 
 // TestRun_PartialTool_FillsModelFromStore covers the partial-flag
-// fallback: --tool alone reads model from the coder bucket.
+// fallback: --tool alone reads model from the worker bucket.
 func TestRun_PartialTool_FillsModelFromStore(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := s.Put(store.BucketCoder, "model", "stored-model"); err != nil {
+	if err := s.Put(store.BucketWorker, "model", "stored-model"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 	id := seedPlanDoneTask(t, "x", "body", "")
@@ -1303,8 +1303,8 @@ func TestRun_PartialTool_FillsModelFromStore(t *testing.T) {
 }
 
 // TestRun_ExplicitTool_NilStore_LazyOpenSucceeds drives the
-// nil-Store branch of coderResolveExplicit. The lazy open finds
-// the seeded coder.model so --tool=cursor resolves cleanly.
+// nil-Store branch of workerResolveExplicit. The lazy open finds
+// the seeded worker.model so --tool=cursor resolves cleanly.
 func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -1316,7 +1316,7 @@ func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Put(store.BucketCoder, "model", "stored-model"); err != nil {
+	if err := s.Put(store.BucketWorker, "model", "stored-model"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -1342,7 +1342,7 @@ func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 }
 
 // TestRun_ExplicitTool_NilStore_LazyOpenFails covers the
-// settings-DB-broken branch of coderResolveExplicit.
+// settings-DB-broken branch of workerResolveExplicit.
 func TestRun_ExplicitTool_NilStore_LazyOpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -1366,7 +1366,7 @@ func TestRun_ExplicitTool_NilStore_LazyOpenFails(t *testing.T) {
 		Agents: []codingagents.Agent{agent},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "given without stored model in coder") {
+	if err == nil || !strings.Contains(err.Error(), "given without stored model in worker") {
 		t.Fatalf("err = %v, want missing-model error", err)
 	}
 	if agent.worked != 0 {
@@ -1389,7 +1389,7 @@ func TestRun_PartialModel_NoStoredTool(t *testing.T) {
 		UI:     &scriptedUI{},
 		Store:  s,
 	})
-	if err == nil || !strings.Contains(err.Error(), "given without stored tool in coder") {
+	if err == nil || !strings.Contains(err.Error(), "given without stored tool in worker") {
 		t.Fatalf("err = %v, want missing-tool error", err)
 	}
 	if agent.worked != 0 {
@@ -1399,10 +1399,10 @@ func TestRun_PartialModel_NoStoredTool(t *testing.T) {
 
 func TestRun_FromStore_LoginFailureSurfaces(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := s.Put(store.BucketCoder, "model", "sonnet-4"); err != nil {
+	if err := s.Put(store.BucketWorker, "model", "sonnet-4"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 	id := seedPlanDoneTask(t, "x", "body", "")
@@ -1427,10 +1427,10 @@ func TestRun_FromStore_LoginFailureSurfaces(t *testing.T) {
 
 func TestRun_FromStore_NonSentinelStoreError(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.Put(store.BucketCoder, "tool", "ghost"); err != nil {
+	if err := s.Put(store.BucketWorker, "tool", "ghost"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := s.Put(store.BucketCoder, "model", "sonnet-4"); err != nil {
+	if err := s.Put(store.BucketWorker, "model", "sonnet-4"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 	id := seedPlanDoneTask(t, "x", "body", "")
@@ -1455,7 +1455,7 @@ func TestRun_FromStore_NonSentinelStoreError(t *testing.T) {
 
 // TestRun_StoreLazyDefault confirms a nil opts.Store causes
 // withDefaults to open and close the default DB and write to the
-// coder bucket.
+// worker bucket.
 func TestRun_StoreLazyDefault(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -1481,24 +1481,24 @@ func TestRun_StoreLazyDefault(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	got, ok, err := s.Get(store.BucketCoder, "tool")
+	got, ok, err := s.Get(store.BucketWorker, "tool")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !ok || got != "cursor" {
-		t.Fatalf("coder.tool = %q (ok=%v)", got, ok)
+		t.Fatalf("worker.tool = %q (ok=%v)", got, ok)
 	}
 }
 
-// TestPersistCoderSelection_NilStore_LazyOpenSucceeds exercises the
+// TestPersistWorkerSelection_NilStore_LazyOpenSucceeds exercises the
 // nil-Store branch when openSettingsStore can lay hands on a real
 // `<cwd>/.j/settings`: the helper opens, persists, and closes
 // silently and the values land on disk.
-func TestPersistCoderSelection_NilStore_LazyOpenSucceeds(t *testing.T) {
+func TestPersistWorkerSelection_NilStore_LazyOpenSucceeds(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	var stderr bytes.Buffer
-	persistCoderSelection(Options{
+	persistWorkerSelection(Options{
 		Stderr:      &stderr,
 		Interactive: boolPtr(true),
 	}, "cursor", "sonnet-4")
@@ -1514,23 +1514,23 @@ func TestPersistCoderSelection_NilStore_LazyOpenSucceeds(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	v, ok, err := s.Get(store.BucketCoder, "tool")
+	v, ok, err := s.Get(store.BucketWorker, "tool")
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 	if !ok || v != "cursor" {
-		t.Fatalf("coder.tool = %q (ok=%v), want cursor", v, ok)
+		t.Fatalf("worker.tool = %q (ok=%v), want cursor", v, ok)
 	}
 }
 
-// TestPersistCoderSelection_NilStore_LazyOpenFails covers the
+// TestPersistWorkerSelection_NilStore_LazyOpenFails covers the
 // early-return branch when openSettingsStore can't open the DB
 // (no .j layout on disk): the helper warns once and returns
 // without panicking.
-func TestPersistCoderSelection_NilStore_LazyOpenFails(t *testing.T) {
+func TestPersistWorkerSelection_NilStore_LazyOpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	var stderr bytes.Buffer
-	persistCoderSelection(Options{Stderr: &stderr}, "cursor", "sonnet-4")
+	persistWorkerSelection(Options{Stderr: &stderr}, "cursor", "sonnet-4")
 	if !strings.Contains(stderr.String(), "warning: settings") {
 		t.Fatalf("stderr = %q, want settings warning", stderr.String())
 	}
@@ -1726,17 +1726,17 @@ func TestValidateForWork(t *testing.T) {
 
 // TestRun_FromStore_StoredInteractiveFalseOverridesDefault pins
 // the bug fix: with no explicit Interactive pointer, a stored
-// interactive=false in the coder bucket flows
+// interactive=false in the worker bucket flows
 // through to both the agent request and the persisted value.
 func TestRun_FromStore_StoredInteractiveFalseOverridesDefault(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := s.Put(store.BucketCoder, "model", "sonnet-4"); err != nil {
+	if err := s.Put(store.BucketWorker, "model", "sonnet-4"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := s.Put(store.BucketCoder, "interactive", "false"); err != nil {
+	if err := s.Put(store.BucketWorker, "interactive", "false"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 	id := seedPlanDoneTask(t, "x", "body", "")
@@ -1758,7 +1758,7 @@ func TestRun_FromStore_StoredInteractiveFalseOverridesDefault(t *testing.T) {
 		t.Fatalf("agent.lastReq.Interactive = true, want false (stored override): %+v", agent.lastReq)
 	}
 	if v, ok := mustGet(t, s, "interactive"); !ok || v != "false" {
-		t.Fatalf("coder.interactive = %q (ok=%v), want false", v, ok)
+		t.Fatalf("worker.interactive = %q (ok=%v), want false", v, ok)
 	}
 }
 
@@ -1767,13 +1767,13 @@ func TestRun_FromStore_StoredInteractiveFalseOverridesDefault(t *testing.T) {
 // Interactive pointer must win even when the bucket says otherwise.
 func TestRun_FromStore_ExplicitInteractiveWins(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := s.Put(store.BucketCoder, "model", "sonnet-4"); err != nil {
+	if err := s.Put(store.BucketWorker, "model", "sonnet-4"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := s.Put(store.BucketCoder, "interactive", "false"); err != nil {
+	if err := s.Put(store.BucketWorker, "interactive", "false"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 	id := seedPlanDoneTask(t, "x", "body", "")
@@ -1801,13 +1801,13 @@ func TestRun_FromStore_ExplicitInteractiveWins(t *testing.T) {
 // default flows through without a warning.
 func TestRun_FromStore_StoredInteractiveUnparseable(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := s.Put(store.BucketCoder, "model", "sonnet-4"); err != nil {
+	if err := s.Put(store.BucketWorker, "model", "sonnet-4"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := s.Put(store.BucketCoder, "interactive", "garbage"); err != nil {
+	if err := s.Put(store.BucketWorker, "interactive", "garbage"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 	id := seedPlanDoneTask(t, "x", "body", "")
@@ -1839,10 +1839,10 @@ func TestRun_FromStore_StoredInteractiveUnparseable(t *testing.T) {
 // `interactive` entry leaves the cobra default (true) intact.
 func TestRun_FromStore_NoInteractiveKey_DefaultTrue(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := s.Put(store.BucketCoder, "model", "sonnet-4"); err != nil {
+	if err := s.Put(store.BucketWorker, "model", "sonnet-4"); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 	id := seedPlanDoneTask(t, "x", "body", "")
@@ -1867,12 +1867,12 @@ func TestRun_FromStore_NoInteractiveKey_DefaultTrue(t *testing.T) {
 
 // TestRun_FromStore_NilStore_EmptyStorePromptsPick mirrors
 // the plan-side test for the work flow: a real `.j/settings` is
-// laid down via mustInit but the coder bucket is empty, so
-// coderFromStore opens the DB, observes ErrNoStoredSelection,
+// laid down via mustInit but the worker bucket is empty, so
+// workerFromStore opens the DB, observes ErrNoStoredSelection,
 // closes, and Run falls back to Pick. The persistence path then
 // re-opens settings, writes, and closes. Together these exercise
-// the lazy open-success branches in coderFromStore,
-// storedCoderInteractive, and persistCoderSelection.
+// the lazy open-success branches in workerFromStore,
+// storedWorkerInteractive, and persistWorkerSelection.
 func TestRun_FromStore_NilStore_EmptyStorePromptsPick(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -1904,20 +1904,20 @@ func TestRun_FromStore_NilStore_EmptyStorePromptsPick(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	got, ok, err := s.Get(store.BucketCoder, "tool")
+	got, ok, err := s.Get(store.BucketWorker, "tool")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !ok || got != "cursor" {
-		t.Fatalf("coder.tool = %q (ok=%v), want cursor", got, ok)
+		t.Fatalf("worker.tool = %q (ok=%v), want cursor", got, ok)
 	}
 }
 
 // TestRun_FromStore_NilStore_SettingsOpenFails covers the lazy
 // open-fails branches on the settings path for `j work`: with no
 // caller-supplied Store and a `<cwd>/.j/settings` directory
-// (instead of file) sabotaging bolt.Open, coderFromStore and
-// storedCoderInteractive both surface the openSettingsStore
+// (instead of file) sabotaging bolt.Open, workerFromStore and
+// storedWorkerInteractive both surface the openSettingsStore
 // warning and fall back to the prompted Pick path.
 func TestRun_FromStore_NilStore_SettingsOpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())

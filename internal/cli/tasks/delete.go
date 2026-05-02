@@ -90,7 +90,7 @@ func (o DeleteOptions) withDefaults() DeleteOptions {
 //     refs/heads/<name>. When task.Worktree is empty (legacy rows or
 //     rows that never went through `j work`) the lookup falls back to
 //     store.WorktreeNameFor(project, task) so the deterministic slug
-//     used by the coder prompt is still tried. Failures print a
+//     used by the worker prompt is still tried. Failures print a
 //     single stderr warning and do not abort the delete.
 //  5. DeleteTask removes the bbolt row.
 //  6. RemoveTaskDir deletes <cwd>/.j/tasks/<id>/ recursively. The

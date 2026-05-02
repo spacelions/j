@@ -12,7 +12,7 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 )
 
-// defaultMaxIterations bounds the verifier / coder fix loop. Three
+// defaultMaxIterations bounds the verifier / worker fix loop. Three
 // is the default the plan asks for: enough to converge on small
 // follow-up fixes, low enough that a divergent loop fails fast.
 const defaultMaxIterations = 3
@@ -33,7 +33,7 @@ func New() *cobra.Command {
 			"recent work-done task in bbolt, or an interactive picker over work-done / " +
 			"verify-done / help tasks. The verifier writes verifier_plan.md and " +
 			"verifier_findings.md inside the task directory; on VERDICT: FAIL the " +
-			"orchestrator resumes the coder with the findings and re-runs the verifier " +
+			"orchestrator resumes the worker with the findings and re-runs the verifier " +
 			"up to --max-iterations times before terminating as verify-done. Pass " +
 			"--tool / --model (or VERIFY_TOOL / VERIFY_MODEL) for a one-off override " +
 			"that does not update the verifier bucket; run `j settings reset " +
@@ -63,7 +63,7 @@ func New() *cobra.Command {
 	cmd.Flags().Bool("interactive", true, "Launch the verifier agent in interactive mode (its TUI). Set to false for headless capture.")
 	cmd.Flags().String("tool", "", "Coding agent tool (cursor|claude). One-off override; does not update verifier.tool.")
 	cmd.Flags().String("model", "", "Model identifier. One-off override; does not update verifier.model.")
-	cmd.Flags().Int("max-iterations", defaultMaxIterations, "Maximum verifier / coder-fix iterations before terminating as verify-done.")
+	cmd.Flags().Int("max-iterations", defaultMaxIterations, "Maximum verifier / worker-fix iterations before terminating as verify-done.")
 	_ = viper.BindPFlag("verify.from_task", cmd.Flags().Lookup("from-task"))
 	_ = viper.BindPFlag("verify.interactive", cmd.Flags().Lookup("interactive"))
 	_ = viper.BindPFlag("verify.tool", cmd.Flags().Lookup("tool"))

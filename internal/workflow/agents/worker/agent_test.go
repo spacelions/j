@@ -1,11 +1,11 @@
-package coder
+package worker
 
 import (
 	"testing"
 )
 
 func TestConstants(t *testing.T) {
-	if Name != "coder" {
+	if Name != "worker" {
 		t.Fatalf("Name = %q", Name)
 	}
 	if OutputKey != "code" {

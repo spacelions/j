@@ -23,7 +23,7 @@ Expected:
   - The two analogous invocations (`WORK_TOOL` / `VERIFY_TOOL`) confirm
     the env-var binding is wired but may surface the unknown-task error
     first because `j work` / `j verify` resolve the task id before
-    `selectCoder` / `selectVerifier`. Either error is acceptable as long
+    `selectWorker` / `selectVerifier`. Either error is acceptable as long
     as the env var name is recognised.
   - The legacy `PLAN_FROM_SETTINGS` / `WORK_FROM_SETTINGS` /
     `VERIFY_FROM_SETTINGS` env vars must NOT be honoured anywhere

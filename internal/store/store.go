@@ -28,17 +28,17 @@ import (
 // most-recently-selected tool/model/interactive flag.
 const BucketPlanner = "planner"
 
-// BucketCoder is the bucket used by `j work` to record the
+// BucketWorker is the bucket used by `j work` to record the
 // most-recently-selected tool/model/interactive flag.
-const BucketCoder = "coder"
+const BucketWorker = "worker"
 
 // BucketVerifier is the bucket used by `j verify` to record the
 // most-recently-selected tool/model/interactive flag, mirroring
-// BucketPlanner / BucketCoder.
+// BucketPlanner / BucketWorker.
 const BucketVerifier = "verifier"
 
 // BucketProject holds project-wide settings that aren't tied to a
-// single role (planner / coder / verifier). The first key under it is
+// single role (planner / worker / verifier). The first key under it is
 // "mustread", a `;`-separated list of files every agent should read
 // before starting.
 const BucketProject = "project"

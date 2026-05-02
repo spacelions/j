@@ -13,9 +13,9 @@ import (
 	"time"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/workflow/agents/coder"
 	"github.com/spacelions/j/internal/workflow/agents/planner"
 	"github.com/spacelions/j/internal/workflow/agents/verifier"
+	"github.com/spacelions/j/internal/workflow/agents/worker"
 )
 
 // spawnWaitTimeout bounds the polling helpers below. The claude stub
@@ -639,8 +639,8 @@ func TestWork_Interactive_Resume(t *testing.T) {
 			t.Fatalf("resume prompt missing %q: %q", marker, prompt)
 		}
 	}
-	if strings.Contains(prompt, strings.TrimSpace(coder.Instruction)) {
-		t.Fatalf("resume prompt should not include coder.Instruction: %q", prompt)
+	if strings.Contains(prompt, strings.TrimSpace(worker.Instruction)) {
+		t.Fatalf("resume prompt should not include worker.Instruction: %q", prompt)
 	}
 }
 
@@ -804,8 +804,8 @@ func TestWork_Interactive_FixFindings(t *testing.T) {
 			t.Fatalf("fix prompt missing %q: %q", want, prompt)
 		}
 	}
-	if strings.Contains(prompt, strings.TrimSpace(coder.Instruction)) {
-		t.Fatalf("fix prompt should not include coder.Instruction: %q", prompt)
+	if strings.Contains(prompt, strings.TrimSpace(worker.Instruction)) {
+		t.Fatalf("fix prompt should not include worker.Instruction: %q", prompt)
 	}
 	if !strings.Contains(prompt, "Do not re-plan") {
 		t.Fatalf("fix prompt missing re-plan guard: %q", prompt)

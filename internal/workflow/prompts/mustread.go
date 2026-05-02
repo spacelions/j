@@ -4,7 +4,7 @@ import "strings"
 
 // mustreadSuffix renders the project-wide must-read list as a leading
 // "\n\n"-prefixed bulleted block ready to be concatenated into a
-// first-run planner / coder / verifier prompt. Empty or nil input
+// first-run planner / worker / verifier prompt. Empty or nil input
 // returns "" so callers keep prompts byte-identical to the
 // pre-mustread output when no files are configured. File names are
 // rendered verbatim (no normalisation, no case-folding) because

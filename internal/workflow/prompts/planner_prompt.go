@@ -1,8 +1,8 @@
-// Package prompts composes the embedded planner / coder instruction
+// Package prompts composes the embedded planner / worker instruction
 // markdown with a user-supplied target so every coding-agent backend
 // (Cursor, Codex, Claude, ...) sends the same prompt shape. The
 // instruction text lives next to the agent that owns it
-// (internal/workflow/agents/{planner,coder}/instruction.md) and is
+// (internal/workflow/agents/{planner,worker}/instruction.md) and is
 // re-exported from those packages as a string constant.
 package prompts
 

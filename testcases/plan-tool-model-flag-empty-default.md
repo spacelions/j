@@ -17,7 +17,7 @@ Expected:
   - `plan --help` mentions `planner.tool` / `planner.model` and the
     `j settings reset planner.tool` / `j settings reset planner.model`
     re-pick path.
-  - `work --help` mentions `coder.tool` / `coder.model` and
-    `j settings reset coder.tool` / `j settings reset coder.model`.
+  - `work --help` mentions `worker.tool` / `worker.model` and
+    `j settings reset worker.tool` / `j settings reset worker.model`.
   - `verify --help` mentions `verifier.tool` / `verifier.model` and
     `j settings reset verifier.tool` / `j settings reset verifier.model`.

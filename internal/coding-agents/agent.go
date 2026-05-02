@@ -67,7 +67,7 @@ type Agent interface {
 	// or "VERDICT: FAIL" inside the per-task workspace. On FAIL the
 	// agent edits project files itself to address the findings before
 	// exiting so the orchestrator can re-run the verifier turn after
-	// a coder-resume fix loop. The agent is responsible for writing
+	// a worker-resume fix loop. The agent is responsible for writing
 	// req.VerifierPlanOutputPath and req.VerifierFindingsOutputPath
 	// before exiting; the orchestrator reads the findings afterwards.
 	//
@@ -124,7 +124,7 @@ type PlanRequest struct {
 // WorkRequest is the input to Agent.Work. The caller pre-reads the plan
 // markdown body so the agent can choose how to embed or attach it
 // without having to re-stat or re-read the file. There is no
-// OutputPath: the coder edits files in place, so the orchestrator does
+// OutputPath: the worker edits files in place, so the orchestrator does
 // not stat a single output file afterwards.
 //
 // PlanPath is always an absolute path inside `<cwd>/.j/tasks/<id>/`
@@ -140,23 +140,23 @@ type WorkRequest struct {
 	Interactive  bool
 	ResumeChatID string
 	// Resume, when true, asks the backend to use its resume-only
-	// prompt template: skip the full coder instruction body and
+	// prompt template: skip the full worker instruction body and
 	// instead tell the previous session to inspect what was already
 	// done, summarise it for the user, and continue only the
 	// outstanding work. Independent of ResumeChatID.
 	Resume bool
 	// FixFindings, when non-empty, asks the backend to use a
-	// fix-only coder prompt that points the previous session at the
+	// fix-only worker prompt that points the previous session at the
 	// supplied verifier findings markdown body and asks it to
 	// address every listed item without re-planning. Empty preserves
 	// today's first-run / resume behaviour. Used by `j verify`'s
 	// bounded fix loop after a verifier turn returned VERDICT: FAIL.
 	FixFindings string
 	// Worktree, when non-empty, is the bare git-worktree name the
-	// coder should operate against. The backend threads it into the
-	// prompt builders so the coder knows which worktree to `cd`
+	// worker should operate against. The backend threads it into the
+	// prompt builders so the worker knows which worktree to `cd`
 	// into (creating it via `git worktree add` if it does not yet
-	// exist). Empty preserves the pre-R2 behaviour: the coder
+	// exist). Empty preserves the pre-R2 behaviour: the worker
 	// operates against the main checkout. The value is NOT a path.
 	Worktree string
 	// AgentLogPath is the absolute path the headless backend MUST
@@ -164,7 +164,7 @@ type WorkRequest struct {
 	// background child. Same contract as PlanRequest.AgentLogPath.
 	AgentLogPath string
 	// Mustread is the project-wide must-read list (see
-	// PlanRequest.Mustread). Threaded into the first-run coder
+	// PlanRequest.Mustread). Threaded into the first-run worker
 	// prompt only; resume / fix runs ignore it.
 	Mustread []string
 }

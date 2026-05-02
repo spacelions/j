@@ -17,7 +17,7 @@ Expected:
         
         [planner]
         
-        [coder]
+        [worker]
         
         [verifier]
 

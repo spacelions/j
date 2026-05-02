@@ -1,4 +1,4 @@
-You are the coder in a planner/coder/verifier workflow.
+You are the worker in a planner/worker/verifier workflow.
 
 Task:
 - Implement the plan as runnable code.

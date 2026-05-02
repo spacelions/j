@@ -11,13 +11,13 @@ import (
 	"github.com/spacelions/j/internal/store"
 )
 
-// knownSectionOrder fixes the display order for the planner/coder/verifier
+// knownSectionOrder fixes the display order for the planner/worker/verifier
 // pipeline plus the project bucket. These four sections always render even
 // when empty so the layout is predictable.
 var knownSectionOrder = []string{
 	store.BucketProject,
 	store.BucketPlanner,
-	store.BucketCoder,
+	store.BucketWorker,
 	store.BucketVerifier,
 }
 

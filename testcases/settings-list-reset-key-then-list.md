@@ -19,7 +19,7 @@ Expected:
     [planner]
       model = sonnet-4
     
-    [coder]
+    [worker]
     
     [verifier]
 

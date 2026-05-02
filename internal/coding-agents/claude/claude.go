@@ -28,7 +28,7 @@ const Binary = "claude"
 // `j settings set model <id>`.
 var defaultModels = []string{"opus", "sonnet", "haiku"}
 
-// Agent is a Claude-backed coder. It is stateless: every method shells
+// Agent is a Claude-backed worker. It is stateless: every method shells
 // out to the real claude binary on PATH via the run package's
 // package-level helpers. Tests drive it with a stub binary on PATH
 // rather than an injected runner (see AGENTS.md "no test seams" rule).
@@ -127,7 +127,7 @@ func (a *Agent) Plan(ctx context.Context, req codingagents.PlanRequest) (int, er
 // agent edits files directly so we do not pass `--permission-mode
 // plan`. Two flavours mirror Plan:
 //
-//   - Interactive: launch claude's TUI with the coder prompt as the
+//   - Interactive: launch claude's TUI with the worker prompt as the
 //     initial user message; the user drives the session.
 //   - Headless: `--print --output-format text --dangerously-skip-permissions
 //     --model <m>`, fire-and-forget. claude's stdout/stderr are
@@ -221,9 +221,9 @@ func buildPlanPrompt(req codingagents.PlanRequest) string {
 	)
 }
 
-// buildWorkPrompt picks the right coder prompt for req. The
+// buildWorkPrompt picks the right worker prompt for req. The
 // fix-findings branch wins first (a non-empty FixFindings means the
-// outer verify loop wants the previous coder session to address a
+// outer verify loop wants the previous worker session to address a
 // concrete set of verifier findings without re-planning), then
 // resume, then first-run.
 func buildWorkPrompt(req codingagents.WorkRequest) string {
@@ -231,9 +231,9 @@ func buildWorkPrompt(req codingagents.WorkRequest) string {
 		return prompts.BuildVerifierFix(req.PlanPath, req.Body, "verifier_findings.md", req.FixFindings, req.Worktree)
 	}
 	if req.Resume {
-		return prompts.BuildCoderResume(req.PlanPath, req.Body, req.Worktree)
+		return prompts.BuildWorkerResume(req.PlanPath, req.Body, req.Worktree)
 	}
-	return prompts.BuildCoder(req.PlanPath, req.Body, req.Worktree, req.Mustread)
+	return prompts.BuildWorker(req.PlanPath, req.Body, req.Worktree, req.Mustread)
 }
 
 // buildVerifyPrompt picks the right verifier prompt for req. Resume

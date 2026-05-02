@@ -5,7 +5,7 @@
 //
 // Each command keeps its own UI interface (plan and work intentionally
 // have different shapes today and will diverge further as planner and
-// coder grow apart). They both happen to satisfy the small Selector
+// worker grow apart). They both happen to satisfy the small Selector
 // surface declared here, so callers pass their UI straight in.
 package agentpick
 
