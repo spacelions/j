@@ -1,7 +1,7 @@
 Prerequisites:
   - Run `make` (compiles `./bin/j`).
   - `cd` into a fresh empty directory and run `./bin/j init --yes`.
-    Do NOT pass `--mustread` — this test exercises the preflight
+    Do NOT pass `--must-read` — this test exercises the preflight
     prompt path. Confirm `.j/` exists with `test -d .j && echo ok`.
 
 Steps (MANUAL — requires a TTY):

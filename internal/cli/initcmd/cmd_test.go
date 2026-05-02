@@ -314,7 +314,7 @@ func readProjectKey(t *testing.T, key string) (string, bool) {
 	return v, set
 }
 
-// readMustread is the legacy alias retained so the --mustread test
+// readMustread is the legacy alias retained so the --must-read test
 // bodies stay terse.
 func readMustread(t *testing.T) (string, bool) {
 	t.Helper()
@@ -376,7 +376,7 @@ func TestRun_ResetReseedsMaxIterations(t *testing.T) {
 	}
 }
 
-// TestRun_MustreadFlag_SeedsValue pins the new --mustread flag: when
+// TestRun_MustreadFlag_SeedsValue pins the new --must-read flag: when
 // Options.Mustread is non-nil, Run persists the pointed-to string
 // verbatim under project.mustread so the next preflight-gated command
 // short-circuits the prompt.
@@ -402,7 +402,7 @@ func TestRun_MustreadFlag_SeedsValue(t *testing.T) {
 }
 
 // TestRun_MustreadFlag_BlankIsPersisted pins the empty-string branch:
-// `--mustread=""` seeds the empty string verbatim, mirroring the
+// `--must-read=""` seeds the empty string verbatim, mirroring the
 // "blank input is valid" preflight contract.
 func TestRun_MustreadFlag_BlankIsPersisted(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -436,12 +436,12 @@ func TestRun_MustreadFlag_AbsentLeavesUnset(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	if _, set := readMustread(t); set {
-		t.Fatal("project.mustread should be unset when --mustread is not passed")
+		t.Fatal("project.mustread should be unset when --must-read is not passed")
 	}
 }
 
 // TestNew_MustreadFlagWiring exercises the cobra wiring: passing
-// --mustread on the command line populates Options.Mustread via
+// --must-read on the command line populates Options.Mustread via
 // cmd.Flags().Changed, and the persisted value matches the flag.
 func TestNew_MustreadFlagWiring(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -449,7 +449,7 @@ func TestNew_MustreadFlagWiring(t *testing.T) {
 	t.Cleanup(viper.Reset)
 
 	cmd := New()
-	cmd.SetArgs([]string{"--yes", "--mustread=AGENTS.md;CLAUDE.md"})
+	cmd.SetArgs([]string{"--yes", "--must-read=AGENTS.md;CLAUDE.md"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {
