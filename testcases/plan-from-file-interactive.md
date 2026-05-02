@@ -1,6 +1,6 @@
 Prerequisites:
   - Run `make` (compiles `./bin/j`).
-  - `cd` into a fresh empty directory and run `./bin/j init --yes`. Confirm
+  - `cd` into a fresh empty directory and run `./bin/j init --yes --mustread=`. Confirm
     the `.j/` folder exists with `test -d .j && echo ok`.
   - Have `cursor-agent` (or another supported coding-agent backend) on
     PATH and logged in.

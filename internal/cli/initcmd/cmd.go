@@ -29,6 +29,14 @@ type Options struct {
 	// the init.yes viper key.
 	Yes bool
 
+	// Mustread, when non-nil, pre-seeds project.mustread with the
+	// pointed-to string verbatim (case-preserved, including the empty
+	// string). nil leaves the key unset so the next preflight-gated
+	// command surfaces the "Files every agent must read first" prompt
+	// as before. Sourced from the --mustread CLI flag; the pointer
+	// distinguishes "flag absent" from "flag set to empty value".
+	Mustread *string
+
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
@@ -52,15 +60,21 @@ func New() *cobra.Command {
 			"missing pieces without prompting. The --yes/-y flag " +
 			"skips the prompt and always wipes-and-recreates.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return Run(cmd.Context(), Options{
+			opts := Options{
 				Yes:    viper.GetBool("init.yes"),
 				Stdin:  cmd.InOrStdin(),
 				Stdout: cmd.OutOrStdout(),
 				Stderr: cmd.ErrOrStderr(),
-			})
+			}
+			if cmd.Flags().Changed("mustread") {
+				v, _ := cmd.Flags().GetString("mustread")
+				opts.Mustread = &v
+			}
+			return Run(cmd.Context(), opts)
 		},
 	}
 	cmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt and recreate the layout")
+	cmd.Flags().String("mustread", "", `Pre-seed project.mustread (skip the preflight prompt). Use --mustread="" to seed an empty value.`)
 	_ = viper.BindPFlag("init.yes", cmd.Flags().Lookup("yes"))
 	_ = viper.BindEnv("init.yes", "INIT_YES")
 	return cmd
@@ -105,11 +119,39 @@ func Run(ctx context.Context, opts Options) error {
 	if err := store.EnsureProject(); err != nil {
 		return err
 	}
+	if opts.Mustread != nil {
+		if err := persistMustread(*opts.Mustread); err != nil {
+			return err
+		}
+	}
 	jDir, err := store.DefaultDir()
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(opts.Stdout, "initialized %s\n", jDir)
+	return nil
+}
+
+// persistMustread writes the supplied value verbatim under
+// project.mustread so the next preflight-gated command sees
+// found=true and skips the must-read prompt. The empty string is
+// stored as-is to honour the "blank input is valid" contract.
+func persistMustread(value string) error {
+	path, err := store.DefaultPath()
+	if err != nil {
+		return err
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		return err
+	}
+	if err := s.Put(store.BucketProject, "mustread", value); err != nil {
+		_ = s.Close()
+		return fmt.Errorf("init: persist mustread: %w", err)
+	}
+	if err := s.Close(); err != nil {
+		return fmt.Errorf("init: close store: %w", err)
+	}
 	return nil
 }
 

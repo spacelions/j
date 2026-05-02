@@ -856,10 +856,13 @@ func TestVerify_Interactive(t *testing.T) {
 	if !strings.Contains(prompt, strings.TrimSpace(verifier.Instruction)) {
 		t.Fatalf("prompt missing verifier.Instruction: %q", prompt)
 	}
-	for _, want := range []string{reqPath, "# req", planPath, "1. step", verifierPlan, findingsPath, "VERDICT: PASS", "VERDICT: FAIL", "j-verify-task", "git worktree list"} {
+	for _, want := range []string{reqPath, "# req", planPath, "1. step", findingsPath, "VERDICT: PASS", "VERDICT: FAIL", "j-verify-task", "git worktree list"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q: %q", want, prompt)
 		}
+	}
+	if strings.Contains(prompt, verifierPlan) {
+		t.Fatalf("prompt should not reference verifier_plan.md: %q", prompt)
 	}
 	assertCwd(t, cwd, readCwd(t, cwdPath))
 }

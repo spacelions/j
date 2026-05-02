@@ -17,6 +17,7 @@ import (
 	bolt "go.etcd.io/bbolt"
 
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // fakeSpawner is the scripted Spawner used by RunEnter tests. It
@@ -275,9 +276,7 @@ func TestRunEnter_DirectIDPrint(t *testing.T) {
 // Spawner is invoked.
 func TestRunEnter_DirectIDUnknown(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 	ui := &fakeUI{}
 	spawner := &fakeSpawner{}
 	var stdout bytes.Buffer
@@ -331,9 +330,7 @@ func TestRunEnter_NoIDMissingDB(t *testing.T) {
 // fires.
 func TestRunEnter_NoIDEmptyBucket(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 	ui := &fakeUI{}
 	spawner := &fakeSpawner{}
 	var stdout bytes.Buffer
@@ -443,9 +440,7 @@ func TestRunEnter_EnsureTaskDirError_DirectID(t *testing.T) {
 	}
 	dir := t.TempDir()
 	t.Chdir(dir)
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatal(err)
@@ -589,9 +584,7 @@ func TestRunEnter_OpenError_Picker(t *testing.T) {
 // surface.
 func TestRunEnter_GetTaskNonNotExistError(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatal(err)
@@ -628,9 +621,7 @@ func TestRunEnter_GetTaskNonNotExistError(t *testing.T) {
 // the bucket and exercises the picker branch's ListTasks path.
 func TestRunEnter_ListDecodeError_Picker(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatal(err)

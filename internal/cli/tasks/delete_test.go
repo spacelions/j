@@ -18,6 +18,7 @@ import (
 	bolt "go.etcd.io/bbolt"
 
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // fakeUI is the scripted UI fake used by the orchestration tests.
@@ -65,9 +66,7 @@ func (u *fakeUI) PickTask(_ context.Context, tasks []store.Task) (string, error)
 // assert post-state).
 func seedTask(t *testing.T, id, summary string) string {
 	t.Helper()
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatalf("DefaultTasksDBPath: %v", err)
@@ -103,9 +102,7 @@ func seedTask(t *testing.T, id, summary string) string {
 // git worktree integration tests.
 func seedTaskWithWorktree(t *testing.T, id, summary, worktree string) string {
 	t.Helper()
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatalf("DefaultTasksDBPath: %v", err)
@@ -324,9 +321,7 @@ func TestRunDelete_Decline_LeavesRowAndDirIntact(t *testing.T) {
 
 func TestRunDelete_MissingTask_PrintsNoTask(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
 	err := RunDelete(context.Background(), DeleteOptions{
@@ -377,9 +372,7 @@ func TestRunDelete_UIErrorPropagates(t *testing.T) {
 // caller and the store must be closed before the return.
 func TestRunDelete_GetTaskNonNotExistError(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatal(err)
@@ -763,9 +756,7 @@ func TestRunDelete_NoIDMissingDB(t *testing.T) {
 // is printed and RunDelete returns nil.
 func TestRunDelete_NoIDEmptyBucket(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
 	err := RunDelete(context.Background(), DeleteOptions{
@@ -790,9 +781,7 @@ func TestRunDelete_NoIDEmptyBucket(t *testing.T) {
 // opens the store. The error must propagate; no UI is invoked.
 func TestRunDelete_NoIDListDecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatal(err)

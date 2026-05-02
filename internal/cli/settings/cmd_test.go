@@ -33,8 +33,8 @@ func TestNew_Smoke(t *testing.T) {
 }
 
 // TestNew_BareSettingsRunsList exercises the parent RunE: plain
-// `j settings` is the list path. After mustInit the DB is empty so
-// output is "no settings stored".
+// `j settings` is the list path. After mustInit the DB carries only
+// the project.mustread placeholder seeded by preflight.
 func TestNew_BareSettingsRunsList(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -47,7 +47,7 @@ func TestNew_BareSettingsRunsList(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "no settings stored") {
-		t.Fatalf("stdout = %q, want no settings", stdout.String())
+	if stdout.String() != "project.mustread = \n" {
+		t.Fatalf("stdout = %q, want only project.mustread placeholder", stdout.String())
 	}
 }

@@ -21,12 +21,15 @@ func TestBuildVerifier(t *testing.T) {
 	if !strings.Contains(got, strings.TrimSpace(verifier.Instruction)) {
 		t.Fatalf("prompt missing verifier.Instruction: %q", got)
 	}
-	for _, want := range []string{reqPath, reqBody, planPath, planBody, verifierPlanPath, findingsPath} {
+	for _, want := range []string{reqPath, reqBody, planPath, planBody, findingsPath} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("prompt missing %q: %q", want, got)
 		}
 	}
-	for _, want := range []string{"VERDICT: PASS", "VERDICT: FAIL", "Save", "Then exit."} {
+	if strings.Contains(got, verifierPlanPath) {
+		t.Fatalf("prompt should not reference verifier_plan.md: %q", got)
+	}
+	for _, want := range []string{"VERDICT: PASS", "VERDICT: FAIL", "Then exit."} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("prompt missing %q: %q", want, got)
 		}

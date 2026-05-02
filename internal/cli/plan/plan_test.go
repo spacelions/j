@@ -17,6 +17,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // openTestStore returns a fresh *store.Store rooted in t.TempDir() with
@@ -48,9 +49,7 @@ func openTestStore(t *testing.T) *store.Store {
 // it twice (e.g. via openTestStore) is harmless.
 func mustInit(t *testing.T) {
 	t.Helper()
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	testutil.Init(t)
 }
 
 func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {

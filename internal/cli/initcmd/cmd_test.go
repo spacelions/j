@@ -293,3 +293,109 @@ func TestWithDefaults_FillsAllNilStreams(t *testing.T) {
 		t.Error("UI was not defaulted")
 	}
 }
+
+// readMustread reads project.mustread from the current cwd's settings
+// store and returns (value, set). Used by the --mustread flag tests
+// to confirm the seeded value persisted verbatim.
+func readMustread(t *testing.T) (string, bool) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+	v, set, err := s.Get(store.BucketProject, "mustread")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	return v, set
+}
+
+// TestRun_MustreadFlag_SeedsValue pins the new --mustread flag: when
+// Options.Mustread is non-nil, Run persists the pointed-to string
+// verbatim under project.mustread so the next preflight-gated command
+// short-circuits the prompt.
+func TestRun_MustreadFlag_SeedsValue(t *testing.T) {
+	t.Chdir(t.TempDir())
+	v := "AGENTS.md;CLAUDE.md"
+	if err := Run(context.Background(), Options{
+		Yes:      true,
+		Mustread: &v,
+		Stdout:   io.Discard,
+		Stderr:   io.Discard,
+		UI:       &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got, set := readMustread(t)
+	if !set {
+		t.Fatal("project.mustread should be persisted")
+	}
+	if got != v {
+		t.Fatalf("project.mustread = %q, want %q (case-preserved)", got, v)
+	}
+}
+
+// TestRun_MustreadFlag_BlankIsPersisted pins the empty-string branch:
+// `--mustread=""` seeds the empty string verbatim, mirroring the
+// "blank input is valid" preflight contract.
+func TestRun_MustreadFlag_BlankIsPersisted(t *testing.T) {
+	t.Chdir(t.TempDir())
+	empty := ""
+	if err := Run(context.Background(), Options{
+		Yes:      true,
+		Mustread: &empty,
+		Stdout:   io.Discard,
+		Stderr:   io.Discard,
+		UI:       &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got, set := readMustread(t)
+	if !set || got != "" {
+		t.Fatalf("readMustread = (%q, %v), want (\"\", true)", got, set)
+	}
+}
+
+// TestRun_MustreadFlag_AbsentLeavesUnset confirms Options.Mustread==nil
+// does NOT seed the key: the next preflight-gated command will still
+// surface the must-read prompt.
+func TestRun_MustreadFlag_AbsentLeavesUnset(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := Run(context.Background(), Options{
+		Yes:    true,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if _, set := readMustread(t); set {
+		t.Fatal("project.mustread should be unset when --mustread is not passed")
+	}
+}
+
+// TestNew_MustreadFlagWiring exercises the cobra wiring: passing
+// --mustread on the command line populates Options.Mustread via
+// cmd.Flags().Changed, and the persisted value matches the flag.
+func TestNew_MustreadFlagWiring(t *testing.T) {
+	t.Chdir(t.TempDir())
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	cmd := New()
+	cmd.SetArgs([]string{"--yes", "--mustread=AGENTS.md;CLAUDE.md"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got, set := readMustread(t)
+	if !set || got != "AGENTS.md;CLAUDE.md" {
+		t.Fatalf("readMustread = (%q, %v), want (\"AGENTS.md;CLAUDE.md\", true)", got, set)
+	}
+}
