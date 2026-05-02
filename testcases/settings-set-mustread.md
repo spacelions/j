@@ -1,8 +1,8 @@
 Prerequisites:
   - Run `make` (compiles `./bin/j`).
   - `cd` into a fresh empty directory and run
-    `./bin/j init --yes --mustread=`. Confirm the `.j/` folder
-    exists with `test -d .j && echo ok`. The `--mustread=` flag
+    `./bin/j init --yes --must-read=`. Confirm the `.j/` folder
+    exists with `test -d .j && echo ok`. The `--must-read=` flag
     pre-seeds an empty value so the preflight check skips the
     "Files every agent must read first" prompt; the subsequent
     `settings set` calls overwrite the empty value.

@@ -65,7 +65,11 @@ func runList(cmd *cobra.Command) error {
 			first = false
 			fmt.Fprintf(out, "[%s]\n", b)
 			for _, kv := range entries {
-				fmt.Fprintf(out, "  %s = %s\n", kv.Key, kv.Value)
+				value := kv.Value
+				if b == store.BucketProject && kv.Key == "api_key" {
+					value = "****"
+				}
+				fmt.Fprintf(out, "  %s = %s\n", kv.Key, value)
 			}
 		}
 		return nil

@@ -1,6 +1,6 @@
 Prerequisites:
   - Run `make` (compiles `./bin/j`).
-  - `cd` into a fresh empty directory and run `./bin/j init --yes --mustread=`. Confirm
+  - `cd` into a fresh empty directory and run `./bin/j init --yes --must-read=`. Confirm
     the `.j/` folder exists with `test -d .j && echo ok`.
 
 Steps (headless variant — runnable):
@@ -17,7 +17,7 @@ Expected (headless):
   - After `reset --yes` returns, `<cwd>/.j/` does NOT exist.
 
 Steps (interactive variant — MANUAL, requires a TTY):
-  - Run `./bin/j init --yes --mustread=` to recreate the layout.
+  - Run `./bin/j init --yes --must-read=` to recreate the layout.
   - Run `./bin/j settings set plan.tool=cursor`.
   - Run `./bin/j settings reset` WITHOUT `--yes`. The confirmation
     prompt appears on stdin (line-based: type `y` and Enter to accept,

@@ -1,7 +1,7 @@
 Prerequisites:
   - Run `make` (compiles `./bin/j`).
   - `cd` into a fresh empty directory and run
-    `./bin/j init --yes "--mustread=AGENTS.md;CLAUDE.md"`.
+    `./bin/j init --yes "--must-read=AGENTS.md;CLAUDE.md"`.
   - Have a supported coding-agent backend on PATH (cursor-agent or
     claude) and logged in.
   - Drop a small markdown task description at `task.md`.
@@ -16,7 +16,7 @@ Steps (MANUAL — requires a TTY and a real coding-agent backend):
         - CLAUDE.md
 
   - Optional cross-check: re-run the flow with
-    `./bin/j init --yes --mustread=` (empty mustread) and observe
+    `./bin/j init --yes --must-read=` (empty mustread) and observe
     that the same prompt no longer carries the bulleted block.
 
 Expected:

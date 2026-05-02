@@ -17,7 +17,6 @@ import (
 	"github.com/spacelions/j/internal/cli/verify"
 	"github.com/spacelions/j/internal/cli/web"
 	"github.com/spacelions/j/internal/cli/work"
-	"github.com/spacelions/j/internal/config"
 )
 
 // Execute is the process entry point. It builds the cobra root, parses
@@ -29,9 +28,6 @@ func Execute() int {
 		// Errors are printed once here; don't let cobra print them too.
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		PersistentPreRunE: func(*cobra.Command, []string) error {
-			return config.Init()
-		},
 	}
 
 	root.AddCommand(

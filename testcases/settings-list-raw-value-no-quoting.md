@@ -1,6 +1,6 @@
 Prerequisites:
   - Run `make` (compiles `./bin/j`).
-  - `cd` into a fresh empty directory and run `./bin/j init --yes --mustread=`.
+  - `cd` into a fresh empty directory and run `./bin/j init --yes --must-read=`.
 
 Steps:
   - Run `./bin/j settings set 'project.mustread=AGENTS.md;CLAUDE.md'`

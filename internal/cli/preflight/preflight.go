@@ -20,7 +20,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
-	"github.com/spacelions/j/internal/config"
 	"github.com/spacelions/j/internal/mustread"
 	"github.com/spacelions/j/internal/store"
 )
@@ -174,15 +173,10 @@ func ensureMustread(ctx context.Context, ui UI) error {
 }
 
 // PreRunE is the cobra PersistentPreRunE wired into every subcommand
-// that needs an initialized .j layout. It performs config bindings
-// (so subcommands inherit the same env-var setup the root command
-// does) and then delegates to Ensure with a huh-backed UI. The two
-// concerns live in one helper so the cobra layer needs only a single
-// reference per subcommand.
+// that needs an initialized .j layout. It delegates to Ensure with a
+// huh-backed UI so the cobra layer needs only a single reference per
+// subcommand.
 func PreRunE(cmd *cobra.Command, _ []string) error {
-	if err := config.Init(); err != nil {
-		return err
-	}
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()

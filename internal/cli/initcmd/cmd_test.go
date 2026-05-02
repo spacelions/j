@@ -294,10 +294,9 @@ func TestWithDefaults_FillsAllNilStreams(t *testing.T) {
 	}
 }
 
-// readMustread reads project.mustread from the current cwd's settings
-// store and returns (value, set). Used by the --mustread flag tests
-// to confirm the seeded value persisted verbatim.
-func readMustread(t *testing.T) (string, bool) {
+// readProjectKey reads a key from the project bucket of the current
+// cwd's settings store and returns (value, set).
+func readProjectKey(t *testing.T, key string) (string, bool) {
 	t.Helper()
 	path, err := store.DefaultPath()
 	if err != nil {
@@ -308,14 +307,76 @@ func readMustread(t *testing.T) (string, bool) {
 		t.Fatalf("Open: %v", err)
 	}
 	defer s.Close()
-	v, set, err := s.Get(store.BucketProject, "mustread")
+	v, set, err := s.Get(store.BucketProject, key)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 	return v, set
 }
 
-// TestRun_MustreadFlag_SeedsValue pins the new --mustread flag: when
+// readMustread is the legacy alias retained so the --must-read test
+// bodies stay terse.
+func readMustread(t *testing.T) (string, bool) {
+	t.Helper()
+	return readProjectKey(t, "mustread")
+}
+
+// TestRun_FreshInit_SeedsMaxIterations pins the unconditional seed:
+// every successful `j init` writes project.max_iterations=3, and the
+// user can override it later via `j settings set`.
+func TestRun_FreshInit_SeedsMaxIterations(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := Run(context.Background(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got, set := readProjectKey(t, "max_iterations")
+	if !set || got != "3" {
+		t.Fatalf("project.max_iterations = (%q, %v), want (\"3\", true)", got, set)
+	}
+}
+
+// TestRun_ResetReseedsMaxIterations confirms the reset-and-recreate
+// path also reseeds project.max_iterations: a stale value persisted
+// before the reset is overwritten with the fresh default of "3".
+func TestRun_ResetReseedsMaxIterations(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketProject, "max_iterations", "99"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(context.Background(), Options{
+		Yes:    true,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got, set := readProjectKey(t, "max_iterations")
+	if !set || got != "3" {
+		t.Fatalf("project.max_iterations after reset = (%q, %v), want (\"3\", true)", got, set)
+	}
+}
+
+// TestRun_MustreadFlag_SeedsValue pins the new --must-read flag: when
 // Options.Mustread is non-nil, Run persists the pointed-to string
 // verbatim under project.mustread so the next preflight-gated command
 // short-circuits the prompt.
@@ -341,7 +402,7 @@ func TestRun_MustreadFlag_SeedsValue(t *testing.T) {
 }
 
 // TestRun_MustreadFlag_BlankIsPersisted pins the empty-string branch:
-// `--mustread=""` seeds the empty string verbatim, mirroring the
+// `--must-read=""` seeds the empty string verbatim, mirroring the
 // "blank input is valid" preflight contract.
 func TestRun_MustreadFlag_BlankIsPersisted(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -375,12 +436,12 @@ func TestRun_MustreadFlag_AbsentLeavesUnset(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	if _, set := readMustread(t); set {
-		t.Fatal("project.mustread should be unset when --mustread is not passed")
+		t.Fatal("project.mustread should be unset when --must-read is not passed")
 	}
 }
 
 // TestNew_MustreadFlagWiring exercises the cobra wiring: passing
-// --mustread on the command line populates Options.Mustread via
+// --must-read on the command line populates Options.Mustread via
 // cmd.Flags().Changed, and the persisted value matches the flag.
 func TestNew_MustreadFlagWiring(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -388,7 +449,7 @@ func TestNew_MustreadFlagWiring(t *testing.T) {
 	t.Cleanup(viper.Reset)
 
 	cmd := New()
-	cmd.SetArgs([]string{"--yes", "--mustread=AGENTS.md;CLAUDE.md"})
+	cmd.SetArgs([]string{"--yes", "--must-read=AGENTS.md;CLAUDE.md"})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.Execute(); err != nil {

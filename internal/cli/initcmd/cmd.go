@@ -33,7 +33,7 @@ type Options struct {
 	// pointed-to string verbatim (case-preserved, including the empty
 	// string). nil leaves the key unset so the next preflight-gated
 	// command surfaces the "Files every agent must read first" prompt
-	// as before. Sourced from the --mustread CLI flag; the pointer
+	// as before. Sourced from the --must-read CLI flag; the pointer
 	// distinguishes "flag absent" from "flag set to empty value".
 	Mustread *string
 
@@ -66,15 +66,15 @@ func New() *cobra.Command {
 				Stdout: cmd.OutOrStdout(),
 				Stderr: cmd.ErrOrStderr(),
 			}
-			if cmd.Flags().Changed("mustread") {
-				v, _ := cmd.Flags().GetString("mustread")
+			if cmd.Flags().Changed("must-read") {
+				v, _ := cmd.Flags().GetString("must-read")
 				opts.Mustread = &v
 			}
 			return Run(cmd.Context(), opts)
 		},
 	}
 	cmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt and recreate the layout")
-	cmd.Flags().String("mustread", "", `Pre-seed project.mustread (skip the preflight prompt). Use --mustread="" to seed an empty value.`)
+	cmd.Flags().String("must-read", "", `Pre-seed project.mustread (skip the preflight prompt). Use --must-read="" to seed an empty value.`)
 	_ = viper.BindPFlag("init.yes", cmd.Flags().Lookup("yes"))
 	_ = viper.BindEnv("init.yes", "INIT_YES")
 	return cmd
@@ -119,10 +119,8 @@ func Run(ctx context.Context, opts Options) error {
 	if err := store.EnsureProject(); err != nil {
 		return err
 	}
-	if opts.Mustread != nil {
-		if err := persistMustread(*opts.Mustread); err != nil {
-			return err
-		}
+	if err := seedDefaults(opts.Mustread); err != nil {
+		return err
 	}
 	jDir, err := store.DefaultDir()
 	if err != nil {
@@ -132,11 +130,20 @@ func Run(ctx context.Context, opts Options) error {
 	return nil
 }
 
-// persistMustread writes the supplied value verbatim under
-// project.mustread so the next preflight-gated command sees
-// found=true and skips the must-read prompt. The empty string is
-// stored as-is to honour the "blank input is valid" contract.
-func persistMustread(value string) error {
+// defaultMaxIterations is the seed value written to
+// project.max_iterations on every successful `j init`. The user can
+// override it later via `j settings set project.max_iterations=...`.
+const defaultMaxIterations = "3"
+
+// seedDefaults opens the freshly-created settings store once and
+// writes the project-bucket defaults: max_iterations is always
+// reseeded to defaultMaxIterations, and mustread is persisted
+// verbatim when the caller passed --must-read (mustread != nil). A
+// nil mustread leaves the key unset so the next preflight-gated
+// command surfaces the "Files every agent must read first" prompt.
+// The empty string is stored as-is to honour the "blank input is
+// valid" contract.
+func seedDefaults(mustread *string) error {
 	path, err := store.DefaultPath()
 	if err != nil {
 		return err
@@ -145,9 +152,15 @@ func persistMustread(value string) error {
 	if err != nil {
 		return err
 	}
-	if err := s.Put(store.BucketProject, "mustread", value); err != nil {
+	if err := s.Put(store.BucketProject, "max_iterations", defaultMaxIterations); err != nil {
 		_ = s.Close()
-		return fmt.Errorf("init: persist mustread: %w", err)
+		return fmt.Errorf("init: persist max_iterations: %w", err)
+	}
+	if mustread != nil {
+		if err := s.Put(store.BucketProject, "mustread", *mustread); err != nil {
+			_ = s.Close()
+			return fmt.Errorf("init: persist mustread: %w", err)
+		}
 	}
 	if err := s.Close(); err != nil {
 		return fmt.Errorf("init: close store: %w", err)
