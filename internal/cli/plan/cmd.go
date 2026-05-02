@@ -27,7 +27,9 @@ func New() *cobra.Command {
 			"which coding agent and model to use, runs that agent in plan mode, and stores the " +
 			"refined requirements.md and the produced plan.md inside <cwd>/.j/tasks/<id>/. " +
 			"No file is written to the workspace; use `j tasks` to list runs and `j work --from-task <id>` " +
-			"to execute the plan.",
+			"to execute the plan. Pass --tool / --model (or PLAN_TOOL / PLAN_MODEL) for a one-off " +
+			"override that does not update the planner bucket; run `j settings reset planner.tool` " +
+			"and/or `j settings reset planner.model` to be re-prompted on the next run.",
 		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// We do not construct a *store.Store here: Run's
@@ -48,25 +50,29 @@ func New() *cobra.Command {
 				interactive = &v
 			}
 			return Run(cmd.Context(), Options{
-				FromFile:     viper.GetString("plan.from_file"),
-				Interactive:  interactive,
-				FromSettings: viper.GetBool("plan.from_settings"),
-				Stdin:        cmd.InOrStdin(),
-				Stdout:       cmd.OutOrStdout(),
-				Stderr:       cmd.ErrOrStderr(),
-				Agents:       []codingagents.Agent{cursor.New(), claude.New()},
+				FromFile:    viper.GetString("plan.from_file"),
+				Interactive: interactive,
+				Tool:        viper.GetString("plan.tool"),
+				Model:       viper.GetString("plan.model"),
+				Stdin:       cmd.InOrStdin(),
+				Stdout:      cmd.OutOrStdout(),
+				Stderr:      cmd.ErrOrStderr(),
+				Agents:      []codingagents.Agent{cursor.New(), claude.New()},
 			})
 		},
 	}
 	cmd.Flags().StringP("from-file", "f", "", "Path to a markdown file describing the task")
 	cmd.Flags().Bool("interactive", true, "Launch the coding agent in interactive mode (its TUI). Set to false for headless capture.")
-	cmd.Flags().Bool("from-settings", true, "Use the tool/model recorded in <cwd>/.j/settings; pass --from-settings=false to be prompted instead.")
+	cmd.Flags().String("tool", "", "Coding agent tool (cursor|claude). One-off override; does not update planner.tool.")
+	cmd.Flags().String("model", "", "Model identifier. One-off override; does not update planner.model.")
 	_ = viper.BindPFlag("plan.from_file", cmd.Flags().Lookup("from-file"))
 	_ = viper.BindPFlag("plan.interactive", cmd.Flags().Lookup("interactive"))
-	_ = viper.BindPFlag("plan.from_settings", cmd.Flags().Lookup("from-settings"))
+	_ = viper.BindPFlag("plan.tool", cmd.Flags().Lookup("tool"))
+	_ = viper.BindPFlag("plan.model", cmd.Flags().Lookup("model"))
 	_ = viper.BindEnv("plan.from_file", "PLAN_FROM_FILE")
 	_ = viper.BindEnv("plan.interactive", "PLAN_INTERACTIVE")
-	_ = viper.BindEnv("plan.from_settings", "PLAN_FROM_SETTINGS")
+	_ = viper.BindEnv("plan.tool", "PLAN_TOOL")
+	_ = viper.BindEnv("plan.model", "PLAN_MODEL")
 	cmd.AddCommand(newResumeCmd())
 	return cmd
 }

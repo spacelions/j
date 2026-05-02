@@ -10,7 +10,7 @@ Steps:
 Expected:
   - Both invocations exit with code 0.
   - `work --help` stdout mentions `--from-task`, `--from-file` (alias
-    `-f`), `--from-settings`, `--interactive`, and lists the `resume`
+    `-f`), `--tool`, `--model`, `--interactive`, and lists the `resume`
     subcommand.
   - `work resume --help` stdout mentions the `--from-task` flag and
     `WORK_RESUME_FROM_TASK` env-var binding, and explains the

@@ -494,6 +494,176 @@ func TestStoredInteractive_GetError(t *testing.T) {
 	}
 }
 
+// TestResolve_BothExplicit short-circuits the store entirely:
+// neither key is read, the agent runs CheckLogin, and the bucket is
+// not consulted. A nil store is fine.
+func TestResolve_BothExplicit(t *testing.T) {
+	cursor := newStubAgent("cursor", "sonnet-4")
+	agent, model, err := Resolve(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "opus")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if agent != cursor {
+		t.Fatalf("agent = %v, want cursor", agent.Name())
+	}
+	if model != "opus" {
+		t.Fatalf("model = %q, want opus", model)
+	}
+	if cursor.checked != 1 {
+		t.Fatalf("CheckLogin = %d, want 1", cursor.checked)
+	}
+	// Resolve must not list models — that's prompt-time work.
+	if cursor.listed != 0 {
+		t.Fatalf("ListModels called %d times, want 0", cursor.listed)
+	}
+}
+
+// TestResolve_ToolOnly_FillsModelFromStore covers the partial-flag
+// path: --tool alone reads model from the bucket.
+func TestResolve_ToolOnly_FillsModelFromStore(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Put(store.BucketPlanner, "model", "stored-model"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+
+	agent, model, err := Resolve(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if agent != cursor {
+		t.Fatalf("agent = %v, want cursor", agent.Name())
+	}
+	if model != "stored-model" {
+		t.Fatalf("model = %q, want stored-model", model)
+	}
+}
+
+// TestResolve_ModelOnly_FillsToolFromStore is the symmetric case.
+func TestResolve_ModelOnly_FillsToolFromStore(t *testing.T) {
+	s := openTestStore(t, store.BucketCoder)
+	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+
+	agent, model, err := Resolve(context.Background(), s, store.BucketCoder, []codingagents.Agent{cursor}, "", "opus")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if agent != cursor {
+		t.Fatalf("agent = %v, want cursor", agent.Name())
+	}
+	if model != "opus" {
+		t.Fatalf("model = %q, want opus", model)
+	}
+}
+
+// TestResolve_ToolOnly_EmptyBucket errors with a clear hint about
+// the missing half so the user knows to pass --model or run
+// `j settings reset`.
+func TestResolve_ToolOnly_EmptyBucket(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	cursor := newStubAgent("cursor", "sonnet-4")
+
+	_, _, err := Resolve(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
+	if err == nil || !strings.Contains(err.Error(), "given without stored model in planner") {
+		t.Fatalf("err = %v, want missing-model error", err)
+	}
+	if cursor.checked != 0 {
+		t.Fatal("CheckLogin must not run when the missing half is unavailable")
+	}
+}
+
+// TestResolve_ModelOnly_EmptyBucket is the symmetric case.
+func TestResolve_ModelOnly_EmptyBucket(t *testing.T) {
+	s := openTestStore(t, store.BucketVerifier)
+	cursor := newStubAgent("cursor", "sonnet-4")
+
+	_, _, err := Resolve(context.Background(), s, store.BucketVerifier, []codingagents.Agent{cursor}, "", "opus")
+	if err == nil || !strings.Contains(err.Error(), "given without stored tool in verifier") {
+		t.Fatalf("err = %v, want missing-tool error", err)
+	}
+	if cursor.checked != 0 {
+		t.Fatal("CheckLogin must not run when the missing half is unavailable")
+	}
+}
+
+// TestResolve_BothEmpty signals to the caller (selectPlanner /
+// selectCoder / selectVerifier) that no override was requested so it
+// can fall through to FromStore / Pick.
+func TestResolve_BothEmpty(t *testing.T) {
+	cursor := newStubAgent("cursor", "sonnet-4")
+	_, _, err := Resolve(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "", "")
+	if !errors.Is(err, ErrNoStoredSelection) {
+		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
+	}
+}
+
+// TestResolve_UnknownTool errors on an off-list explicit tool name
+// before CheckLogin runs.
+func TestResolve_UnknownTool(t *testing.T) {
+	cursor := newStubAgent("cursor", "sonnet-4")
+	_, _, err := Resolve(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "ghost", "opus")
+	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
+		t.Fatalf("err = %v, want unknown-tool error", err)
+	}
+	if cursor.checked != 0 {
+		t.Fatal("CheckLogin must not run when lookup fails")
+	}
+}
+
+// TestResolve_CheckLoginError propagates the agent's auth failure.
+func TestResolve_CheckLoginError(t *testing.T) {
+	cursor := newStubAgent("cursor", "sonnet-4")
+	cursor.loginErr = errors.New("not logged in")
+
+	_, _, err := Resolve(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "opus")
+	if err == nil || !strings.Contains(err.Error(), "not logged in") {
+		t.Fatalf("err = %v, want login error", err)
+	}
+	if cursor.checked != 1 {
+		t.Fatalf("CheckLogin called %d times, want 1", cursor.checked)
+	}
+}
+
+// TestResolve_StoreReadError surfaces non-sentinel read failures
+// rather than silently treating them as a missing key.
+func TestResolve_StoreReadError(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+
+	_, _, err := Resolve(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
+	if err == nil || !strings.Contains(err.Error(), "agentpick: read planner") {
+		t.Fatalf("err = %v, want wrapped read error", err)
+	}
+}
+
+// TestResolve_DoesNotPersist confirms Resolve never writes the
+// values it reads, so the contract "explicit overrides are one-off"
+// is observable from the bucket contents.
+func TestResolve_DoesNotPersist(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+
+	if _, _, err := Resolve(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "", "opus"); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	entries, err := s.List(store.BucketPlanner)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Key != "tool" {
+		t.Fatalf("planner entries = %v, want only the original tool key", entries)
+	}
+}
+
 // TestPick_NoAgents pins the empty-slice behavior: Pick still calls
 // SelectTool with a zero-length list and the UI is responsible for
 // surfacing "no options". Callers (plan.Run, work.Run) guard against

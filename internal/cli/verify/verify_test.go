@@ -138,6 +138,11 @@ type scriptedUI struct {
 	toolCalls       int
 	modelCalls      int
 
+	// toolHook, when non-nil, runs at the start of SelectTool so
+	// tests can mutate shared state (e.g. close the injected store)
+	// between Pick and the post-Pick persist step.
+	toolHook func()
+
 	pickedTasks      []store.Task
 	pickResumedTasks []store.Task
 }
@@ -182,6 +187,9 @@ func (s *scriptedUI) PickVerifyTask(_ context.Context, tasks []store.Task) (stri
 
 func (s *scriptedUI) SelectTool(_ context.Context, options []string) (string, error) {
 	s.toolCalls++
+	if s.toolHook != nil {
+		s.toolHook()
+	}
 	if s.toolErr != nil {
 		return "", s.toolErr
 	}
@@ -1064,9 +1072,9 @@ func TestRun_PersistsVerifierSelection(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_PopulatedStore_SkipsPrompts mirrors the
+// TestRun_FromStore_PopulatedStore_SkipsPrompts mirrors the
 // work flow's settings-on path.
-func TestRun_FromSettings_PopulatedStore_SkipsPrompts(t *testing.T) {
+func TestRun_FromStore_PopulatedStore_SkipsPrompts(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Put(store.BucketVerifier, "tool", "cursor"); err != nil {
 		t.Fatal(err)
@@ -1084,7 +1092,6 @@ func TestRun_FromSettings_PopulatedStore_SkipsPrompts(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:       id,
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       io.Discard,
 		Agents:       []codingagents.Agent{agent},
@@ -1105,9 +1112,9 @@ func TestRun_FromSettings_PopulatedStore_SkipsPrompts(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_EmptyStore_FallsBack covers the fallback to
+// TestRun_FromStore_EmptyStore_FallsBack covers the fallback to
 // Pick when the bucket is empty.
-func TestRun_FromSettings_EmptyStore_FallsBack(t *testing.T) {
+func TestRun_FromStore_EmptyStore_FallsBack(t *testing.T) {
 	s := openTestStore(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
 	agent := newScriptedAgent()
@@ -1118,7 +1125,6 @@ func TestRun_FromSettings_EmptyStore_FallsBack(t *testing.T) {
 	err := Run(context.Background(), Options{
 		TaskID:       id,
 		Interactive:  boolPtr(true),
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       &stderr,
 		Agents:       []codingagents.Agent{agent},
@@ -1136,10 +1142,10 @@ func TestRun_FromSettings_EmptyStore_FallsBack(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_NonSentinelStoreError pins agentpick.FromStore's
+// TestRun_FromStore_NonSentinelStoreError pins agentpick.FromStore's
 // non-sentinel error path: a stored tool that isn't in the agent
 // list.
-func TestRun_FromSettings_NonSentinelStoreError(t *testing.T) {
+func TestRun_FromStore_NonSentinelStoreError(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Put(store.BucketVerifier, "tool", "ghost"); err != nil {
 		t.Fatal(err)
@@ -1153,7 +1159,6 @@ func TestRun_FromSettings_NonSentinelStoreError(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:       id,
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       io.Discard,
 		Agents:       []codingagents.Agent{agent},
@@ -1168,10 +1173,10 @@ func TestRun_FromSettings_NonSentinelStoreError(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_StoredInteractiveFalseOverridesDefault pins
+// TestRun_FromStore_StoredInteractiveFalseOverridesDefault pins
 // the precedence: stored=false propagates to the agent request and
 // the persisted value when no explicit Interactive pointer is set.
-func TestRun_FromSettings_StoredInteractiveFalseOverridesDefault(t *testing.T) {
+func TestRun_FromStore_StoredInteractiveFalseOverridesDefault(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Put(store.BucketVerifier, "tool", "cursor"); err != nil {
 		t.Fatal(err)
@@ -1189,7 +1194,6 @@ func TestRun_FromSettings_StoredInteractiveFalseOverridesDefault(t *testing.T) {
 	err := Run(context.Background(), Options{
 		TaskID:       id,
 		Interactive:  nil,
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       io.Discard,
 		Agents:       []codingagents.Agent{agent},
@@ -1204,8 +1208,8 @@ func TestRun_FromSettings_StoredInteractiveFalseOverridesDefault(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_ExplicitWins mirrors work coverage.
-func TestRun_FromSettings_ExplicitWins(t *testing.T) {
+// TestRun_FromStore_ExplicitWins mirrors work coverage.
+func TestRun_FromStore_ExplicitWins(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Put(store.BucketVerifier, "tool", "cursor"); err != nil {
 		t.Fatal(err)
@@ -1223,7 +1227,6 @@ func TestRun_FromSettings_ExplicitWins(t *testing.T) {
 	err := Run(context.Background(), Options{
 		TaskID:       id,
 		Interactive:  boolPtr(true),
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       io.Discard,
 		Agents:       []codingagents.Agent{agent},
@@ -1238,9 +1241,9 @@ func TestRun_FromSettings_ExplicitWins(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_StoredInteractiveUnparseable confirms a
+// TestRun_FromStore_StoredInteractiveUnparseable confirms a
 // garbled bucket value leaves the cobra default true intact.
-func TestRun_FromSettings_StoredInteractiveUnparseable(t *testing.T) {
+func TestRun_FromStore_StoredInteractiveUnparseable(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Put(store.BucketVerifier, "tool", "cursor"); err != nil {
 		t.Fatal(err)
@@ -1257,7 +1260,6 @@ func TestRun_FromSettings_StoredInteractiveUnparseable(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:       id,
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       io.Discard,
 		Agents:       []codingagents.Agent{agent},
@@ -1272,17 +1274,53 @@ func TestRun_FromSettings_StoredInteractiveUnparseable(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_False_IgnoresStored exercises the
-// FromSettings=false branch.
-func TestRun_FromSettings_False_IgnoresStored(t *testing.T) {
+// TestRun_ExplicitTool_SkipsPersistence asserts the new --tool /
+// --model contract: when both flags are supplied, Run resolves via
+// agentpick.Resolve, runs the verifier, and leaves the verifier
+// bucket untouched.
+func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
+	s := openTestStore(t)
+	id := seedWorkDoneTask(t, "x", "plan", "")
+	agent := newScriptedAgent()
+	agent.verifyVerdicts = []string{"PASS"}
+	ui := &scriptedUI{}
+
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Tool:   "cursor",
+		Model:  "opus",
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+		Store:  s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.toolCalls != 0 || ui.modelCalls != 0 {
+		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	}
+	if agent.verifiedReqs[0].Model != "opus" {
+		t.Fatalf("model = %q, want opus", agent.verifiedReqs[0].Model)
+	}
+	entries, err := s.List(store.BucketVerifier)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("verifier bucket should be untouched, got %d entries", len(entries))
+	}
+}
+
+// TestRun_PartialTool_FillsModelFromStore covers the partial-flag
+// fallback: --tool alone reads model from the verifier bucket.
+func TestRun_PartialTool_FillsModelFromStore(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Put(store.BucketVerifier, "tool", "cursor"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Put(store.BucketVerifier, "model", "sonnet-4"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketVerifier, "interactive", "false"); err != nil {
+	if err := s.Put(store.BucketVerifier, "model", "stored-model"); err != nil {
 		t.Fatal(err)
 	}
 	id := seedWorkDoneTask(t, "x", "plan", "")
@@ -1290,26 +1328,121 @@ func TestRun_FromSettings_False_IgnoresStored(t *testing.T) {
 	agent.verifyVerdicts = []string{"PASS"}
 
 	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Interactive:  boolPtr(true),
-		FromSettings: false,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
+		TaskID: id,
+		Tool:   "cursor",
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+		Store:  s,
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !agent.verifiedReqs[0].Interactive {
-		t.Fatalf("Interactive should be true")
+	if agent.verifiedReqs[0].Model != "stored-model" {
+		t.Fatalf("model = %q, want stored-model", agent.verifiedReqs[0].Model)
 	}
 }
 
-// TestRun_FromSettings_NoInteractiveKey_DefaultTrue covers the
+// TestRun_ExplicitTool_NilStore_LazyOpenSucceeds drives the
+// nil-Store branch of verifierResolveExplicit. The lazy open finds
+// the seeded verifier.model so --tool=cursor resolves cleanly.
+func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketVerifier, "model", "stored-model"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	id := seedWorkDoneTask(t, "x", "plan", "")
+	agent := newScriptedAgent()
+	agent.verifyVerdicts = []string{"PASS"}
+	err = Run(context.Background(), Options{
+		TaskID: id,
+		Tool:   "cursor",
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if agent.verifiedReqs[0].Model != "stored-model" {
+		t.Fatalf("model = %q, want stored-model", agent.verifiedReqs[0].Model)
+	}
+}
+
+// TestRun_ExplicitTool_NilStore_LazyOpenFails covers the
+// settings-DB-broken branch of verifierResolveExplicit.
+func TestRun_ExplicitTool_NilStore_LazyOpenFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	settingsPath, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(settingsPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(settingsPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	id := seedWorkDoneTask(t, "x", "plan", "")
+	agent := newScriptedAgent()
+	err = Run(context.Background(), Options{
+		TaskID: id,
+		Tool:   "cursor",
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "given without stored model in verifier") {
+		t.Fatalf("err = %v, want missing-model error", err)
+	}
+	if len(agent.verifiedReqs) != 0 {
+		t.Fatal("verifier must not run when settings DB is broken")
+	}
+}
+
+// TestRun_PartialModel_NoStoredTool errors before invoking the verifier.
+func TestRun_PartialModel_NoStoredTool(t *testing.T) {
+	s := openTestStore(t)
+	id := seedWorkDoneTask(t, "x", "plan", "")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Model:  "opus",
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+		Store:  s,
+	})
+	if err == nil || !strings.Contains(err.Error(), "given without stored tool in verifier") {
+		t.Fatalf("err = %v, want missing-tool error", err)
+	}
+	if len(agent.verifiedReqs) != 0 {
+		t.Fatal("verifier should not run when explicit resolve fails")
+	}
+}
+
+// TestRun_FromStore_NoInteractiveKey_DefaultTrue covers the
 // cobra default branch.
-func TestRun_FromSettings_NoInteractiveKey_DefaultTrue(t *testing.T) {
+func TestRun_FromStore_NoInteractiveKey_DefaultTrue(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Put(store.BucketVerifier, "tool", "cursor"); err != nil {
 		t.Fatal(err)
@@ -1324,7 +1457,6 @@ func TestRun_FromSettings_NoInteractiveKey_DefaultTrue(t *testing.T) {
 	err := Run(context.Background(), Options{
 		TaskID:       id,
 		Interactive:  nil,
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       io.Discard,
 		Agents:       []codingagents.Agent{agent},
@@ -1543,12 +1675,12 @@ func TestStoredVerifierInteractive_NilStore_LazyOpenFails(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_NilStore_LazyOpenSucceeds drives the
-// nil-Store + populated-settings branch of verifierFromSettings:
+// TestRun_FromStore_NilStore_LazyOpenSucceeds drives the
+// nil-Store + populated-settings branch of verifierFromStore:
 // the helper opens `<cwd>/.j/settings`, reads the bucket, and
 // surfaces the recorded tool/model so the UI prompts are skipped
 // and storedVerifierInteractive returns the stored false.
-func TestRun_FromSettings_NilStore_LazyOpenSucceeds(t *testing.T) {
+func TestRun_FromStore_NilStore_LazyOpenSucceeds(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	settingsPath, err := store.DefaultPath()
@@ -1579,7 +1711,6 @@ func TestRun_FromSettings_NilStore_LazyOpenSucceeds(t *testing.T) {
 
 	err = Run(context.Background(), Options{
 		TaskID:       id,
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       &stderr,
 		Agents:       []codingagents.Agent{agent},
@@ -1625,9 +1756,9 @@ func TestStoredVerifierInteractive_NilStore_LazyOpenSucceeds(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_NilStore_SettingsOpenFails covers the lazy
+// TestRun_FromStore_NilStore_SettingsOpenFails covers the lazy
 // open-fails branches on the settings path.
-func TestRun_FromSettings_NilStore_SettingsOpenFails(t *testing.T) {
+func TestRun_FromStore_NilStore_SettingsOpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
@@ -1647,7 +1778,6 @@ func TestRun_FromSettings_NilStore_SettingsOpenFails(t *testing.T) {
 
 	err = Run(context.Background(), Options{
 		TaskID:       id,
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       &stderr,
 		Agents:       []codingagents.Agent{agent},

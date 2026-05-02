@@ -120,6 +120,11 @@ type scriptedUI struct {
 	toolCalls       int
 	modelCalls      int
 
+	// toolHook, when non-nil, runs at the start of SelectTool so
+	// tests can mutate shared state (e.g. close the injected store)
+	// between Pick and the post-Pick persist step.
+	toolHook func()
+
 	pickedTasks      []store.Task
 	pickResumedTasks []store.Task
 }
@@ -164,6 +169,9 @@ func (s *scriptedUI) PickWorkTask(_ context.Context, tasks []store.Task) (string
 
 func (s *scriptedUI) SelectTool(_ context.Context, options []string) (string, error) {
 	s.toolCalls++
+	if s.toolHook != nil {
+		s.toolHook()
+	}
 	if s.toolErr != nil {
 		return "", s.toolErr
 	}
@@ -1079,23 +1087,22 @@ func TestRun_SelectionCancelled_DoesNotPersist(t *testing.T) {
 }
 
 // TestRun_StoreWriteError_WarnsAndContinues exercises the persistence
-// best-effort branch: a closed store returns errors from Put, and the
-// agent must still run.
+// best-effort branch: an empty bucket sends Run through the Pick
+// path, and a tool-hook closes the store mid-Pick so the post-Pick
+// Put fails. The agent must still run.
 func TestRun_StoreWriteError_WarnsAndContinues(t *testing.T) {
 	s := openTestStore(t)
 	id := seedPlanDoneTask(t, "x", "body", "")
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
 	agent := newScriptedAgent()
 	var stderr bytes.Buffer
+	ui := &scriptedUI{toolHook: func() { _ = s.Close() }}
 
 	err := Run(context.Background(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: &stderr,
 		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
+		UI:     ui,
 		Store:  s,
 	})
 	if err != nil {
@@ -1109,12 +1116,38 @@ func TestRun_StoreWriteError_WarnsAndContinues(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_PopulatedStore_SkipsPrompts is the work
+// TestRun_StoreReadError_Surfaces pins the new contract for a
+// broken settings DB: when reading the coder bucket fails for a
+// non-sentinel reason, Run aborts before invoking the agent.
+func TestRun_StoreReadError_Surfaces(t *testing.T) {
+	s := openTestStore(t)
+	id := seedPlanDoneTask(t, "x", "body", "")
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+		Store:  s,
+	})
+	if err == nil || !strings.Contains(err.Error(), "agentpick: read coder") {
+		t.Fatalf("err = %v, want wrapped read error", err)
+	}
+	if agent.worked != 0 {
+		t.Fatal("agent.Work must not run when settings DB is broken")
+	}
+}
+
+// TestRun_FromStore_PopulatedStore_SkipsPrompts is the work
 // counterpart of the plan test: a populated coder bucket must
 // short-circuit the prompts and route the stored model into the
-// WorkRequest. The bucket is left untouched (no "from_settings"
-// key, no rewrite).
-func TestRun_FromSettings_PopulatedStore_SkipsPrompts(t *testing.T) {
+// WorkRequest. The bucket is left untouched (no rewrite).
+func TestRun_FromStore_PopulatedStore_SkipsPrompts(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
@@ -1133,7 +1166,6 @@ func TestRun_FromSettings_PopulatedStore_SkipsPrompts(t *testing.T) {
 	err := Run(context.Background(), Options{
 		TaskID:       id,
 		Interactive:  boolPtr(true),
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       &stderr,
 		Agents:       []codingagents.Agent{agent},
@@ -1172,7 +1204,7 @@ func TestRun_FromSettings_PopulatedStore_SkipsPrompts(t *testing.T) {
 	}
 }
 
-func TestRun_FromSettings_EmptyStore_FallsBackToPrompt(t *testing.T) {
+func TestRun_FromStore_EmptyStore_FallsBackToPrompt(t *testing.T) {
 	s := openTestStore(t)
 	id := seedPlanDoneTask(t, "x", "body", "")
 	agent := newScriptedAgent()
@@ -1182,7 +1214,6 @@ func TestRun_FromSettings_EmptyStore_FallsBackToPrompt(t *testing.T) {
 	err := Run(context.Background(), Options{
 		TaskID:       id,
 		Interactive:  boolPtr(true),
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       &stderr,
 		Agents:       []codingagents.Agent{agent},
@@ -1203,40 +1234,170 @@ func TestRun_FromSettings_EmptyStore_FallsBackToPrompt(t *testing.T) {
 	}
 }
 
-func TestRun_FromSettings_False_AlwaysPrompts(t *testing.T) {
+// TestRun_ExplicitTool_SkipsPersistence asserts the new --tool /
+// --model contract: when both flags are supplied, Run resolves via
+// agentpick.Resolve, runs the chosen agent, and leaves the coder
+// bucket untouched.
+func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	s := openTestStore(t)
-	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketCoder, "model", "sonnet-4"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
 	id := seedPlanDoneTask(t, "x", "body", "")
 	agent := newScriptedAgent()
 	ui := &scriptedUI{}
-	var stderr bytes.Buffer
 
 	err := Run(context.Background(), Options{
-		TaskID:       id,
-		FromSettings: false,
-		Stdout:       io.Discard,
-		Stderr:       &stderr,
-		Agents:       []codingagents.Agent{agent},
-		UI:           ui,
-		Store:        s,
+		TaskID: id,
+		Tool:   "cursor",
+		Model:  "opus",
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+		Store:  s,
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if ui.toolCalls != 1 || ui.modelCalls != 1 {
-		t.Fatalf("UI should be prompted: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	if ui.toolCalls != 0 || ui.modelCalls != 0 {
+		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
 	}
-	if strings.Contains(stderr.String(), "Choose your favourite:") {
-		t.Fatalf("stderr should not warn on explicit --from-settings=false: %q", stderr.String())
+	if agent.lastReq.Model != "opus" {
+		t.Fatalf("model = %q, want opus", agent.lastReq.Model)
+	}
+	entries, err := s.List(store.BucketCoder)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("coder bucket should be untouched, got %d entries", len(entries))
 	}
 }
 
-func TestRun_FromSettings_LoginFailureSurfaces(t *testing.T) {
+// TestRun_PartialTool_FillsModelFromStore covers the partial-flag
+// fallback: --tool alone reads model from the coder bucket.
+func TestRun_PartialTool_FillsModelFromStore(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := s.Put(store.BucketCoder, "model", "stored-model"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	id := seedPlanDoneTask(t, "x", "body", "")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Tool:   "cursor",
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+		Store:  s,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if agent.lastReq.Model != "stored-model" {
+		t.Fatalf("model = %q, want stored-model", agent.lastReq.Model)
+	}
+}
+
+// TestRun_ExplicitTool_NilStore_LazyOpenSucceeds drives the
+// nil-Store branch of coderResolveExplicit. The lazy open finds
+// the seeded coder.model so --tool=cursor resolves cleanly.
+func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketCoder, "model", "stored-model"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	id := seedPlanDoneTask(t, "x", "body", "")
+	agent := newScriptedAgent()
+	err = Run(context.Background(), Options{
+		TaskID: id,
+		Tool:   "cursor",
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if agent.lastReq.Model != "stored-model" {
+		t.Fatalf("model = %q, want stored-model (lazy-open path)", agent.lastReq.Model)
+	}
+}
+
+// TestRun_ExplicitTool_NilStore_LazyOpenFails covers the
+// settings-DB-broken branch of coderResolveExplicit.
+func TestRun_ExplicitTool_NilStore_LazyOpenFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	settingsPath, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(settingsPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(settingsPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	id := seedPlanDoneTask(t, "x", "body", "")
+	agent := newScriptedAgent()
+	err = Run(context.Background(), Options{
+		TaskID: id,
+		Tool:   "cursor",
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "given without stored model in coder") {
+		t.Fatalf("err = %v, want missing-model error", err)
+	}
+	if agent.worked != 0 {
+		t.Fatal("agent.Work must not run when settings DB is broken")
+	}
+}
+
+// TestRun_PartialModel_NoStoredTool errors before invoking the agent.
+func TestRun_PartialModel_NoStoredTool(t *testing.T) {
+	s := openTestStore(t)
+	id := seedPlanDoneTask(t, "x", "body", "")
+	agent := newScriptedAgent()
+
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Model:  "opus",
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+		Store:  s,
+	})
+	if err == nil || !strings.Contains(err.Error(), "given without stored tool in coder") {
+		t.Fatalf("err = %v, want missing-tool error", err)
+	}
+	if agent.worked != 0 {
+		t.Fatal("agent.Work should not run when explicit resolve fails")
+	}
+}
+
+func TestRun_FromStore_LoginFailureSurfaces(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
@@ -1250,7 +1411,6 @@ func TestRun_FromSettings_LoginFailureSurfaces(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:       id,
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       io.Discard,
 		Agents:       []codingagents.Agent{agent},
@@ -1265,7 +1425,7 @@ func TestRun_FromSettings_LoginFailureSurfaces(t *testing.T) {
 	}
 }
 
-func TestRun_FromSettings_NonSentinelStoreError(t *testing.T) {
+func TestRun_FromStore_NonSentinelStoreError(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Put(store.BucketCoder, "tool", "ghost"); err != nil {
 		t.Fatalf("Put: %v", err)
@@ -1279,7 +1439,6 @@ func TestRun_FromSettings_NonSentinelStoreError(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:       id,
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       io.Discard,
 		Agents:       []codingagents.Agent{agent},
@@ -1565,11 +1724,11 @@ func TestValidateForWork(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_StoredInteractiveFalseOverridesDefault pins
-// the bug fix: with FromSettings on and no explicit Interactive
-// pointer, a stored interactive=false in the coder bucket flows
+// TestRun_FromStore_StoredInteractiveFalseOverridesDefault pins
+// the bug fix: with no explicit Interactive pointer, a stored
+// interactive=false in the coder bucket flows
 // through to both the agent request and the persisted value.
-func TestRun_FromSettings_StoredInteractiveFalseOverridesDefault(t *testing.T) {
+func TestRun_FromStore_StoredInteractiveFalseOverridesDefault(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
@@ -1586,7 +1745,6 @@ func TestRun_FromSettings_StoredInteractiveFalseOverridesDefault(t *testing.T) {
 	err := Run(context.Background(), Options{
 		TaskID:       id,
 		Interactive:  nil,
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       io.Discard,
 		Agents:       []codingagents.Agent{agent},
@@ -1604,10 +1762,10 @@ func TestRun_FromSettings_StoredInteractiveFalseOverridesDefault(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_ExplicitInteractiveWins covers the
+// TestRun_FromStore_ExplicitInteractiveWins covers the
 // explicit-beats-stored half of the precedence: a non-nil
 // Interactive pointer must win even when the bucket says otherwise.
-func TestRun_FromSettings_ExplicitInteractiveWins(t *testing.T) {
+func TestRun_FromStore_ExplicitInteractiveWins(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
@@ -1624,7 +1782,6 @@ func TestRun_FromSettings_ExplicitInteractiveWins(t *testing.T) {
 	err := Run(context.Background(), Options{
 		TaskID:       id,
 		Interactive:  boolPtr(true),
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       io.Discard,
 		Agents:       []codingagents.Agent{agent},
@@ -1639,10 +1796,10 @@ func TestRun_FromSettings_ExplicitInteractiveWins(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_StoredInteractiveUnparseable confirms a
+// TestRun_FromStore_StoredInteractiveUnparseable confirms a
 // garbled bucket value is treated as "not set" and the cobra
 // default flows through without a warning.
-func TestRun_FromSettings_StoredInteractiveUnparseable(t *testing.T) {
+func TestRun_FromStore_StoredInteractiveUnparseable(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
@@ -1660,7 +1817,6 @@ func TestRun_FromSettings_StoredInteractiveUnparseable(t *testing.T) {
 	err := Run(context.Background(), Options{
 		TaskID:       id,
 		Interactive:  nil,
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       &stderr,
 		Agents:       []codingagents.Agent{agent},
@@ -1678,45 +1834,10 @@ func TestRun_FromSettings_StoredInteractiveUnparseable(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_False_IgnoresStoredInteractive pins the
-// FromSettings=false branch of resolveInteractive: the bucket is
-// never consulted, the explicit value flows through.
-func TestRun_FromSettings_False_IgnoresStoredInteractive(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketCoder, "model", "sonnet-4"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketCoder, "interactive", "false"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	id := seedPlanDoneTask(t, "x", "body", "")
-	agent := newScriptedAgent()
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Interactive:  boolPtr(true),
-		FromSettings: false,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !agent.lastReq.Interactive {
-		t.Fatalf("agent.lastReq.Interactive = false, want true: %+v", agent.lastReq)
-	}
-}
-
-// TestRun_FromSettings_NoInteractiveKey_DefaultTrue locks down the
+// TestRun_FromStore_NoInteractiveKey_DefaultTrue locks down the
 // resolveInteractive default branch: a populated bucket without an
 // `interactive` entry leaves the cobra default (true) intact.
-func TestRun_FromSettings_NoInteractiveKey_DefaultTrue(t *testing.T) {
+func TestRun_FromStore_NoInteractiveKey_DefaultTrue(t *testing.T) {
 	s := openTestStore(t)
 	if err := s.Put(store.BucketCoder, "tool", "cursor"); err != nil {
 		t.Fatalf("Put: %v", err)
@@ -1730,7 +1851,6 @@ func TestRun_FromSettings_NoInteractiveKey_DefaultTrue(t *testing.T) {
 	err := Run(context.Background(), Options{
 		TaskID:       id,
 		Interactive:  nil,
-		FromSettings: true,
 		Stdout:       io.Discard,
 		Stderr:       io.Discard,
 		Agents:       []codingagents.Agent{agent},
@@ -1745,15 +1865,15 @@ func TestRun_FromSettings_NoInteractiveKey_DefaultTrue(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_NilStore_EmptyStorePromptsPick mirrors
+// TestRun_FromStore_NilStore_EmptyStorePromptsPick mirrors
 // the plan-side test for the work flow: a real `.j/settings` is
 // laid down via mustInit but the coder bucket is empty, so
-// coderFromSettings opens the DB, observes ErrNoStoredSelection,
+// coderFromStore opens the DB, observes ErrNoStoredSelection,
 // closes, and Run falls back to Pick. The persistence path then
 // re-opens settings, writes, and closes. Together these exercise
-// the lazy open-success branches in coderFromSettings,
+// the lazy open-success branches in coderFromStore,
 // storedCoderInteractive, and persistCoderSelection.
-func TestRun_FromSettings_NilStore_EmptyStorePromptsPick(t *testing.T) {
+func TestRun_FromStore_NilStore_EmptyStorePromptsPick(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "body", "")
@@ -1762,7 +1882,6 @@ func TestRun_FromSettings_NilStore_EmptyStorePromptsPick(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:       id,
-		FromSettings: true,
 		Stdin:        strings.NewReader(""),
 		Stdout:       io.Discard,
 		Stderr:       &stderr,
@@ -1794,14 +1913,13 @@ func TestRun_FromSettings_NilStore_EmptyStorePromptsPick(t *testing.T) {
 	}
 }
 
-// TestRun_FromSettings_NilStore_SettingsOpenFails covers the lazy
-// open-fails branches on the settings path for `j work`: with
-// FromSettings=true, no caller-supplied Store, and a
-// `<cwd>/.j/settings` directory (instead of file) sabotaging
-// bolt.Open, coderFromSettings and storedCoderInteractive both
-// surface the openSettingsStore warning and fall back to the
-// prompted Pick path.
-func TestRun_FromSettings_NilStore_SettingsOpenFails(t *testing.T) {
+// TestRun_FromStore_NilStore_SettingsOpenFails covers the lazy
+// open-fails branches on the settings path for `j work`: with no
+// caller-supplied Store and a `<cwd>/.j/settings` directory
+// (instead of file) sabotaging bolt.Open, coderFromStore and
+// storedCoderInteractive both surface the openSettingsStore
+// warning and fall back to the prompted Pick path.
+func TestRun_FromStore_NilStore_SettingsOpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "body", "")
@@ -1819,7 +1937,6 @@ func TestRun_FromSettings_NilStore_SettingsOpenFails(t *testing.T) {
 	var stderr bytes.Buffer
 	err = Run(context.Background(), Options{
 		TaskID:       id,
-		FromSettings: true,
 		Stdin:        strings.NewReader(""),
 		Stdout:       io.Discard,
 		Stderr:       &stderr,
