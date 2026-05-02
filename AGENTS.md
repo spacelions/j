@@ -1,3 +1,4 @@
-Always plan before writing code
-Test coverage: line coverage and branch coverage should be >95%.
-Do not introduce seams, use allowlist instead
+- Always plan before writing code
+- Test coverage: line coverage and branch coverage should be >95%.
+- Do not introduce seams, use allowlist instead
+- `fd` to replace `find`, `z` to replace `cd`, `eza` to replace `ls`, `rg` to replace `grep`
