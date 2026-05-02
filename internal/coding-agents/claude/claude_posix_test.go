@@ -103,6 +103,46 @@ exit %d
 	return callsPath, cwdPath
 }
 
+// installHeadlessRegressionStub is a guard against the headless argv
+// regression that originally bricked Plan/Work/Verify (the real claude
+// CLI parsed any argv element starting with `--` as a flag, so a
+// prompt body whose first line started with `-` made the CLI bail
+// with "unknown option" instead of running the prompt). The stub
+// fails loudly whenever a `--print` invocation lacks a literal `--`
+// separator before the trailing prompt positional, emulating the real
+// CLI's failure mode without needing a network round-trip. It writes
+// a recognisable error string to stderr (which run.SpawnIn redirects
+// into AgentLogPath) and exits non-zero so the test can assert on
+// either the exit status or the log contents.
+func installHeadlessRegressionStub(t *testing.T) (callsPath string) {
+	t.Helper()
+	dir := t.TempDir()
+	callsPath = filepath.Join(dir, "calls.log")
+	body := fmt.Sprintf(`#!/bin/sh
+: > %q
+for a in "$@"; do printf '%%s\0' "$a" >> %q; done
+saw_print=0
+saw_dashdash=0
+for a in "$@"; do
+  case "$a" in
+    --print|-p) saw_print=1 ;;
+    --) saw_dashdash=1 ;;
+  esac
+done
+if [ "$saw_print" = "1" ] && [ "$saw_dashdash" = "0" ]; then
+  echo "claude-stub: regression: headless argv missing -- separator before prompt" >&2
+  exit 99
+fi
+exit 0
+`, callsPath, callsPath)
+	bin := filepath.Join(dir, Binary)
+	if err := os.WriteFile(bin, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return callsPath
+}
+
 func readCalls(t *testing.T, path string) []string {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -363,6 +403,7 @@ func TestPlan_Headless(t *testing.T) {
 		"--output-format", "text",
 		"--dangerously-skip-permissions",
 		"--model", "sonnet",
+		"--",
 	}
 	argv := waitForCalls(t, calls, len(want)+1)
 	if len(argv) != len(want)+1 {
@@ -418,6 +459,7 @@ func TestPlan_Headless_FirstRun_SessionID(t *testing.T) {
 		"--output-format", "text",
 		"--dangerously-skip-permissions",
 		"--model", "sonnet",
+		"--",
 	}
 	argv := waitForCalls(t, calls, len(want)+1)
 	if len(argv) != len(want)+1 {
@@ -629,6 +671,7 @@ func TestWork_Headless(t *testing.T) {
 		"--output-format", "text",
 		"--dangerously-skip-permissions",
 		"--model", "sonnet",
+		"--",
 	}
 	argv := waitForCalls(t, calls, len(want)+1)
 	if len(argv) != len(want)+1 {
@@ -679,6 +722,7 @@ func TestWork_Headless_Resume(t *testing.T) {
 		"--output-format", "text",
 		"--dangerously-skip-permissions",
 		"--model", "sonnet",
+		"--",
 	}
 	argv := waitForCalls(t, calls, len(want)+1)
 	if len(argv) != len(want)+1 {
@@ -955,6 +999,7 @@ func TestVerify_Headless(t *testing.T) {
 		"--output-format", "text",
 		"--dangerously-skip-permissions",
 		"--model", "sonnet",
+		"--",
 	}
 	argv := waitForCalls(t, calls, len(want)+1)
 	if len(argv) != len(want)+1 {
@@ -1006,6 +1051,7 @@ func TestVerify_Headless_Resume(t *testing.T) {
 		"--output-format", "text",
 		"--dangerously-skip-permissions",
 		"--model", "sonnet",
+		"--",
 	}
 	argv := waitForCalls(t, calls, len(want)+1)
 	if len(argv) != len(want)+1 {
@@ -1040,4 +1086,107 @@ func TestVerify_Headless_SpawnError(t *testing.T) {
 	if pid != 0 {
 		t.Fatalf("Verify pid = %d, want 0 on Spawn error", pid)
 	}
+}
+
+// waitForArgvContains is a polling helper that waits for the
+// regression stub to record its argv and then asserts that the given
+// token appears at least once. Used by the headless regression-guard
+// tests below.
+func waitForArgvContains(t *testing.T, callsPath, want string) {
+	t.Helper()
+	deadline := time.Now().Add(spawnWaitTimeout)
+	for {
+		argv := readCallsBestEffort(callsPath)
+		for _, a := range argv {
+			if a == want {
+				return
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timeout waiting for argv to contain %q at %s; argv=%v",
+				want, callsPath, argv)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestPlan_Headless_RegressionGuard pins a stub-level guard against
+// the headless argv regression: if a future change drops the literal
+// `--` separator immediately before the prompt positional, the stub
+// will exit non-zero and write a recognisable error into AgentLogPath,
+// turning a previously-silent failure mode (claude prints help / errors
+// out, the orchestrator waits forever for plan.md) into a hard test
+// failure here. The test asserts the `--` token is in argv; the stub
+// itself enforces the "exit 99 if missing" half of the guard.
+func TestPlan_Headless_RegressionGuard(t *testing.T) {
+	calls := installHeadlessRegressionStub(t)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "spec.md")
+	if err := os.WriteFile(target, []byte("body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(dir, "agent.log")
+	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+		FromFilePath:           target,
+		Body:                   "body",
+		Model:                  "sonnet",
+		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
+		PlanOutputPath:         filepath.Join(dir, "plan.md"),
+		Interactive:            false,
+		AgentLogPath:           logPath,
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if pid <= 0 {
+		t.Fatalf("Plan pid = %d, want > 0", pid)
+	}
+	waitForArgvContains(t, calls, "--")
+}
+
+func TestWork_Headless_RegressionGuard(t *testing.T) {
+	calls := installHeadlessRegressionStub(t)
+	dir := t.TempDir()
+	plan := filepath.Join(dir, "spec.plan.md")
+	if err := os.WriteFile(plan, []byte("plan body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(dir, "agent.log")
+	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+		PlanPath:     plan,
+		Body:         "plan body",
+		Model:        "sonnet",
+		Interactive:  false,
+		AgentLogPath: logPath,
+	})
+	if err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	if pid <= 0 {
+		t.Fatalf("Work pid = %d, want > 0", pid)
+	}
+	waitForArgvContains(t, calls, "--")
+}
+
+func TestVerify_Headless_RegressionGuard(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	calls := installHeadlessRegressionStub(t)
+	logPath := filepath.Join(dir, "agent.log")
+	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+		RequirementsPath:           filepath.Join(dir, "requirements.md"),
+		PlanPath:                   filepath.Join(dir, "plan.md"),
+		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
+		VerifierFindingsOutputPath: filepath.Join(dir, "verifier_findings.md"),
+		Model:                      "sonnet",
+		Interactive:                false,
+		AgentLogPath:               logPath,
+	})
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if pid <= 0 {
+		t.Fatalf("Verify pid = %d, want > 0", pid)
+	}
+	waitForArgvContains(t, calls, "--")
 }
