@@ -88,13 +88,17 @@ func (*Agent) CheckLogin(ctx context.Context) error {
 //     before exiting via a suffix on the prompt. The TUI is allowed
 //     to leave plan mode and approve writes manually.
 //   - Headless (req.Interactive == false): `--print --output-format text
-//     --dangerously-skip-permissions --model <m>`. We drop
+//     --dangerously-skip-permissions --model <m> -- <prompt>`. We drop
 //     `--permission-mode plan` here on purpose: plan mode is read-only
 //     and would forbid every write tool call, blocking the prompt's
 //     "save requirements/plan" instructions.
 //     `--dangerously-skip-permissions` auto-approves tool calls and
 //     skips the workspace-trust prompt; combined they make the
-//     headless run actually complete without stalling.
+//     headless run actually complete without stalling. The literal
+//     `--` separator pins the prompt as a positional so a leading
+//     `-`/`--` line in the user's spec body is not parsed as a flag
+//     (which would otherwise make the CLI bail with an "unknown
+//     option" error and never start the session).
 //
 // cmd.Dir is set to the per-task workspace dir so claude's CLAUDE.md
 // auto-discovery and tool scope land where the user expects.
@@ -111,7 +115,7 @@ func (a *Agent) Plan(ctx context.Context, req codingagents.PlanRequest) (int, er
 	}
 
 	hargs := append(sessionArgs(req.ResumeChatID, req.Resume),
-		"--print", "--output-format", "text", "--dangerously-skip-permissions", "--model", req.Model, prompt)
+		"--print", "--output-format", "text", "--dangerously-skip-permissions", "--model", req.Model, "--", prompt)
 	pid, err := run.SpawnIn(ctx, workspace, req.AgentLogPath, Binary, hargs...)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
@@ -142,7 +146,7 @@ func (a *Agent) Work(ctx context.Context, req codingagents.WorkRequest) (int, er
 	}
 
 	pargs := append(sessionArgs(req.ResumeChatID, req.Resume),
-		"--print", "--output-format", "text", "--dangerously-skip-permissions", "--model", req.Model, prompt)
+		"--print", "--output-format", "text", "--dangerously-skip-permissions", "--model", req.Model, "--", prompt)
 	pid, err := run.SpawnIn(ctx, workspace, req.AgentLogPath, Binary, pargs...)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
@@ -169,7 +173,7 @@ func (a *Agent) Verify(ctx context.Context, req codingagents.VerifyRequest) (int
 	}
 
 	pargs := append(sessionArgs(req.ResumeChatID, req.Resume),
-		"--print", "--output-format", "text", "--dangerously-skip-permissions", "--model", req.Model, prompt)
+		"--print", "--output-format", "text", "--dangerously-skip-permissions", "--model", req.Model, "--", prompt)
 	pid, err := run.SpawnIn(ctx, workspace, req.AgentLogPath, Binary, pargs...)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
