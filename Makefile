@@ -104,6 +104,7 @@ coverage:
 		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
 		-e 'internal/cli/verify/tasklog\.go:[0-9]+:[[:space:]]+beginVerifyTask[[:space:]]' \
 		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+Spawn[[:space:]]' \
+		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+SpawnIn[[:space:]]' \
 		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+IsAlive[[:space:]]' \
 		-e 'internal/util/mdfile/mdfile\.go:[0-9]+:[[:space:]]+ListInDir[[:space:]]' \
 		|| true); \

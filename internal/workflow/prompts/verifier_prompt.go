@@ -20,14 +20,12 @@ func BuildVerifier(reqPath, reqBody, planPath, planBody, verifierPlanPath, findi
 			"%s\n\n"+
 				"Requirements (from %q):\n%s\n\n"+
 				"Plan (from %q):\n%s\n\n"+
-				"Save your draft verification plan to %q (overwrite if it exists) "+
 				"and your final findings (with the terminal `VERDICT: PASS` or "+
 				"`VERDICT: FAIL` line) to %q (overwrite if it exists). "+
 				"Then exit.",
 			strings.TrimSpace(verifier.Instruction),
 			reqPath, reqBody,
 			planPath, planBody,
-			verifierPlanPath,
 			findingsPath,
 		),
 		worktree,
@@ -50,7 +48,7 @@ func BuildVerifierResume(reqPath, reqBody, planPath, planBody, worktree string) 
 				"summarise the prior progress for the user in one short paragraph, "+
 				"and then continue only the verification work that is still outstanding. "+
 				"Do not re-verify from scratch and do not overwrite the saved "+
-				"verifier_plan.md / verifier_findings.md unless new information forces a change.\n\n"+
+				"verifier_findings.md unless new information forces a change.\n\n"+
 				"Requirements (from %q), provided for context only:\n%s\n\n"+
 				"Plan (from %q), provided for context only:\n%s",
 			reqPath, reqBody,
