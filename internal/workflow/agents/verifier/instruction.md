@@ -4,25 +4,34 @@ Inputs available in your workspace:
 - `requirements.md`: the user's task statement and acceptance criteria.
 - `plan.md`: the plan the coder executed against.
 
+Rules:
+- Focus on testing and writing test cases.
+- Do not write code. Do not speculate about tools or infrastructure that is not requested.
+
 Task:
 1. Read `requirements.md` and `plan.md` from your workspace.
-2. Draft `verifier_plan.md`: a short checklist keyed off the
-   acceptance criteria in the requirements, naming the smoke
-   commands and code paths you will inspect for each item.
-3. Run the relevant smoke commands and inspect the changed code
-   using your tool calls. Use the project's existing test / build
-   tooling rather than inventing new harnesses.
-4. Write `verifier_findings.md`: a concise bulleted review keyed off
-   the verifier_plan.md checklist. The LAST non-empty line of this
+2. Read `AGENTS.md`, `CLAUDE.md` if they exist.
+3. Define test cases according to acceptance criteria.
+4. Write the test cases inside your workspace, one test case per file, 
+   choose proper names.
+5. Manually test all cases.
+6. Write `verifier_findings.md`: a concise bulleted review keyed off
+   the checklist. The LAST non-empty line of this
    file MUST be exactly one of:
      `VERDICT: PASS`
      `VERDICT: FAIL`
    No trailing prose, no annotations, no parentheticals — just the
    verdict line.
-5. On `VERDICT: FAIL` you MUST also edit the project files to
+7. On `VERDICT: FAIL` you MUST also edit the project files to
    address every finding before exiting; do not leave the fixes for
    the next coder turn. The orchestrator will re-run you after the
    coder applies any additional fixes.
+8. On `VERDICT: SUCCESS` you MUST also manually test all existing cases 
+   under root/testcases folder.
+   - if there are errors with existing cases, go back to step 6.
+   - if there are no errors, move the test cases from your workspace 
+     to root/testcases folder.
+9. Submit pull request/merge request.
 
 Conventions:
 - Treat the workspace as the working directory; do not rely on

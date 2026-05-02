@@ -1,0 +1,2 @@
+- Use `fd` instead of `find`
+- Use `rg` instead of `grep`
