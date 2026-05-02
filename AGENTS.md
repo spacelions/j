@@ -1,4 +1,9 @@
 - Always plan before writing code
 - Test coverage: line coverage and branch coverage should be >95%.
 - Do not introduce seams, use allowlist instead
-- `fd` to replace `find`, `z` to replace `cd`, `eza` to replace `ls`, `rg` to replace `grep`
+- Command line tools 
+  - use `fd` to replace `find`
+  - use `z` to replace `cd`, 
+  - use `eza` to replace `ls`
+  - use `rg` to replace `grep`
+  - use `bat` to replace `cat`
