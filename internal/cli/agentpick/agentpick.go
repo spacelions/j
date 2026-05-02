@@ -70,6 +70,77 @@ func Pick(ctx context.Context, ui Selector, agents []codingagents.Agent) (coding
 	return agent, model, nil
 }
 
+// Resolve handles the explicit-with-stored-fallback path used by the
+// new --tool / --model one-off override flags on `j plan|work|verify`.
+// It is the read-only counterpart to Pick: when the caller supplies at
+// least one of explicitTool / explicitModel, the missing half (if any)
+// is filled from the bucket and CheckLogin runs against the resolved
+// agent. The store is never written.
+//
+// Behavior:
+//   - both empty → ErrNoStoredSelection (caller falls back to FromStore
+//     or Pick).
+//   - one empty + bucket has the missing key → fill from bucket.
+//   - one empty + bucket missing → wrapped error naming the supplied
+//     flag and the bucket so the user can run `j settings reset` or
+//     pass the missing flag.
+//   - unknown tool name → "unknown tool %q" (same shape as Pick /
+//     FromStore so error handling stays uniform across the three
+//     selection paths).
+//   - CheckLogin failure propagates verbatim.
+func Resolve(ctx context.Context, s *store.Store, bucket string, agents []codingagents.Agent, explicitTool, explicitModel string) (codingagents.Agent, string, error) {
+	if explicitTool == "" && explicitModel == "" {
+		return nil, "", ErrNoStoredSelection
+	}
+	tool, model := explicitTool, explicitModel
+	if tool == "" || model == "" {
+		stored, err := storedToolModel(s, bucket)
+		if err != nil {
+			return nil, "", err
+		}
+		if tool == "" {
+			tool = stored["tool"]
+		}
+		if model == "" {
+			model = stored["model"]
+		}
+	}
+	if tool == "" {
+		return nil, "", fmt.Errorf("agentpick: --model given without stored tool in %s", bucket)
+	}
+	if model == "" {
+		return nil, "", fmt.Errorf("agentpick: --tool given without stored model in %s", bucket)
+	}
+	agent, ok := lookup(agents, tool)
+	if !ok {
+		return nil, "", fmt.Errorf("unknown tool %q", tool)
+	}
+	if err := agent.CheckLogin(ctx); err != nil {
+		return nil, "", err
+	}
+	return agent, model, nil
+}
+
+// storedToolModel reads the bucket's "tool" and "model" entries into
+// a map for the partial-flag fallback in Resolve. A nil store returns
+// an empty map (no fallback available); a real read error is wrapped
+// like FromStore so the caller can surface a clear failure instead of
+// silently falling through to "missing half" errors.
+func storedToolModel(s *store.Store, bucket string) (map[string]string, error) {
+	values := map[string]string{}
+	if s == nil {
+		return values, nil
+	}
+	entries, err := s.List(bucket)
+	if err != nil {
+		return nil, fmt.Errorf("agentpick: read %s: %w", bucket, err)
+	}
+	for _, kv := range entries {
+		values[kv.Key] = kv.Value
+	}
+	return values, nil
+}
+
 // FromStore reuses a previously-recorded tool/model selection from
 // the bbolt settings store instead of prompting the user. It reads
 // the "tool" and "model" keys from the supplied bucket, looks the
@@ -85,13 +156,9 @@ func FromStore(ctx context.Context, s *store.Store, bucket string, agents []codi
 	if s == nil {
 		return nil, "", ErrNoStoredSelection
 	}
-	entries, err := s.List(bucket)
+	values, err := storedToolModel(s, bucket)
 	if err != nil {
-		return nil, "", fmt.Errorf("agentpick: read %s: %w", bucket, err)
-	}
-	values := make(map[string]string, len(entries))
-	for _, kv := range entries {
-		values[kv.Key] = kv.Value
+		return nil, "", err
 	}
 	tool := values["tool"]
 	model := values["model"]

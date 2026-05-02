@@ -37,19 +37,19 @@ type Options struct {
 	// Interactive is a tri-state: a non-nil value is the explicit
 	// user choice (cobra `--interactive` flag or PLAN_INTERACTIVE
 	// env var), and nil means "not set, fall back to the stored
-	// `interactive` (when FromSettings is true) or the cobra
-	// default true". Stored only wins when Interactive is nil and
-	// FromSettings is true; explicit always wins.
+	// `interactive` value or the cobra default true". Stored wins
+	// when Interactive is nil and the bucket has a parseable value;
+	// explicit always wins.
 	Interactive *bool
 
-	// FromSettings, when true, makes Run reuse the tool/model
-	// recorded in the planner bucket of <cwd>/.j/settings instead of
-	// prompting. When the bucket is empty (first run) Run falls back
-	// to the interactive Pick flow and emits a single stderr warning.
-	// This field is session-only and is intentionally NOT persisted
-	// to the bbolt store; the cobra layer supplies the default
-	// (true) so the zero value here is fine.
-	FromSettings bool
+	// Tool and Model are one-off overrides for the planner bucket's
+	// recorded tool/model. When either is set, Run resolves the
+	// planner via agentpick.Resolve (filling the missing half from
+	// the bucket if needed) and skips persistence: the bucket is
+	// left untouched. When both are empty, Run falls back to the
+	// existing read-then-prompt-then-persist precedence.
+	Tool  string
+	Model string
 
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -100,8 +100,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 	// value flows into both the agent request and the plan-done
 	// row (and into persistPlannerSelection on the prompted path).
 	// Precedence: explicit (opts.Interactive != nil) > stored
-	// (FromSettings && bucket has parseable value) > cobra default
-	// true.
+	// (bucket has parseable value) > cobra default true.
 	opts.Interactive = boolPtr(resolveInteractive(opts))
 
 	if opts.FromFile != "" {
@@ -249,30 +248,37 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 }
 
 // selectPlanner is the single chokepoint for choosing the planner
-// tool/model. When FromSettings is true it tries the read-only
-// agentpick.FromStore path first and only falls back to the
-// interactive Pick flow on ErrNoStoredSelection (printing the
-// "Choose your favourite:" cue on stderr so the user knows the
-// prompt is intentional). The just-confirmed selection is persisted
-// only on the prompted path: values that came from the store are
-// already there.
+// tool/model. Precedence:
+//  1. explicit --tool / --model (opts.Tool or opts.Model set) →
+//     agentpick.Resolve fills the missing half from the planner
+//     bucket and runs CheckLogin. The bucket is NOT written.
+//  2. populated planner bucket → agentpick.FromStore reuses it.
+//  3. otherwise → agentpick.Pick prompts the user and the result is
+//     persisted to the planner bucket.
 //
 // Settings DB access is short-lived: the bucket is read inside
-// plannerFromSettings and the handle is released before this returns
+// plannerFromStore and the handle is released before this returns
 // so the agent.Plan call downstream never contends on the bbolt file
 // lock.
 func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
-	if opts.FromSettings {
-		agent, model, err := plannerFromSettings(ctx, opts)
+	if opts.Tool != "" || opts.Model != "" {
+		agent, model, err := plannerResolveExplicit(ctx, opts)
 		if err == nil {
 			return agent, model, nil
 		}
 		if !errors.Is(err, agentpick.ErrNoStoredSelection) {
 			return nil, "", err
 		}
-		fmt.Fprintln(opts.Stderr, "Choose your favourite:")
 	}
-	agent, model, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
+	agent, model, err := plannerFromStore(ctx, opts)
+	if err == nil {
+		return agent, model, nil
+	}
+	if !errors.Is(err, agentpick.ErrNoStoredSelection) {
+		return nil, "", err
+	}
+	fmt.Fprintln(opts.Stderr, "Choose your favourite:")
+	agent, model, err = agentpick.Pick(ctx, opts.UI, opts.Agents)
 	if err != nil {
 		return nil, "", err
 	}
@@ -280,14 +286,31 @@ func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, strin
 	return agent, model, nil
 }
 
-// plannerFromSettings reads the planner bucket and returns the chosen
+// plannerResolveExplicit reads the planner bucket only to fill the
+// missing half of the user-supplied --tool / --model pair. When
+// opts.Store is non-nil it is reused; otherwise this opens
+// `<cwd>/.j/settings` for the duration of the read and releases it
+// before returning so the file lock is not held across agent.Plan.
+func plannerResolveExplicit(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
+	if opts.Store != nil {
+		return agentpick.Resolve(ctx, opts.Store, store.BucketPlanner, opts.Agents, opts.Tool, opts.Model)
+	}
+	s, ok := openSettingsStore(opts.Stderr)
+	if !ok {
+		return agentpick.Resolve(ctx, nil, store.BucketPlanner, opts.Agents, opts.Tool, opts.Model)
+	}
+	defer func() { _ = s.Close() }()
+	return agentpick.Resolve(ctx, s, store.BucketPlanner, opts.Agents, opts.Tool, opts.Model)
+}
+
+// plannerFromStore reads the planner bucket and returns the chosen
 // tool/model. When opts.Store is non-nil (test injection) it is reused
 // without any open/close cycle. Otherwise this opens
 // `<cwd>/.j/settings` only for the duration of agentpick.FromStore and
 // releases it before returning. A failure to open the settings DB
 // surfaces as ErrNoStoredSelection so the caller falls back to the
 // prompt path the same way an empty bucket would.
-func plannerFromSettings(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
+func plannerFromStore(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
 	if opts.Store != nil {
 		return agentpick.FromStore(ctx, opts.Store, store.BucketPlanner, opts.Agents)
 	}
@@ -341,10 +364,8 @@ func resolveInteractive(opts Options) bool {
 	if opts.Interactive != nil {
 		return *opts.Interactive
 	}
-	if opts.FromSettings {
-		if v, ok := storedPlannerInteractive(opts); ok {
-			return v
-		}
+	if v, ok := storedPlannerInteractive(opts); ok {
+		return v
 	}
 	return true
 }

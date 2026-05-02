@@ -43,15 +43,18 @@ type Options struct {
 	// Interactive is a tri-state: a non-nil value is the explicit
 	// user choice (cobra `--interactive` flag or VERIFY_INTERACTIVE
 	// env var), and nil means "not set, fall back to the stored
-	// `interactive` (when FromSettings is true) or the cobra
-	// default true". Stored only wins when Interactive is nil and
-	// FromSettings is true; explicit always wins.
+	// `interactive` value or the cobra default true". Stored wins
+	// when Interactive is nil and the bucket has a parseable value;
+	// explicit always wins.
 	Interactive *bool
 
-	// FromSettings, when true, makes Run reuse the tool/model
-	// recorded in the verifier bucket of <cwd>/.j/settings instead
-	// of prompting. Mirrors the `j plan` / `j work` semantics.
-	FromSettings bool
+	// Tool and Model are one-off overrides for the verifier
+	// bucket's recorded tool/model. When either is set, Run resolves
+	// the verifier via agentpick.Resolve (filling the missing half
+	// from the bucket if needed) and skips persistence: the bucket
+	// is left untouched. Mirrors the `j plan` / `j work` semantics.
+	Tool  string
+	Model string
 
 	// MaxIterations bounds the verifier / coder-fix loop. Zero or
 	// negative values fall back to defaultMaxIterations so callers
@@ -371,22 +374,31 @@ func parseVerdict(path string) string {
 }
 
 // selectVerifier is the single chokepoint for choosing the verifier
-// tool/model. Mirrors selectCoder in `j work`: when FromSettings is
-// true it tries the read-only agentpick.FromStore path first and
-// only falls back to the interactive Pick flow on
-// ErrNoStoredSelection.
+// tool/model. Mirrors selectCoder in `j work`. Precedence:
+//  1. explicit --tool / --model → agentpick.Resolve fills the missing
+//     half from the verifier bucket; bucket is NOT written.
+//  2. populated verifier bucket → agentpick.FromStore reuses it.
+//  3. otherwise → agentpick.Pick prompts the user and the result is
+//     persisted to the verifier bucket.
 func selectVerifier(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
-	if opts.FromSettings {
-		agent, model, err := verifierFromSettings(ctx, opts)
+	if opts.Tool != "" || opts.Model != "" {
+		agent, model, err := verifierResolveExplicit(ctx, opts)
 		if err == nil {
 			return agent, model, nil
 		}
 		if !errors.Is(err, agentpick.ErrNoStoredSelection) {
 			return nil, "", err
 		}
-		fmt.Fprintln(opts.Stderr, "Choose your favourite:")
 	}
-	agent, model, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
+	agent, model, err := verifierFromStore(ctx, opts)
+	if err == nil {
+		return agent, model, nil
+	}
+	if !errors.Is(err, agentpick.ErrNoStoredSelection) {
+		return nil, "", err
+	}
+	fmt.Fprintln(opts.Stderr, "Choose your favourite:")
+	agent, model, err = agentpick.Pick(ctx, opts.UI, opts.Agents)
 	if err != nil {
 		return nil, "", err
 	}
@@ -394,9 +406,24 @@ func selectVerifier(ctx context.Context, opts Options) (codingagents.Agent, stri
 	return agent, model, nil
 }
 
-// verifierFromSettings reads the verifier bucket and returns the
-// chosen tool/model. Mirrors coderFromSettings in `j work`.
-func verifierFromSettings(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
+// verifierResolveExplicit reads the verifier bucket only to fill the
+// missing half of the user-supplied --tool / --model pair. Mirrors
+// coderResolveExplicit in `j work`.
+func verifierResolveExplicit(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
+	if opts.Store != nil {
+		return agentpick.Resolve(ctx, opts.Store, store.BucketVerifier, opts.Agents, opts.Tool, opts.Model)
+	}
+	s, ok := openSettingsStore(opts.Stderr)
+	if !ok {
+		return agentpick.Resolve(ctx, nil, store.BucketVerifier, opts.Agents, opts.Tool, opts.Model)
+	}
+	defer func() { _ = s.Close() }()
+	return agentpick.Resolve(ctx, s, store.BucketVerifier, opts.Agents, opts.Tool, opts.Model)
+}
+
+// verifierFromStore reads the verifier bucket and returns the
+// chosen tool/model. Mirrors coderFromStore in `j work`.
+func verifierFromStore(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
 	if opts.Store != nil {
 		return agentpick.FromStore(ctx, opts.Store, store.BucketVerifier, opts.Agents)
 	}
@@ -434,10 +461,8 @@ func resolveInteractive(opts Options) bool {
 	if opts.Interactive != nil {
 		return *opts.Interactive
 	}
-	if opts.FromSettings {
-		if v, ok := storedVerifierInteractive(opts); ok {
-			return v
-		}
+	if v, ok := storedVerifierInteractive(opts); ok {
+		return v
 	}
 	return true
 }

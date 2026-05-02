@@ -7,46 +7,75 @@ import (
 	"github.com/spf13/viper"
 )
 
-func TestNew_FromSettingsFlag_DefaultsTrue(t *testing.T) {
+// TestNew_ToolFlag_DefaultsEmpty asserts the new --tool flag.
+func TestNew_ToolFlag_DefaultsEmpty(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 
 	cmd := New()
-	f := cmd.Flags().Lookup("from-settings")
+	f := cmd.Flags().Lookup("tool")
 	if f == nil {
-		t.Fatal("--from-settings flag was not registered")
+		t.Fatal("--tool flag was not registered")
 	}
-	if f.DefValue != "true" {
-		t.Fatalf("--from-settings default = %q, want %q", f.DefValue, "true")
+	if f.DefValue != "" {
+		t.Fatalf("--tool default = %q, want empty", f.DefValue)
 	}
-	if !viper.GetBool("work.from_settings") {
-		t.Error("work.from_settings should default to true via BindPFlag")
+	if viper.GetString("work.tool") != "" {
+		t.Error("work.tool should default to empty via BindPFlag")
 	}
 }
 
-func TestNew_FromSettingsFlag_FalseFlowsToViper(t *testing.T) {
+// TestNew_ModelFlag_DefaultsEmpty asserts the new --model flag.
+func TestNew_ModelFlag_DefaultsEmpty(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 
 	cmd := New()
-	if err := cmd.Flags().Set("from-settings", "false"); err != nil {
+	f := cmd.Flags().Lookup("model")
+	if f == nil {
+		t.Fatal("--model flag was not registered")
+	}
+	if f.DefValue != "" {
+		t.Fatalf("--model default = %q, want empty", f.DefValue)
+	}
+}
+
+// TestNew_ToolFlag_FlowsToViper confirms BindPFlag wiring round-trip.
+func TestNew_ToolFlag_FlowsToViper(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	cmd := New()
+	if err := cmd.Flags().Set("tool", "claude"); err != nil {
 		t.Fatalf("Flags().Set: %v", err)
 	}
-	if viper.GetBool("work.from_settings") {
-		t.Error("work.from_settings should be false after --from-settings=false")
+	if got := viper.GetString("work.tool"); got != "claude" {
+		t.Errorf("work.tool = %q, want claude", got)
+	}
+	if err := cmd.Flags().Set("model", "opus"); err != nil {
+		t.Fatalf("Flags().Set: %v", err)
+	}
+	if got := viper.GetString("work.model"); got != "opus" {
+		t.Errorf("work.model = %q, want opus", got)
 	}
 }
 
-func TestNew_FromSettingsEnv(t *testing.T) {
+// TestNew_ToolEnv covers WORK_TOOL / WORK_MODEL bindings.
+func TestNew_ToolEnv(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
-	t.Setenv("WORK_FROM_SETTINGS", "false")
+	t.Setenv("WORK_TOOL", "claude")
+	t.Setenv("WORK_MODEL", "opus")
 
 	_ = New()
-	if viper.GetBool("work.from_settings") {
-		t.Error("WORK_FROM_SETTINGS=false should make work.from_settings false")
+	if got := viper.GetString("work.tool"); got != "claude" {
+		t.Errorf("work.tool = %q, want claude", got)
+	}
+	if got := viper.GetString("work.model"); got != "opus" {
+		t.Errorf("work.model = %q, want opus", got)
 	}
 }
+
 
 // TestNew_FromTaskFlowsToViper confirms BindPFlag wires the renamed
 // --from-task flag into the work.from_task viper key.

@@ -10,7 +10,7 @@ Steps:
 Expected:
   - Both invocations exit with code 0.
   - `verify --help` stdout mentions `verifier`, `--from-task`,
-    `--from-settings`, `--interactive`, `--max-iterations`, and lists
+    `--tool`, `--model`, `--interactive`, `--max-iterations`, and lists
     the `resume` subcommand.
   - `verify resume --help` stdout mentions the `--from-task` flag and
     `VERIFY_RESUME_FROM_TASK` env-var binding, plus the permissive

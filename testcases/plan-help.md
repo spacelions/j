@@ -10,7 +10,7 @@ Steps:
 Expected:
   - Both invocations exit with code 0.
   - `plan --help` stdout mentions `--from-file` (alias `-f`),
-    `--from-settings`, `--interactive`, and lists the `resume`
+    `--tool`, `--model`, `--interactive`, and lists the `resume`
     subcommand.
   - `plan resume --help` stdout mentions the `--from-task` flag and
     explains that `PLAN_RESUME_FROM_TASK` is the env-var binding.

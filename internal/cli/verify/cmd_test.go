@@ -7,46 +7,75 @@ import (
 	"github.com/spf13/viper"
 )
 
-func TestNew_FromSettingsFlag_DefaultsTrue(t *testing.T) {
+// TestNew_ToolFlag_DefaultsEmpty asserts the new --tool flag.
+func TestNew_ToolFlag_DefaultsEmpty(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 
 	cmd := New()
-	f := cmd.Flags().Lookup("from-settings")
+	f := cmd.Flags().Lookup("tool")
 	if f == nil {
-		t.Fatal("--from-settings flag was not registered")
+		t.Fatal("--tool flag was not registered")
 	}
-	if f.DefValue != "true" {
-		t.Fatalf("--from-settings default = %q, want %q", f.DefValue, "true")
+	if f.DefValue != "" {
+		t.Fatalf("--tool default = %q, want empty", f.DefValue)
 	}
-	if !viper.GetBool("verify.from_settings") {
-		t.Error("verify.from_settings should default to true via BindPFlag")
+	if viper.GetString("verify.tool") != "" {
+		t.Error("verify.tool should default to empty via BindPFlag")
 	}
 }
 
-func TestNew_FromSettingsFlag_FalseFlowsToViper(t *testing.T) {
+// TestNew_ModelFlag_DefaultsEmpty asserts the new --model flag.
+func TestNew_ModelFlag_DefaultsEmpty(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 
 	cmd := New()
-	if err := cmd.Flags().Set("from-settings", "false"); err != nil {
+	f := cmd.Flags().Lookup("model")
+	if f == nil {
+		t.Fatal("--model flag was not registered")
+	}
+	if f.DefValue != "" {
+		t.Fatalf("--model default = %q, want empty", f.DefValue)
+	}
+}
+
+// TestNew_ToolFlag_FlowsToViper confirms BindPFlag wiring round-trip.
+func TestNew_ToolFlag_FlowsToViper(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	cmd := New()
+	if err := cmd.Flags().Set("tool", "claude"); err != nil {
 		t.Fatalf("Flags().Set: %v", err)
 	}
-	if viper.GetBool("verify.from_settings") {
-		t.Error("verify.from_settings should be false after --from-settings=false")
+	if got := viper.GetString("verify.tool"); got != "claude" {
+		t.Errorf("verify.tool = %q, want claude", got)
+	}
+	if err := cmd.Flags().Set("model", "opus"); err != nil {
+		t.Fatalf("Flags().Set: %v", err)
+	}
+	if got := viper.GetString("verify.model"); got != "opus" {
+		t.Errorf("verify.model = %q, want opus", got)
 	}
 }
 
-func TestNew_FromSettingsEnv(t *testing.T) {
+// TestNew_ToolEnv covers VERIFY_TOOL / VERIFY_MODEL bindings.
+func TestNew_ToolEnv(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
-	t.Setenv("VERIFY_FROM_SETTINGS", "false")
+	t.Setenv("VERIFY_TOOL", "claude")
+	t.Setenv("VERIFY_MODEL", "opus")
 
 	_ = New()
-	if viper.GetBool("verify.from_settings") {
-		t.Error("VERIFY_FROM_SETTINGS=false should make verify.from_settings false")
+	if got := viper.GetString("verify.tool"); got != "claude" {
+		t.Errorf("verify.tool = %q, want claude", got)
+	}
+	if got := viper.GetString("verify.model"); got != "opus" {
+		t.Errorf("verify.model = %q, want opus", got)
 	}
 }
+
 
 func TestNew_FromTaskFlowsToViper(t *testing.T) {
 	viper.Reset()
@@ -127,7 +156,7 @@ func TestNew_Smoke(t *testing.T) {
 	if cmd.RunE == nil {
 		t.Fatal("RunE is nil")
 	}
-	for _, name := range []string{"from-task", "interactive", "from-settings", "max-iterations"} {
+	for _, name := range []string{"from-task", "interactive", "tool", "model", "max-iterations"} {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("--%s flag was not registered", name)
 		}

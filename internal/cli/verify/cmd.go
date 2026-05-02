@@ -34,7 +34,11 @@ func New() *cobra.Command {
 			"verify-done / help tasks. The verifier writes verifier_plan.md and " +
 			"verifier_findings.md inside the task directory; on VERDICT: FAIL the " +
 			"orchestrator resumes the coder with the findings and re-runs the verifier " +
-			"up to --max-iterations times before terminating as verify-done.",
+			"up to --max-iterations times before terminating as verify-done. Pass " +
+			"--tool / --model (or VERIFY_TOOL / VERIFY_MODEL) for a one-off override " +
+			"that does not update the verifier bucket; run `j settings reset " +
+			"verifier.tool` and/or `j settings reset verifier.model` to be re-prompted " +
+			"on the next run.",
 		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var interactive *bool
@@ -45,7 +49,8 @@ func New() *cobra.Command {
 			return Run(cmd.Context(), Options{
 				TaskID:        viper.GetString("verify.from_task"),
 				Interactive:   interactive,
-				FromSettings:  viper.GetBool("verify.from_settings"),
+				Tool:          viper.GetString("verify.tool"),
+				Model:         viper.GetString("verify.model"),
 				MaxIterations: viper.GetInt("verify.max_iterations"),
 				Stdin:         cmd.InOrStdin(),
 				Stdout:        cmd.OutOrStdout(),
@@ -56,15 +61,18 @@ func New() *cobra.Command {
 	}
 	cmd.Flags().String("from-task", "", "Existing task id to verify (loads <cwd>/.j/tasks/<id>/)")
 	cmd.Flags().Bool("interactive", true, "Launch the verifier agent in interactive mode (its TUI). Set to false for headless capture.")
-	cmd.Flags().Bool("from-settings", true, "Use the tool/model recorded in <cwd>/.j/settings; pass --from-settings=false to be prompted instead.")
+	cmd.Flags().String("tool", "", "Coding agent tool (cursor|claude). One-off override; does not update verifier.tool.")
+	cmd.Flags().String("model", "", "Model identifier. One-off override; does not update verifier.model.")
 	cmd.Flags().Int("max-iterations", defaultMaxIterations, "Maximum verifier / coder-fix iterations before terminating as verify-done.")
 	_ = viper.BindPFlag("verify.from_task", cmd.Flags().Lookup("from-task"))
 	_ = viper.BindPFlag("verify.interactive", cmd.Flags().Lookup("interactive"))
-	_ = viper.BindPFlag("verify.from_settings", cmd.Flags().Lookup("from-settings"))
+	_ = viper.BindPFlag("verify.tool", cmd.Flags().Lookup("tool"))
+	_ = viper.BindPFlag("verify.model", cmd.Flags().Lookup("model"))
 	_ = viper.BindPFlag("verify.max_iterations", cmd.Flags().Lookup("max-iterations"))
 	_ = viper.BindEnv("verify.from_task", "VERIFY_FROM_TASK")
 	_ = viper.BindEnv("verify.interactive", "VERIFY_INTERACTIVE")
-	_ = viper.BindEnv("verify.from_settings", "VERIFY_FROM_SETTINGS")
+	_ = viper.BindEnv("verify.tool", "VERIFY_TOOL")
+	_ = viper.BindEnv("verify.model", "VERIFY_MODEL")
 	_ = viper.BindEnv("verify.max_iterations", "VERIFY_MAX_ITERATIONS")
 	cmd.AddCommand(newResumeCmd())
 	return cmd

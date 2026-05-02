@@ -14,12 +14,12 @@ Expected:
   - Each invocation exits with code 0.
   - `help plan` stdout begins with `Reads a markdown task description`
     and lists the `resume` subcommand plus the `--from-file`,
-    `--from-settings`, `--interactive` flags.
+    `--tool`, `--model`, `--interactive` flags.
   - `help work` stdout begins with `Resolves a plan to execute` and
     lists the `resume` subcommand plus `--from-file`, `--from-task`,
-    `--from-settings`, `--interactive` flags.
+    `--tool`, `--model`, `--interactive` flags.
   - `help verify` stdout mentions `verifier` and lists the `resume`
-    subcommand plus `--from-task`, `--from-settings`, `--interactive`,
+    subcommand plus `--from-task`, `--tool`, `--model`, `--interactive`,
     `--max-iterations` flags.
   - `help tasks` stdout mentions the bbolt task log
     (`<cwd>/.j/tasks/list.db`) and lists the `delete` and `enter`
