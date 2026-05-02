@@ -24,6 +24,7 @@ import (
 	"github.com/spacelions/j/internal/cli/agentpick"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/mustread"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -289,6 +290,10 @@ func validateForVerify(t store.Task) error {
 // reused.
 func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, coderAgent codingagents.Agent, model, resumeID string, res resolved) (verifyOutcome, error) {
 	agentLogPath := filepath.Join(res.TaskDir, tasklog.AgentLogFileName)
+	mustreadFiles, mustreadErr := mustread.LoadFromDefault()
+	if mustreadErr != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustreadErr)
+	}
 	for i := 0; i < opts.MaxIterations; i++ {
 		req := codingagents.VerifyRequest{
 			RequirementsPath:           res.RequirementsPath,
@@ -304,6 +309,7 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, coderAgent 
 			ResumeChatID:               resumeID,
 			Worktree:                   res.Task.Worktree,
 			AgentLogPath:               agentLogPath,
+			Mustread:                   mustreadFiles,
 		}
 		if _, err := verifierAgent.Verify(ctx, req); err != nil {
 			return outcomeNoRetries, err

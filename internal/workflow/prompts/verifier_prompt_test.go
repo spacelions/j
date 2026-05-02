@@ -16,7 +16,7 @@ func TestBuildVerifier(t *testing.T) {
 		verifierPlanPath = "/tmp/.j/tasks/abc/verifier_plan.md"
 		findingsPath     = "/tmp/.j/tasks/abc/verifier_findings.md"
 	)
-	got := BuildVerifier(reqPath, reqBody, planPath, planBody, verifierPlanPath, findingsPath, "")
+	got := BuildVerifier(reqPath, reqBody, planPath, planBody, verifierPlanPath, findingsPath, "", nil)
 
 	if !strings.Contains(got, strings.TrimSpace(verifier.Instruction)) {
 		t.Fatalf("prompt missing verifier.Instruction: %q", got)
@@ -34,6 +34,29 @@ func TestBuildVerifier(t *testing.T) {
 	if strings.Contains(strings.ToLower(got), "git worktree") {
 		t.Fatalf("empty worktree should not emit worktree line: %q", got)
 	}
+	if strings.Contains(got, "Before starting, read these project files") {
+		t.Fatalf("prompt should not include must-read block when nil: %q", got)
+	}
+}
+
+// TestBuildVerifier_WithMustread pins the bulleted must-read block on
+// the verifier prompt: appears once, preserves case, and sits between
+// the verifier instruction and the requirements section.
+func TestBuildVerifier_WithMustread(t *testing.T) {
+	got := BuildVerifier("r.md", "r", "p.md", "p", "vp.md", "vf.md", "", []string{"AGENTS.md", "CLAUDE.md"})
+	const header = "Before starting, read these project files for required context:"
+	if strings.Count(got, header) != 1 {
+		t.Fatalf("must-read header should appear exactly once: %q", got)
+	}
+	if !strings.Contains(got, "- AGENTS.md") || !strings.Contains(got, "- CLAUDE.md") {
+		t.Fatalf("must-read block missing entries: %q", got)
+	}
+	if strings.Contains(got, "- agents.md") || strings.Contains(got, "- claude.md") {
+		t.Fatalf("must-read block lowercased entries: %q", got)
+	}
+	if strings.Index(got, header) > strings.Index(got, "Requirements (from") {
+		t.Fatalf("must-read block must precede requirements: %q", got)
+	}
 }
 
 // TestBuildVerifier_TrimsLeadingWhitespace pins the same trim
@@ -41,7 +64,7 @@ func TestBuildVerifier(t *testing.T) {
 // verifier.Instruction must not bleed leading whitespace into the
 // composed prompt.
 func TestBuildVerifier_TrimsLeadingWhitespace(t *testing.T) {
-	got := BuildVerifier("r.md", "r", "p.md", "p", "vp.md", "vf.md", "")
+	got := BuildVerifier("r.md", "r", "p.md", "p", "vp.md", "vf.md", "", nil)
 	if strings.HasPrefix(got, "\n") || strings.HasPrefix(got, " ") {
 		t.Fatalf("prompt should not start with whitespace: %q", got[:10])
 	}
@@ -52,7 +75,7 @@ func TestBuildVerifier_TrimsLeadingWhitespace(t *testing.T) {
 // worktree verbatim and mentions `git worktree list` so the verifier
 // knows how to resolve the absolute path.
 func TestBuildVerifier_WithWorktree(t *testing.T) {
-	got := BuildVerifier("r.md", "r", "p.md", "p", "vp.md", "vf.md", "j-my-task")
+	got := BuildVerifier("r.md", "r", "p.md", "p", "vp.md", "vf.md", "j-my-task", nil)
 	if !strings.Contains(got, "j-my-task") {
 		t.Fatalf("worktree prompt missing worktree name: %q", got)
 	}
@@ -91,7 +114,7 @@ func TestBuildVerifierResume(t *testing.T) {
 			t.Fatalf("resume prompt should not include %q: %q", banned, got)
 		}
 	}
-	if got == BuildVerifier(reqPath, reqBody, planPath, planBody, "vp.md", "vf.md", "") {
+	if got == BuildVerifier(reqPath, reqBody, planPath, planBody, "vp.md", "vf.md", "", nil) {
 		t.Fatal("resume prompt should differ from BuildVerifier output")
 	}
 	if strings.Contains(strings.ToLower(got), "git worktree") {

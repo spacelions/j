@@ -204,7 +204,7 @@ func buildPlanPrompt(req codingagents.PlanRequest) string {
 	if req.Resume {
 		return prompts.BuildPlannerResume(req.FromFilePath, req.Body)
 	}
-	base := prompts.BuildPlanner(req.FromFilePath, req.Body)
+	base := prompts.BuildPlanner(req.FromFilePath, req.Body, req.Mustread)
 	return fmt.Sprintf(
 		"%s\n\nDuring this session you may clarify the requirements with the user. Before exiting:\n"+
 			"1. Save the (possibly refined) requirements summary to %q (overwrite if it exists). "+
@@ -229,7 +229,7 @@ func buildWorkPrompt(req codingagents.WorkRequest) string {
 	if req.Resume {
 		return prompts.BuildCoderResume(req.PlanPath, req.Body, req.Worktree)
 	}
-	return prompts.BuildCoder(req.PlanPath, req.Body, req.Worktree)
+	return prompts.BuildCoder(req.PlanPath, req.Body, req.Worktree, req.Mustread)
 }
 
 // buildVerifyPrompt picks the right verifier prompt for req. Resume
@@ -244,5 +244,6 @@ func buildVerifyPrompt(req codingagents.VerifyRequest) string {
 		req.PlanPath, req.PlanBody,
 		req.VerifierPlanOutputPath, req.VerifierFindingsOutputPath,
 		req.Worktree,
+		req.Mustread,
 	)
 }
