@@ -294,10 +294,9 @@ func TestWithDefaults_FillsAllNilStreams(t *testing.T) {
 	}
 }
 
-// readMustread reads project.mustread from the current cwd's settings
-// store and returns (value, set). Used by the --mustread flag tests
-// to confirm the seeded value persisted verbatim.
-func readMustread(t *testing.T) (string, bool) {
+// readProjectKey reads a key from the project bucket of the current
+// cwd's settings store and returns (value, set).
+func readProjectKey(t *testing.T, key string) (string, bool) {
 	t.Helper()
 	path, err := store.DefaultPath()
 	if err != nil {
@@ -308,11 +307,73 @@ func readMustread(t *testing.T) (string, bool) {
 		t.Fatalf("Open: %v", err)
 	}
 	defer s.Close()
-	v, set, err := s.Get(store.BucketProject, "mustread")
+	v, set, err := s.Get(store.BucketProject, key)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 	return v, set
+}
+
+// readMustread is the legacy alias retained so the --mustread test
+// bodies stay terse.
+func readMustread(t *testing.T) (string, bool) {
+	t.Helper()
+	return readProjectKey(t, "mustread")
+}
+
+// TestRun_FreshInit_SeedsMaxIterations pins the unconditional seed:
+// every successful `j init` writes project.max_iterations=3, and the
+// user can override it later via `j settings set`.
+func TestRun_FreshInit_SeedsMaxIterations(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := Run(context.Background(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got, set := readProjectKey(t, "max_iterations")
+	if !set || got != "3" {
+		t.Fatalf("project.max_iterations = (%q, %v), want (\"3\", true)", got, set)
+	}
+}
+
+// TestRun_ResetReseedsMaxIterations confirms the reset-and-recreate
+// path also reseeds project.max_iterations: a stale value persisted
+// before the reset is overwritten with the fresh default of "3".
+func TestRun_ResetReseedsMaxIterations(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketProject, "max_iterations", "99"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(context.Background(), Options{
+		Yes:    true,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got, set := readProjectKey(t, "max_iterations")
+	if !set || got != "3" {
+		t.Fatalf("project.max_iterations after reset = (%q, %v), want (\"3\", true)", got, set)
+	}
 }
 
 // TestRun_MustreadFlag_SeedsValue pins the new --mustread flag: when

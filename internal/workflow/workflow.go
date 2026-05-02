@@ -22,7 +22,6 @@ import (
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/genai"
 
-	"github.com/spacelions/j/internal/config"
 	"github.com/spacelions/j/internal/workflow/agents/coder"
 	"github.com/spacelions/j/internal/workflow/agents/planner"
 	"github.com/spacelions/j/internal/workflow/agents/verifier"
@@ -32,7 +31,7 @@ import (
 // universal launcher. The cfg carries the runtime knobs (API key, model,
 // iterations); launcherArgs are passed straight to the launcher parser
 // (nil/empty for console, or "web" "api" "webui" for the local web stack).
-func Run(ctx context.Context, cfg config.Config, launcherArgs []string) error {
+func Run(ctx context.Context, cfg Config, launcherArgs []string) error {
 	m, err := gemini.NewModel(ctx, cfg.Model, &genai.ClientConfig{APIKey: cfg.APIKey})
 	if err != nil {
 		return fmt.Errorf("workflow: model: %w", err)

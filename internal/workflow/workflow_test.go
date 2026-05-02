@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-
-	"github.com/spacelions/j/internal/config"
 )
 
 // TestRun_SmokeBogusLauncherArgs exercises Run end-to-end through real model,
@@ -14,7 +12,7 @@ import (
 func TestRun_SmokeBogusLauncherArgs(t *testing.T) {
 	err := Run(
 		context.Background(),
-		config.Config{APIKey: "bogus", Model: "gemini-2.5-flash", MaxIterations: 1},
+		Config{APIKey: "bogus", Model: "gemini-2.5-flash", MaxIterations: 1},
 		[]string{"definitely-not-a-real-subcommand"},
 	)
 	if err == nil {

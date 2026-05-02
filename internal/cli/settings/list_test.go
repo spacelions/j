@@ -179,6 +179,53 @@ func TestList_StatNonENOENT(t *testing.T) {
 	}
 }
 
+// TestList_MasksAPIKey pins the secret-redaction behaviour: when the
+// project bucket carries an `api_key` entry, the list output renders
+// it as the fixed mask `****` so the real value never echoes onto the
+// terminal. Other project keys (model, max_iterations, mustread) are
+// rendered verbatim alongside it.
+func TestList_MasksAPIKey(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range map[string]string{
+		"api_key":        "secret123",
+		"model":          "gemini-2.5-flash",
+		"max_iterations": "3",
+	} {
+		if err := s.Put(store.BucketProject, k, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _, err := runSettingsArgs(t)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "api_key = ****") {
+		t.Fatalf("stdout = %q, want masked api_key line", out)
+	}
+	if strings.Contains(out, "secret123") {
+		t.Fatalf("stdout = %q, must not echo the real api_key", out)
+	}
+	if !strings.Contains(out, "model = gemini-2.5-flash") {
+		t.Fatalf("stdout = %q, want model rendered verbatim", out)
+	}
+	if !strings.Contains(out, "max_iterations = 3") {
+		t.Fatalf("stdout = %q, want max_iterations rendered verbatim", out)
+	}
+}
+
 // TestList_OnlyEmptyBuckets verifies the unknown-empty-bucket skip:
 // a DB whose only bucket is empty and unknown renders just the four
 // known section headers, with no entries and no [ghost] section.

@@ -25,8 +25,9 @@ coverage:
 	echo "total coverage: $$total"; \
 	below=$$(go tool cover -func=cover.out | awk '$$NF != "100.0%" && !/^total:/ {print}'); \
 	below=$$(printf '%s\n' "$$below" | grep -Ev \
-		-e 'internal/config/config\.go:[0-9]+:[[:space:]]+Init[[:space:]]' \
 		-e 'internal/workflow/workflow\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
+		-e 'internal/workflow/loadconfig\.go:[0-9]+:[[:space:]]+LoadConfig[[:space:]]' \
+		-e 'internal/workflow/loadconfig\.go:[0-9]+:[[:space:]]+readSetting[[:space:]]' \
 		-e 'internal/cli/run/run\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
 		-e 'internal/cli/web/web\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
 		-e 'internal/util/mdfile/mdfile\.go:[0-9]+:[[:space:]]+Resolve[[:space:]]' \
@@ -41,6 +42,7 @@ coverage:
 		-e 'internal/cli/tasks/ui\.go:[0-9]+:[[:space:]]+ConfirmDelete[[:space:]]' \
 		-e 'internal/cli/tasks/ui\.go:[0-9]+:[[:space:]]+PickTask[[:space:]]' \
 		-e 'internal/cli/initcmd/cmd\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
+		-e 'internal/cli/initcmd/cmd\.go:[0-9]+:[[:space:]]+seedDefaults[[:space:]]' \
 		-e 'internal/cli/tasks/delete\.go:[0-9]+:[[:space:]]+RunDelete[[:space:]]' \
 		-e 'internal/cli/tasks/enter\.go:[0-9]+:[[:space:]]+RunEnter[[:space:]]' \
 		-e 'internal/cli/preflight/preflight\.go:[0-9]+:[[:space:]]+ConfirmInit[[:space:]]' \

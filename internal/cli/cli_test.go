@@ -28,8 +28,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// resetGlobals resets any global state that tests share (currently only the
-// Viper singleton used by internal/config).
+// resetGlobals resets any global state that tests share (the Viper
+// singleton used by per-subcommand BindPFlag / BindEnv calls).
 func resetGlobals(t *testing.T) {
 	t.Helper()
 	viper.Reset()
@@ -82,8 +82,7 @@ func withArgs(t *testing.T, args ...string) {
 }
 
 // assertExecuteFails runs Execute and asserts it exits with code 1 and
-// stderr contains every substring in wants. Pass both substrings (e.g.
-// "j:" and "GOOGLE_API_KEY") to keep the existing assertions intact.
+// stderr contains every substring in wants.
 func assertExecuteFails(t *testing.T, wants ...string) {
 	t.Helper()
 	var code int
@@ -123,18 +122,18 @@ func TestSettingsCommand_Children(t *testing.T) {
 }
 
 
-func TestExecute_RunMissingKey(t *testing.T) {
+func TestExecute_RunMissingSettings(t *testing.T) {
 	resetGlobals(t)
-	t.Setenv("GOOGLE_API_KEY", "")
+	t.Chdir(t.TempDir())
 	withArgs(t, "run")
-	assertExecuteFails(t, "j:", "GOOGLE_API_KEY")
+	assertExecuteFails(t, "j:", "j init")
 }
 
-func TestExecute_WebMissingKey(t *testing.T) {
+func TestExecute_WebMissingSettings(t *testing.T) {
 	resetGlobals(t)
-	t.Setenv("GOOGLE_API_KEY", "")
+	t.Chdir(t.TempDir())
 	withArgs(t, "web")
-	assertExecuteFails(t, "GOOGLE_API_KEY")
+	assertExecuteFails(t, "j init")
 }
 
 func TestExecute_PlanInvalidFromFile_FromFlag(t *testing.T) {

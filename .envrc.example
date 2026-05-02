@@ -1,4 +1,1 @@
 # Copy to .envrc and fill in. Run `direnv allow` after editing.
-export GOOGLE_API_KEY=
-export MODEL=gemini-2.5-flash
-export MAX_ITERATIONS=3
