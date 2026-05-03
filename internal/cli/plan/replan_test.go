@@ -1,0 +1,832 @@
+package plan
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/charmbracelet/huh"
+
+	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/store"
+)
+
+// taskFilePath returns the expected absolute location of `<id>/<name>`
+// under the per-cwd tasks directory.
+func taskFilePath(t *testing.T, id, name string) string {
+	t.Helper()
+	dir, err := store.DefaultTasksDir()
+	if err != nil {
+		t.Fatalf("DefaultTasksDir: %v", err)
+	}
+	return filepath.Join(dir, id, name)
+}
+
+// seedReplanTask writes a task row with the supplied status,
+// requirements body, and (optionally) a fresh PlanBeginAt. Used by
+// the re-plan tests to drive runReplanTask against a known state.
+func seedReplanTask(t *testing.T, status store.TaskStatus, requirement string, planBegin *time.Time) string {
+	t.Helper()
+	id := store.NewTaskID()
+	if _, err := store.EnsureTaskDir(id); err != nil {
+		t.Fatalf("EnsureTaskDir: %v", err)
+	}
+	if requirement != "" {
+		reqPath := taskFilePath(t, id, store.RequirementsFileName)
+		if err := os.WriteFile(reqPath, []byte(requirement), 0o644); err != nil {
+			t.Fatalf("write requirements: %v", err)
+		}
+	}
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatalf("DefaultTasksDBPath: %v", err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	task := store.Task{
+		ID:               id,
+		Status:           status,
+		InvokedTool:      "cursor-prev",
+		InvokedModel:     "opus-prev",
+		PlanResumeCursor: "seed-resume",
+		Summary:          "seed summary",
+		PlanBeginAt:      planBegin,
+	}
+	if err := s.PutTask(task); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	return id
+}
+
+// TestAllowedForReplan covers every status branch in the re-plan
+// allowlist: only plan-done and help return true; everything else
+// (planning / working / verifying / done / unknown) routes to the
+// confirm prompt.
+func TestAllowedForReplan(t *testing.T) {
+	cases := []struct {
+		status store.TaskStatus
+		want   bool
+	}{
+		{store.StatusPlanDone, true},
+		{store.StatusHelp, true},
+		{store.StatusPlanning, false},
+		{store.StatusWorking, false},
+		{store.StatusVerifying, false},
+		{store.StatusCompleted, false},
+		{store.StatusWorkDone, false},
+		{store.StatusVerifyDone, false},
+		{store.TaskStatus("unknown"), false},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.status), func(t *testing.T) {
+			got := allowedForReplan(store.Task{Status: tc.status})
+			if got != tc.want {
+				t.Fatalf("allowedForReplan(%q) = %v, want %v", tc.status, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestConfirmStatusOverride_AllowedShortCircuits covers the
+// allowlist short-circuit: an allowed status returns proceed=true
+// without invoking the UI.
+func TestConfirmStatusOverride_AllowedShortCircuits(t *testing.T) {
+	ui := &scriptedUI{}
+	proceed, err := confirmStatusOverride(context.Background(), Options{UI: ui},
+		"re-plan",
+		store.Task{ID: "id1", Status: store.StatusPlanDone},
+		allowedForReplan)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !proceed {
+		t.Fatal("proceed = false, want true (allowed status)")
+	}
+	if ui.confirmCalls != 0 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 0", ui.confirmCalls)
+	}
+}
+
+// TestConfirmStatusOverride_YesFlagSkipsPrompt covers the --yes
+// branch: a wrong status with Yes=true returns proceed=true and
+// the UI is left untouched.
+func TestConfirmStatusOverride_YesFlagSkipsPrompt(t *testing.T) {
+	ui := &scriptedUI{}
+	proceed, err := confirmStatusOverride(context.Background(),
+		Options{UI: ui, Yes: true},
+		"re-plan",
+		store.Task{ID: "id1", Status: store.StatusWorking},
+		allowedForReplan)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !proceed {
+		t.Fatal("proceed = false, want true (Yes=true)")
+	}
+	if ui.confirmCalls != 0 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 0", ui.confirmCalls)
+	}
+}
+
+// TestConfirmStatusOverride_PromptYes covers the prompted-and-accepted
+// branch: a wrong status with the UI returning true yields
+// proceed=true.
+func TestConfirmStatusOverride_PromptYes(t *testing.T) {
+	ui := &scriptedUI{confirm: true}
+	proceed, err := confirmStatusOverride(context.Background(),
+		Options{UI: ui},
+		"re-plan",
+		store.Task{ID: "id1", Status: store.StatusWorking},
+		allowedForReplan)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !proceed {
+		t.Fatal("proceed = false, want true (UI accepted)")
+	}
+	if ui.confirmCalls != 1 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 1", ui.confirmCalls)
+	}
+	if ui.confirmCmd != "re-plan" || ui.confirmStatus != string(store.StatusWorking) || ui.confirmTaskID != "id1" {
+		t.Fatalf("confirm args = (%q, %q, %q)", ui.confirmCmd, ui.confirmTaskID, ui.confirmStatus)
+	}
+}
+
+// TestConfirmStatusOverride_PromptNo covers the prompted-and-declined
+// branch: a wrong status with the UI returning false yields
+// proceed=false and a nil error.
+func TestConfirmStatusOverride_PromptNo(t *testing.T) {
+	ui := &scriptedUI{confirm: false}
+	proceed, err := confirmStatusOverride(context.Background(),
+		Options{UI: ui},
+		"re-plan",
+		store.Task{ID: "id1", Status: store.StatusWorking},
+		allowedForReplan)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if proceed {
+		t.Fatal("proceed = true, want false (UI declined)")
+	}
+}
+
+// TestConfirmStatusOverride_PromptError surfaces a UI error verbatim
+// without consulting Yes (the prompt is the source of truth here).
+func TestConfirmStatusOverride_PromptError(t *testing.T) {
+	ui := &scriptedUI{confirmErr: errors.New("confirm boom")}
+	proceed, err := confirmStatusOverride(context.Background(),
+		Options{UI: ui},
+		"re-plan",
+		store.Task{ID: "id1", Status: store.StatusWorking},
+		allowedForReplan)
+	if err == nil || !strings.Contains(err.Error(), "confirm boom") {
+		t.Fatalf("err = %v", err)
+	}
+	if proceed {
+		t.Fatal("proceed = true, want false on prompt error")
+	}
+}
+
+// TestLoadTaskByID_NotFound confirms the io/fs.ErrNotExist wrap into
+// the user-facing "task %q not found" error.
+func TestLoadTaskByID_NotFound(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	_, err := loadTaskByID(Options{Stderr: io.Discard}, "ghost")
+	if err == nil || !strings.Contains(err.Error(), `task "ghost" not found`) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestLoadTaskByID_Success returns the seeded row verbatim.
+func TestLoadTaskByID_Success(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedReplanTask(t, store.StatusPlanDone, "# req", nil)
+	got, err := loadTaskByID(Options{Stderr: io.Discard}, id)
+	if err != nil {
+		t.Fatalf("loadTaskByID: %v", err)
+	}
+	if got.ID != id || got.Status != store.StatusPlanDone {
+		t.Fatalf("got = %+v", got)
+	}
+}
+
+// TestLoadTaskByID_OpenFails covers the OpenTaskLog !ok branch by
+// replacing list.db with a directory before the call.
+func TestLoadTaskByID_OpenFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(dbPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dbPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	_, err = loadTaskByID(Options{Stderr: &stderr}, "anything")
+	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestListAllTasks_OpenFails covers the OpenTaskLog !ok branch.
+func TestListAllTasks_OpenFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(dbPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dbPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	_, err = listAllTasks(Options{Stderr: &stderr})
+	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestListAllTasks_SortsAndReturns confirms the helper returns every
+// row sorted by store.SortTasks (active-first ordering).
+func TestListAllTasks_SortsAndReturns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id1 := seedReplanTask(t, store.StatusPlanDone, "a", nil)
+	id2 := seedReplanTask(t, store.StatusPlanning, "b", nil)
+	got, err := listAllTasks(Options{Stderr: io.Discard})
+	if err != nil {
+		t.Fatalf("listAllTasks: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2", len(got))
+	}
+	// store.SortTasks puts active (planning/working/verifying)
+	// rows first; the planning row therefore precedes plan-done.
+	if got[0].ID != id2 || got[1].ID != id1 {
+		t.Fatalf("order = [%s, %s], want [%s, %s]", got[0].ID, got[1].ID, id2, id1)
+	}
+}
+
+// TestPickReplanTarget_EmptyList surfaces the "no tasks to re-plan"
+// error when bbolt is empty.
+func TestPickReplanTarget_EmptyList(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	_, err := pickReplanTarget(context.Background(), Options{Stderr: io.Discard, UI: &scriptedUI{}})
+	if err == nil || !strings.Contains(err.Error(), "no tasks to re-plan") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestPickReplanTarget_DelegatesToUI feeds the UI a sorted task list
+// and asserts the chosen id flows back.
+func TestPickReplanTarget_DelegatesToUI(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedReplanTask(t, store.StatusPlanDone, "a", nil)
+	ui := &scriptedUI{replanID: id}
+	got, err := pickReplanTarget(context.Background(), Options{Stderr: io.Discard, UI: ui})
+	if err != nil {
+		t.Fatalf("pickReplanTarget: %v", err)
+	}
+	if got != id {
+		t.Fatalf("id = %q, want %q", got, id)
+	}
+	if ui.replanCalls != 1 {
+		t.Fatalf("PickReplanTask calls = %d, want 1", ui.replanCalls)
+	}
+	if len(ui.replanTasks) != 1 || ui.replanTasks[0].ID != id {
+		t.Fatalf("UI received %+v", ui.replanTasks)
+	}
+}
+
+// TestPickReplanTarget_UIError propagates the picker error verbatim.
+func TestPickReplanTarget_UIError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	_ = seedReplanTask(t, store.StatusPlanDone, "a", nil)
+	ui := &scriptedUI{replanErr: errors.New("pick boom")}
+	_, err := pickReplanTarget(context.Background(), Options{Stderr: io.Discard, UI: ui})
+	if err == nil || !strings.Contains(err.Error(), "pick boom") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestPickReplanTarget_ListError covers the listAllTasks-error
+// path through pickReplanTarget: replacing list.db with a
+// directory makes OpenTaskLog fail and the error propagates
+// without invoking the UI picker.
+func TestPickReplanTarget_ListError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(dbPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dbPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ui := &scriptedUI{}
+	_, err = pickReplanTarget(context.Background(), Options{Stderr: io.Discard, UI: ui})
+	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+		t.Fatalf("err = %v", err)
+	}
+	if ui.replanCalls != 0 {
+		t.Fatalf("PickReplanTask calls = %d, want 0", ui.replanCalls)
+	}
+}
+
+// TestRun_FromTask_BypassesSourceSelector pins the rule that
+// --from-task takes the re-plan path without prompting for a source.
+func TestRun_FromTask_BypassesSourceSelector(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedReplanTask(t, store.StatusPlanDone, "# req\nbody", nil)
+	agent := newScriptedAgent()
+	ui := &scriptedUI{}
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.sourceCalls != 0 {
+		t.Fatalf("SelectSource should not be invoked, got %d", ui.sourceCalls)
+	}
+	if agent.planned != 1 {
+		t.Fatalf("agent.planned = %d, want 1", agent.planned)
+	}
+}
+
+// TestRun_FromTask_NotFound surfaces the load error before any
+// agent or UI interaction.
+func TestRun_FromTask_NotFound(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	agent := newScriptedAgent()
+	err := Run(context.Background(), Options{
+		TaskID: "ghost",
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), `task "ghost" not found`) {
+		t.Fatalf("err = %v", err)
+	}
+	if agent.planned != 0 {
+		t.Fatal("agent.Plan must not run when the task is missing")
+	}
+}
+
+// TestRun_FromTask_StatusMismatch_DeclinedExitsClean covers the
+// re-plan prompt-on-mismatch contract: a `working` task triggers
+// the confirm prompt; a `no` answer exits cleanly with nil and
+// leaves the row untouched.
+func TestRun_FromTask_StatusMismatch_DeclinedExitsClean(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedReplanTask(t, store.StatusWorking, "# req", nil)
+	agent := newScriptedAgent()
+	ui := &scriptedUI{confirm: false}
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if ui.confirmCalls != 1 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 1", ui.confirmCalls)
+	}
+	if ui.confirmCmd != "re-plan" || ui.confirmTaskID != id || ui.confirmStatus != string(store.StatusWorking) {
+		t.Fatalf("confirm args = (%q, %q, %q)", ui.confirmCmd, ui.confirmTaskID, ui.confirmStatus)
+	}
+	if agent.planned != 0 {
+		t.Fatal("agent.Plan should not run when the user declines")
+	}
+	tasks := readTasks(t)
+	if len(tasks) != 1 || tasks[0].Status != store.StatusWorking {
+		t.Fatalf("declined task should stay working: %+v", tasks)
+	}
+}
+
+// TestRun_FromTask_StatusMismatch_AcceptedRuns pins the accepted-prompt
+// branch: confirm=true makes the re-plan run against a wrong-status
+// task and the row flips to plan-done.
+func TestRun_FromTask_StatusMismatch_AcceptedRuns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedReplanTask(t, store.StatusWorking, "# old req\nbody", nil)
+	agent := newScriptedAgent()
+	agent.requirement = "# refreshed req"
+	agent.plan = "1. step\n2. step"
+	ui := &scriptedUI{confirm: true}
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if agent.planned != 1 {
+		t.Fatalf("agent.planned = %d, want 1", agent.planned)
+	}
+	tasks := readTasks(t)
+	if len(tasks) != 1 || tasks[0].Status != store.StatusPlanDone {
+		t.Fatalf("tasks = %+v, want one plan-done row", tasks)
+	}
+}
+
+// TestRun_FromTask_YesFlagSkipsPrompt covers the --yes path on the
+// re-plan flow: a wrong-status task with Yes=true skips the prompt
+// and runs the agent.
+func TestRun_FromTask_YesFlagSkipsPrompt(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedReplanTask(t, store.StatusVerifying, "# req\nbody", nil)
+	agent := newScriptedAgent()
+	ui := &scriptedUI{}
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Yes:    true,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.confirmCalls != 0 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 0 with Yes=true", ui.confirmCalls)
+	}
+	if agent.planned != 1 {
+		t.Fatalf("agent.planned = %d, want 1", agent.planned)
+	}
+}
+
+// TestRun_FromTask_StatusMismatch_PromptError surfaces a UI error
+// from ConfirmStatusOverride and skips the agent.
+func TestRun_FromTask_StatusMismatch_PromptError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedReplanTask(t, store.StatusPlanning, "# req", nil)
+	agent := newScriptedAgent()
+	ui := &scriptedUI{confirmErr: errors.New("confirm boom")}
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err == nil || !strings.Contains(err.Error(), "confirm boom") {
+		t.Fatalf("err = %v", err)
+	}
+	if agent.planned != 0 {
+		t.Fatal("planner must not run when the prompt errored")
+	}
+}
+
+// TestRun_FromTask_StatusMismatch_AbortExitsClean pins the huh
+// abort path through the re-plan confirm prompt: aborting yields
+// a clean nil exit (consistent with the deferred guard in Run).
+func TestRun_FromTask_StatusMismatch_AbortExitsClean(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedReplanTask(t, store.StatusCompleted, "# req", nil)
+	agent := newScriptedAgent()
+	ui := &scriptedUI{confirmErr: huh.ErrUserAborted}
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
+	}
+	if agent.planned != 0 {
+		t.Fatal("agent.Plan must not run after abort")
+	}
+}
+
+// TestRun_FromTask_PreservesPlanBeginAt confirms beginPlanTaskReuse
+// keeps the original PlanBeginAt while flipping status through
+// planning → plan-done. The summary is regenerated from the refreshed
+// requirements body so users see the latest content.
+func TestRun_FromTask_PreservesPlanBeginAt(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	original := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+	id := seedReplanTask(t, store.StatusPlanDone, "# original\nbody", &original)
+	agent := newScriptedAgent()
+	agent.requirement = "# refreshed\nbody"
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	tasks := readTasks(t)
+	if len(tasks) != 1 {
+		t.Fatalf("len = %d, want 1", len(tasks))
+	}
+	got := tasks[0]
+	if got.Status != store.StatusPlanDone {
+		t.Fatalf("Status = %q, want plan-done", got.Status)
+	}
+	if got.PlanBeginAt == nil || !got.PlanBeginAt.Equal(original) {
+		t.Fatalf("PlanBeginAt = %v, want %v", got.PlanBeginAt, original)
+	}
+	if got.PlanEndAt == nil {
+		t.Fatal("PlanEndAt should be set after re-plan finalises")
+	}
+	if !strings.Contains(got.Summary, "refreshed") {
+		t.Fatalf("Summary = %q, want refreshed body", got.Summary)
+	}
+	if got.InvokedTool != "cursor" || got.InvokedModel != "sonnet-4" {
+		t.Fatalf("tool/model = %q/%q, want refreshed values", got.InvokedTool, got.InvokedModel)
+	}
+}
+
+// TestRun_FromTask_AgentError_LogsHelp drives the planErr branch in
+// runReplanTask: agent failure must log the row as help and surface
+// the error to the caller.
+func TestRun_FromTask_AgentError_LogsHelp(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedReplanTask(t, store.StatusPlanDone, "# req", nil)
+	agent := newScriptedAgent()
+	agent.planErr = errors.New("boom")
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("err = %v", err)
+	}
+	tasks := readTasks(t)
+	if len(tasks) != 1 || tasks[0].Status != store.StatusHelp {
+		t.Fatalf("tasks = %+v, want one help-status row", tasks)
+	}
+}
+
+// TestRun_FromTask_BackgroundSpawn_RecordsPID exercises the
+// fire-and-forget headless spawn path through runReplanTask: a
+// positive PID skips finishPlan and stamps the row's
+// BackgroundPID.
+func TestRun_FromTask_BackgroundSpawn_RecordsPID(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedReplanTask(t, store.StatusPlanDone, "# req", nil)
+	agent := newScriptedAgent()
+	agent.planPID = 31415
+	var stdout bytes.Buffer
+	err := Run(context.Background(), Options{
+		TaskID:      id,
+		Interactive: boolPtr(false),
+		Stdout:      &stdout,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{agent},
+		UI:          &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "running in background") || !strings.Contains(stdout.String(), "PID=31415") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	tasks := readTasks(t)
+	if len(tasks) != 1 {
+		t.Fatalf("len = %d, want 1", len(tasks))
+	}
+	got := tasks[0]
+	if got.Status != store.StatusPlanning {
+		t.Fatalf("Status = %q, want planning (background row)", got.Status)
+	}
+	if got.BackgroundPID != 31415 {
+		t.Fatalf("BackgroundPID = %d", got.BackgroundPID)
+	}
+}
+
+// TestRun_FromTask_AgentSkipsRequirementsRead pins the warning
+// branch when the agent claims success but does not produce
+// requirements.md / plan.md. The row must still record plan-done
+// (the lifecycle treats agent error as the only fatal signal).
+func TestRun_FromTask_AgentSkipsRequirementsRead(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedReplanTask(t, store.StatusPlanDone, "# req", nil)
+	agent := newScriptedAgent()
+	agent.skipWrite = true
+	// Remove the seeded requirements.md so the post-run reads fail.
+	reqPath := taskFilePath(t, id, store.RequirementsFileName)
+	if err := os.Remove(reqPath); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: &stderr,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "requirements.md") {
+		t.Fatalf("stderr should warn about requirements.md: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "plan.md") {
+		t.Fatalf("stderr should warn about plan.md: %q", stderr.String())
+	}
+	tasks := readTasks(t)
+	if len(tasks) != 1 || tasks[0].Status != store.StatusPlanDone {
+		t.Fatalf("tasks = %+v, want one plan-done row", tasks)
+	}
+}
+
+// TestRun_FromTask_NewResumeIDError warns and continues when the
+// agent's resume-id minting fails on the re-plan path; the row
+// still flips to plan-done because the resume cursor is best-effort.
+func TestRun_FromTask_NewResumeIDError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedReplanTask(t, store.StatusPlanDone, "# req", nil)
+	agent := newScriptedAgent()
+	agent.resumeErr = errors.New("create-chat down")
+	var stderr bytes.Buffer
+	err := Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: &stderr,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "create-chat down") {
+		t.Fatalf("stderr should warn about resume-id failure: %q", stderr.String())
+	}
+}
+
+// TestRun_SourceTask_PicksAndReplans drives the full no-flag flow:
+// SelectSource returns SourceTask, the picker returns the only
+// seeded id, runReplanTask completes successfully.
+func TestRun_SourceTask_PicksAndReplans(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedReplanTask(t, store.StatusPlanDone, "# req\nbody", nil)
+	agent := newScriptedAgent()
+	ui := &scriptedUI{source: SourceTask, replanID: id}
+	err := Run(context.Background(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.replanCalls != 1 {
+		t.Fatalf("PickReplanTask calls = %d, want 1", ui.replanCalls)
+	}
+	if agent.planned != 1 {
+		t.Fatalf("agent.planned = %d, want 1", agent.planned)
+	}
+}
+
+// TestRun_SourceTask_PickerError propagates the picker error and
+// keeps the agent untouched.
+func TestRun_SourceTask_PickerError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	_ = seedReplanTask(t, store.StatusPlanDone, "# req", nil)
+	agent := newScriptedAgent()
+	ui := &scriptedUI{source: SourceTask, replanErr: errors.New("pick boom")}
+	err := Run(context.Background(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err == nil || !strings.Contains(err.Error(), "pick boom") {
+		t.Fatalf("err = %v", err)
+	}
+	if agent.planned != 0 {
+		t.Fatal("agent should not run when the picker errored")
+	}
+}
+
+// TestBeginPlanTaskReuse_SeedsBeginIfMissing confirms the helper
+// stamps a fresh PlanBeginAt when the existing row had none. This
+// is the defensive branch behind the `if task.PlanBeginAt == nil`
+// guard.
+func TestBeginPlanTaskReuse_SeedsBeginIfMissing(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	existing := store.Task{
+		ID:           store.NewTaskID(),
+		Status:       store.StatusPlanDone,
+		InvokedTool:  "old",
+		InvokedModel: "old",
+		// PlanBeginAt intentionally nil.
+	}
+	if _, err := store.EnsureTaskDir(existing.ID); err != nil {
+		t.Fatal(err)
+	}
+	lc := beginPlanTaskReuse(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", existing, "resume-id")
+	if lc == nil {
+		t.Fatal("lifecycle = nil")
+	}
+	if lc.task.PlanBeginAt == nil {
+		t.Fatal("PlanBeginAt should be stamped when the row had none")
+	}
+	if lc.task.InvokedTool != "cursor" || lc.task.InvokedModel != "sonnet-4" {
+		t.Fatalf("tool/model = %q/%q", lc.task.InvokedTool, lc.task.InvokedModel)
+	}
+	if lc.task.PlanResumeCursor != "resume-id" {
+		t.Fatalf("PlanResumeCursor = %q", lc.task.PlanResumeCursor)
+	}
+	if lc.task.Status != store.StatusPlanning {
+		t.Fatalf("Status = %q, want planning", lc.task.Status)
+	}
+}
+
+// TestBeginPlanTaskReuse_PreservesExistingBegin pins the
+// branch where the row already has a PlanBeginAt: the helper
+// must keep it verbatim and clear PlanEndAt / DoneAt.
+func TestBeginPlanTaskReuse_PreservesExistingBegin(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	original := time.Date(2023, 6, 7, 8, 9, 10, 0, time.UTC)
+	existingEnd := original.Add(time.Minute)
+	existing := store.Task{
+		ID:           store.NewTaskID(),
+		Status:       store.StatusPlanDone,
+		InvokedTool:  "old",
+		InvokedModel: "old",
+		PlanBeginAt:  &original,
+		PlanEndAt:    &existingEnd,
+		DoneAt:       &existingEnd,
+	}
+	if _, err := store.EnsureTaskDir(existing.ID); err != nil {
+		t.Fatal(err)
+	}
+	lc := beginPlanTaskReuse(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", existing, "resume-id")
+	if lc == nil {
+		t.Fatal("lifecycle = nil")
+	}
+	if lc.task.PlanBeginAt == nil || !lc.task.PlanBeginAt.Equal(original) {
+		t.Fatalf("PlanBeginAt = %v, want %v", lc.task.PlanBeginAt, original)
+	}
+	if lc.task.PlanEndAt != nil {
+		t.Fatalf("PlanEndAt should be cleared, got %v", lc.task.PlanEndAt)
+	}
+	if lc.task.DoneAt != nil {
+		t.Fatalf("DoneAt should be cleared, got %v", lc.task.DoneAt)
+	}
+}

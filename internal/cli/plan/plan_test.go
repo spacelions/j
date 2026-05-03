@@ -115,22 +115,28 @@ exit 1
 // the option slice the orchestrator offered so tests can assert the
 // scan + filter contract end-to-end.
 type scriptedUI struct {
-	source      PlanSource
-	pickedFile  string
-	tool        string
-	model       string
-	pickedID    string
-	sourceErr   error
-	pickFileErr error
-	toolErr     error
-	modelErr    error
-	pickErr     error
+	source       PlanSource
+	pickedFile   string
+	tool         string
+	model        string
+	pickedID     string
+	replanID     string
+	sourceErr    error
+	pickFileErr  error
+	toolErr      error
+	modelErr     error
+	pickErr      error
+	replanErr    error
+	confirm      bool
+	confirmErr   error
 
 	sourceCalls   int
 	pickFileCalls int
 	toolCalls     int
 	modelCalls    int
 	pickCalls     int
+	replanCalls   int
+	confirmCalls  int
 
 	// toolHook, when non-nil, runs at the start of SelectTool so
 	// tests can mutate shared state (e.g. close the injected store)
@@ -139,6 +145,10 @@ type scriptedUI struct {
 
 	pickFileOptions []string
 	pickedTasks     []store.Task
+	replanTasks     []store.Task
+	confirmCmd      string
+	confirmTaskID   string
+	confirmStatus   string
 }
 
 func (s *scriptedUI) SelectSource(context.Context) (PlanSource, error) {
@@ -189,19 +199,48 @@ func (s *scriptedUI) SelectModel(_ context.Context, options []string) (string, e
 	return options[0], nil
 }
 
-func (s *scriptedUI) PickPlanTask(_ context.Context, tasks []store.Task) (string, error) {
+// PickReplanTask matches the unified taskpick contract:
+// (id, ok, err). ok=false collapses both the user-abort path
+// and the "no selection programmed" case so leaving replanID
+// empty signals cancel, matching the production huhUI behaviour.
+// Tests that want a happy-path pick must set replanID explicitly.
+func (s *scriptedUI) PickReplanTask(_ context.Context, tasks []store.Task) (string, bool, error) {
+	s.replanCalls++
+	s.replanTasks = tasks
+	if s.replanErr != nil {
+		return "", false, s.replanErr
+	}
+	if s.replanID == "" {
+		return "", false, nil
+	}
+	return s.replanID, true, nil
+}
+
+func (s *scriptedUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, status string) (bool, error) {
+	s.confirmCalls++
+	s.confirmCmd = cmd
+	s.confirmTaskID = taskID
+	s.confirmStatus = status
+	if s.confirmErr != nil {
+		return false, s.confirmErr
+	}
+	return s.confirm, nil
+}
+
+// PickPlanTask matches the unified taskpick contract:
+// (id, ok, err). See PickReplanTask above for the rationale —
+// empty pickedID means cancel; tests that exercise the
+// happy-path pick must set pickedID explicitly.
+func (s *scriptedUI) PickPlanTask(_ context.Context, tasks []store.Task) (string, bool, error) {
 	s.pickCalls++
 	s.pickedTasks = tasks
 	if s.pickErr != nil {
-		return "", s.pickErr
+		return "", false, s.pickErr
 	}
-	if s.pickedID != "" {
-		return s.pickedID, nil
+	if s.pickedID == "" {
+		return "", false, nil
 	}
-	if len(tasks) == 0 {
-		return "", errors.New("scriptedUI: no tasks to pick")
-	}
-	return tasks[0].ID, nil
+	return s.pickedID, true, nil
 }
 
 // scriptedAgent stands in for any codingagents.Agent in tests.
@@ -1204,101 +1243,6 @@ func TestPersistPlannerSelection_NilStore_LazyOpenFails(t *testing.T) {
 	}
 }
 
-// TestRun_FromStore_PopulatedStore_SkipsPrompts pins the
-// happy-path of the FromStore reuse: a populated planner bucket
-// causes Run to look up the agent by stored name, run CheckLogin,
-// and skip the tool/model prompts entirely. The bucket must keep
-// only the original three keys (no rewrite).
-func TestRun_FromStore_PopulatedStore_SkipsPrompts(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketPlanner, "model", "gpt-5"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketPlanner, "interactive", "true"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	target := writeFromFile(t, "body")
-	agent := newScriptedAgent()
-	ui := &scriptedUI{}
-	var stderr bytes.Buffer
-
-	err := Run(context.Background(), Options{
-		FromFile:     target,
-		Interactive:  boolPtr(true),
-		Stdout:       io.Discard,
-		Stderr:       &stderr,
-		Agents:       []codingagents.Agent{agent},
-		UI:           ui,
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if ui.toolCalls != 0 || ui.modelCalls != 0 {
-		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
-	}
-	if agent.listed != 0 {
-		t.Fatalf("ListModels should not be called when reading from settings (got %d)", agent.listed)
-	}
-	if agent.checked != 1 {
-		t.Fatalf("CheckLogin = %d, want 1", agent.checked)
-	}
-	if agent.lastReq.Model != "gpt-5" {
-		t.Fatalf("model = %q, want gpt-5", agent.lastReq.Model)
-	}
-	entries, err := s.List(store.BucketPlanner)
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	got := make([]string, len(entries))
-	for i, kv := range entries {
-		got[i] = kv.Key
-	}
-	want := []string{"interactive", "model", "tool"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("planner keys = %v, want %v", got, want)
-	}
-	if strings.Contains(stderr.String(), "Choose your favourite:") {
-		t.Fatalf("stderr should not warn when store is populated: %q", stderr.String())
-	}
-}
-
-// TestRun_FromStore_EmptyStore_FallsBackToPrompt covers the
-// first-run case: an empty bucket forces the interactive Pick
-// flow with a single stderr breadcrumb explaining why.
-func TestRun_FromStore_EmptyStore_FallsBackToPrompt(t *testing.T) {
-	s := openTestStore(t)
-	target := writeFromFile(t, "body")
-	agent := newScriptedAgent()
-	ui := &scriptedUI{}
-	var stderr bytes.Buffer
-
-	err := Run(context.Background(), Options{
-		FromFile:     target,
-		Interactive:  boolPtr(true),
-		Stdout:       io.Discard,
-		Stderr:       &stderr,
-		Agents:       []codingagents.Agent{agent},
-		UI:           ui,
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if ui.toolCalls != 1 || ui.modelCalls != 1 {
-		t.Fatalf("UI should be prompted: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
-	}
-	if !strings.Contains(stderr.String(), "Choose your favourite:") {
-		t.Fatalf("stderr should warn about fallback: %q", stderr.String())
-	}
-	if v, ok := mustGet(t, s, "tool"); !ok || v != "cursor" {
-		t.Fatalf("planner.tool = %q (ok=%v), want cursor", v, ok)
-	}
-}
-
 // TestRun_ExplicitTool_SkipsPersistence asserts the new --tool /
 // --model contract: when both flags are supplied, Run resolves via
 // agentpick.Resolve, runs the chosen agent, and leaves the planner
@@ -1334,37 +1278,6 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("planner bucket should be untouched, got %d entries", len(entries))
-	}
-}
-
-// TestRun_PartialTool_FillsModelFromStore covers the partial-flag
-// fallback: --tool alone reads model from the planner bucket and
-// runs without writing.
-func TestRun_PartialTool_FillsModelFromStore(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketPlanner, "model", "stored-model"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	target := writeFromFile(t, "body")
-	agent := newScriptedAgent()
-
-	err := Run(context.Background(), Options{
-		FromFile: target,
-		Tool:     "cursor",
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{agent},
-		UI:       &scriptedUI{},
-		Store:    s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if agent.lastReq.Model != "stored-model" {
-		t.Fatalf("model = %q, want stored-model", agent.lastReq.Model)
 	}
 }
 
@@ -1466,103 +1379,6 @@ func TestRun_PartialModel_NoStoredTool(t *testing.T) {
 	}
 }
 
-// TestRun_FromStore_LoginFailureSurfaces covers the
-// CheckLogin-error branch on the FromStore path: the error must
-// propagate and the agent must NOT plan.
-func TestRun_FromStore_LoginFailureSurfaces(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	target := writeFromFile(t, "body")
-	agent := newScriptedAgent()
-	agent.loginErr = errors.New("not logged in")
-
-	err := Run(context.Background(), Options{
-		FromFile:     target,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err == nil || !strings.Contains(err.Error(), "not logged in") {
-		t.Fatalf("err = %v", err)
-	}
-	if agent.planned != 0 {
-		t.Fatal("agent.Plan should not run when CheckLogin fails on FromStore path")
-	}
-}
-
-// TestRun_FromStore_NonSentinelStoreError pins the branch where
-// FromStore returns an error other than ErrNoStoredSelection (an
-// unknown tool name in the bucket): Run propagates it without
-// falling back to Pick, since that's a real misconfiguration.
-func TestRun_FromStore_NonSentinelStoreError(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketPlanner, "tool", "ghost"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	target := writeFromFile(t, "body")
-	agent := newScriptedAgent()
-	ui := &scriptedUI{}
-
-	err := Run(context.Background(), Options{
-		FromFile:     target,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           ui,
-		Store:        s,
-	})
-	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
-		t.Fatalf("err = %v", err)
-	}
-	if ui.toolCalls != 0 {
-		t.Fatal("Pick should not be invoked on non-sentinel error")
-	}
-}
-
-// TestRun_FromStore_EmptyStore_PromptsPick asserts the fallback
-// path: an empty project store triggers the "Choose your favourite:"
-// line then Pick. The .j layout is pre-created via mustInit (the
-// pre-flight contract: callers must run `j init` before plan).
-func TestRun_FromStore_EmptyStore_PromptsPick(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	target := writeFromFile(t, "x")
-	agent := newScriptedAgent()
-	var stderr bytes.Buffer
-	err := Run(context.Background(), Options{
-		FromFile:     target,
-		Stdin:        strings.NewReader(""),
-		Stdout:       io.Discard,
-		Stderr:       &stderr,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        nil,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(stderr.String(), "Choose your favourite:") {
-		t.Fatalf("stderr = %q, want choose-your-favourite line", stderr.String())
-	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("settings file not created: %v", err)
-	}
-}
-
 // TestRun_StoreLazyDefault confirms that a nil opts.Store causes
 // withDefaults to open the existing default DB created by mustInit.
 // The pre-flight contract guarantees the file is on disk before Run.
@@ -1631,191 +1447,6 @@ func TestRun_EnsureTaskDirError(t *testing.T) {
 	}
 	if agent.planned != 0 {
 		t.Fatal("agent.Plan should not run when EnsureTaskDir fails")
-	}
-}
-
-// TestRun_FromStore_StoredInteractiveFalseOverridesDefault pins
-// the bug fix on the planner side: stored interactive=false flows
-// through to the agent request and the persisted row when no
-// explicit pointer is supplied.
-func TestRun_FromStore_StoredInteractiveFalseOverridesDefault(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketPlanner, "interactive", "false"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	target := writeFromFile(t, "body")
-	agent := newScriptedAgent()
-
-	err := Run(context.Background(), Options{
-		FromFile:     target,
-		Interactive:  nil,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if agent.lastReq.Interactive {
-		t.Fatalf("agent.lastReq.Interactive = true, want false (stored override): %+v", agent.lastReq)
-	}
-	if v, ok := mustGet(t, s, "interactive"); !ok || v != "false" {
-		t.Fatalf("planner.interactive = %q (ok=%v), want false", v, ok)
-	}
-}
-
-// TestRun_FromStore_ExplicitInteractiveWins documents the
-// explicit-beats-stored half on the planner side.
-func TestRun_FromStore_ExplicitInteractiveWins(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketPlanner, "interactive", "false"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	target := writeFromFile(t, "body")
-	agent := newScriptedAgent()
-
-	err := Run(context.Background(), Options{
-		FromFile:     target,
-		Interactive:  boolPtr(true),
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !agent.lastReq.Interactive {
-		t.Fatalf("agent.lastReq.Interactive = false, want true (explicit wins): %+v", agent.lastReq)
-	}
-}
-
-// TestRun_FromStore_StoredInteractiveUnparseable confirms a
-// garbled bucket value collapses to "not set" with no warning.
-func TestRun_FromStore_StoredInteractiveUnparseable(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketPlanner, "interactive", "garbage"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	target := writeFromFile(t, "body")
-	agent := newScriptedAgent()
-	var stderr bytes.Buffer
-
-	err := Run(context.Background(), Options{
-		FromFile:     target,
-		Interactive:  nil,
-		Stdout:       io.Discard,
-		Stderr:       &stderr,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !agent.lastReq.Interactive {
-		t.Fatalf("agent.lastReq.Interactive = false, want true (default): %+v", agent.lastReq)
-	}
-	if strings.Contains(stderr.String(), "interactive") {
-		t.Fatalf("stderr should not warn on unparseable interactive: %q", stderr.String())
-	}
-}
-
-// TestRun_FromStore_NoInteractiveKey_DefaultTrue locks down the
-// resolveInteractive default branch: a populated bucket without an
-// `interactive` entry leaves the cobra default (true) intact.
-func TestRun_FromStore_NoInteractiveKey_DefaultTrue(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	target := writeFromFile(t, "body")
-	agent := newScriptedAgent()
-
-	err := Run(context.Background(), Options{
-		FromFile:     target,
-		Interactive:  nil,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !agent.lastReq.Interactive {
-		t.Fatalf("agent.lastReq.Interactive = false, want true (default): %+v", agent.lastReq)
-	}
-}
-
-// TestRun_FromStore_NilStore_SettingsOpenFails covers the lazy
-// open-fails branches on the settings path: with no caller-supplied
-// Store and a `<cwd>/.j/settings` directory (instead of file)
-// sabotaging bolt.Open, plannerFromStore and storedPlannerInteractive
-// both surface the openSettingsStore warning and fall back to the
-// prompted Pick path. Coverage tracks the !ok branches that the
-// happy-path EmptyStore test cannot hit.
-func TestRun_FromStore_NilStore_SettingsOpenFails(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	settingsPath, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(settingsPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(settingsPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	target := writeFromFile(t, "x")
-	agent := newScriptedAgent()
-	var stderr bytes.Buffer
-	err = Run(context.Background(), Options{
-		FromFile:     target,
-		Stdin:        strings.NewReader(""),
-		Stdout:       io.Discard,
-		Stderr:       &stderr,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        nil,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(stderr.String(), "warning: settings") {
-		t.Fatalf("stderr should warn about settings open: %q", stderr.String())
-	}
-	if !strings.Contains(stderr.String(), "Choose your favourite:") {
-		t.Fatalf("stderr should fall back to prompt: %q", stderr.String())
-	}
-	if agent.planned != 1 {
-		t.Fatalf("agent.Plan calls = %d, want 1", agent.planned)
 	}
 }
 

@@ -55,6 +55,34 @@ func beginPlanTask(opts Options, agent codingagents.Agent, model, taskID, target
 	return lc
 }
 
+// beginPlanTaskReuse mutates a copy of `existing` to flip status to
+// `planning` for the re-plan flow. PlanEndAt and DoneAt are cleared
+// so the finalize step stamps fresh values; the original
+// PlanBeginAt is preserved verbatim when set so the row keeps its
+// first-run lineage. Tool/model and the plan resume cursor are
+// refreshed so the row reflects the latest re-plan invocation.
+//
+// The body / source-path are intentionally not touched: re-plan
+// reads requirements.md from the existing task directory and feeds
+// it back through agent.Plan, so the summary derivation runs again
+// in finishPlan.
+func beginPlanTaskReuse(opts Options, agent codingagents.Agent, model string, existing store.Task, planResumeChatID string) *planLifecycle {
+	begin := time.Now().UTC()
+	task := existing
+	task.Status = store.StatusPlanning
+	task.InvokedTool = agent.Name()
+	task.InvokedModel = model
+	task.PlanResumeCursor = planResumeChatID
+	task.PlanEndAt = nil
+	task.DoneAt = nil
+	if task.PlanBeginAt == nil {
+		task.PlanBeginAt = &begin
+	}
+	lc := &planLifecycle{stderr: opts.Stderr, task: task}
+	tasklog.PersistWarn(opts.Stderr, task)
+	return lc
+}
+
 // recordBackground stamps the spawned child's PID and the agent log
 // path on the in-memory task row and re-persists it. It is the
 // counterpart of finishPlan for fire-and-forget headless runs: the

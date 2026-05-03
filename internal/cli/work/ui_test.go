@@ -37,25 +37,10 @@ func TestHuhUI_SelectModel_EmptyOptions(t *testing.T) {
 	}
 }
 
-// TestHuhUI_PickPlanTask_EmptyTasks pins the empty-slice early
-// return for the regular `j work` picker.
-func TestHuhUI_PickPlanTask_EmptyTasks(t *testing.T) {
-	u := newHuhUI(strings.NewReader(""), io.Discard)
-	_, err := u.PickPlanTask(context.Background(), nil)
-	if err == nil || !strings.Contains(err.Error(), "no tasks") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-// TestHuhUI_PickWorkTask_EmptyTasks pins the empty-slice early
-// return for the resume picker variant.
-func TestHuhUI_PickWorkTask_EmptyTasks(t *testing.T) {
-	u := newHuhUI(strings.NewReader(""), io.Discard)
-	_, err := u.PickWorkTask(context.Background(), nil)
-	if err == nil || !strings.Contains(err.Error(), "no tasks") {
-		t.Fatalf("err = %v", err)
-	}
-}
+// PickPlanTask / PickWorkTask are one-line delegates to
+// internal/cli/taskpick.Pick; the empty-input contract is pinned
+// once in taskpick_test.go (TestPick_EmptyTasks) and not
+// re-asserted here.
 
 // TestErrEmptyFromFile_Message pins the user-facing string of the
 // AskFromFile empty-input branch (AC#1 / AC#5a). The message is

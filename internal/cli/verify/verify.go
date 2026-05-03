@@ -39,6 +39,11 @@ type Options struct {
 	// updated in place (work-done -> verifying ->
 	// completed | verify-done | help).
 	TaskID string
+	// Yes, when true, skips the status-mismatch confirmation
+	// prompt and proceeds even when the resolved task is not in
+	// the work-done / verify-done / help allowlist. Mirrors the
+	// `--yes` / VERIFY_YES flag wiring on the cobra command.
+	Yes bool
 
 	// Interactive is a tri-state: a non-nil value is the explicit
 	// user choice (cobra `--interactive` flag or VERIFY_INTERACTIVE
@@ -123,12 +128,19 @@ func Run(ctx context.Context, opts Options) (err error) {
 	}
 	opts.Interactive = boolPtr(resolveInteractive(opts))
 
-	res, err := resolveTask(ctx, opts)
+	res, ok, err := resolveTask(ctx, opts)
 	if err != nil {
 		return err
 	}
-	if err := validateForVerify(res.Task); err != nil {
+	if !ok {
+		return nil
+	}
+	proceed, err := confirmStatusOverride(ctx, opts, "verify", res.Task, allowedForVerify)
+	if err != nil {
 		return err
+	}
+	if !proceed {
+		return nil
 	}
 
 	verifierAgent, model, err := selectVerifier(ctx, opts)
@@ -166,28 +178,64 @@ func Run(ctx context.Context, opts Options) (err error) {
 }
 
 // resolveTask implements the precedence: --from-task > most recent
-// work-done > UI picker over work-done / verify-done / help tasks.
-// Each branch returns a fully-populated resolved or a wrapped
-// error.
-func resolveTask(ctx context.Context, opts Options) (resolved, error) {
+// work-done auto-pick > UI picker over every task. Each branch
+// returns a fully-populated resolved or a wrapped error.
+//
+// When the bbolt store contains exactly one row whose status is
+// in the natural verify allowlist (work-done / verify-done / help),
+// the no-flag path auto-picks it without prompting — this preserves
+// the historic happy-path UX. Otherwise the picker shows every task
+// and the downstream confirm prompt handles the wrong-status case.
+//
+// The bool return is the "proceed" signal from the unified
+// taskpick contract: ok=false means the user cancelled the picker
+// (Ctrl-C / Esc) and Run should exit cleanly without invoking the
+// agent. ok=true means the resolved struct is populated and Run
+// can continue.
+func resolveTask(ctx context.Context, opts Options) (resolved, bool, error) {
 	if opts.TaskID != "" {
-		return resolveByTaskID(opts, opts.TaskID)
+		r, err := resolveByTaskID(opts, opts.TaskID)
+		return r, err == nil, err
 	}
-	tasks, err := listVerifiableTasks(opts)
+	tasks, err := listResolvableVerifyTasks(opts)
 	if err != nil {
-		return resolved{}, err
+		return resolved{}, false, err
 	}
-	switch len(tasks) {
-	case 0:
-		return resolved{}, errors.New("J: no work-done tasks to verify; run `j work` first")
-	case 1:
-		return resolveByTaskID(opts, tasks[0].ID)
+	if len(tasks) == 0 {
+		return resolved{}, false, errors.New("J: no tasks to verify; run `j plan` and `j work` first")
 	}
-	chosen, err := opts.UI.PickWorkDoneTask(ctx, tasks)
+	if id, ok := autoPickAllowed(tasks, allowedForVerify); ok {
+		r, err := resolveByTaskID(opts, id)
+		return r, err == nil, err
+	}
+	chosen, ok, err := opts.UI.PickWorkDoneTask(ctx, tasks)
 	if err != nil {
-		return resolved{}, err
+		return resolved{}, false, err
 	}
-	return resolveByTaskID(opts, chosen)
+	if !ok {
+		return resolved{}, false, nil
+	}
+	r, err := resolveByTaskID(opts, chosen)
+	return r, err == nil, err
+}
+
+// autoPickAllowed returns the single task id and ok=true when
+// exactly one of the supplied tasks is in the allowlist (i.e. the
+// happy-path auto-pick). Any other count surfaces ok=false so the
+// caller renders the picker over the full slice.
+func autoPickAllowed(tasks []store.Task, allowed func(store.Task) bool) (string, bool) {
+	var picked string
+	count := 0
+	for _, t := range tasks {
+		if allowed(t) {
+			picked = t.ID
+			count++
+		}
+	}
+	if count == 1 {
+		return picked, true
+	}
+	return "", false
 }
 
 // resolveByTaskID loads an existing task row, then reads
@@ -234,11 +282,13 @@ func resolveByTaskID(opts Options, id string) (resolved, error) {
 	}, nil
 }
 
-// listVerifiableTasks returns every task whose status is in the
-// validateForVerify allowlist (work-done / verify-done / help)
-// sorted via store.SortTasks so the picker shows the active-then-
-// most-recent order users see in `j tasks`.
-func listVerifiableTasks(opts Options) ([]store.Task, error) {
+// listResolvableVerifyTasks returns every task in bbolt sorted via
+// store.SortTasks. The picker now surfaces every row regardless of
+// status; the downstream confirm prompt handles the wrong-status
+// case (per the re-verify contract). The happy-path auto-pick still
+// kicks in via autoPickAllowed when exactly one of the rows is in
+// the verify allowlist.
+func listResolvableVerifyTasks(opts Options) ([]store.Task, error) {
 	s, ok := tasklog.OpenTaskLog(opts.Stderr)
 	if !ok {
 		return nil, errors.New("verify: tasks db unavailable")
@@ -249,36 +299,38 @@ func listVerifiableTasks(opts Options) ([]store.Task, error) {
 		return nil, err
 	}
 	store.SortTasks(all)
-	out := all[:0]
-	for _, t := range all {
-		if validateForVerify(t) == nil {
-			out = append(out, t)
-		}
-	}
-	return out, nil
+	return all, nil
 }
 
-// validateForVerify rejects starting `j verify` against a task whose
-// status would clobber unrelated state. Allowed entry statuses are
-// work-done (the happy path), verify-done (re-verify after an
-// exhausted loop), and help (retry after a failed run). Anything
-// else is a deterministic error.
-func validateForVerify(t store.Task) error {
+// allowedForVerify is the natural status allowlist for `j verify`:
+// work-done (the happy path after `j work`), verify-done (re-verify
+// after an exhausted loop), and help (retry after a failed run).
+// Anything else is allowed by `j verify` only after the user
+// confirms the prompt (or via --yes / VERIFY_YES); this preserves
+// the prior UX for the common case while letting users re-run
+// verify against in-flight or post-verify tasks.
+func allowedForVerify(t store.Task) bool {
 	switch t.Status {
 	case store.StatusWorkDone, store.StatusVerifyDone, store.StatusHelp:
-		return nil
-	case store.StatusPlanning:
-		return fmt.Errorf("verify: task %s is still planning", t.ID)
-	case store.StatusPlanDone:
-		return fmt.Errorf("verify: task %s has not been worked yet (status plan-done)", t.ID)
-	case store.StatusWorking:
-		return fmt.Errorf("verify: task %s is still working", t.ID)
-	case store.StatusVerifying:
-		return fmt.Errorf("verify: task %s is already verifying", t.ID)
-	case store.StatusCompleted:
-		return fmt.Errorf("verify: task %s is already completed", t.ID)
+		return true
 	}
-	return fmt.Errorf("verify: task %s has unsupported status %q", t.ID, t.Status)
+	return false
+}
+
+// confirmStatusOverride decides whether to run agent.Verify against
+// a task whose status falls outside the allowlist. Allowlist match
+// → proceed silently. Otherwise --yes / VERIFY_YES → proceed
+// silently; else delegate to the UI confirm prompt and return its
+// bool. A user decline (false from the prompt) returns
+// proceed=false with err=nil so the caller can exit cleanly.
+func confirmStatusOverride(ctx context.Context, opts Options, cmd string, t store.Task, allowed func(store.Task) bool) (bool, error) {
+	if allowed(t) {
+		return true, nil
+	}
+	if opts.Yes {
+		return true, nil
+	}
+	return opts.UI.ConfirmStatusOverride(ctx, cmd, t.ID, string(t.Status))
 }
 
 // runVerifyLoop alternates verifier turns with worker-resume fix

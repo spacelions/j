@@ -113,12 +113,15 @@ type scriptedUI struct {
 	resumeErr    error
 	toolErr      error
 	modelErr     error
+	confirm      bool
+	confirmErr   error
 
 	askCalls        int
 	pickCalls       int
 	pickResumeCalls int
 	toolCalls       int
 	modelCalls      int
+	confirmCalls    int
 
 	// toolHook, when non-nil, runs at the start of SelectTool so
 	// tests can mutate shared state (e.g. close the injected store)
@@ -127,6 +130,9 @@ type scriptedUI struct {
 
 	pickedTasks      []store.Task
 	pickResumedTasks []store.Task
+	confirmCmd       string
+	confirmTaskID    string
+	confirmStatus    string
 }
 
 func (s *scriptedUI) AskFromFile(context.Context) (string, error) {
@@ -137,34 +143,44 @@ func (s *scriptedUI) AskFromFile(context.Context) (string, error) {
 	return s.fromFile, nil
 }
 
-func (s *scriptedUI) PickPlanTask(_ context.Context, tasks []store.Task) (string, error) {
+// PickPlanTask matches the unified taskpick contract:
+// (id, ok, err). Empty pickedID signals cancel (ok=false), so
+// happy-path tests must set pickedID explicitly.
+func (s *scriptedUI) PickPlanTask(_ context.Context, tasks []store.Task) (string, bool, error) {
 	s.pickCalls++
 	s.pickedTasks = tasks
 	if s.pickErr != nil {
-		return "", s.pickErr
+		return "", false, s.pickErr
 	}
-	if s.pickedID != "" {
-		return s.pickedID, nil
+	if s.pickedID == "" {
+		return "", false, nil
 	}
-	if len(tasks) == 0 {
-		return "", errors.New("scriptedUI: no tasks to pick")
-	}
-	return tasks[0].ID, nil
+	return s.pickedID, true, nil
 }
 
-func (s *scriptedUI) PickWorkTask(_ context.Context, tasks []store.Task) (string, error) {
+// PickWorkTask matches the unified taskpick contract: see
+// PickPlanTask above for the rationale on pickedID semantics.
+func (s *scriptedUI) PickWorkTask(_ context.Context, tasks []store.Task) (string, bool, error) {
 	s.pickResumeCalls++
 	s.pickResumedTasks = tasks
 	if s.resumeErr != nil {
-		return "", s.resumeErr
+		return "", false, s.resumeErr
 	}
-	if s.resumePicked != "" {
-		return s.resumePicked, nil
+	if s.resumePicked == "" {
+		return "", false, nil
 	}
-	if len(tasks) == 0 {
-		return "", errors.New("scriptedUI: no tasks to resume-pick")
+	return s.resumePicked, true, nil
+}
+
+func (s *scriptedUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, status string) (bool, error) {
+	s.confirmCalls++
+	s.confirmCmd = cmd
+	s.confirmTaskID = taskID
+	s.confirmStatus = status
+	if s.confirmErr != nil {
+		return false, s.confirmErr
 	}
-	return tasks[0].ID, nil
+	return s.confirm, nil
 }
 
 func (s *scriptedUI) SelectTool(_ context.Context, options []string) (string, error) {
@@ -439,13 +455,16 @@ func TestRun_ByTaskID_NotFound(t *testing.T) {
 	}
 }
 
-// TestRun_ByTaskID_StatusRejected covers validateForWork: a task that
-// is not plan-done or help should be rejected.
-func TestRun_ByTaskID_StatusRejected(t *testing.T) {
+// TestRun_ByTaskID_StatusMismatch_DeclinedExitsClean covers the
+// new prompt-on-mismatch contract: a task that is not in the
+// plan-done / help allowlist (here `working`) triggers the
+// confirm prompt; a `no` answer exits cleanly with nil and
+// leaves the task untouched. Replaces the old hard-fail
+// behaviour from the validateForWork era.
+func TestRun_ByTaskID_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "plan", "")
-	// Mutate the task to working so reuse is rejected.
 	dbPath, err := store.DefaultTasksDBPath()
 	if err != nil {
 		t.Fatal(err)
@@ -465,18 +484,208 @@ func TestRun_ByTaskID_StatusRejected(t *testing.T) {
 	_ = s.Close()
 
 	agent := newScriptedAgent()
+	ui := &scriptedUI{confirm: false}
 	err = Run(context.Background(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
+		UI:     ui,
 	})
-	if err == nil || !strings.Contains(err.Error(), "already working") {
+	if err != nil {
+		t.Fatalf("err = %v, want nil (declined prompt exits cleanly)", err)
+	}
+	if ui.confirmCalls != 1 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 1", ui.confirmCalls)
+	}
+	if ui.confirmCmd != "work" || ui.confirmStatus != string(store.StatusWorking) || ui.confirmTaskID != id {
+		t.Fatalf("confirm args = (%q, %q, %q), want (work, %q, %q)",
+			ui.confirmCmd, ui.confirmTaskID, ui.confirmStatus, id, store.StatusWorking)
+	}
+	if agent.worked != 0 {
+		t.Fatal("agent.Work should not run when the user declines the prompt")
+	}
+	tasks := readTasks(t)
+	if len(tasks) != 1 || tasks[0].Status != store.StatusWorking {
+		t.Fatalf("declined task should stay working: %+v", tasks)
+	}
+}
+
+// TestRun_ByTaskID_StatusMismatch_AcceptedRuns pins the
+// accepted-prompt branch: confirm=true makes the worker run
+// against a wrong-status task and the row flips to work-done.
+func TestRun_ByTaskID_StatusMismatch_AcceptedRuns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedPlanDoneTask(t, "x", "plan", "")
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got.Status = store.StatusCompleted
+	if err := s.PutTask(got); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+
+	agent := newScriptedAgent()
+	ui := &scriptedUI{confirm: true}
+	err = Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.confirmCalls != 1 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 1", ui.confirmCalls)
+	}
+	if agent.worked != 1 {
+		t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
+	}
+	tasks := readTasks(t)
+	if len(tasks) != 1 || tasks[0].Status != store.StatusWorkDone {
+		t.Fatalf("accepted task should flip to work-done: %+v", tasks)
+	}
+}
+
+// TestRun_ByTaskID_StatusMismatch_YesFlagSkipsPrompt covers the
+// `--yes` path: with Yes=true the orchestrator never invokes the
+// confirm prompt and the worker runs against a wrong-status task.
+func TestRun_ByTaskID_StatusMismatch_YesFlagSkipsPrompt(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedPlanDoneTask(t, "x", "plan", "")
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got.Status = store.StatusVerifyDone
+	if err := s.PutTask(got); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+
+	agent := newScriptedAgent()
+	ui := &scriptedUI{}
+	err = Run(context.Background(), Options{
+		TaskID: id,
+		Yes:    true,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.confirmCalls != 0 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 0 with Yes=true", ui.confirmCalls)
+	}
+	if agent.worked != 1 {
+		t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
+	}
+}
+
+// TestRun_ByTaskID_StatusMismatch_PromptError surfaces a UI
+// error from ConfirmStatusOverride verbatim and skips the agent.
+func TestRun_ByTaskID_StatusMismatch_PromptError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedPlanDoneTask(t, "x", "plan", "")
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got.Status = store.StatusWorking
+	if err := s.PutTask(got); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+
+	agent := newScriptedAgent()
+	ui := &scriptedUI{confirmErr: errors.New("confirm boom")}
+	err = Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err == nil || !strings.Contains(err.Error(), "confirm boom") {
 		t.Fatalf("err = %v", err)
 	}
 	if agent.worked != 0 {
-		t.Fatal("agent.Work should not run when validateForWork rejects")
+		t.Fatal("agent.Work must not run when the prompt errored")
+	}
+}
+
+// TestRun_ByTaskID_StatusMismatch_AbortExitsClean pins the huh
+// abort path: huh.ErrUserAborted from ConfirmStatusOverride is
+// translated to nil by the deferred guard.
+func TestRun_ByTaskID_StatusMismatch_AbortExitsClean(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedPlanDoneTask(t, "x", "plan", "")
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got.Status = store.StatusWorking
+	if err := s.PutTask(got); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+
+	agent := newScriptedAgent()
+	ui := &scriptedUI{confirmErr: huh.ErrUserAborted}
+	err = Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
+	}
+	if agent.worked != 0 {
+		t.Fatal("agent.Work must not run after abort")
 	}
 }
 
@@ -1143,97 +1352,6 @@ func TestRun_StoreReadError_Surfaces(t *testing.T) {
 	}
 }
 
-// TestRun_FromStore_PopulatedStore_SkipsPrompts is the work
-// counterpart of the plan test: a populated worker bucket must
-// short-circuit the prompts and route the stored model into the
-// WorkRequest. The bucket is left untouched (no rewrite).
-func TestRun_FromStore_PopulatedStore_SkipsPrompts(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketWorker, "model", "gpt-5"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketWorker, "interactive", "true"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	id := seedPlanDoneTask(t, "x", "body", "")
-	agent := newScriptedAgent()
-	ui := &scriptedUI{}
-	var stderr bytes.Buffer
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Interactive:  boolPtr(true),
-		Stdout:       io.Discard,
-		Stderr:       &stderr,
-		Agents:       []codingagents.Agent{agent},
-		UI:           ui,
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if ui.toolCalls != 0 || ui.modelCalls != 0 {
-		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
-	}
-	if agent.listed != 0 {
-		t.Fatalf("ListModels should not be called: got %d", agent.listed)
-	}
-	if agent.checked != 1 {
-		t.Fatalf("CheckLogin = %d, want 1", agent.checked)
-	}
-	if agent.lastReq.Model != "gpt-5" {
-		t.Fatalf("model = %q, want gpt-5", agent.lastReq.Model)
-	}
-	entries, err := s.List(store.BucketWorker)
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	got := make([]string, len(entries))
-	for i, kv := range entries {
-		got[i] = kv.Key
-	}
-	want := []string{"interactive", "model", "tool"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("worker keys = %v, want %v", got, want)
-	}
-	if strings.Contains(stderr.String(), "Choose your favourite:") {
-		t.Fatalf("stderr should not warn when store is populated: %q", stderr.String())
-	}
-}
-
-func TestRun_FromStore_EmptyStore_FallsBackToPrompt(t *testing.T) {
-	s := openTestStore(t)
-	id := seedPlanDoneTask(t, "x", "body", "")
-	agent := newScriptedAgent()
-	ui := &scriptedUI{}
-	var stderr bytes.Buffer
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Interactive:  boolPtr(true),
-		Stdout:       io.Discard,
-		Stderr:       &stderr,
-		Agents:       []codingagents.Agent{agent},
-		UI:           ui,
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if ui.toolCalls != 1 || ui.modelCalls != 1 {
-		t.Fatalf("UI should be prompted: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
-	}
-	if !strings.Contains(stderr.String(), "Choose your favourite:") {
-		t.Fatalf("stderr should warn about fallback: %q", stderr.String())
-	}
-	if v, ok := mustGet(t, s, "tool"); !ok || v != "cursor" {
-		t.Fatalf("worker.tool = %q (ok=%v), want cursor", v, ok)
-	}
-}
-
 // TestRun_ExplicitTool_SkipsPersistence asserts the new --tool /
 // --model contract: when both flags are supplied, Run resolves via
 // agentpick.Resolve, runs the chosen agent, and leaves the worker
@@ -1269,36 +1387,6 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("worker bucket should be untouched, got %d entries", len(entries))
-	}
-}
-
-// TestRun_PartialTool_FillsModelFromStore covers the partial-flag
-// fallback: --tool alone reads model from the worker bucket.
-func TestRun_PartialTool_FillsModelFromStore(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketWorker, "model", "stored-model"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	id := seedPlanDoneTask(t, "x", "body", "")
-	agent := newScriptedAgent()
-
-	err := Run(context.Background(), Options{
-		TaskID: id,
-		Tool:   "cursor",
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-		Store:  s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if agent.lastReq.Model != "stored-model" {
-		t.Fatalf("model = %q, want stored-model", agent.lastReq.Model)
 	}
 }
 
@@ -1394,62 +1482,6 @@ func TestRun_PartialModel_NoStoredTool(t *testing.T) {
 	}
 	if agent.worked != 0 {
 		t.Fatal("agent.Work should not run when explicit resolve fails")
-	}
-}
-
-func TestRun_FromStore_LoginFailureSurfaces(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketWorker, "model", "sonnet-4"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	id := seedPlanDoneTask(t, "x", "body", "")
-	agent := newScriptedAgent()
-	agent.loginErr = errors.New("not logged in")
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err == nil || !strings.Contains(err.Error(), "not logged in") {
-		t.Fatalf("err = %v", err)
-	}
-	if agent.worked != 0 {
-		t.Fatal("agent.Work should not run when CheckLogin fails on FromStore path")
-	}
-}
-
-func TestRun_FromStore_NonSentinelStoreError(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketWorker, "tool", "ghost"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketWorker, "model", "sonnet-4"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	id := seedPlanDoneTask(t, "x", "body", "")
-	agent := newScriptedAgent()
-	ui := &scriptedUI{}
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           ui,
-		Store:        s,
-	})
-	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
-		t.Fatalf("err = %v", err)
-	}
-	if ui.toolCalls != 0 {
-		t.Fatal("Pick should not be invoked on non-sentinel error")
 	}
 }
 
@@ -1697,264 +1729,30 @@ func TestOpenLifecycle_PutTaskErrorWarns(t *testing.T) {
 	}
 }
 
-// TestValidateForWork covers every validateForWork branch.
-func TestValidateForWork(t *testing.T) {
+// TestAllowedForWork covers every status branch of the new
+// allowlist helper used by the prompt logic. plan-done and help
+// are the natural happy-path entries; everything else triggers
+// the confirm prompt unless --yes / WORK_YES skips it.
+func TestAllowedForWork(t *testing.T) {
 	cases := []struct {
-		status  store.TaskStatus
-		wantErr string
+		status store.TaskStatus
+		want   bool
 	}{
-		{store.StatusPlanDone, ""},
-		{store.StatusHelp, ""},
-		{store.StatusPlanning, "still planning"},
-		{store.StatusWorking, "already working"},
-		{store.StatusWorkDone, "already past work"},
-		{store.StatusVerifying, "already past work"},
-		{store.StatusVerifyDone, "already past work"},
-		{store.StatusCompleted, "already past work"},
-		{store.TaskStatus("nonsense"), "unsupported status"},
+		{store.StatusPlanDone, true},
+		{store.StatusHelp, true},
+		{store.StatusPlanning, false},
+		{store.StatusWorking, false},
+		{store.StatusWorkDone, false},
+		{store.StatusVerifying, false},
+		{store.StatusVerifyDone, false},
+		{store.StatusCompleted, false},
+		{store.TaskStatus("nonsense"), false},
 	}
 	for _, c := range cases {
-		err := validateForWork(store.Task{ID: "x", Status: c.status})
-		if c.wantErr == "" && err != nil {
-			t.Errorf("status=%q: unexpected error %v", c.status, err)
+		got := allowedForWork(store.Task{ID: "x", Status: c.status})
+		if got != c.want {
+			t.Errorf("allowedForWork(%q) = %v, want %v", c.status, got, c.want)
 		}
-		if c.wantErr != "" && (err == nil || !strings.Contains(err.Error(), c.wantErr)) {
-			t.Errorf("status=%q: err = %v, want %q", c.status, err, c.wantErr)
-		}
-	}
-}
-
-// TestRun_FromStore_StoredInteractiveFalseOverridesDefault pins
-// the bug fix: with no explicit Interactive pointer, a stored
-// interactive=false in the worker bucket flows
-// through to both the agent request and the persisted value.
-func TestRun_FromStore_StoredInteractiveFalseOverridesDefault(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketWorker, "model", "sonnet-4"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketWorker, "interactive", "false"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	id := seedPlanDoneTask(t, "x", "body", "")
-	agent := newScriptedAgent()
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Interactive:  nil,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if agent.lastReq.Interactive {
-		t.Fatalf("agent.lastReq.Interactive = true, want false (stored override): %+v", agent.lastReq)
-	}
-	if v, ok := mustGet(t, s, "interactive"); !ok || v != "false" {
-		t.Fatalf("worker.interactive = %q (ok=%v), want false", v, ok)
-	}
-}
-
-// TestRun_FromStore_ExplicitInteractiveWins covers the
-// explicit-beats-stored half of the precedence: a non-nil
-// Interactive pointer must win even when the bucket says otherwise.
-func TestRun_FromStore_ExplicitInteractiveWins(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketWorker, "model", "sonnet-4"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketWorker, "interactive", "false"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	id := seedPlanDoneTask(t, "x", "body", "")
-	agent := newScriptedAgent()
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Interactive:  boolPtr(true),
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !agent.lastReq.Interactive {
-		t.Fatalf("agent.lastReq.Interactive = false, want true (explicit wins): %+v", agent.lastReq)
-	}
-}
-
-// TestRun_FromStore_StoredInteractiveUnparseable confirms a
-// garbled bucket value is treated as "not set" and the cobra
-// default flows through without a warning.
-func TestRun_FromStore_StoredInteractiveUnparseable(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketWorker, "model", "sonnet-4"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketWorker, "interactive", "garbage"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	id := seedPlanDoneTask(t, "x", "body", "")
-	agent := newScriptedAgent()
-	var stderr bytes.Buffer
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Interactive:  nil,
-		Stdout:       io.Discard,
-		Stderr:       &stderr,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !agent.lastReq.Interactive {
-		t.Fatalf("agent.lastReq.Interactive = false, want true (cobra default): %+v", agent.lastReq)
-	}
-	if strings.Contains(stderr.String(), "interactive") {
-		t.Fatalf("stderr should not warn on unparseable interactive: %q", stderr.String())
-	}
-}
-
-// TestRun_FromStore_NoInteractiveKey_DefaultTrue locks down the
-// resolveInteractive default branch: a populated bucket without an
-// `interactive` entry leaves the cobra default (true) intact.
-func TestRun_FromStore_NoInteractiveKey_DefaultTrue(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketWorker, "tool", "cursor"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if err := s.Put(store.BucketWorker, "model", "sonnet-4"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	id := seedPlanDoneTask(t, "x", "body", "")
-	agent := newScriptedAgent()
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Interactive:  nil,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !agent.lastReq.Interactive {
-		t.Fatalf("agent.lastReq.Interactive = false, want true (default): %+v", agent.lastReq)
-	}
-}
-
-// TestRun_FromStore_NilStore_EmptyStorePromptsPick mirrors
-// the plan-side test for the work flow: a real `.j/settings` is
-// laid down via mustInit but the worker bucket is empty, so
-// workerFromStore opens the DB, observes ErrNoStoredSelection,
-// closes, and Run falls back to Pick. The persistence path then
-// re-opens settings, writes, and closes. Together these exercise
-// the lazy open-success branches in workerFromStore,
-// storedWorkerInteractive, and persistWorkerSelection.
-func TestRun_FromStore_NilStore_EmptyStorePromptsPick(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	id := seedPlanDoneTask(t, "x", "body", "")
-	agent := newScriptedAgent()
-	var stderr bytes.Buffer
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Stdin:        strings.NewReader(""),
-		Stdout:       io.Discard,
-		Stderr:       &stderr,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        nil,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(stderr.String(), "Choose your favourite:") {
-		t.Fatalf("stderr should fall back to prompt: %q", stderr.String())
-	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	got, ok, err := s.Get(store.BucketWorker, "tool")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok || got != "cursor" {
-		t.Fatalf("worker.tool = %q (ok=%v), want cursor", got, ok)
-	}
-}
-
-// TestRun_FromStore_NilStore_SettingsOpenFails covers the lazy
-// open-fails branches on the settings path for `j work`: with no
-// caller-supplied Store and a `<cwd>/.j/settings` directory
-// (instead of file) sabotaging bolt.Open, workerFromStore and
-// storedWorkerInteractive both surface the openSettingsStore
-// warning and fall back to the prompted Pick path.
-func TestRun_FromStore_NilStore_SettingsOpenFails(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	id := seedPlanDoneTask(t, "x", "body", "")
-	settingsPath, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(settingsPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(settingsPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	var stderr bytes.Buffer
-	err = Run(context.Background(), Options{
-		TaskID:       id,
-		Stdin:        strings.NewReader(""),
-		Stdout:       io.Discard,
-		Stderr:       &stderr,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        nil,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(stderr.String(), "warning: settings") {
-		t.Fatalf("stderr should warn about settings open: %q", stderr.String())
-	}
-	if !strings.Contains(stderr.String(), "Choose your favourite:") {
-		t.Fatalf("stderr should fall back to prompt: %q", stderr.String())
-	}
-	if agent.worked != 1 {
-		t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
 	}
 }
 

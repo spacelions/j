@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/charmbracelet/huh"
 
+	"github.com/spacelions/j/internal/cli/taskpick"
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store"
 )
@@ -26,14 +26,16 @@ type UI interface {
 	// decline.
 	ConfirmDelete(ctx context.Context, task store.Task) (bool, error)
 	// PickTask renders a select widget over the supplied tasks and
-	// returns the chosen task's id. Implementations must translate
-	// huh.ErrUserAborted into ("", nil) so a Ctrl-C / Esc is
-	// indistinguishable from an explicit cancel and callers can
-	// treat an empty id as the cancel signal. The slice is expected
-	// to be non-empty and pre-sorted by the caller (the orchestrator
-	// already screens the empty-store case before invoking the
-	// picker).
-	PickTask(ctx context.Context, tasks []store.Task) (string, error)
+	// returns the chosen task's id. The bool reports whether a row
+	// was actually selected: ok=false collapses both a user-abort
+	// (Ctrl-C / Esc) and a defensive empty-input case so callers
+	// treat them uniformly as "no selection". The slice is expected
+	// to be non-empty and pre-sorted by the caller (the
+	// orchestrator already screens the empty-store case before
+	// invoking the picker). Behaviour and label format are
+	// delegated to internal/cli/taskpick so plan / work / verify /
+	// tasks all share one widget.
+	PickTask(ctx context.Context, tasks []store.Task) (string, bool, error)
 }
 
 // huhUI is the huh-backed UI implementation. The form is driven on
@@ -68,54 +70,14 @@ func (u *huhUI) ConfirmDelete(ctx context.Context, task store.Task) (bool, error
 	return v, nil
 }
 
-// PickTask renders a single huh.NewSelect[string] over the supplied
-// tasks. The label shape (`<id> — <status> — <summary>`) matches the
-// requirements doc and is built by the package-private helper
-// formatEnterLabels so the unit test can pin the format without
-// driving a real huh widget. A user-abort (Ctrl-C / Esc) collapses
-// to ("", nil) so the orchestrator can treat an empty id as a clean
-// cancel — same convention as ConfirmDelete.
-func (u *huhUI) PickTask(ctx context.Context, tasks []store.Task) (string, error) {
-	labels, byLabel := formatEnterLabels(tasks)
-	var chosen string
-	err := huh.NewForm(huh.NewGroup(
-		huh.NewSelect[string]().
-			Title("Select a task").
-			Options(huh.NewOptions(labels...)...).
-			Filtering(true).
-			Value(&chosen),
-	)).WithInput(u.in).WithOutput(u.out).WithTheme(uitheme.Theme()).RunWithContext(ctx)
-	if errors.Is(err, huh.ErrUserAborted) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("tasks ui: %w", err)
-	}
-	id, ok := byLabel[chosen]
-	if !ok {
-		return "", fmt.Errorf("tasks ui: unknown selection %q", chosen)
-	}
-	return id, nil
-}
-
-// formatEnterLabels builds the `<id> — <status> — <summary>` label
-// list and a reverse lookup from label to task id. An empty Summary
-// falls back to "(no summary)" so every row stays selectable. The
-// helper is package-private so the unit test pins the label shape
-// without driving a real huh widget.
-func formatEnterLabels(tasks []store.Task) (labels []string, byLabel map[string]string) {
-	labels = make([]string, 0, len(tasks))
-	byLabel = make(map[string]string, len(tasks))
-	for _, t := range tasks {
-		summary := strings.TrimSpace(t.Summary)
-		if summary == "" {
-			summary = "(no summary)"
-		}
-		label := fmt.Sprintf("%s — %s — %s", t.ID, t.Status, summary)
-		labels = append(labels, label)
-		byLabel[label] = t.ID
-	}
-	return labels, byLabel
+// PickTask delegates to the shared internal/cli/taskpick.Pick widget
+// so the label format and abort/empty contract stay uniform across
+// every j subcommand. The "Select a task" title is the same the
+// previous in-package implementation rendered, so the user-visible
+// prompt is unchanged on the `j tasks enter` / `j tasks delete`
+// flows.
+func (u *huhUI) PickTask(ctx context.Context, tasks []store.Task) (string, bool, error) {
+	return taskpick.Pick(ctx, u.in, u.out, "Select a task", tasks)
 }
 
 // pickFromStore renders the shared task picker over the rows in s
@@ -125,14 +87,15 @@ func formatEnterLabels(tasks []store.Task) (labels []string, byLabel map[string]
 //   - Empty bucket: prints emptyMessage to stdout and returns
 //     ("", false, nil); callers short-circuit cleanly with no
 //     picker, no confirm, no spawner.
-//   - User-abort (Ctrl-C / Esc): UI.PickTask returns ("", nil) and
-//     this helper threads it through as ("", false, nil) so callers
-//     can recognise the cancel signal via the bool flag.
+//   - User-abort (Ctrl-C / Esc) or defensive empty input: UI.PickTask
+//     returns ok=false and this helper threads it through as
+//     ("", false, nil) so callers can recognise the cancel signal
+//     via the bool flag.
 //   - Happy path: returns (id, true, nil) with id sourced from the
 //     scripted UI / huh widget.
 //
 // Errors from ListTasks or the UI propagate; the UI wraps its own
-// errors with the "tasks ui:" prefix so RunDelete / RunEnter can
+// errors via the taskpick package so RunDelete / RunEnter can
 // re-emit them without a second wrap.
 func pickFromStore(ctx context.Context, s *store.Store, ui UI, stdout io.Writer) (string, bool, error) {
 	tasks, err := s.ListTasks()
@@ -144,11 +107,11 @@ func pickFromStore(ctx context.Context, s *store.Store, ui UI, stdout io.Writer)
 		return "", false, nil
 	}
 	store.SortTasks(tasks)
-	id, err := ui.PickTask(ctx, tasks)
+	id, ok, err := ui.PickTask(ctx, tasks)
 	if err != nil {
 		return "", false, err
 	}
-	if id == "" {
+	if !ok {
 		return "", false, nil
 	}
 	return id, true, nil

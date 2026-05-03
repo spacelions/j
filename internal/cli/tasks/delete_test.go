@@ -49,13 +49,18 @@ func (u *fakeUI) ConfirmDelete(_ context.Context, task store.Task) (bool, error)
 	return u.confirmReturn, nil
 }
 
-func (u *fakeUI) PickTask(_ context.Context, tasks []store.Task) (string, error) {
+// PickTask matches the new (id, ok, err) contract shared with
+// taskpick / plan / work / verify. ok mirrors "a non-empty
+// pickReturn was set" so existing call sites that pre-date the
+// contract (which programmed the cancel case via an empty
+// pickReturn) continue to work without a parallel pickOk knob.
+func (u *fakeUI) PickTask(_ context.Context, tasks []store.Task) (string, bool, error) {
 	u.pickCalls++
 	u.lastPickedFrom = tasks
 	if u.pickErr != nil {
-		return "", u.pickErr
+		return "", false, u.pickErr
 	}
-	return u.pickReturn, nil
+	return u.pickReturn, u.pickReturn != "", nil
 }
 
 // seedTask writes a Task row into the freshly-initialised tasks DB
