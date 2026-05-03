@@ -32,13 +32,48 @@ func BuildPlanner(targetPath string, mustread []string) string {
 	)
 }
 
+// AppendPlannerSaveSuffix wraps base with the canonical
+// "save requirements / save plan / then exit" instruction the
+// orchestrator expects after either a fresh-run BuildPlanner or a
+// resume-run BuildPlannerResume. Centralising the wording here means
+// the cursor and claude backends share one source of truth — the
+// reaper-visible exit contract is identical across backends and
+// across the fresh / resume branches.
+//
+// The suffix also pins the requirements.md "first line is a one-line
+// summary" rule so `j tasks` does not surface the literal heading
+// `# Requirements` as a task summary.
+func AppendPlannerSaveSuffix(base, requirementsPath, planPath string) string {
+	return fmt.Sprintf(
+		"%s\n\nDuring this session you may clarify the requirements with the user. Before exiting:\n"+
+			"1. Save the (possibly refined) requirements summary to %q (overwrite if it exists). "+
+			"The first line of this file MUST be a concise one-line summary of the user task — "+
+			"do NOT use `# Requirements` (or any other heading) as the first line; "+
+			"subsequent sections may use any structure you prefer.\n"+
+			"2. Save the plan to %q (overwrite if it exists).\n"+
+			"Then exit.",
+		base, requirementsPath, planPath,
+	)
+}
+
 // BuildPlannerResume composes the resume-only planner prompt: it
 // asks the agent to inspect the previous session, check what was
 // already done, summarise it for the user, and continue only what is
 // still outstanding. The original requirement markdown path is
 // referenced for context only — there is no instruction to re-plan
-// from scratch and no instruction to save requirements.md / plan.md,
-// so resumed cursor sessions stop overwriting the prior artifacts.
+// from scratch.
+//
+// The exit contract (save requirements.md / plan.md and then exit)
+// is appended by the backend in buildPlanPrompt — kept there so a
+// single save-suffix string is the source of truth for both the
+// fresh-run and resume paths and the reaper sees identical
+// artifacts in either case.
+//
+// mustread, when non-empty, is rendered as a bulleted "Before
+// starting, read these project files…" block between the
+// instruction and the resume framing line (mirroring BuildPlanner).
+// An empty / nil mustread keeps the prompt byte-identical to the
+// pre-mustread output.
 //
 // The full planner.Instruction body is embedded so the resumed
 // session has the same coding rules available as the first-run
@@ -46,17 +81,17 @@ func BuildPlanner(targetPath string, mustread []string) string {
 // "You are the planner in a planner/worker/verifier workflow.",
 // so this builder relies on that opening as the role preamble
 // rather than emitting a duplicate sentence.
-func BuildPlannerResume(targetPath string) string {
+func BuildPlannerResume(targetPath string, mustread []string) string {
 	return fmt.Sprintf(
-		"%s\n\n"+
+		"%s%s\n\n"+
 			"You are resuming a previous planning session. "+
 			"Check what was already done in the previous turn, "+
 			"summarise the prior progress for the user in one short paragraph, "+
 			"and then continue only the work that is still outstanding. "+
-			"Do not re-plan from scratch and do not overwrite the saved "+
-			"requirements.md / plan.md unless new information forces a change.\n\n"+
+			"Do not re-plan from scratch.\n\n"+
 			"Original user request lives at %q; read it if you need context.",
 		strings.TrimSpace(planner.Instruction),
+		mustreadSuffix(mustread),
 		targetPath,
 	)
 }

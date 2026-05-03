@@ -61,9 +61,15 @@ func TestBuildPlanner_WithMustread(t *testing.T) {
 // continue" semantics, cite the supplied path, and NOT inline the
 // user-request body. It must also differ from BuildPlanner so the
 // resume turn is observably distinct from the first run.
+//
+// The "do not overwrite saved requirements.md / plan.md" clause
+// must NOT appear: the backend's save-and-exit suffix is now the
+// single source of truth for the exit contract, and a help-status
+// row whose first run skipped the artifacts must produce them on
+// resume.
 func TestBuildPlannerResume(t *testing.T) {
 	const target = "/tmp/feature.md"
-	got := BuildPlannerResume(target)
+	got := BuildPlannerResume(target, nil)
 	if got == "" {
 		t.Fatal("BuildPlannerResume returned empty string")
 	}
@@ -89,7 +95,69 @@ func TestBuildPlannerResume(t *testing.T) {
 	if strings.Contains(got, "Original user request (from") {
 		t.Fatalf("resume prompt should not embed user-request body: %q", got)
 	}
+	if strings.Contains(got, "do not overwrite") {
+		t.Fatalf("resume prompt should NOT carry the do-not-overwrite clause anymore: %q", got)
+	}
+	if strings.Contains(got, "Before starting, read these project files") {
+		t.Fatalf("resume prompt should not include must-read block when nil: %q", got)
+	}
 	if got == BuildPlanner(target, nil) {
 		t.Fatal("resume prompt should differ from BuildPlanner output")
+	}
+}
+
+// TestAppendPlannerSaveSuffix pins the canonical save-and-exit
+// wording the cursor and claude backends both rely on. Cited path
+// arguments must round-trip through %q quoting; the suffix must
+// carry both numbered steps, the one-line-summary rule, and the
+// "Then exit." terminator.
+func TestAppendPlannerSaveSuffix(t *testing.T) {
+	got := AppendPlannerSaveSuffix("BASE", "/tmp/req.md", "/tmp/plan.md")
+	if !strings.HasPrefix(got, "BASE\n\n") {
+		t.Fatalf("suffix should follow base verbatim with two newlines: %q", got)
+	}
+	for _, want := range []string{
+		"During this session you may clarify",
+		"Save the (possibly refined) requirements summary to",
+		"\"/tmp/req.md\"",
+		"one-line summary",
+		"# Requirements",
+		"Save the plan to",
+		"\"/tmp/plan.md\"",
+		"Then exit.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("suffix missing %q: %q", want, got)
+		}
+	}
+}
+
+// TestBuildPlannerResume_WithMustread mirrors
+// TestBuildPlanner_WithMustread for the resume builder: the bulleted
+// must-read block must appear exactly once, preserve case verbatim,
+// and sit between the planner.Instruction body and the resume
+// framing line ("You are resuming…").
+func TestBuildPlannerResume_WithMustread(t *testing.T) {
+	got := BuildPlannerResume("/tmp/feature.md", []string{"AGENTS.md", "CLAUDE.md"})
+
+	const header = "Before starting, read these project files for required context:"
+	if strings.Count(got, header) != 1 {
+		t.Fatalf("must-read header should appear exactly once: %q", got)
+	}
+	if !strings.Contains(got, "- AGENTS.md") {
+		t.Fatalf("must-read block missing AGENTS.md bullet: %q", got)
+	}
+	if !strings.Contains(got, "- CLAUDE.md") {
+		t.Fatalf("must-read block missing CLAUDE.md bullet: %q", got)
+	}
+	if strings.Contains(got, "- agents.md") || strings.Contains(got, "- claude.md") {
+		t.Fatalf("must-read block lowercased entries: %q", got)
+	}
+	const framing = "You are resuming a previous planning session."
+	if strings.Index(got, header) > strings.Index(got, framing) {
+		t.Fatalf("must-read block must precede resume framing line: %q", got)
+	}
+	if strings.Index(got, strings.TrimSpace(planner.Instruction)) > strings.Index(got, header) {
+		t.Fatalf("must-read block must follow planner.Instruction body: %q", got)
 	}
 }

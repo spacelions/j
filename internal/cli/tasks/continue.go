@@ -222,6 +222,12 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, task store.Task
 // same precedence so a plan-time crash that never wrote PlanEndAt is
 // still resumable. With no usable signal the dispatch errors instead
 // of silently skipping.
+//
+// `help` rows inherit the always-interactive + (for plan) mustread
+// + save-suffix contract from {plan,work,verify}.RunResume: those
+// helpers force Interactive=true on resume regardless of the bucket
+// value, so a help row whose first run went headless still lands in
+// the TUI here where the user can answer the clarification turn.
 func dispatchHelp(ctx context.Context, opts ContinueOptions, task store.Task) error {
 	switch latestPhase(task) {
 	case "verify":

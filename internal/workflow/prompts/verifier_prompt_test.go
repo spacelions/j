@@ -111,7 +111,7 @@ func TestBuildVerifierResume(t *testing.T) {
 	if !strings.Contains(got, strings.TrimSpace(verifier.Instruction)) {
 		t.Fatalf("resume prompt missing verifier.Instruction: %q", got)
 	}
-	const preamble = "You are the verifier in a planner / worker / verifier workflow."
+	const preamble = "You are the verifier in a planner/worker/verifier workflow."
 	if strings.Count(got, preamble) != 1 {
 		t.Fatalf("resume prompt should contain the role preamble exactly once (no duplicate): %q", got)
 	}

@@ -497,21 +497,24 @@ func TestPlan_Headless_SpawnError(t *testing.T) {
 
 // TestPlan_Interactive_Resume pins the resume prompt path: argv
 // carries --resume <id> (NOT --session-id), the prompt includes the
-// resume markers and does not include the planner instruction body
-// or the save suffix.
+// resume markers, embeds the planner.Instruction body, and ends with
+// the same save suffix as a fresh-run plan (so the reaper sees
+// identical artifacts on resume).
 func TestPlan_Interactive_Resume(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "spec.md")
 	if err := os.WriteFile(target, []byte("# task\nbody"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	reqOut := filepath.Join(dir, "requirements.md")
+	planOut := filepath.Join(dir, "plan.md")
 	calls, _ := installStub(t, "", 0)
 	rid := "66666666-6666-4666-8666-666666666666"
 	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  "sonnet",
-		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
-		PlanOutputPath:         filepath.Join(dir, "plan.md"),
+		RequirementsOutputPath: reqOut,
+		PlanOutputPath:         planOut,
 		Interactive:            true,
 		ResumeChatID:           rid,
 		Resume:                 true,
@@ -542,9 +545,72 @@ func TestPlan_Interactive_Resume(t *testing.T) {
 	if !strings.Contains(prompt, strings.TrimSpace(planner.Instruction)) {
 		t.Fatalf("resume prompt should include planner.Instruction (its opening sentence doubles as the role preamble): %q", prompt)
 	}
-	for _, banned := range []string{"Save", "Then exit."} {
-		if strings.Contains(prompt, banned) {
-			t.Fatalf("resume prompt should not include %q: %q", banned, prompt)
+	for _, want := range []string{
+		"Save the (possibly refined) requirements summary to",
+		reqOut,
+		"Save the plan to",
+		planOut,
+		"Then exit.",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("resume prompt missing save-suffix marker %q: %q", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "do not overwrite") {
+		t.Fatalf("resume prompt should NOT carry the do-not-overwrite clause: %q", prompt)
+	}
+}
+
+// TestPlan_Interactive_Resume_WithMustread mirrors the cursor
+// equivalent: project mustread bullets must reach the resume prompt
+// (case-preserved, exactly once) so a help-status row's resume turn
+// inherits the same project-wide must-read context the first run had.
+func TestPlan_Interactive_Resume_WithMustread(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "spec.md")
+	if err := os.WriteFile(target, []byte("# task\nbody"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reqOut := filepath.Join(dir, "requirements.md")
+	planOut := filepath.Join(dir, "plan.md")
+	calls, _ := installStub(t, "", 0)
+	rid := "66666666-6666-4666-8666-666666666667"
+	_, err := New().Plan(context.Background(), codingagents.PlanRequest{
+		FromFilePath:           target,
+		Model:                  "sonnet",
+		RequirementsOutputPath: reqOut,
+		PlanOutputPath:         planOut,
+		Interactive:            true,
+		ResumeChatID:           rid,
+		Resume:                 true,
+		Mustread:               []string{"AGENTS.md", "CLAUDE.md"},
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	argv := readCalls(t, calls)
+	prompt := argv[len(argv)-1]
+	lower := strings.ToLower(prompt)
+	for _, marker := range []string{"previous", "check", "continue"} {
+		if !strings.Contains(lower, marker) {
+			t.Fatalf("resume prompt missing %q: %q", marker, prompt)
+		}
+	}
+	const header = "Before starting, read these project files for required context:"
+	if strings.Count(prompt, header) != 1 {
+		t.Fatalf("must-read header should appear exactly once: %q", prompt)
+	}
+	for _, bullet := range []string{"- AGENTS.md", "- CLAUDE.md"} {
+		if !strings.Contains(prompt, bullet) {
+			t.Fatalf("resume prompt missing must-read bullet %q: %q", bullet, prompt)
+		}
+	}
+	if strings.Contains(prompt, "- agents.md") || strings.Contains(prompt, "- claude.md") {
+		t.Fatalf("must-read block lowercased entries: %q", prompt)
+	}
+	for _, want := range []string{reqOut, planOut, "Then exit."} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("resume prompt missing save-suffix marker %q: %q", want, prompt)
 		}
 	}
 }
