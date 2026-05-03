@@ -480,6 +480,19 @@ func (s *Store) Delete(bucket, key string) error {
 	})
 }
 
+// DeleteBucket removes the named bucket and every key inside it. A
+// missing bucket is a no-op with a nil error, mirroring Delete's
+// missing-key semantics so callers can ask for a wipe without
+// pre-checking existence. Other failures (closed DB, etc.) propagate.
+func (s *Store) DeleteBucket(name string) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		if tx.Bucket([]byte(name)) == nil {
+			return nil
+		}
+		return tx.DeleteBucket([]byte(name))
+	})
+}
+
 // IsEmpty reports whether the database has no buckets or every
 // bucket has no key/value entries.
 func (s *Store) IsEmpty() (bool, error) {

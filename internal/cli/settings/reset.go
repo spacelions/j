@@ -16,9 +16,9 @@ import (
 
 func newResetCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "reset [bucket.key]",
-		Short: "Remove all project settings, or a single bucket.key",
-		Args:  cobra.RangeArgs(0, 1),
+		Use:   "reset [bucket|bucket.key ...]",
+		Short: "Remove all project settings, a whole bucket, or one bucket.key (multiple targets allowed)",
+		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runReset(cmd, args)
 		},
@@ -31,7 +31,7 @@ func runReset(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return runResetFull(cmd)
 	}
-	return runResetOneKey(cmd, args[0])
+	return runResetTargets(cmd, args)
 }
 
 func runResetFull(cmd *cobra.Command) error {
@@ -114,8 +114,41 @@ func isYesAnswer(s string) bool {
 	return lower == "y" || lower == "yes"
 }
 
-func runResetOneKey(cmd *cobra.Command, arg string) error {
-	bucket, key, err := parseBucketKey(arg)
+// resetTarget is one parsed positional arg: either a whole bucket
+// (isBucket==true, key==""), or a single bucket.key entry.
+type resetTarget struct {
+	bucket   string
+	key      string
+	isBucket bool
+}
+
+// parseResetTargets validates each positional arg and routes it to
+// either a bucket-level or bucket.key target. Whitespace is the only
+// argument separator (cobra has already split on it); literal commas
+// or semicolons inside an arg are part of the bucket/key name and
+// only fail when they leave bucket or key empty (handled by
+// parseBucketKey).
+func parseResetTargets(args []string) ([]resetTarget, error) {
+	out := make([]resetTarget, 0, len(args))
+	for _, arg := range args {
+		if arg == "" {
+			return nil, fmt.Errorf("settings: empty reset target")
+		}
+		if strings.ContainsRune(arg, '.') {
+			bucket, key, err := parseBucketKey(arg)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, resetTarget{bucket: bucket, key: key})
+			continue
+		}
+		out = append(out, resetTarget{bucket: arg, isBucket: true})
+	}
+	return out, nil
+}
+
+func runResetTargets(cmd *cobra.Command, args []string) error {
+	targets, err := parseResetTargets(args)
 	if err != nil {
 		return err
 	}
@@ -131,10 +164,19 @@ func runResetOneKey(cmd *cobra.Command, arg string) error {
 		return err
 	}
 	return withOpenStore(func(_ string, s *store.Store) error {
-		if err := s.Delete(bucket, key); err != nil {
-			return err
+		for _, t := range targets {
+			if t.isBucket {
+				if err := s.DeleteBucket(t.bucket); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "unset %s\n", t.bucket)
+				continue
+			}
+			if err := s.Delete(t.bucket, t.key); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "unset %s.%s\n", t.bucket, t.key)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "unset %s.%s\n", bucket, key)
 		return nil
 	})
 }

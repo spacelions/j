@@ -2,9 +2,17 @@
 // the on-disk bbolt database under `<cwd>/.j/settings`. Listing is
 // done with plain `j settings`. Values are set with
 // `j settings set bucket.key=value [bucket.key=value ...]` (e.g.
-// `j settings set planner.tool=cursor planner.model=opus`) and
-// cleared with `j settings reset` (all) or
-// `j settings reset bucket.key`.
+// `j settings set planner.tool=cursor planner.model=opus`).
+//
+// Values are cleared with `j settings reset`, which accepts:
+//   - no args  → prompt + wipe the entire `.j/` directory.
+//   - bucket   → wipe every key under that bucket (`reset planner`).
+//   - bucket.key → wipe one key (`reset planner.tool`).
+//   - any number of the above, whitespace-separated and applied in
+//     left-to-right order (`reset planner worker.model verifier`).
+//
+// Whitespace is the only target separator: `,` and `;` are NOT
+// recognized and remain part of the literal target name.
 package settings
 
 import (
