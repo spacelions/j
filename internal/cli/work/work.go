@@ -39,6 +39,11 @@ type Options struct {
 	// file outside .j/tasks/. The file is imported into a fresh
 	// .j/tasks/<new-id>/plan.md folder and a NEW task row is created.
 	FromFile string
+	// Yes, when true, skips the status-mismatch confirmation prompt
+	// and proceeds even when the resolved task is not in the
+	// plan-done / help allowlist. Mirrors the `--yes` / WORK_YES
+	// flag wiring on the cobra command.
+	Yes bool
 
 	// Interactive is a tri-state: a non-nil value is the explicit
 	// user choice (cobra `--interactive` flag or WORK_INTERACTIVE
@@ -130,9 +135,12 @@ func Run(ctx context.Context, opts Options) (err error) {
 	// (bucket has parseable value) > cobra default true.
 	opts.Interactive = boolPtr(resolveInteractive(opts))
 
-	res, err := resolvePlan(ctx, opts)
+	res, ok, err := resolvePlan(ctx, opts)
 	if err != nil {
 		return err
+	}
+	if !ok {
+		return nil
 	}
 
 	agent, model, err := selectWorker(ctx, opts)
@@ -147,8 +155,12 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 	var lc *workLifecycle
 	if res.Existing != nil {
-		if err := validateForWork(*res.Existing); err != nil {
-			return err
+		proceed, confirmErr := confirmStatusOverride(ctx, opts, "work", *res.Existing, allowedForWork)
+		if confirmErr != nil {
+			return confirmErr
+		}
+		if !proceed {
+			return nil
 		}
 		lc = beginWorkTaskReuse(opts, agent, model, *res.Existing, resumeID)
 	} else {
@@ -203,35 +215,76 @@ func workTaskID(res resolved) string {
 }
 
 // resolvePlan implements the precedence: --from-task > --from-file (legacy
-// import) > pick latest plan-done > UI picker. Each branch returns a
-// fully-populated resolved or a wrapped error; callers do not need to
-// re-stat or re-read files afterwards.
-func resolvePlan(ctx context.Context, opts Options) (resolved, error) {
+// import) > pick latest plan-done auto-pick > UI picker over every task.
+// Each branch returns a fully-populated resolved or a wrapped error;
+// callers do not need to re-stat or re-read files afterwards.
+//
+// When the bbolt store contains exactly one row whose status is in
+// the natural work allowlist (plan-done / help), the no-flag path
+// auto-picks it without prompting — this preserves the
+// historic happy-path UX for the common case of a fresh `j plan`
+// followed by `j work`. Otherwise the picker shows every task and
+// the downstream confirm prompt handles the wrong-status case.
+//
+// The bool return is the "proceed" signal from the unified
+// taskpick contract: ok=false means the user cancelled the picker
+// (Ctrl-C / Esc) and the caller should exit cleanly without
+// invoking the agent. ok=true means the resolved struct is
+// populated and Run can continue.
+func resolvePlan(ctx context.Context, opts Options) (resolved, bool, error) {
 	switch {
 	case opts.TaskID != "":
-		return resolveByTaskID(opts, opts.TaskID)
+		r, err := resolveByTaskID(opts, opts.TaskID)
+		return r, err == nil, err
 	case opts.FromFile != "":
-		return resolveFromFile(opts, opts.FromFile)
+		r, err := resolveFromFile(opts, opts.FromFile)
+		return r, err == nil, err
 	}
-	tasks, err := listPlanDoneTasks(opts)
+	tasks, err := listResolvableWorkTasks(opts)
 	if err != nil {
-		return resolved{}, err
+		return resolved{}, false, err
 	}
-	switch len(tasks) {
-	case 0:
+	if len(tasks) == 0 {
 		raw, err := opts.UI.AskFromFile(ctx)
 		if err != nil {
-			return resolved{}, err
+			return resolved{}, false, err
 		}
-		return resolveFromFile(opts, raw)
-	case 1:
-		return resolveByTaskID(opts, tasks[0].ID)
+		r, err := resolveFromFile(opts, raw)
+		return r, err == nil, err
 	}
-	chosen, err := opts.UI.PickPlanTask(ctx, tasks)
+	if id, ok := autoPickAllowed(tasks, allowedForWork); ok {
+		r, err := resolveByTaskID(opts, id)
+		return r, err == nil, err
+	}
+	chosen, ok, err := opts.UI.PickPlanTask(ctx, tasks)
 	if err != nil {
-		return resolved{}, err
+		return resolved{}, false, err
 	}
-	return resolveByTaskID(opts, chosen)
+	if !ok {
+		return resolved{}, false, nil
+	}
+	r, err := resolveByTaskID(opts, chosen)
+	return r, err == nil, err
+}
+
+// autoPickAllowed returns the single task id and ok=true when
+// exactly one of the supplied tasks is in the allowlist (i.e. the
+// happy-path auto-pick from the historic listPlanDoneTasks
+// behaviour). Any other count surfaces ok=false so the caller
+// renders the picker over the full slice.
+func autoPickAllowed(tasks []store.Task, allowed func(store.Task) bool) (string, bool) {
+	var picked string
+	count := 0
+	for _, t := range tasks {
+		if allowed(t) {
+			picked = t.ID
+			count++
+		}
+	}
+	if count == 1 {
+		return picked, true
+	}
+	return "", false
 }
 
 // resolveByTaskID loads an existing task row, then reads
@@ -312,10 +365,13 @@ func resolveFromFile(opts Options, raw string) (resolved, error) {
 	}, nil
 }
 
-// listPlanDoneTasks returns all plan-done tasks in bbolt sorted with
-// the most recent first (SortTasks already groups active first; we
-// filter here so the UI picker only shows actionable rows).
-func listPlanDoneTasks(opts Options) ([]store.Task, error) {
+// listResolvableWorkTasks returns every task in bbolt sorted via
+// store.SortTasks. The picker now surfaces every row regardless of
+// status; the downstream confirm prompt handles the wrong-status
+// case (per the re-plan / re-work contract). The happy-path
+// auto-pick still kicks in via autoPickAllowed when exactly one of
+// the rows is in the work allowlist.
+func listResolvableWorkTasks(opts Options) ([]store.Task, error) {
 	s, ok := tasklog.OpenTaskLog(opts.Stderr)
 	if !ok {
 		return nil, errors.New("work: tasks db unavailable")
@@ -326,33 +382,37 @@ func listPlanDoneTasks(opts Options) ([]store.Task, error) {
 		return nil, err
 	}
 	store.SortTasks(all)
-	out := all[:0]
-	for _, t := range all {
-		if t.Status == store.StatusPlanDone {
-			out = append(out, t)
-		}
-	}
-	return out, nil
+	return all, nil
 }
 
-// validateForWork rejects starting `j work` against a task whose
-// status would clobber unrelated state. Allowed entry statuses are
-// plan-done (the happy path) and help (retry after a failed run).
-// Anything else is an error so users do not accidentally re-run work
-// against a task that is currently in flight or already past the
-// work phase.
-func validateForWork(t store.Task) error {
+// allowedForWork is the natural status allowlist for `j work`:
+// plan-done (the happy path after `j plan`) and help (retry after
+// a failed run). Anything else is allowed by `j work` only after
+// the user confirms the prompt (or via --yes / WORK_YES); this
+// preserves the prior UX for the common case while letting users
+// re-run work against in-flight or post-work tasks.
+func allowedForWork(t store.Task) bool {
 	switch t.Status {
 	case store.StatusPlanDone, store.StatusHelp:
-		return nil
-	case store.StatusPlanning:
-		return fmt.Errorf("work: task %s is still planning", t.ID)
-	case store.StatusWorking:
-		return fmt.Errorf("work: task %s is already working", t.ID)
-	case store.StatusWorkDone, store.StatusVerifying, store.StatusVerifyDone, store.StatusCompleted:
-		return fmt.Errorf("work: task %s already past work phase (status %s)", t.ID, t.Status)
+		return true
 	}
-	return fmt.Errorf("work: task %s has unsupported status %q", t.ID, t.Status)
+	return false
+}
+
+// confirmStatusOverride decides whether to run agent.Work against a
+// task whose status falls outside the allowlist. Allowlist match
+// → proceed silently. Otherwise --yes / WORK_YES → proceed
+// silently; else delegate to the UI confirm prompt and return its
+// bool. A user decline (false from the prompt) returns
+// proceed=false with err=nil so the caller can exit cleanly.
+func confirmStatusOverride(ctx context.Context, opts Options, cmd string, t store.Task, allowed func(store.Task) bool) (bool, error) {
+	if allowed(t) {
+		return true, nil
+	}
+	if opts.Yes {
+		return true, nil
+	}
+	return opts.UI.ConfirmStatusOverride(ctx, cmd, t.ID, string(t.Status))
 }
 
 // selectWorker is the single chokepoint for choosing the worker

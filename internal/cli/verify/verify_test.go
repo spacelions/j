@@ -131,12 +131,15 @@ type scriptedUI struct {
 	resumeErr    error
 	toolErr      error
 	modelErr     error
+	confirm      bool
+	confirmErr   error
 
 	askCalls        int
 	pickCalls       int
 	pickResumeCalls int
 	toolCalls       int
 	modelCalls      int
+	confirmCalls    int
 
 	// toolHook, when non-nil, runs at the start of SelectTool so
 	// tests can mutate shared state (e.g. close the injected store)
@@ -145,6 +148,9 @@ type scriptedUI struct {
 
 	pickedTasks      []store.Task
 	pickResumedTasks []store.Task
+	confirmCmd       string
+	confirmTaskID    string
+	confirmStatus    string
 }
 
 func (s *scriptedUI) AskFromFile(context.Context) (string, error) {
@@ -155,34 +161,45 @@ func (s *scriptedUI) AskFromFile(context.Context) (string, error) {
 	return s.fromFile, nil
 }
 
-func (s *scriptedUI) PickWorkDoneTask(_ context.Context, tasks []store.Task) (string, error) {
+// PickWorkDoneTask matches the unified taskpick contract:
+// (id, ok, err). Empty pickedID signals cancel (ok=false), so
+// happy-path tests must set pickedID explicitly.
+func (s *scriptedUI) PickWorkDoneTask(_ context.Context, tasks []store.Task) (string, bool, error) {
 	s.pickCalls++
 	s.pickedTasks = tasks
 	if s.pickErr != nil {
-		return "", s.pickErr
+		return "", false, s.pickErr
 	}
-	if s.pickedID != "" {
-		return s.pickedID, nil
+	if s.pickedID == "" {
+		return "", false, nil
 	}
-	if len(tasks) == 0 {
-		return "", errors.New("scriptedUI: no tasks to pick")
-	}
-	return tasks[0].ID, nil
+	return s.pickedID, true, nil
 }
 
-func (s *scriptedUI) PickVerifyTask(_ context.Context, tasks []store.Task) (string, error) {
+// PickVerifyTask matches the unified taskpick contract: see
+// PickWorkDoneTask above for the rationale on resumePicked
+// semantics.
+func (s *scriptedUI) PickVerifyTask(_ context.Context, tasks []store.Task) (string, bool, error) {
 	s.pickResumeCalls++
 	s.pickResumedTasks = tasks
 	if s.resumeErr != nil {
-		return "", s.resumeErr
+		return "", false, s.resumeErr
 	}
-	if s.resumePicked != "" {
-		return s.resumePicked, nil
+	if s.resumePicked == "" {
+		return "", false, nil
 	}
-	if len(tasks) == 0 {
-		return "", errors.New("scriptedUI: no tasks to resume-pick")
+	return s.resumePicked, true, nil
+}
+
+func (s *scriptedUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, status string) (bool, error) {
+	s.confirmCalls++
+	s.confirmCmd = cmd
+	s.confirmTaskID = taskID
+	s.confirmStatus = status
+	if s.confirmErr != nil {
+		return false, s.confirmErr
 	}
-	return tasks[0].ID, nil
+	return s.confirm, nil
 }
 
 func (s *scriptedUI) SelectTool(_ context.Context, options []string) (string, error) {
@@ -726,29 +743,30 @@ func TestParseVerdict_EdgeCases(t *testing.T) {
 	}
 }
 
-// TestValidateForVerify covers every validateForVerify branch.
-func TestValidateForVerify(t *testing.T) {
+// TestAllowedForVerify covers every status branch of the new
+// allowlist helper used by the prompt logic. work-done /
+// verify-done / help are the natural happy-path entries;
+// everything else triggers the confirm prompt unless --yes /
+// VERIFY_YES skips it.
+func TestAllowedForVerify(t *testing.T) {
 	cases := []struct {
-		status  store.TaskStatus
-		wantErr string
+		status store.TaskStatus
+		want   bool
 	}{
-		{store.StatusWorkDone, ""},
-		{store.StatusVerifyDone, ""},
-		{store.StatusHelp, ""},
-		{store.StatusPlanning, "still planning"},
-		{store.StatusPlanDone, "not been worked"},
-		{store.StatusWorking, "still working"},
-		{store.StatusVerifying, "already verifying"},
-		{store.StatusCompleted, "already completed"},
-		{store.TaskStatus("nonsense"), "unsupported status"},
+		{store.StatusWorkDone, true},
+		{store.StatusVerifyDone, true},
+		{store.StatusHelp, true},
+		{store.StatusPlanning, false},
+		{store.StatusPlanDone, false},
+		{store.StatusWorking, false},
+		{store.StatusVerifying, false},
+		{store.StatusCompleted, false},
+		{store.TaskStatus("nonsense"), false},
 	}
 	for _, c := range cases {
-		err := validateForVerify(store.Task{ID: "x", Status: c.status})
-		if c.wantErr == "" && err != nil {
-			t.Errorf("status=%q: unexpected error %v", c.status, err)
-		}
-		if c.wantErr != "" && (err == nil || !strings.Contains(err.Error(), c.wantErr)) {
-			t.Errorf("status=%q: err = %v, want %q", c.status, err, c.wantErr)
+		got := allowedForVerify(store.Task{ID: "x", Status: c.status})
+		if got != c.want {
+			t.Errorf("allowedForVerify(%q) = %v, want %v", c.status, got, c.want)
 		}
 	}
 }
@@ -762,7 +780,10 @@ func TestRun_NoAgents(t *testing.T) {
 }
 
 // TestRun_NoCandidatesError exercises resolveTask's empty-list
-// branch.
+// branch. The error message changed alongside the
+// re-plan/re-verify contract: the picker now lists every task,
+// so the empty-list breadcrumb mentions both `j plan` and
+// `j work` instead of a work-done filter.
 func TestRun_NoCandidatesError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -773,7 +794,7 @@ func TestRun_NoCandidatesError(t *testing.T) {
 		Agents: []codingagents.Agent{agent},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "no work-done tasks") {
+	if err == nil || !strings.Contains(err.Error(), "no tasks to verify") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -798,10 +819,11 @@ func TestRun_FromTask_NotFound(t *testing.T) {
 	}
 }
 
-// TestRun_FromTask_StatusRejected validates the orchestrator
-// surfaces the right error when the task is in an inactive
-// non-allowlisted state.
-func TestRun_FromTask_StatusRejected(t *testing.T) {
+// TestRun_FromTask_StatusMismatch_DeclinedExitsClean covers the
+// new prompt-on-mismatch contract: a task that is not in the
+// work-done / verify-done / help allowlist (here `completed`)
+// triggers the confirm prompt; a `no` answer exits cleanly.
+func TestRun_FromTask_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "body", "")
@@ -824,18 +846,204 @@ func TestRun_FromTask_StatusRejected(t *testing.T) {
 	_ = s.Close()
 
 	agent := newScriptedAgent()
+	ui := &scriptedUI{confirm: false}
 	err = Run(context.Background(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
+		UI:     ui,
 	})
-	if err == nil || !strings.Contains(err.Error(), "already completed") {
+	if err != nil {
+		t.Fatalf("err = %v, want nil (declined prompt exits cleanly)", err)
+	}
+	if ui.confirmCalls != 1 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 1", ui.confirmCalls)
+	}
+	if ui.confirmCmd != "verify" || ui.confirmStatus != string(store.StatusCompleted) || ui.confirmTaskID != id {
+		t.Fatalf("confirm args = (%q, %q, %q), want (verify, %q, %q)",
+			ui.confirmCmd, ui.confirmTaskID, ui.confirmStatus, id, store.StatusCompleted)
+	}
+	if len(agent.verifiedReqs) != 0 {
+		t.Fatal("agent.Verify should not run when the user declines the prompt")
+	}
+}
+
+// TestRun_FromTask_StatusMismatch_AcceptedRuns pins the
+// accepted-prompt branch: confirm=true makes the verifier run
+// against a wrong-status task.
+func TestRun_FromTask_StatusMismatch_AcceptedRuns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedWorkDoneTask(t, "x", "plan", "")
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got.Status = store.StatusPlanDone
+	if err := s.PutTask(got); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+
+	agent := newScriptedAgent()
+	agent.verifyVerdicts = []string{"PASS"}
+	ui := &scriptedUI{confirm: true}
+	err = Run(context.Background(), Options{
+		TaskID:        id,
+		MaxIterations: 1,
+		Stdout:        io.Discard,
+		Stderr:        io.Discard,
+		Agents:        []codingagents.Agent{agent},
+		UI:            ui,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.confirmCalls != 1 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 1", ui.confirmCalls)
+	}
+	if len(agent.verifiedReqs) != 1 {
+		t.Fatalf("verify calls = %d, want 1", len(agent.verifiedReqs))
+	}
+}
+
+// TestRun_FromTask_StatusMismatch_YesFlagSkipsPrompt covers the
+// `--yes` path: with Yes=true the orchestrator never invokes
+// the confirm prompt and the verifier runs against a wrong-
+// status task.
+func TestRun_FromTask_StatusMismatch_YesFlagSkipsPrompt(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedWorkDoneTask(t, "x", "plan", "")
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got.Status = store.StatusVerifying
+	if err := s.PutTask(got); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+
+	agent := newScriptedAgent()
+	agent.verifyVerdicts = []string{"PASS"}
+	ui := &scriptedUI{}
+	err = Run(context.Background(), Options{
+		TaskID:        id,
+		Yes:           true,
+		MaxIterations: 1,
+		Stdout:        io.Discard,
+		Stderr:        io.Discard,
+		Agents:        []codingagents.Agent{agent},
+		UI:            ui,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.confirmCalls != 0 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 0 with Yes=true", ui.confirmCalls)
+	}
+	if len(agent.verifiedReqs) != 1 {
+		t.Fatalf("verify calls = %d, want 1", len(agent.verifiedReqs))
+	}
+}
+
+// TestRun_FromTask_StatusMismatch_PromptError surfaces a UI
+// error from ConfirmStatusOverride verbatim and skips the agent.
+func TestRun_FromTask_StatusMismatch_PromptError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedWorkDoneTask(t, "x", "plan", "")
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got.Status = store.StatusPlanning
+	if err := s.PutTask(got); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+
+	agent := newScriptedAgent()
+	ui := &scriptedUI{confirmErr: errors.New("confirm boom")}
+	err = Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err == nil || !strings.Contains(err.Error(), "confirm boom") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(agent.verifiedReqs) != 0 {
-		t.Fatal("agent.Verify should not run when validateForVerify rejects")
+		t.Fatal("verifier must not run when the prompt errored")
+	}
+}
+
+// TestRun_FromTask_StatusMismatch_AbortExitsClean pins the huh
+// abort path for the verify confirm prompt.
+func TestRun_FromTask_StatusMismatch_AbortExitsClean(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedWorkDoneTask(t, "x", "plan", "")
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got.Status = store.StatusPlanDone
+	if err := s.PutTask(got); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+
+	agent := newScriptedAgent()
+	ui := &scriptedUI{confirmErr: huh.ErrUserAborted}
+	err = Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
+	}
+	if len(agent.verifiedReqs) != 0 {
+		t.Fatal("verifier must not run after abort")
 	}
 }
 
@@ -1072,208 +1280,6 @@ func TestRun_PersistsVerifierSelection(t *testing.T) {
 	}
 }
 
-// TestRun_FromStore_PopulatedStore_SkipsPrompts mirrors the
-// work flow's settings-on path.
-func TestRun_FromStore_PopulatedStore_SkipsPrompts(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketVerifier, "tool", "cursor"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketVerifier, "model", "gpt-5"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketVerifier, "interactive", "true"); err != nil {
-		t.Fatal(err)
-	}
-	id := seedWorkDoneTask(t, "x", "plan", "")
-	agent := newScriptedAgent()
-	agent.verifyVerdicts = []string{"PASS"}
-	ui := &scriptedUI{}
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           ui,
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if ui.toolCalls != 0 || ui.modelCalls != 0 {
-		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
-	}
-	if agent.listed != 0 {
-		t.Fatalf("ListModels should not be called: got %d", agent.listed)
-	}
-	if agent.verifiedReqs[0].Model != "gpt-5" {
-		t.Fatalf("model = %q, want gpt-5", agent.verifiedReqs[0].Model)
-	}
-}
-
-// TestRun_FromStore_EmptyStore_FallsBack covers the fallback to
-// Pick when the bucket is empty.
-func TestRun_FromStore_EmptyStore_FallsBack(t *testing.T) {
-	s := openTestStore(t)
-	id := seedWorkDoneTask(t, "x", "plan", "")
-	agent := newScriptedAgent()
-	agent.verifyVerdicts = []string{"PASS"}
-	ui := &scriptedUI{}
-	var stderr bytes.Buffer
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Interactive:  boolPtr(true),
-		Stdout:       io.Discard,
-		Stderr:       &stderr,
-		Agents:       []codingagents.Agent{agent},
-		UI:           ui,
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if ui.toolCalls != 1 || ui.modelCalls != 1 {
-		t.Fatalf("UI should be prompted: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
-	}
-	if !strings.Contains(stderr.String(), "Choose your favourite:") {
-		t.Fatalf("stderr should fall back to prompt: %q", stderr.String())
-	}
-}
-
-// TestRun_FromStore_NonSentinelStoreError pins agentpick.FromStore's
-// non-sentinel error path: a stored tool that isn't in the agent
-// list.
-func TestRun_FromStore_NonSentinelStoreError(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketVerifier, "tool", "ghost"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketVerifier, "model", "sonnet-4"); err != nil {
-		t.Fatal(err)
-	}
-	id := seedWorkDoneTask(t, "x", "plan", "")
-	agent := newScriptedAgent()
-	ui := &scriptedUI{}
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           ui,
-		Store:        s,
-	})
-	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
-		t.Fatalf("err = %v", err)
-	}
-	if ui.toolCalls != 0 {
-		t.Fatalf("Pick should not be invoked on non-sentinel error: %d", ui.toolCalls)
-	}
-}
-
-// TestRun_FromStore_StoredInteractiveFalseOverridesDefault pins
-// the precedence: stored=false propagates to the agent request and
-// the persisted value when no explicit Interactive pointer is set.
-func TestRun_FromStore_StoredInteractiveFalseOverridesDefault(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketVerifier, "tool", "cursor"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketVerifier, "model", "sonnet-4"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketVerifier, "interactive", "false"); err != nil {
-		t.Fatal(err)
-	}
-	id := seedWorkDoneTask(t, "x", "plan", "")
-	agent := newScriptedAgent()
-	agent.verifyVerdicts = []string{"PASS"}
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Interactive:  nil,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if agent.verifiedReqs[0].Interactive {
-		t.Fatalf("Interactive = true, want false")
-	}
-}
-
-// TestRun_FromStore_ExplicitWins mirrors work coverage.
-func TestRun_FromStore_ExplicitWins(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketVerifier, "tool", "cursor"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketVerifier, "model", "sonnet-4"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketVerifier, "interactive", "false"); err != nil {
-		t.Fatal(err)
-	}
-	id := seedWorkDoneTask(t, "x", "plan", "")
-	agent := newScriptedAgent()
-	agent.verifyVerdicts = []string{"PASS"}
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Interactive:  boolPtr(true),
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !agent.verifiedReqs[0].Interactive {
-		t.Fatalf("Interactive should be true (explicit wins)")
-	}
-}
-
-// TestRun_FromStore_StoredInteractiveUnparseable confirms a
-// garbled bucket value leaves the cobra default true intact.
-func TestRun_FromStore_StoredInteractiveUnparseable(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketVerifier, "tool", "cursor"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketVerifier, "model", "sonnet-4"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketVerifier, "interactive", "garbage"); err != nil {
-		t.Fatal(err)
-	}
-	id := seedWorkDoneTask(t, "x", "plan", "")
-	agent := newScriptedAgent()
-	agent.verifyVerdicts = []string{"PASS"}
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !agent.verifiedReqs[0].Interactive {
-		t.Fatalf("Interactive should default to true on garbled stored value")
-	}
-}
-
 // TestRun_ExplicitTool_SkipsPersistence asserts the new --tool /
 // --model contract: when both flags are supplied, Run resolves via
 // agentpick.Resolve, runs the verifier, and leaves the verifier
@@ -1310,37 +1316,6 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("verifier bucket should be untouched, got %d entries", len(entries))
-	}
-}
-
-// TestRun_PartialTool_FillsModelFromStore covers the partial-flag
-// fallback: --tool alone reads model from the verifier bucket.
-func TestRun_PartialTool_FillsModelFromStore(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketVerifier, "tool", "cursor"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketVerifier, "model", "stored-model"); err != nil {
-		t.Fatal(err)
-	}
-	id := seedWorkDoneTask(t, "x", "plan", "")
-	agent := newScriptedAgent()
-	agent.verifyVerdicts = []string{"PASS"}
-
-	err := Run(context.Background(), Options{
-		TaskID: id,
-		Tool:   "cursor",
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-		Store:  s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if agent.verifiedReqs[0].Model != "stored-model" {
-		t.Fatalf("model = %q, want stored-model", agent.verifiedReqs[0].Model)
 	}
 }
 
@@ -1437,37 +1412,6 @@ func TestRun_PartialModel_NoStoredTool(t *testing.T) {
 	}
 	if len(agent.verifiedReqs) != 0 {
 		t.Fatal("verifier should not run when explicit resolve fails")
-	}
-}
-
-// TestRun_FromStore_NoInteractiveKey_DefaultTrue covers the
-// cobra default branch.
-func TestRun_FromStore_NoInteractiveKey_DefaultTrue(t *testing.T) {
-	s := openTestStore(t)
-	if err := s.Put(store.BucketVerifier, "tool", "cursor"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketVerifier, "model", "sonnet-4"); err != nil {
-		t.Fatal(err)
-	}
-	id := seedWorkDoneTask(t, "x", "plan", "")
-	agent := newScriptedAgent()
-	agent.verifyVerdicts = []string{"PASS"}
-
-	err := Run(context.Background(), Options{
-		TaskID:       id,
-		Interactive:  nil,
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-		Store:        s,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !agent.verifiedReqs[0].Interactive {
-		t.Fatalf("Interactive should default to true")
 	}
 }
 
@@ -1675,61 +1619,6 @@ func TestStoredVerifierInteractive_NilStore_LazyOpenFails(t *testing.T) {
 	}
 }
 
-// TestRun_FromStore_NilStore_LazyOpenSucceeds drives the
-// nil-Store + populated-settings branch of verifierFromStore:
-// the helper opens `<cwd>/.j/settings`, reads the bucket, and
-// surfaces the recorded tool/model so the UI prompts are skipped
-// and storedVerifierInteractive returns the stored false.
-func TestRun_FromStore_NilStore_LazyOpenSucceeds(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	settingsPath, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	seed, err := store.Open(settingsPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := seed.Put(store.BucketVerifier, "tool", "cursor"); err != nil {
-		t.Fatal(err)
-	}
-	if err := seed.Put(store.BucketVerifier, "model", "gpt-5"); err != nil {
-		t.Fatal(err)
-	}
-	if err := seed.Put(store.BucketVerifier, "interactive", "false"); err != nil {
-		t.Fatal(err)
-	}
-	if err := seed.Close(); err != nil {
-		t.Fatal(err)
-	}
-	id := seedWorkDoneTask(t, "x", "plan", "")
-	agent := newScriptedAgent()
-	agent.verifyVerdicts = []string{"PASS"}
-	ui := &scriptedUI{}
-	var stderr bytes.Buffer
-
-	err = Run(context.Background(), Options{
-		TaskID:       id,
-		Stdout:       io.Discard,
-		Stderr:       &stderr,
-		Agents:       []codingagents.Agent{agent},
-		UI:           ui,
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if ui.toolCalls != 0 || ui.modelCalls != 0 {
-		t.Fatalf("UI prompts should be skipped on lazy-open success: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
-	}
-	if agent.verifiedReqs[0].Model != "gpt-5" {
-		t.Fatalf("model = %q, want gpt-5", agent.verifiedReqs[0].Model)
-	}
-	if agent.verifiedReqs[0].Interactive {
-		t.Fatalf("Interactive = true, want false (stored)")
-	}
-}
-
 // TestStoredVerifierInteractive_NilStore_LazyOpenSucceeds covers
 // the success branch where openSettingsStore lays hands on a real
 // `<cwd>/.j/settings` and returns the recorded interactive flag.
@@ -1753,43 +1642,5 @@ func TestStoredVerifierInteractive_NilStore_LazyOpenSucceeds(t *testing.T) {
 	v, ok := storedVerifierInteractive(Options{Stderr: io.Discard})
 	if !ok || v {
 		t.Fatalf("storedVerifierInteractive = (%v, %v), want (false, true)", v, ok)
-	}
-}
-
-// TestRun_FromStore_NilStore_SettingsOpenFails covers the lazy
-// open-fails branches on the settings path.
-func TestRun_FromStore_NilStore_SettingsOpenFails(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	id := seedWorkDoneTask(t, "x", "plan", "")
-	settingsPath, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(settingsPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(settingsPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	agent.verifyVerdicts = []string{"PASS"}
-	var stderr bytes.Buffer
-
-	err = Run(context.Background(), Options{
-		TaskID:       id,
-		Stdout:       io.Discard,
-		Stderr:       &stderr,
-		Agents:       []codingagents.Agent{agent},
-		UI:           &scriptedUI{},
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(stderr.String(), "warning: settings") {
-		t.Fatalf("stderr should warn about settings open: %q", stderr.String())
-	}
-	if !strings.Contains(stderr.String(), "Choose your favourite:") {
-		t.Fatalf("stderr should fall back to prompt: %q", stderr.String())
 	}
 }

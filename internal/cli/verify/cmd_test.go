@@ -190,3 +190,39 @@ func TestNew_RunE_PropagatesError(t *testing.T) {
 		t.Fatal("expected error from bogus --from-task id")
 	}
 }
+
+// TestNew_YesFlag_DefaultsFalse pins the new --yes flag's default
+// (status-mismatch prompts are required by default) and the Viper
+// round-trip when the user opts in.
+func TestNew_YesFlag_DefaultsFalse(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	cmd := New()
+	f := cmd.Flags().Lookup("yes")
+	if f == nil {
+		t.Fatal("--yes flag was not registered")
+	}
+	if f.DefValue != "false" {
+		t.Fatalf("--yes default = %q, want false", f.DefValue)
+	}
+	if err := cmd.Flags().Set("yes", "true"); err != nil {
+		t.Fatalf("Flags().Set: %v", err)
+	}
+	if !viper.GetBool("verify.yes") {
+		t.Fatal("verify.yes should be true after setting --yes=true")
+	}
+}
+
+// TestNew_YesEnv covers VERIFY_YES binding so CI / scripts can skip
+// the status-mismatch prompt without a flag.
+func TestNew_YesEnv(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Setenv("VERIFY_YES", "1")
+
+	_ = New()
+	if !viper.GetBool("verify.yes") {
+		t.Fatal("verify.yes should be true when VERIFY_YES=1")
+	}
+}

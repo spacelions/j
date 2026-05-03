@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
@@ -379,9 +378,10 @@ func TestRunResume_Work_PickerError(t *testing.T) {
 	}
 }
 
-// TestRunResume_Work_PickerCancelled covers the deferred
-// huh.ErrUserAborted guard in RunResume: a user-abort surfaced from
-// the picker maps to a clean nil return and the agent is never
+// TestRunResume_Work_PickerCancelled covers the cancel signal
+// from the unified taskpick contract: a user-abort (or empty
+// resumePicked) surfaced from PickWorkTask returns ok=false and
+// RunResume must exit cleanly with nil. The agent must never be
 // invoked.
 func TestRunResume_Work_PickerCancelled(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -393,7 +393,7 @@ func TestRunResume_Work_PickerCancelled(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{resumeErr: huh.ErrUserAborted},
+		UI:     &scriptedUI{},
 	})
 	if err != nil {
 		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)

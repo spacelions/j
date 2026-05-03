@@ -51,13 +51,7 @@ func TestHuhUI_PickFromFile_EmptyOptions(t *testing.T) {
 	}
 }
 
-// TestHuhUI_PickPlanTask_EmptyTasks pins the early-return
-// validation: PickPlanTask refuses an empty slice instead of
-// trying to render a huh widget without options.
-func TestHuhUI_PickPlanTask_EmptyTasks(t *testing.T) {
-	u := newHuhUI(strings.NewReader(""), io.Discard)
-	_, err := u.PickPlanTask(context.Background(), nil)
-	if err == nil || !strings.Contains(err.Error(), "no plan sessions") {
-		t.Fatalf("err = %v, want 'no plan sessions' error", err)
-	}
-}
+// PickPlanTask / PickReplanTask are one-line delegates to
+// internal/cli/taskpick.Pick; the empty-input contract is pinned
+// once in taskpick_test.go (TestPick_EmptyTasks) and not
+// re-asserted here.

@@ -162,9 +162,12 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 	case 1:
 		return tasks[0], true, nil
 	}
-	chosen, err := opts.UI.PickVerifyTask(ctx, tasks)
+	chosen, ok, err := opts.UI.PickVerifyTask(ctx, tasks)
 	if err != nil {
 		return store.Task{}, false, err
+	}
+	if !ok {
+		return store.Task{}, false, nil
 	}
 	for _, t := range tasks {
 		if t.ID == chosen {

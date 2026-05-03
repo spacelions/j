@@ -132,3 +132,74 @@ func TestNew_RunE_PropagatesPlanError(t *testing.T) {
 		t.Fatal("expected error from bogus from-file")
 	}
 }
+
+// TestNew_FromTaskFlag_DefaultsEmpty pins the new --from-task flag's
+// default value and Viper round-trip so users can supply
+// PLAN_FROM_TASK / --from-task without surprise.
+func TestNew_FromTaskFlag_DefaultsEmpty(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	cmd := New()
+	f := cmd.Flags().Lookup("from-task")
+	if f == nil {
+		t.Fatal("--from-task flag was not registered")
+	}
+	if f.DefValue != "" {
+		t.Fatalf("--from-task default = %q, want empty", f.DefValue)
+	}
+	if err := cmd.Flags().Set("from-task", "01ABCDEF"); err != nil {
+		t.Fatalf("Flags().Set: %v", err)
+	}
+	if got := viper.GetString("plan.from_task"); got != "01ABCDEF" {
+		t.Fatalf("plan.from_task = %q, want 01ABCDEF", got)
+	}
+}
+
+// TestNew_FromTaskEnv covers PLAN_FROM_TASK binding so CI can drive
+// the re-plan flow without a flag.
+func TestNew_FromTaskEnv(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Setenv("PLAN_FROM_TASK", "01XYZ")
+
+	_ = New()
+	if got := viper.GetString("plan.from_task"); got != "01XYZ" {
+		t.Fatalf("plan.from_task = %q, want 01XYZ", got)
+	}
+}
+
+// TestNew_YesFlag_DefaultsFalse pins the new --yes flag's default
+// (status-mismatch prompts are required by default) and the Viper
+// round-trip when the user opts in.
+func TestNew_YesFlag_DefaultsFalse(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	cmd := New()
+	f := cmd.Flags().Lookup("yes")
+	if f == nil {
+		t.Fatal("--yes flag was not registered")
+	}
+	if f.DefValue != "false" {
+		t.Fatalf("--yes default = %q, want false", f.DefValue)
+	}
+	if err := cmd.Flags().Set("yes", "true"); err != nil {
+		t.Fatalf("Flags().Set: %v", err)
+	}
+	if !viper.GetBool("plan.yes") {
+		t.Fatal("plan.yes should be true after setting --yes=true")
+	}
+}
+
+// TestNew_YesEnv covers PLAN_YES binding.
+func TestNew_YesEnv(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Setenv("PLAN_YES", "1")
+
+	_ = New()
+	if !viper.GetBool("plan.yes") {
+		t.Fatal("plan.yes should be true when PLAN_YES=1")
+	}
+}

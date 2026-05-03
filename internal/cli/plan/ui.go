@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 
+	"github.com/spacelions/j/internal/cli/taskpick"
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store"
 )
@@ -36,7 +37,30 @@ type UI interface {
 	// task's id. The slice is expected to be non-empty and sorted by
 	// the caller. Used by `j plan resume` to pick a session to
 	// resume; mirrors the same-named helper in `internal/cli/work`.
-	PickPlanTask(ctx context.Context, tasks []store.Task) (string, error)
+	// The bool reports whether a row was actually selected: ok=false
+	// collapses both a user-abort (Ctrl-C / Esc) and a defensive
+	// empty-input case so callers treat them uniformly as "no
+	// selection".
+	PickPlanTask(ctx context.Context, tasks []store.Task) (string, bool, error)
+	// PickReplanTask is the picker variant used by the new
+	// "re-plan an existing task" SelectSource entry and by the
+	// no-flag `j plan` picker reachable from `--from-task`. It
+	// shares the underlying widget shape with PickPlanTask but
+	// renders a different title so users see immediately which
+	// flow they are inside. The slice is expected to be non-empty
+	// and sorted by the caller (store.SortTasks); the bool follows
+	// the same ok=false-means-no-selection contract as
+	// PickPlanTask.
+	PickReplanTask(ctx context.Context, tasks []store.Task) (string, bool, error)
+	// ConfirmStatusOverride asks the user to confirm proceeding
+	// when the resolved task's status falls outside the natural
+	// allowlist for the current command. cmd is the command label
+	// rendered into the prompt (e.g. "re-plan", "work", "verify");
+	// taskID and status come from the resolved task row. A `false`
+	// return means the user declined; the orchestrator should
+	// surface a clean nil error in that case (consistent with
+	// huh.ErrUserAborted handling).
+	ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error)
 }
 
 // huhUI is the huh-backed implementation of UI. The methods drive real
@@ -79,35 +103,38 @@ func (u *huhUI) SelectModel(ctx context.Context, options []string) (string, erro
 }
 
 // PickPlanTask renders the resume picker for `j plan resume`. The
-// label format mirrors `internal/cli/work`'s identical helper so
-// users see the same shape (`<id> — <summary>`) across the two
-// resume flows. The huh widget is not exercised in headless CI;
-// orchestration logic in resume.go is unit-tested through the UI
-// interface using a scripted fake.
-func (u *huhUI) PickPlanTask(ctx context.Context, tasks []store.Task) (string, error) {
-	if len(tasks) == 0 {
-		return "", errors.New("pick plan task: no plan sessions available")
+// label format ("<id> — <status> — <summary>") is delegated to the
+// shared internal/cli/taskpick package so the four j subcommands
+// agree on a single picker shape.
+func (u *huhUI) PickPlanTask(ctx context.Context, tasks []store.Task) (string, bool, error) {
+	return taskpick.Pick(ctx, u.in, u.out, "Select a plan session to resume", tasks)
+}
+
+// PickReplanTask renders the picker for the re-plan flow. The
+// title differs from PickPlanTask so users can tell at a glance
+// which command they are inside (resume vs re-plan); the widget
+// body is shared with the other j pickers via taskpick.Pick.
+func (u *huhUI) PickReplanTask(ctx context.Context, tasks []store.Task) (string, bool, error) {
+	return taskpick.Pick(ctx, u.in, u.out, "Select a task to re-plan", tasks)
+}
+
+// ConfirmStatusOverride renders a yes/no prompt when a resolved
+// task's status falls outside the command's allowlist. The default
+// answer is "no" so a stray Enter does not run agent.Plan against
+// a task that's still in flight. huh.ErrUserAborted from this
+// prompt is propagated verbatim and the caller's deferred guard
+// converts it to a nil return.
+func (u *huhUI) ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error) {
+	title := fmt.Sprintf("Task %s is in status %s; %s anyway?", taskID, status, cmd)
+	v := false
+	if err := u.run(ctx, huh.NewConfirm().
+		Title(title).
+		Affirmative("yes").
+		Negative("no").
+		Value(&v)); err != nil {
+		return false, err
 	}
-	labels := make([]string, 0, len(tasks))
-	byLabel := make(map[string]string, len(tasks))
-	for _, t := range tasks {
-		summary := strings.TrimSpace(t.Summary)
-		if summary == "" {
-			summary = "(no summary)"
-		}
-		label := fmt.Sprintf("%s — %s", t.ID, summary)
-		labels = append(labels, label)
-		byLabel[label] = t.ID
-	}
-	chosen, err := u.choose(ctx, "Select a plan session to resume", labels)
-	if err != nil {
-		return "", err
-	}
-	id, ok := byLabel[chosen]
-	if !ok {
-		return "", fmt.Errorf("pick plan task: unknown selection %q", chosen)
-	}
-	return id, nil
+	return v, nil
 }
 
 func (u *huhUI) choose(ctx context.Context, title string, options []string) (string, error) {

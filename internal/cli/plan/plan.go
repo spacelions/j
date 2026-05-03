@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -34,6 +35,17 @@ type Options struct {
 	// or PLAN_FROM_FILE). When empty the orchestrator prompts via the
 	// UI.
 	FromFile string
+	// TaskID, when set, names an existing task whose
+	// `<cwd>/.j/tasks/<id>/requirements.md` should be re-planned
+	// in place. The task row is updated in place (status →
+	// planning → plan-done|help, original PlanBeginAt
+	// preserved). Beats FromFile when both are supplied.
+	TaskID string
+	// Yes, when true, skips the status-mismatch confirmation
+	// prompt and proceeds even when the resolved task is not in
+	// the plan-done / help allowlist. Mirrors the `--yes` /
+	// PLAN_YES flag wiring on the cobra command.
+	Yes bool
 	// Interactive is a tri-state: a non-nil value is the explicit
 	// user choice (cobra `--interactive` flag or PLAN_INTERACTIVE
 	// env var), and nil means "not set, fall back to the stored
@@ -103,6 +115,12 @@ func Run(ctx context.Context, opts Options) (err error) {
 	// (bucket has parseable value) > cobra default true.
 	opts.Interactive = boolPtr(resolveInteractive(opts))
 
+	// --from-task short-circuits the source picker; the explicit
+	// flag is unambiguous so we head straight to the re-plan
+	// flow without prompting for a source.
+	if opts.TaskID != "" {
+		return runReplanTask(ctx, opts, opts.TaskID)
+	}
 	if opts.FromFile != "" {
 		return runMarkdown(ctx, opts, opts.FromFile)
 	}
@@ -121,8 +139,198 @@ func Run(ctx context.Context, opts Options) (err error) {
 	case SourceLinear:
 		fmt.Fprintln(opts.Stdout, "plan: linear source is not yet wired up; nothing to do")
 		return nil
+	case SourceTask:
+		id, err := pickReplanTarget(ctx, opts)
+		if err != nil {
+			return err
+		}
+		if id == "" {
+			return nil
+		}
+		return runReplanTask(ctx, opts, id)
 	}
 	return fmt.Errorf("plan: unsupported source %s", src)
+}
+
+// pickReplanTarget lists every task in bbolt (sorted via
+// store.SortTasks) and asks the user to pick one for the re-plan
+// flow. An empty list surfaces a clean error mentioning the cwd
+// so users see why nothing is available; otherwise the chosen id
+// is returned for runReplanTask. The picker now uses the unified
+// (id, ok, err) contract from internal/cli/taskpick: ok=false
+// (user aborted Ctrl-C / Esc) collapses to ("", nil) so Run can
+// short-circuit cleanly without relying on the deferred
+// huh.ErrUserAborted guard for this hop. Genuine UI errors
+// propagate verbatim.
+func pickReplanTarget(ctx context.Context, opts Options) (string, error) {
+	tasks, err := listAllTasks(opts)
+	if err != nil {
+		return "", err
+	}
+	if len(tasks) == 0 {
+		return "", errors.New("plan: no tasks to re-plan; run `j plan` first")
+	}
+	id, ok, err := opts.UI.PickReplanTask(ctx, tasks)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", nil
+	}
+	return id, nil
+}
+
+// runReplanTask is the re-plan flow: load the existing task row,
+// confirm status if necessary, read the existing requirements.md,
+// pick a tool/model, and re-run agent.Plan against the same task
+// directory so requirements.md and plan.md are refreshed in
+// place. The task row is mutated (status: planning → plan-done,
+// preserving original PlanBeginAt).
+func runReplanTask(ctx context.Context, opts Options, id string) error {
+	existing, err := loadTaskByID(opts, id)
+	if err != nil {
+		return err
+	}
+	proceed, err := confirmStatusOverride(ctx, opts, "re-plan", existing, allowedForReplan)
+	if err != nil {
+		return err
+	}
+	if !proceed {
+		return nil
+	}
+
+	tasksDir, err := store.DefaultTasksDir()
+	if err != nil {
+		return err
+	}
+	taskDir := filepath.Join(tasksDir, existing.ID)
+	requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
+	planPath := filepath.Join(taskDir, store.PlanFileName)
+	body := readBestEffort(requirementsPath)
+
+	agent, model, err := selectPlanner(ctx, opts)
+	if err != nil {
+		return err
+	}
+
+	resumeID, err := agent.NewResumeID(ctx)
+	if err != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
+	}
+	agentLogPath := filepath.Join(taskDir, tasklog.AgentLogFileName)
+	mustreadFiles, mustreadErr := mustread.LoadFromDefault()
+	if mustreadErr != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustreadErr)
+	}
+	lc := beginPlanTaskReuse(opts, agent, model, existing, resumeID)
+	pid, planErr := agent.Plan(ctx, codingagents.PlanRequest{
+		FromFilePath:           requirementsPath,
+		Body:                   body,
+		Model:                  model,
+		RequirementsOutputPath: requirementsPath,
+		PlanOutputPath:         planPath,
+		Interactive:            *opts.Interactive,
+		ResumeChatID:           resumeID,
+		AgentLogPath:           agentLogPath,
+		Mustread:               mustreadFiles,
+	})
+
+	if planErr == nil && pid > 0 {
+		lc.recordBackground(pid, agentLogPath)
+		fmt.Fprintf(opts.Stdout,
+			"J: cursor-agent running in background (PID=%d); see .j/tasks/%s/%s\n",
+			pid, existing.ID, tasklog.AgentLogFileName)
+		return nil
+	}
+
+	var refinedReq, planMD string
+	if planErr == nil {
+		if data, readErr := os.ReadFile(requirementsPath); readErr == nil {
+			refinedReq = string(data)
+		} else {
+			fmt.Fprintf(opts.Stderr, "warning: read %s: %v\n", requirementsPath, readErr)
+		}
+		if data, readErr := os.ReadFile(planPath); readErr == nil {
+			planMD = string(data)
+		} else {
+			fmt.Fprintf(opts.Stderr, "warning: read %s: %v\n", planPath, readErr)
+		}
+	}
+	lc.finishPlan(planErr, refinedReq, planMD, requirementsPath)
+	if planErr != nil {
+		return planErr
+	}
+
+	fmt.Fprintf(opts.Stdout, "J: re-planned task %s\n", existing.ID)
+	return nil
+}
+
+// loadTaskByID opens the tasks DB, reads the row, and closes the
+// handle before returning. fs.ErrNotExist is rewrapped into the
+// user-facing "task %q not found" so the caller does not need to
+// translate it.
+func loadTaskByID(opts Options, id string) (store.Task, error) {
+	s, ok := tasklog.OpenTaskLog(opts.Stderr)
+	if !ok {
+		return store.Task{}, errors.New("plan: tasks db unavailable")
+	}
+	defer func() { _ = s.Close() }()
+	task, err := s.GetTask(id)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return store.Task{}, fmt.Errorf("plan: task %q not found", id)
+		}
+		return store.Task{}, err
+	}
+	return task, nil
+}
+
+// listAllTasks returns every task in bbolt, sorted via
+// store.SortTasks so the picker shows the active-then-most-recent
+// order users see in `j tasks`. The store is closed before the
+// slice is returned so the agent invocation downstream does not
+// contend on the bbolt file lock.
+func listAllTasks(opts Options) ([]store.Task, error) {
+	s, ok := tasklog.OpenTaskLog(opts.Stderr)
+	if !ok {
+		return nil, errors.New("plan: tasks db unavailable")
+	}
+	defer func() { _ = s.Close() }()
+	all, err := s.ListTasks()
+	if err != nil {
+		return nil, err
+	}
+	store.SortTasks(all)
+	return all, nil
+}
+
+// allowedForReplan is the natural status allowlist for the re-plan
+// flow: plan-done (user is iterating on the plan after a previous
+// plan run) and help (retry after a failed planning run). Tasks
+// in any other status trigger the confirm prompt unless --yes /
+// PLAN_YES skips it.
+func allowedForReplan(t store.Task) bool {
+	switch t.Status {
+	case store.StatusPlanDone, store.StatusHelp:
+		return true
+	}
+	return false
+}
+
+// confirmStatusOverride decides whether to run agent.Plan against a
+// task whose status falls outside the allowlist. The allowlist
+// returns true → proceed silently. Otherwise --yes / PLAN_YES →
+// proceed silently; else delegate to the UI confirm prompt and
+// return its bool. A user decline (false from the prompt) returns
+// proceed=false with err=nil so the caller can exit cleanly.
+func confirmStatusOverride(ctx context.Context, opts Options, cmd string, t store.Task, allowed func(store.Task) bool) (bool, error) {
+	if allowed(t) {
+		return true, nil
+	}
+	if opts.Yes {
+		return true, nil
+	}
+	return opts.UI.ConfirmStatusOverride(ctx, cmd, t.ID, string(t.Status))
 }
 
 // pickMarkdownTarget scans the current working directory for markdown
