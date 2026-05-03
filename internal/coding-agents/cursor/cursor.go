@@ -202,9 +202,9 @@ func (*Agent) Work(ctx context.Context, req codingagents.WorkRequest) (int, erro
 // task summary.
 func buildPlanPrompt(req codingagents.PlanRequest) string {
 	if req.Resume {
-		return prompts.BuildPlannerResume(req.FromFilePath, req.Body)
+		return prompts.BuildPlannerResume(req.FromFilePath)
 	}
-	base := prompts.BuildPlanner(req.FromFilePath, req.Body, req.Mustread)
+	base := prompts.BuildPlanner(req.FromFilePath, req.Mustread)
 	return fmt.Sprintf(
 		"%s\n\nDuring this session you may clarify the requirements with the user. Before exiting:\n"+
 			"1. Save the (possibly refined) requirements summary to %q (overwrite if it exists). "+
@@ -218,20 +218,21 @@ func buildPlanPrompt(req codingagents.PlanRequest) string {
 }
 
 // buildWorkPrompt picks the right worker prompt for req. The
-// fix-findings branch wins first: a non-empty FixFindings means the
-// outer verify loop wants the previous worker session to address a
-// concrete set of verifier findings without re-planning. Resume
-// runs are next; first-run falls through to the full worker
-// instruction. Every branch threads req.Worktree through so the
-// prompt carries the worktree-direction line when the task has one.
+// fix-findings branch wins first: FixFindings=true means the outer
+// verify loop wants the previous worker session to address a
+// concrete set of verifier findings (read by the agent from the
+// per-task verifier_findings.md) without re-planning. Resume runs
+// are next; first-run falls through to the full worker instruction.
+// Every branch threads req.Worktree through so the prompt carries
+// the worktree-direction line when the task has one.
 func buildWorkPrompt(req codingagents.WorkRequest) string {
-	if req.FixFindings != "" {
-		return prompts.BuildVerifierFix(req.PlanPath, req.Body, "verifier_findings.md", req.FixFindings, req.Worktree)
+	if req.FixFindings {
+		return prompts.BuildVerifierFix(req.PlanPath, "verifier_findings.md", req.Worktree)
 	}
 	if req.Resume {
-		return prompts.BuildWorkerResume(req.PlanPath, req.Body, req.Worktree)
+		return prompts.BuildWorkerResume(req.PlanPath, req.Worktree)
 	}
-	return prompts.BuildWorker(req.PlanPath, req.Body, req.Worktree, req.Mustread)
+	return prompts.BuildWorker(req.PlanPath, req.Worktree, req.Mustread)
 }
 
 // Verify runs cursor-agent against the requirements + plan pair. The
@@ -289,11 +290,11 @@ func (*Agent) Verify(ctx context.Context, req codingagents.VerifyRequest) (int, 
 // worktree-direction line when the task has one.
 func buildVerifyPrompt(req codingagents.VerifyRequest) string {
 	if req.Resume {
-		return prompts.BuildVerifierResume(req.RequirementsPath, req.RequirementsBody, req.PlanPath, req.PlanBody, req.Worktree)
+		return prompts.BuildVerifierResume(req.RequirementsPath, req.PlanPath, req.Worktree)
 	}
 	return prompts.BuildVerifier(
-		req.RequirementsPath, req.RequirementsBody,
-		req.PlanPath, req.PlanBody,
+		req.RequirementsPath,
+		req.PlanPath,
 		req.VerifierPlanOutputPath, req.VerifierFindingsOutputPath,
 		req.Worktree,
 		req.Mustread,

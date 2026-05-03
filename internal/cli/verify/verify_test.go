@@ -471,8 +471,8 @@ func TestRun_FailThenPass(t *testing.T) {
 	if !work.Resume {
 		t.Fatalf("worker fix turn should set Resume=true: %+v", work)
 	}
-	if !strings.Contains(work.FixFindings, "VERDICT: FAIL") {
-		t.Fatalf("FixFindings missing FAIL line: %q", work.FixFindings)
+	if !work.FixFindings {
+		t.Fatalf("FixFindings should be true on the fix loop's worker turn: %+v", work)
 	}
 	if work.ResumeChatID != "seed-work-cursor" {
 		t.Fatalf("worker fix turn should reuse seeded WorkResumeCursor, got %q", work.ResumeChatID)

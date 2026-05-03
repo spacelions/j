@@ -116,10 +116,6 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	verifierPlanPath := filepath.Join(taskDir, store.VerifierPlanFileName)
 	findingsPath := filepath.Join(taskDir, store.VerifierFindingsFileName)
 
-	planBody := readBestEffort(planPath)
-	requirementsBody := readBestEffort(requirementsPath)
-	previousFindings := readBestEffort(findingsPath)
-
 	lc := beginVerifyTaskResume(Options{Stderr: opts.Stderr}, task)
 	// Resume reads the verifier bucket's stored `interactive` value
 	// and falls back to true when unset; there is no `--interactive`
@@ -130,12 +126,9 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	// observe a stale verdict.
 	pid, runErr := agent.Verify(ctx, codingagents.VerifyRequest{
 		RequirementsPath:           requirementsPath,
-		RequirementsBody:           requirementsBody,
 		PlanPath:                   planPath,
-		PlanBody:                   planBody,
 		VerifierPlanOutputPath:     verifierPlanPath,
 		VerifierFindingsOutputPath: findingsPath,
-		PreviousFindings:           previousFindings,
 		Model:                      task.InvokedModel,
 		Interactive:                interactive,
 		ResumeChatID:               task.VerifyResumeCursor,

@@ -335,7 +335,13 @@ func (s *scriptedAgent) Plan(_ context.Context, req codingagents.PlanRequest) (i
 	req.PlanOutputPath = filepath.Clean(req.PlanOutputPath)
 	requirement := s.requirement
 	if requirement == "" {
-		requirement = req.Body
+		// Mirror what a real agent would do: read the user's
+		// markdown source from disk and use it as the
+		// requirements summary. Tests no longer thread the body
+		// through PlanRequest.
+		if data, err := os.ReadFile(req.FromFilePath); err == nil {
+			requirement = string(data)
+		}
 	}
 	if err := os.WriteFile(req.RequirementsOutputPath, []byte(requirement), 0o644); err != nil {
 		return 0, err
@@ -412,8 +418,8 @@ func TestRun_Success_WithFlag(t *testing.T) {
 		t.Fatalf("requirements and plan paths in different dirs: %q vs %q",
 			agent.lastReq.RequirementsOutputPath, agent.lastReq.PlanOutputPath)
 	}
-	if !strings.Contains(agent.lastReq.Body, "# task") {
-		t.Fatalf("body = %q", agent.lastReq.Body)
+	if agent.lastReq.FromFilePath == "" {
+		t.Fatalf("FromFilePath should be populated: %+v", agent.lastReq)
 	}
 
 	plan, err := os.ReadFile(agent.lastReq.PlanOutputPath)

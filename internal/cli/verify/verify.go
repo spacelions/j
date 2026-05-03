@@ -91,9 +91,7 @@ type resolved struct {
 	Task             store.Task
 	TaskDir          string
 	RequirementsPath string
-	RequirementsBody string
 	PlanPath         string
-	PlanBody         string
 	VerifierPlanPath string
 	FindingsPath     string
 }
@@ -262,22 +260,14 @@ func resolveByTaskID(opts Options, id string) (resolved, error) {
 	}
 	taskDir := filepath.Join(tasksDir, id)
 	planPath := filepath.Join(taskDir, store.PlanFileName)
-	planBody, err := os.ReadFile(planPath)
-	if err != nil {
+	if _, err := os.Stat(planPath); err != nil {
 		return resolved{}, fmt.Errorf("verify: read plan: %w", err)
-	}
-	requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
-	var requirementsBody string
-	if data, readErr := os.ReadFile(requirementsPath); readErr == nil {
-		requirementsBody = string(data)
 	}
 	return resolved{
 		Task:             task,
 		TaskDir:          taskDir,
-		RequirementsPath: requirementsPath,
-		RequirementsBody: requirementsBody,
+		RequirementsPath: filepath.Join(taskDir, store.RequirementsFileName),
 		PlanPath:         planPath,
-		PlanBody:         string(planBody),
 		VerifierPlanPath: filepath.Join(taskDir, store.VerifierPlanFileName),
 		FindingsPath:     filepath.Join(taskDir, store.VerifierFindingsFileName),
 	}, nil
@@ -363,12 +353,9 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 	for i := 0; i < opts.MaxIterations; i++ {
 		req := codingagents.VerifyRequest{
 			RequirementsPath:           res.RequirementsPath,
-			RequirementsBody:           res.RequirementsBody,
 			PlanPath:                   res.PlanPath,
-			PlanBody:                   res.PlanBody,
 			VerifierPlanOutputPath:     res.VerifierPlanPath,
 			VerifierFindingsOutputPath: res.FindingsPath,
-			PreviousFindings:           readBestEffort(res.FindingsPath),
 			Model:                      model,
 			Interactive:                *opts.Interactive,
 			Resume:                     i > 0,
@@ -395,15 +382,13 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 		if i+1 >= opts.MaxIterations {
 			break
 		}
-		findingsBody := readBestEffort(res.FindingsPath)
 		workReq := codingagents.WorkRequest{
 			PlanPath:     res.PlanPath,
-			Body:         res.PlanBody,
 			Model:        res.Task.InvokedModel,
 			Interactive:  *opts.Interactive,
 			ResumeChatID: res.Task.WorkResumeCursor,
 			Resume:       true,
-			FixFindings:  findingsBody,
+			FixFindings:  true,
 			Worktree:     res.Task.Worktree,
 			AgentLogPath: agentLogPath,
 		}
@@ -567,17 +552,6 @@ func lookupResumeAgent(agents []codingagents.Agent, tool string) (codingagents.A
 		}
 	}
 	return nil, false
-}
-
-// readBestEffort reads path silently. Errors yield an empty string
-// because the verify flow tolerates a missing file (e.g. the
-// verifier crashed before writing findings).
-func readBestEffort(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return string(data)
 }
 
 func (o Options) withDefaults() Options {

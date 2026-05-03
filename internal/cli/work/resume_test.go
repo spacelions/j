@@ -317,9 +317,9 @@ func TestRunResume_Work_StatusWorkingIsResumable(t *testing.T) {
 // TestRunResume_Work_AutoPicksSingle exercises the case-1 branch
 // in resolveResumeTask: a single eligible task is picked
 // automatically without consulting the UI. It also deletes
-// plan.md before invoking RunResume so readBestEffort's
-// error-swallow branch is covered (the resume flow tolerates
-// a missing plan body).
+// plan.md before invoking RunResume to confirm the orchestrator
+// does not stat the plan body itself (the agent reads it from
+// disk via the cited PlanPath).
 func TestRunResume_Work_AutoPicksSingle(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -348,8 +348,12 @@ func TestRunResume_Work_AutoPicksSingle(t *testing.T) {
 	if agent.worked != 1 {
 		t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
 	}
-	if agent.lastReq.Body != "" {
-		t.Fatalf("Body should be empty when plan.md is missing, got %q", agent.lastReq.Body)
+	// The resume flow now tells the agent to read plan.md from
+	// disk; the orchestrator does not pre-read the body, so a
+	// missing plan.md no longer surfaces here. PlanPath must
+	// still be set so the agent knows which file to read.
+	if agent.lastReq.PlanPath == "" {
+		t.Fatalf("PlanPath should be populated even when plan.md is missing, got %q", agent.lastReq.PlanPath)
 	}
 }
 

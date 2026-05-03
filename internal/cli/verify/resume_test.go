@@ -153,8 +153,8 @@ func TestRunResume_FromTaskHappyPath(t *testing.T) {
 	if req.Model != "sonnet-4" {
 		t.Fatalf("Model = %q", req.Model)
 	}
-	if !strings.Contains(req.PreviousFindings, "VERDICT: FAIL") {
-		t.Fatalf("PreviousFindings should be seeded: %q", req.PreviousFindings)
+	if req.RequirementsPath == "" || req.PlanPath == "" || req.VerifierFindingsOutputPath == "" {
+		t.Fatalf("paths should be populated so the agent can read them from disk: %+v", req)
 	}
 	if agent.resumeIDed != 0 {
 		t.Fatalf("NewResumeID should not be invoked on resume; calls=%d", agent.resumeIDed)
@@ -314,8 +314,9 @@ func TestRunResume_StatusCompletedIsResumable(t *testing.T) {
 }
 
 // TestRunResume_AutoPicksSingle exercises the case-1 branch.
-// Deletes findings.md before invoking RunResume so readBestEffort's
-// error-swallow branch is also covered.
+// Deletes findings.md before invoking RunResume to confirm the
+// orchestrator no longer pre-reads the findings body — the agent
+// now reads verifier_findings.md from disk via the cited path.
 func TestRunResume_AutoPicksSingle(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -341,9 +342,9 @@ func TestRunResume_AutoPicksSingle(t *testing.T) {
 	if len(agent.verifiedReqs) != 1 {
 		t.Fatalf("verify calls = %d, want 1", len(agent.verifiedReqs))
 	}
-	if agent.verifiedReqs[0].PreviousFindings != "" {
-		t.Fatalf("PreviousFindings should be empty when findings.md is missing, got %q",
-			agent.verifiedReqs[0].PreviousFindings)
+	if agent.verifiedReqs[0].VerifierFindingsOutputPath == "" {
+		t.Fatalf("VerifierFindingsOutputPath should be populated even when findings.md is missing, got %q",
+			agent.verifiedReqs[0].VerifierFindingsOutputPath)
 	}
 }
 
