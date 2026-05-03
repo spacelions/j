@@ -362,6 +362,9 @@ func TestStore_OperationsAfterClose(t *testing.T) {
 	if err := s.Delete(BucketPlanner, "k"); err == nil {
 		t.Fatal("Delete on closed db should error")
 	}
+	if err := s.DeleteBucket(BucketPlanner); err == nil {
+		t.Fatal("DeleteBucket on closed db should error")
+	}
 	if _, err := s.IsEmpty(); err == nil {
 		t.Fatal("IsEmpty on closed db should error")
 	}
@@ -398,6 +401,70 @@ func TestDelete_RemovesKey(t *testing.T) {
 	}
 	if ok {
 		t.Fatal("key should be gone")
+	}
+}
+
+// TestDeleteBucket_RemovesEveryKey pins the contract: deleting a
+// populated bucket wipes every key inside it and the bucket itself
+// so List/ListBuckets stop reporting it.
+func TestDeleteBucket_RemovesEveryKey(t *testing.T) {
+	s := openInTemp(t)
+	for _, k := range []string{"tool", "model", "interactive"} {
+		if err := s.Put(BucketPlanner, k, "v-"+k); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.DeleteBucket(BucketPlanner); err != nil {
+		t.Fatalf("DeleteBucket: %v", err)
+	}
+	got, err := s.List(BucketPlanner)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("List after DeleteBucket = %v, want empty", got)
+	}
+	buckets, err := s.ListBuckets()
+	if err != nil {
+		t.Fatalf("ListBuckets: %v", err)
+	}
+	for _, b := range buckets {
+		if b == BucketPlanner {
+			t.Fatalf("ListBuckets still contains %q after DeleteBucket: %v", BucketPlanner, buckets)
+		}
+	}
+}
+
+// TestDeleteBucket_MissingBucketIsNoop pins the missing-bucket
+// no-op semantics that mirror Delete's missing-key behaviour: a
+// caller may ask for a wipe without pre-checking existence.
+func TestDeleteBucket_MissingBucketIsNoop(t *testing.T) {
+	s := openInTemp(t)
+	if err := s.DeleteBucket("never-created"); err != nil {
+		t.Fatalf("DeleteBucket on missing bucket should be a no-op, got: %v", err)
+	}
+}
+
+// TestDeleteBucket_EnsureBucketRecreates pins the round-trip: after
+// DeleteBucket a subsequent EnsureBucket re-creates a clean (empty)
+// bucket without surfacing the prior contents.
+func TestDeleteBucket_EnsureBucketRecreates(t *testing.T) {
+	s := openInTemp(t)
+	if err := s.Put(BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteBucket(BucketPlanner); err != nil {
+		t.Fatalf("DeleteBucket: %v", err)
+	}
+	if err := s.EnsureBucket(BucketPlanner); err != nil {
+		t.Fatalf("EnsureBucket after DeleteBucket: %v", err)
+	}
+	got, err := s.List(BucketPlanner)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("List after recreate = %v, want empty", got)
 	}
 }
 

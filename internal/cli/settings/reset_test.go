@@ -28,7 +28,7 @@ func runResetArgs(t *testing.T, in io.Reader, args ...string) (string, error) {
 	return stdout.String() + stderr.String(), err
 }
 
-// runResetDirect drives runReset / runResetFull / runResetOneKey
+// runResetDirect drives runReset / runResetFull / runResetTargets
 // without going through the cobra root tree, so the shared pre-flight
 // hook is bypassed. Tests use it to exercise the defense-in-depth
 // branches that fire when artifacts are missing or corrupt.
@@ -159,7 +159,7 @@ func TestReset_Full_StdinNo(t *testing.T) {
 }
 
 // TestReset_Single_MissingDB pins the `nothing to reset` defense
-// branch in runResetOneKey when settings is missing. We bypass cobra
+// branch in runResetTargets when settings is missing. We bypass cobra
 // so the missing-file state survives long enough to reach the branch.
 func TestReset_Single_MissingDB(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -222,12 +222,27 @@ func TestReset_Single_MissingKeyStillOK(t *testing.T) {
 	}
 }
 
+// TestReset_Single_BadKey pins the parse-error path for malformed
+// bucket.key targets: a bare `.key` is rejected by parseBucketKey
+// because the bucket portion is empty. (A bare `nodot` is now a
+// valid bucket-level target — see TestReset_Bucket_RemovesAllKeys.)
 func TestReset_Single_BadKey(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	_, err := runResetArgs(t, &bytes.Buffer{}, "reset", "nodot")
+	_, err := runResetArgs(t, &bytes.Buffer{}, "reset", ".key")
 	if err == nil {
-		t.Fatal("expected error")
+		t.Fatal("expected error for empty bucket portion")
+	}
+}
+
+// TestReset_Single_TrailingDot pins the second parse-error path:
+// `bucket.` is rejected because the key portion is empty.
+func TestReset_Single_TrailingDot(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	_, err := runResetArgs(t, &bytes.Buffer{}, "reset", "bucket.")
+	if err == nil {
+		t.Fatal("expected error for empty key portion")
 	}
 }
 
@@ -243,10 +258,10 @@ func TestReadConfirmationLine_ReadError(t *testing.T) {
 	}
 }
 
-// TestRunResetOneKey_StatError exercises the non-ENOENT stat error
+// TestRunResetTargets_StatError exercises the non-ENOENT stat error
 // path: when .j is a regular file the settings stat fails. We bypass
-// cobra so the corrupt layout reaches runResetOneKey.
-func TestRunResetOneKey_StatError(t *testing.T) {
+// cobra so the corrupt layout reaches runResetTargets.
+func TestRunResetTargets_StatError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	d, err := store.DefaultDir()
 	if err != nil {
@@ -257,5 +272,167 @@ func TestRunResetOneKey_StatError(t *testing.T) {
 	}
 	if _, err := runResetDirect(t, &bytes.Buffer{}, "a.b"); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+// TestReset_Bucket_RemovesAllKeys pins the new bucket-level reset
+// shape: every key under the bucket is gone afterwards and the CLI
+// prints `unset <bucket>` exactly once.
+func TestReset_Bucket_RemovesAllKeys(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	if _, err := runSetArgs(t, "set", "planner.tool=cursor", "planner.model=opus"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	out, err := runResetArgs(t, &bytes.Buffer{}, "reset", "planner")
+	if err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if !strings.Contains(out, "unset planner\n") {
+		t.Fatalf("out = %q, want unset planner line", out)
+	}
+	if strings.Contains(out, "unset planner.") {
+		t.Fatalf("out = %q, bucket reset must not emit per-key lines", out)
+	}
+	p, _ := store.DefaultPath()
+	s, err := store.Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	for _, k := range []string{"tool", "model"} {
+		if _, ok, err := s.Get(store.BucketPlanner, k); err != nil {
+			t.Fatalf("Get %s: %v", k, err)
+		} else if ok {
+			t.Fatalf("planner.%s should be gone", k)
+		}
+	}
+	rows, err := s.List(store.BucketPlanner)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("planner bucket should be empty, got %v", rows)
+	}
+}
+
+// TestReset_Bucket_MissingBucketIsNoop pins the no-op success: when
+// the named bucket was never written, `reset planner` still exits 0
+// and prints `unset planner` (mirrors single-key missing-key reset).
+func TestReset_Bucket_MissingBucketIsNoop(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	out, err := runResetArgs(t, &bytes.Buffer{}, "reset", "planner")
+	if err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if !strings.Contains(out, "unset planner\n") {
+		t.Fatalf("out = %q, want unset planner line", out)
+	}
+}
+
+// TestReset_MultiArg_Space pins the multi-arg shape: a whitespace-
+// separated list of targets is processed in order, each emitting one
+// `unset` line. Both a bucket target and a bucket.key target are
+// applied.
+func TestReset_MultiArg_Space(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	if _, err := runSetArgs(t, "set", "planner.tool=cursor", "planner.model=opus", "worker.model=sonnet"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	out, err := runResetArgs(t, &bytes.Buffer{}, "reset", "planner", "worker.model")
+	if err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	idxBucket := strings.Index(out, "unset planner\n")
+	idxKey := strings.Index(out, "unset worker.model\n")
+	if idxBucket < 0 || idxKey < 0 || idxBucket > idxKey {
+		t.Fatalf("out = %q, want `unset planner` before `unset worker.model`", out)
+	}
+	p, _ := store.DefaultPath()
+	s, err := store.Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	rows, err := s.List(store.BucketPlanner)
+	if err != nil {
+		t.Fatalf("List planner: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("planner not empty: %v", rows)
+	}
+	if _, ok, err := s.Get(store.BucketWorker, "model"); err != nil {
+		t.Fatal(err)
+	} else if ok {
+		t.Fatal("worker.model should be gone")
+	}
+}
+
+// TestReset_MultiArg_Mixed pins ordering for a bucket + key + bucket
+// triple: every target is applied and lines are emitted left-to-right.
+func TestReset_MultiArg_Mixed(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	if _, err := runSetArgs(t, "set", "planner.tool=cursor", "worker.model=sonnet", "verifier.tool=cursor"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	out, err := runResetArgs(t, &bytes.Buffer{}, "reset", "planner", "worker.model", "verifier")
+	if err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	idxPlanner := strings.Index(out, "unset planner\n")
+	idxWorker := strings.Index(out, "unset worker.model\n")
+	idxVerifier := strings.Index(out, "unset verifier\n")
+	if idxPlanner < 0 || idxWorker < 0 || idxVerifier < 0 {
+		t.Fatalf("missing line in out = %q", out)
+	}
+	if !(idxPlanner < idxWorker && idxWorker < idxVerifier) {
+		t.Fatalf("out = %q, want planner < worker.model < verifier", out)
+	}
+	p, _ := store.DefaultPath()
+	s, err := store.Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	for _, b := range []string{store.BucketPlanner, store.BucketVerifier} {
+		rows, err := s.List(b)
+		if err != nil {
+			t.Fatalf("List %s: %v", b, err)
+		}
+		if len(rows) != 0 {
+			t.Fatalf("%s not empty: %v", b, rows)
+		}
+	}
+	if _, ok, err := s.Get(store.BucketWorker, "model"); err != nil {
+		t.Fatal(err)
+	} else if ok {
+		t.Fatal("worker.model should be gone")
+	}
+}
+
+// TestReset_MultiArg_MissingDB pins the missing-DB short-circuit for
+// the multi-arg path: with a non-empty target list and no .j layout
+// the helper still exits 0 and prints `nothing to reset`. We bypass
+// cobra so pre-flight does not heal the layout first.
+func TestReset_MultiArg_MissingDB(t *testing.T) {
+	t.Chdir(t.TempDir())
+	out, err := runResetDirect(t, &bytes.Buffer{}, "planner", "worker.model")
+	if err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if !strings.Contains(out, "nothing to reset") {
+		t.Fatalf("out = %q, want nothing to reset", out)
+	}
+}
+
+// TestParseResetTargets_EmptyArg pins the empty-arg parse error.
+// Cobra collapses adjacent whitespace so this branch only fires
+// when callers (e.g. tests) drive runResetTargets directly.
+func TestParseResetTargets_EmptyArg(t *testing.T) {
+	if _, err := parseResetTargets([]string{""}); err == nil {
+		t.Fatal("expected error for empty target")
 	}
 }
