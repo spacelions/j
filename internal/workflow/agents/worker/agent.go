@@ -1,35 +1,84 @@
-// Package worker defines the worker sub-agent of the planner/worker/verifier
-// workflow. It produces code from the plan (state key "plan") and any prior
-// verifier feedback (state key "temp:review"), writing results under "code".
+// Package worker exposes a single New(Config) constructor mirroring
+// the planner / verifier shape: Config.LLM → llmagent.New (used by
+// `j run` / `j web`), Config{TaskID, Agents} → a custom shell-out
+// agent whose Run blocks on cli/work.Run (used by
+// `j tasks orchestrate`).
 package worker
 
 import (
-	_ "embed"
+	"errors"
+	"io"
+	"iter"
 
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/model"
-)
+	"google.golang.org/adk/session"
 
-// Instruction is the embedded instruction.md used as the worker system
-// prompt. Exported so other backends can reuse the same coding rules
-// without duplicating the file.
-//
-//go:embed instruction.md
-var Instruction string
+	"github.com/spacelions/j/internal/cli/work"
+	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/workflow/agents/shellevent"
+	"github.com/spacelions/j/internal/workflow/instructions"
+)
 
 const (
 	Name      = "worker"
 	OutputKey = "code"
 )
 
-// New returns a worker agent backed by the provided LLM.
-func New(m model.LLM) (agent.Agent, error) {
-	return llmagent.New(llmagent.Config{
+// Config carries the runtime knobs New uses to decide which flavour
+// of agent to return. Exactly one of LLM and TaskID should be set.
+type Config struct {
+	LLM    model.LLM
+	TaskID string
+	Agents []codingagents.Agent
+	Stderr io.Writer
+}
+
+// New returns the configured worker agent. See planner.New for the
+// full Config branching contract.
+func New(cfg Config) (agent.Agent, error) {
+	if cfg.LLM != nil && cfg.TaskID != "" {
+		return nil, errors.New("worker: Config.LLM and Config.TaskID are mutually exclusive")
+	}
+	if cfg.LLM != nil {
+		return llmagent.New(llmagent.Config{
+			Name:        Name,
+			Model:       cfg.LLM,
+			Description: "Produces code from the plan, revising when verifier feedback is available.",
+			Instruction: instructions.Worker,
+			OutputKey:   OutputKey,
+		})
+	}
+	if cfg.TaskID == "" {
+		return nil, errors.New("worker: Config requires LLM or TaskID")
+	}
+	if len(cfg.Agents) == 0 {
+		return nil, errors.New("worker: shell-out branch requires Agents")
+	}
+	stderr := cfg.Stderr
+	if stderr == nil {
+		stderr = io.Discard
+	}
+	taskID := cfg.TaskID
+	agents := cfg.Agents
+	return agent.New(agent.Config{
 		Name:        Name,
-		Model:       m,
-		Description: "Produces code from the plan, revising when verifier feedback is available.",
-		Instruction: Instruction,
-		OutputKey:   OutputKey,
+		Description: "Runs the worker phase by shelling out to `j work` against the seeded task.",
+		Run: func(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				interactive := false
+				err := work.Run(ctx, work.Options{
+					TaskID:            taskID,
+					Yes:               true,
+					Interactive:       &interactive,
+					Stdout:            stderr,
+					Stderr:            stderr,
+					Agents:            agents,
+					WaitForCompletion: true,
+				})
+				shellevent.Yield(ctx, yield, Name, "worker phase complete", err, false)
+			}
+		},
 	})
 }

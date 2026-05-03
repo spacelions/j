@@ -107,6 +107,57 @@ func TestSpawn_Success(t *testing.T) {
 	}
 }
 
+// TestSpawn_AppendsAcrossInvocations pins the append-only invariant on
+// the shared per-task agent.log: a second SpawnIn against the same
+// path must preserve every byte written by the first child.
+// Orchestrator + planner + worker + verifier all share one log file
+// across phase boundaries (and every retry iteration of the
+// worker→verifier loop), and tests downstream rely on the earlier
+// phase's bytes surviving.
+func TestSpawn_AppendsAcrossInvocations(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "out.log")
+	if _, err := Spawn(context.Background(), logPath, "sh", "-c", "echo first-line"); err != nil {
+		t.Fatalf("first Spawn: %v", err)
+	}
+	waitForLogContains(t, logPath, "first-line")
+	if _, err := Spawn(context.Background(), logPath, "sh", "-c", "echo second-line"); err != nil {
+		t.Fatalf("second Spawn: %v", err)
+	}
+	waitForLogContains(t, logPath, "second-line")
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	got := string(data)
+	if !strings.Contains(got, "first-line") {
+		t.Fatalf("first child's bytes were truncated: %q", got)
+	}
+	if !strings.Contains(got, "second-line") {
+		t.Fatalf("second child's bytes are missing: %q", got)
+	}
+	if strings.Index(got, "first-line") > strings.Index(got, "second-line") {
+		t.Fatalf("expected chronological order, got %q", got)
+	}
+}
+
+// waitForLogContains polls logPath until it contains needle or the
+// deadline elapses.
+func waitForLogContains(t *testing.T, logPath, needle string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		data, err := os.ReadFile(logPath)
+		if err == nil && strings.Contains(string(data), needle) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timeout waiting for %q in %s: log=%q err=%v", needle, logPath, string(data), err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // TestSpawn_EmptyLogPath pins the empty-path guard.
 func TestSpawn_EmptyLogPath(t *testing.T) {
 	_, err := Spawn(context.Background(), "", "true")

@@ -703,7 +703,7 @@ func TestRun_MalformedVerdictTreatedAsFail(t *testing.T) {
 	}
 }
 
-// TestParseVerdict_EdgeCases pins every parseVerdict branch on a
+// TestParseVerdict_EdgeCases pins every ParseVerdict branch on a
 // table.
 func TestParseVerdict_EdgeCases(t *testing.T) {
 	dir := t.TempDir()
@@ -729,16 +729,16 @@ func TestParseVerdict_EdgeCases(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			path := filepath.Join(dir, c.name+".md")
 			if c.name == "missing-file" {
-				if got := parseVerdict(path); got != c.want {
-					t.Fatalf("parseVerdict(missing) = %q, want %q", got, c.want)
+				if got := ParseVerdict(path); got != c.want {
+					t.Fatalf("ParseVerdict(missing) = %q, want %q", got, c.want)
 				}
 				return
 			}
 			if err := os.WriteFile(path, []byte(c.body), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if got := parseVerdict(path); got != c.want {
-				t.Fatalf("parseVerdict(%s) = %q, want %q (body=%q)", c.name, got, c.want, c.body)
+			if got := ParseVerdict(path); got != c.want {
+				t.Fatalf("ParseVerdict(%s) = %q, want %q (body=%q)", c.name, got, c.want, c.body)
 			}
 		})
 	}

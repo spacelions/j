@@ -37,17 +37,17 @@ func Run(ctx context.Context, cfg Config, launcherArgs []string) error {
 		return fmt.Errorf("workflow: model: %w", err)
 	}
 
-	p, err := planner.New(m)
+	p, err := planner.New(planner.Config{LLM: m})
 	if err != nil {
 		return fmt.Errorf("workflow: planner: %w", err)
 	}
 
-	w, err := worker.New(m)
+	w, err := worker.New(worker.Config{LLM: m})
 	if err != nil {
 		return fmt.Errorf("workflow: worker: %w", err)
 	}
 
-	vfr, err := verifier.New(m)
+	vfr, err := verifier.New(verifier.Config{LLM: m})
 	if err != nil {
 		return fmt.Errorf("workflow: verifier: %w", err)
 	}

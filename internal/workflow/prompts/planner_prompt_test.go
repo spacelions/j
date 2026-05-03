@@ -4,14 +4,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spacelions/j/internal/workflow/agents/planner"
+	"github.com/spacelions/j/internal/workflow/instructions"
 )
 
 func TestBuildPlanner(t *testing.T) {
 	got := BuildPlanner("/tmp/feature.md", nil)
 
-	if !strings.Contains(got, strings.TrimSpace(planner.Instruction)) {
-		t.Fatalf("prompt missing planner.Instruction: %q", got)
+	if !strings.Contains(got, strings.TrimSpace(instructions.Planner)) {
+		t.Fatalf("prompt missing instructions.Planner: %q", got)
 	}
 	if !strings.Contains(got, "/tmp/feature.md") {
 		t.Fatalf("prompt missing target path: %q", got)
@@ -54,7 +54,7 @@ func TestBuildPlanner_WithMustRead(t *testing.T) {
 }
 
 // TestBuildPlannerResume pins the resume-only planner prompt: the
-// rendered text must be non-empty, embed the planner.Instruction
+// rendered text must be non-empty, embed the instructions.Planner
 // body (which itself opens with the "You are the planner …" role
 // sentence — so the resume turn re-anchors itself in the workflow
 // without a duplicate preamble), mention the "previous / check /
@@ -73,8 +73,8 @@ func TestBuildPlannerResume(t *testing.T) {
 	if got == "" {
 		t.Fatal("BuildPlannerResume returned empty string")
 	}
-	if !strings.Contains(got, strings.TrimSpace(planner.Instruction)) {
-		t.Fatalf("resume prompt missing planner.Instruction: %q", got)
+	if !strings.Contains(got, strings.TrimSpace(instructions.Planner)) {
+		t.Fatalf("resume prompt missing instructions.Planner: %q", got)
 	}
 	const preamble = "You are the planner in a planner/worker/verifier workflow."
 	if strings.Count(got, preamble) != 1 {
@@ -135,7 +135,7 @@ func TestAppendPlannerSaveSuffix(t *testing.T) {
 // TestBuildPlannerResume_WithMustRead mirrors
 // TestBuildPlanner_WithMustRead for the resume builder: the bulleted
 // must-read block must appear exactly once, preserve case verbatim,
-// and sit between the planner.Instruction body and the resume
+// and sit between the instructions.Planner body and the resume
 // framing line ("You are resuming…").
 func TestBuildPlannerResume_WithMustRead(t *testing.T) {
 	got := BuildPlannerResume("/tmp/feature.md", []string{"AGENTS.md", "CLAUDE.md"})
@@ -157,7 +157,7 @@ func TestBuildPlannerResume_WithMustRead(t *testing.T) {
 	if strings.Index(got, header) > strings.Index(got, framing) {
 		t.Fatalf("must-read block must precede resume framing line: %q", got)
 	}
-	if strings.Index(got, strings.TrimSpace(planner.Instruction)) > strings.Index(got, header) {
-		t.Fatalf("must-read block must follow planner.Instruction body: %q", got)
+	if strings.Index(got, strings.TrimSpace(instructions.Planner)) > strings.Index(got, header) {
+		t.Fatalf("must-read block must follow instructions.Planner body: %q", got)
 	}
 }

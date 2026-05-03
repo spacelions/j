@@ -4,8 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spacelions/j/internal/workflow/agents/verifier"
-	"github.com/spacelions/j/internal/workflow/agents/worker"
+	"github.com/spacelions/j/internal/workflow/instructions"
 )
 
 func TestBuildVerifier(t *testing.T) {
@@ -17,8 +16,8 @@ func TestBuildVerifier(t *testing.T) {
 	)
 	got := BuildVerifier(reqPath, planPath, verifierPlanPath, findingsPath, "", nil)
 
-	if !strings.Contains(got, strings.TrimSpace(verifier.Instruction)) {
-		t.Fatalf("prompt missing verifier.Instruction: %q", got)
+	if !strings.Contains(got, strings.TrimSpace(instructions.Verifier)) {
+		t.Fatalf("prompt missing instructions.Verifier: %q", got)
 	}
 	for _, want := range []string{reqPath, planPath, findingsPath} {
 		if !strings.Contains(got, want) {
@@ -69,7 +68,7 @@ func TestBuildVerifier_WithMustRead(t *testing.T) {
 
 // TestBuildVerifier_TrimsLeadingWhitespace pins the same trim
 // invariant exercised by the planner/worker prompts: the embedded
-// verifier.Instruction must not bleed leading whitespace into the
+// instructions.Verifier must not bleed leading whitespace into the
 // composed prompt.
 func TestBuildVerifier_TrimsLeadingWhitespace(t *testing.T) {
 	got := BuildVerifier("r.md", "p.md", "vp.md", "vf.md", "", nil)
@@ -93,7 +92,7 @@ func TestBuildVerifier_WithWorktree(t *testing.T) {
 }
 
 // TestBuildVerifierResume pins the resume-only verifier prompt: the
-// rendered text must be non-empty, embed the verifier.Instruction
+// rendered text must be non-empty, embed the instructions.Verifier
 // body (whose opening line "You are the verifier …" doubles as the
 // role preamble — so no duplicate sentence), mention the
 // "previous / check / continue" semantics, cite the requirement and
@@ -108,8 +107,8 @@ func TestBuildVerifierResume(t *testing.T) {
 	if got == "" {
 		t.Fatal("BuildVerifierResume returned empty string")
 	}
-	if !strings.Contains(got, strings.TrimSpace(verifier.Instruction)) {
-		t.Fatalf("resume prompt missing verifier.Instruction: %q", got)
+	if !strings.Contains(got, strings.TrimSpace(instructions.Verifier)) {
+		t.Fatalf("resume prompt missing instructions.Verifier: %q", got)
 	}
 	const preamble = "You are the verifier in a planner/worker/verifier workflow."
 	if strings.Count(got, preamble) != 1 {
@@ -155,7 +154,7 @@ func TestBuildVerifierResume_WithWorktree(t *testing.T) {
 }
 
 // TestBuildVerifierFix pins the fix-loop worker prompt: the rendered
-// text must be non-empty, embed the worker.Instruction body (whose
+// text must be non-empty, embed the instructions.Worker body (whose
 // opening "You are the worker …" doubles as the role preamble — so
 // no duplicate sentence), reference the plan path for context only
 // and the findings path as the action list, and explicitly forbid
@@ -169,8 +168,8 @@ func TestBuildVerifierFix(t *testing.T) {
 	if got == "" {
 		t.Fatal("BuildVerifierFix returned empty string")
 	}
-	if !strings.Contains(got, strings.TrimSpace(worker.Instruction)) {
-		t.Fatalf("fix prompt missing worker.Instruction: %q", got)
+	if !strings.Contains(got, strings.TrimSpace(instructions.Worker)) {
+		t.Fatalf("fix prompt missing instructions.Worker: %q", got)
 	}
 	const preamble = "You are the worker in a planner/worker/verifier workflow."
 	if strings.Count(got, preamble) != 1 {

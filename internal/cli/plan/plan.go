@@ -23,6 +23,7 @@ import (
 	"github.com/spacelions/j/internal/mustread"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/mdfile"
+	"github.com/spacelions/j/internal/util/run"
 )
 
 // Options configures Run. Stdin/Stdout/Stderr default to the process
@@ -62,6 +63,12 @@ type Options struct {
 	// existing read-then-prompt-then-persist precedence.
 	Tool  string
 	Model string
+
+	// WaitForCompletion blocks on a returned non-zero PID and runs
+	// finishPlan synchronously, instead of leaving the row at
+	// `planning` for the `j tasks` reaper. Used by the orchestrator
+	// chain so the next phase only fires after the planner exits.
+	WaitForCompletion bool
 
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -234,11 +241,18 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 	})
 
 	if planErr == nil && pid > 0 {
-		lc.recordBackground(pid, agentLogPath)
-		fmt.Fprintf(opts.Stdout,
-			"J: cursor-agent running in background (PID=%d); see .j/tasks/%s/%s\n",
-			pid, existing.ID, tasklog.AgentLogFileName)
-		return nil
+		if opts.WaitForCompletion {
+			if err := run.WaitForExit(ctx, pid); err != nil {
+				lc.finishPlan(err, "", "", requirementsPath)
+				return err
+			}
+		} else {
+			lc.recordBackground(pid, agentLogPath)
+			fmt.Fprintf(opts.Stdout,
+				"J: cursor-agent running in background (PID=%d); see .j/tasks/%s/%s\n",
+				pid, existing.ID, tasklog.AgentLogFileName)
+			return nil
+		}
 	}
 
 	var refinedReq, planMD string
@@ -423,11 +437,18 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 	})
 
 	if planErr == nil && pid > 0 {
-		lc.recordBackground(pid, agentLogPath)
-		fmt.Fprintf(opts.Stdout,
-			"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
-			agent.Name(), pid, taskID, tasklog.AgentLogFileName)
-		return nil
+		if opts.WaitForCompletion {
+			if err := run.WaitForExit(ctx, pid); err != nil {
+				lc.finishPlan(err, "", "", target)
+				return err
+			}
+		} else {
+			lc.recordBackground(pid, agentLogPath)
+			fmt.Fprintf(opts.Stdout,
+				"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
+				agent.Name(), pid, taskID, tasklog.AgentLogFileName)
+			return nil
+		}
 	}
 
 	var refinedReq, planMD string

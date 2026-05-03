@@ -1,16 +1,20 @@
-// Package prompts composes the embedded planner / worker instruction
-// markdown with a user-supplied target so every coding-agent backend
-// (Cursor, Codex, Claude, ...) sends the same prompt shape. The
-// instruction text lives next to the agent that owns it
-// (internal/workflow/agents/{planner,worker}/instruction.md) and is
-// re-exported from those packages as a string constant.
+// Package prompts composes the embedded planner / worker / verifier
+// instruction markdown with a user-supplied target so every
+// coding-agent backend (Cursor, Codex, Claude, ...) sends the same
+// prompt shape. The instruction text lives in the dependency-free
+// leaf package internal/workflow/instructions (a single package
+// that embeds planner.md / worker.md / verifier.md as Planner /
+// Worker / Verifier vars), so this package and
+// internal/workflow/agents/* share a single source of truth without
+// re-introducing the agents → cli → coding-agents → prompts →
+// agents import cycle.
 package prompts
 
 import (
 	"fmt"
 	"strings"
 
-	"github.com/spacelions/j/internal/workflow/agents/planner"
+	"github.com/spacelions/j/internal/workflow/instructions"
 )
 
 // BuildPlanner composes the planner's shared instruction with a
@@ -26,7 +30,7 @@ import (
 func BuildPlanner(targetPath string, mustRead []string) string {
 	return fmt.Sprintf(
 		"%s%s\n\nRead the user request at %q before planning.",
-		strings.TrimSpace(planner.Instruction),
+		strings.TrimSpace(instructions.Planner),
 		mustReadSuffix(mustRead),
 		targetPath,
 	)
@@ -75,7 +79,7 @@ func AppendPlannerSaveSuffix(base, requirementsPath, planPath string) string {
 // An empty / nil mustRead keeps the prompt byte-identical to the
 // pre-must-read output.
 //
-// The full planner.Instruction body is embedded so the resumed
+// The full instructions.Planner body is embedded so the resumed
 // session has the same coding rules available as the first-run
 // BuildPlanner did. The instruction text itself opens with
 // "You are the planner in a planner/worker/verifier workflow.",
@@ -90,7 +94,7 @@ func BuildPlannerResume(targetPath string, mustRead []string) string {
 			"and then continue only the work that is still outstanding. "+
 			"Do not re-plan from scratch.\n\n"+
 			"Original user request lives at %q; read it if you need context.",
-		strings.TrimSpace(planner.Instruction),
+		strings.TrimSpace(instructions.Planner),
 		mustReadSuffix(mustRead),
 		targetPath,
 	)

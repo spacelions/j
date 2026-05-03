@@ -23,6 +23,7 @@ import (
 	"github.com/spacelions/j/internal/mustread"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/mdfile"
+	"github.com/spacelions/j/internal/util/run"
 )
 
 // Options configures Run. Stdin/Stdout/Stderr default to the process
@@ -61,6 +62,12 @@ type Options struct {
 	// existing read-then-prompt-then-persist precedence.
 	Tool  string
 	Model string
+
+	// WaitForCompletion mirrors plan.Options.WaitForCompletion: blocks
+	// on a returned non-zero PID and runs finishWork synchronously so
+	// the orchestrator chain can advance to the verifier only after
+	// the worker exits.
+	WaitForCompletion bool
 
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -183,11 +190,18 @@ func Run(ctx context.Context, opts Options) (err error) {
 		MustRead:     mustReadFiles,
 	})
 	if workErr == nil && pid > 0 {
-		lc.recordBackground(pid, agentLogPath)
-		fmt.Fprintf(opts.Stdout,
-			"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
-			agent.Name(), pid, taskID, tasklog.AgentLogFileName)
-		return nil
+		if opts.WaitForCompletion {
+			if err := run.WaitForExit(ctx, pid); err != nil {
+				lc.finishWork(err)
+				return err
+			}
+		} else {
+			lc.recordBackground(pid, agentLogPath)
+			fmt.Fprintf(opts.Stdout,
+				"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
+				agent.Name(), pid, taskID, tasklog.AgentLogFileName)
+			return nil
+		}
 	}
 	lc.finishWork(workErr)
 	if workErr != nil {

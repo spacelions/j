@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/spacelions/j/internal/workflow/agents/worker"
+	"github.com/spacelions/j/internal/workflow/instructions"
 )
 
 // BuildWorker composes the worker's shared instruction with a
@@ -25,7 +25,7 @@ func BuildWorker(planPath, worktree string, mustRead []string) string {
 	return appendWorktreeLine(
 		fmt.Sprintf(
 			"%s%s\n\nRead the plan at %q before starting.",
-			strings.TrimSpace(worker.Instruction),
+			strings.TrimSpace(instructions.Worker),
 			mustReadSuffix(mustRead),
 			planPath,
 		),
@@ -39,7 +39,7 @@ func BuildWorker(planPath, worktree string, mustRead []string) string {
 // outstanding work. The plan path is referenced for context only —
 // there is no instruction to re-implement from scratch.
 //
-// The full worker.Instruction body is embedded so the resumed
+// The full instructions.Worker body is embedded so the resumed
 // session has the same coding rules available as the first-run
 // BuildWorker did. The instruction text itself opens with
 // "You are the worker in a planner/worker/verifier workflow.",
@@ -56,7 +56,7 @@ func BuildWorkerResume(planPath, worktree string) string {
 				"and then continue only the work that is still outstanding. "+
 				"Do not re-implement from scratch.\n\n"+
 				"The plan lives at %q; read it for context only.",
-			strings.TrimSpace(worker.Instruction),
+			strings.TrimSpace(instructions.Worker),
 			planPath,
 		),
 		worktree,

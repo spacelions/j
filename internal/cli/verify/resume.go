@@ -139,7 +139,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		runErr = run.WaitForExit(ctx, pid)
 	}
 	outcome := outcomeNoRetries
-	if runErr == nil && parseVerdict(findingsPath) == "PASS" {
+	if runErr == nil && ParseVerdict(findingsPath) == "PASS" {
 		outcome = outcomeSuccess
 	}
 	lc.finishVerify(outcome, runErr)

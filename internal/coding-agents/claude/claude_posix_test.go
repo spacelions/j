@@ -13,9 +13,7 @@ import (
 	"time"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/workflow/agents/planner"
-	"github.com/spacelions/j/internal/workflow/agents/verifier"
-	"github.com/spacelions/j/internal/workflow/agents/worker"
+	"github.com/spacelions/j/internal/workflow/instructions"
 )
 
 // spawnWaitTimeout bounds the polling helpers below. The claude stub
@@ -497,7 +495,7 @@ func TestPlan_Headless_SpawnError(t *testing.T) {
 
 // TestPlan_Interactive_Resume pins the resume prompt path: argv
 // carries --resume <id> (NOT --session-id), the prompt includes the
-// resume markers, embeds the planner.Instruction body, and ends with
+// resume markers, embeds the instructions.Planner body, and ends with
 // the same save suffix as a fresh-run plan (so the reaper sees
 // identical artifacts on resume).
 func TestPlan_Interactive_Resume(t *testing.T) {
@@ -542,8 +540,8 @@ func TestPlan_Interactive_Resume(t *testing.T) {
 			t.Fatalf("resume prompt missing %q: %q", marker, prompt)
 		}
 	}
-	if !strings.Contains(prompt, strings.TrimSpace(planner.Instruction)) {
-		t.Fatalf("resume prompt should include planner.Instruction (its opening sentence doubles as the role preamble): %q", prompt)
+	if !strings.Contains(prompt, strings.TrimSpace(instructions.Planner)) {
+		t.Fatalf("resume prompt should include instructions.Planner (its opening sentence doubles as the role preamble): %q", prompt)
 	}
 	for _, want := range []string{
 		"Save the (possibly refined) requirements summary to",
@@ -702,8 +700,8 @@ func TestWork_Interactive_Resume(t *testing.T) {
 			t.Fatalf("resume prompt missing %q: %q", marker, prompt)
 		}
 	}
-	if !strings.Contains(prompt, strings.TrimSpace(worker.Instruction)) {
-		t.Fatalf("resume prompt should include worker.Instruction (its opening sentence doubles as the role preamble): %q", prompt)
+	if !strings.Contains(prompt, strings.TrimSpace(instructions.Worker)) {
+		t.Fatalf("resume prompt should include instructions.Worker (its opening sentence doubles as the role preamble): %q", prompt)
 	}
 }
 
@@ -863,8 +861,8 @@ func TestWork_Interactive_FixFindings(t *testing.T) {
 			t.Fatalf("fix prompt missing %q: %q", want, prompt)
 		}
 	}
-	if !strings.Contains(prompt, strings.TrimSpace(worker.Instruction)) {
-		t.Fatalf("fix prompt should include worker.Instruction (its opening sentence doubles as the role preamble): %q", prompt)
+	if !strings.Contains(prompt, strings.TrimSpace(instructions.Worker)) {
+		t.Fatalf("fix prompt should include instructions.Worker (its opening sentence doubles as the role preamble): %q", prompt)
 	}
 	if !strings.Contains(prompt, "Do not re-plan") {
 		t.Fatalf("fix prompt missing re-plan guard: %q", prompt)
@@ -959,8 +957,8 @@ func TestVerify_Interactive(t *testing.T) {
 		}
 	}
 	prompt := argv[len(argv)-1]
-	if !strings.Contains(prompt, strings.TrimSpace(verifier.Instruction)) {
-		t.Fatalf("prompt missing verifier.Instruction: %q", prompt)
+	if !strings.Contains(prompt, strings.TrimSpace(instructions.Verifier)) {
+		t.Fatalf("prompt missing instructions.Verifier: %q", prompt)
 	}
 	for _, want := range []string{reqPath, planPath, findingsPath, "VERDICT: PASS", "VERDICT: FAIL", "j-verify-task", "git worktree list", "Read the requirements at"} {
 		if !strings.Contains(prompt, want) {
@@ -1003,8 +1001,8 @@ func TestVerify_Interactive_Resume(t *testing.T) {
 		t.Fatalf("argv missing --resume %q: %v", rid, argv)
 	}
 	prompt := argv[len(argv)-1]
-	if !strings.Contains(prompt, strings.TrimSpace(verifier.Instruction)) {
-		t.Fatalf("resume prompt should include verifier.Instruction (its opening sentence doubles as the role preamble): %q", prompt)
+	if !strings.Contains(prompt, strings.TrimSpace(instructions.Verifier)) {
+		t.Fatalf("resume prompt should include instructions.Verifier (its opening sentence doubles as the role preamble): %q", prompt)
 	}
 	for _, banned := range []string{"Save", "Then exit."} {
 		if strings.Contains(prompt, banned) {

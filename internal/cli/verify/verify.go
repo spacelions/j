@@ -371,7 +371,7 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 		if err := run.WaitForExit(ctx, pid); err != nil {
 			return outcomeNoRetries, err
 		}
-		verdict := parseVerdict(res.FindingsPath)
+		verdict := ParseVerdict(res.FindingsPath)
 		if verdict == "PASS" {
 			return outcomeSuccess, nil
 		}
@@ -403,13 +403,26 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 	return outcomeNoRetries, nil
 }
 
-// parseVerdict reads path and inspects its last non-empty line for
+// ReadVerdictForTask reads <cwd>/.j/tasks/<id>/verifier_findings.md
+// via ParseVerdict and returns the terminal verdict ("PASS" / "FAIL").
+// Any failure (missing tasks dir, missing file, malformed line)
+// yields "FAIL" so callers treat ambiguity as a non-pass — matching
+// the same rule ParseVerdict applies internally.
+func ReadVerdictForTask(taskID string) string {
+	tasksDir, err := store.DefaultTasksDir()
+	if err != nil {
+		return "FAIL"
+	}
+	return ParseVerdict(filepath.Join(tasksDir, taskID, store.VerifierFindingsFileName))
+}
+
+// ParseVerdict reads path and inspects its last non-empty line for
 // the literal `VERDICT: PASS` / `VERDICT: FAIL` marker. Any other
 // shape (missing file, empty file, malformed line, trailing prose)
 // yields "FAIL" so the orchestrator treats ambiguity as a failure.
 // The match is case-insensitive on PASS / FAIL and tolerates
 // surrounding whitespace.
-func parseVerdict(path string) string {
+func ParseVerdict(path string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "FAIL"
