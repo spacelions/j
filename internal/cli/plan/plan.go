@@ -249,8 +249,8 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 		} else {
 			lc.recordBackground(pid, agentLogPath)
 			fmt.Fprintf(opts.Stdout,
-				"J: cursor-agent running in background (PID=%d); see .j/tasks/%s/%s\n",
-				pid, existing.ID, tasklog.AgentLogFileName)
+				"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
+				agent.Name(), pid, existing.ID, tasklog.AgentLogFileName)
 			return nil
 		}
 	}
