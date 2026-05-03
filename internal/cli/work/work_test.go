@@ -1989,6 +1989,9 @@ func TestRun_BackgroundSpawn_RecordsPID(t *testing.T) {
 	if !strings.Contains(stdout.String(), "PID=31415") {
 		t.Fatalf("stdout = %q, want PID=31415", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "J: "+agent.Name()+" running in background") {
+		t.Fatalf("stdout = %q, want agent name %q", stdout.String(), agent.Name())
+	}
 	tasks := readTasks(t)
 	if len(tasks) != 1 {
 		t.Fatalf("len(tasks) = %d, want 1", len(tasks))
