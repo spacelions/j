@@ -17,7 +17,15 @@ import (
 	"os/exec"
 	"strings"
 	"syscall"
+	"time"
 )
+
+// waitForExitPollInterval is the polling cadence WaitForExit uses to
+// re-check IsAlive. 100ms is fast enough that the verify orchestrator
+// barely notices the wait when a real cursor-agent / claude turn
+// finishes (tens of seconds), and slow enough not to burn CPU on a
+// tight loop while the child is mid-write.
+const waitForExitPollInterval = 100 * time.Millisecond
 
 // Output runs name with args and returns its captured stdout. The wrapped
 // error includes name plus stderr (or stdout if stderr is empty) so the
@@ -120,6 +128,41 @@ func SpawnIn(ctx context.Context, dir, logPath, name string, args ...string) (in
 		return pid, fmt.Errorf("%s: release: %w", name, err)
 	}
 	return pid, nil
+}
+
+// WaitForExit blocks until the OS process identified by pid is no
+// longer alive, returning nil. It is intended for verify-loop
+// synchronisation against Spawn-ed children whose Wait was released
+// (Spawn calls cmd.Process.Release so the parent cannot Wait): the
+// orchestrator must not read the child's findings file until the
+// child has finished writing it, but Spawn deliberately does not
+// expose a Wait. WaitForExit polls IsAlive on a small ticker and
+// returns ctx.Err() if the context is cancelled before the child
+// exits.
+//
+// pid <= 0 returns nil immediately because Spawn reserves 0 for the
+// "synchronous / nothing to wait on" case and negative ids are
+// illegal — neither calls for a wait. An already-dead pid also
+// returns nil immediately on the first IsAlive check.
+func WaitForExit(ctx context.Context, pid int) error {
+	if pid <= 0 {
+		return nil
+	}
+	if !IsAlive(pid) {
+		return nil
+	}
+	ticker := time.NewTicker(waitForExitPollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if !IsAlive(pid) {
+				return nil
+			}
+		}
+	}
 }
 
 // IsAlive reports whether the OS process identified by pid is still

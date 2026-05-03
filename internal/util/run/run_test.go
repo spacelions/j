@@ -4,6 +4,7 @@ package run
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -245,6 +246,87 @@ func TestSpawnIn_EmptyLogPath(t *testing.T) {
 	_, err := SpawnIn(context.Background(), "", "", "true")
 	if err == nil || !strings.Contains(err.Error(), "empty log path") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestWaitForExit_ZeroPid pins the immediate-nil branch for the
+// "synchronous / nothing to wait on" sentinel.
+func TestWaitForExit_ZeroPid(t *testing.T) {
+	if err := WaitForExit(context.Background(), 0); err != nil {
+		t.Fatalf("WaitForExit(0) = %v, want nil", err)
+	}
+	if err := WaitForExit(context.Background(), -1); err != nil {
+		t.Fatalf("WaitForExit(-1) = %v, want nil", err)
+	}
+}
+
+// TestWaitForExit_AlreadyDead drives the immediate-nil branch when
+// IsAlive reports false on the very first check (no ticker spin).
+// Pid 0x7fffffff is reserved well above any plausible kernel
+// max-pid, mirroring TestIsAlive_KnownDead.
+func TestWaitForExit_AlreadyDead(t *testing.T) {
+	const unlikely = 0x7fffffff
+	if IsAlive(unlikely) {
+		t.Skip("PID 0x7fffffff is unexpectedly alive on this system")
+	}
+	if err := WaitForExit(context.Background(), unlikely); err != nil {
+		t.Fatalf("WaitForExit(dead) = %v, want nil", err)
+	}
+}
+
+// TestWaitForExit_LiveExitsDuringPoll starts a real short-lived
+// child via os/exec, releases the parent's Wait state to mimic the
+// Spawn contract (no zombie), and asserts WaitForExit blocks until
+// the child exits.
+func TestWaitForExit_LiveExitsDuringPoll(t *testing.T) {
+	cmd := exec.Command("sleep", "0.3")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Start sleep: %v", err)
+	}
+	pid := cmd.Process.Pid
+	// Drive the post-Start branch: child is still alive on entry,
+	// so WaitForExit must spin the ticker. We Wait in a goroutine
+	// (rather than Process.Release) so the kernel reaps the child
+	// and IsAlive flips to false deterministically.
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- cmd.Wait() }()
+	start := time.Now()
+	if err := WaitForExit(context.Background(), pid); err != nil {
+		t.Fatalf("WaitForExit: %v", err)
+	}
+	if time.Since(start) < 50*time.Millisecond {
+		t.Fatalf("WaitForExit returned too fast (%v); should have polled the ticker", time.Since(start))
+	}
+	<-waitDone
+	if IsAlive(pid) {
+		t.Fatalf("pid %d should be dead after WaitForExit returned", pid)
+	}
+}
+
+// TestWaitForExit_CtxCancelled drives the ctx.Done branch: a long-
+// running sleep is started, then the parent context is cancelled
+// before the child exits. WaitForExit must return ctx.Err().
+func TestWaitForExit_CtxCancelled(t *testing.T) {
+	cmd := exec.Command("sleep", "5")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Start sleep: %v", err)
+	}
+	pid := cmd.Process.Pid
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		cancel()
+	}()
+	err := WaitForExit(ctx, pid)
+	if err == nil {
+		t.Fatal("WaitForExit must surface ctx.Err() when the parent cancels")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }
 
