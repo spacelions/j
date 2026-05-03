@@ -16,9 +16,12 @@ Expected:
     emits one line per arg, not one per key).
   - The final `j settings` listing renders the four known sections in
     fixed order. The `[planner]` section appears with NO rows beneath
-    it (every previously-stored key has been wiped):
+    it (every previously-stored key has been wiped). `[project]` still
+    carries the `max_iterations` row that `j init` seeds plus the
+    empty `mustread` row from `--must-read=`:
 
         [project]
+          max_iterations = 3
           mustread = 
 
         [planner]
