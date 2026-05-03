@@ -235,7 +235,7 @@ func TestLoadProjectConfig_Success(t *testing.T) {
 
 // TestLoadTaskConfig_DefaultsWhenNoSettings pins that a fresh
 // project (no .j layout at all) yields the documented default
-// MaxIterations=defaultTaskMaxIterations with no error so
+// MaxIterations=DefaultTaskMaxIterations with no error so
 // `j tasks start` can run end to end without project knobs.
 func TestLoadTaskConfig_DefaultsWhenNoSettings(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -243,8 +243,8 @@ func TestLoadTaskConfig_DefaultsWhenNoSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadTaskConfig: %v", err)
 	}
-	if got.MaxIterations != defaultTaskMaxIterations {
-		t.Fatalf("MaxIterations = %d, want %d", got.MaxIterations, defaultTaskMaxIterations)
+	if got.MaxIterations != DefaultTaskMaxIterations {
+		t.Fatalf("MaxIterations = %d, want %d", got.MaxIterations, DefaultTaskMaxIterations)
 	}
 }
 
@@ -259,8 +259,8 @@ func TestLoadTaskConfig_DefaultsWhenSettingMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadTaskConfig: %v", err)
 	}
-	if got.MaxIterations != defaultTaskMaxIterations {
-		t.Fatalf("MaxIterations = %d, want %d", got.MaxIterations, defaultTaskMaxIterations)
+	if got.MaxIterations != DefaultTaskMaxIterations {
+		t.Fatalf("MaxIterations = %d, want %d", got.MaxIterations, DefaultTaskMaxIterations)
 	}
 }
 
@@ -294,9 +294,9 @@ func TestLoadTaskConfig_DefaultsOnUnparseable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadTaskConfig: %v", err)
 	}
-	if got.MaxIterations != defaultTaskMaxIterations {
+	if got.MaxIterations != DefaultTaskMaxIterations {
 		t.Fatalf("MaxIterations = %d, want %d (unparseable fallback)",
-			got.MaxIterations, defaultTaskMaxIterations)
+			got.MaxIterations, DefaultTaskMaxIterations)
 	}
 
 	putProject(t, "max_iterations", "0")
@@ -304,8 +304,8 @@ func TestLoadTaskConfig_DefaultsOnUnparseable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadTaskConfig zero: %v", err)
 	}
-	if got.MaxIterations != defaultTaskMaxIterations {
-		t.Fatalf("zero-value MaxIterations = %d, want %d", got.MaxIterations, defaultTaskMaxIterations)
+	if got.MaxIterations != DefaultTaskMaxIterations {
+		t.Fatalf("zero-value MaxIterations = %d, want %d", got.MaxIterations, DefaultTaskMaxIterations)
 	}
 }
 

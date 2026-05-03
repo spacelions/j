@@ -20,10 +20,11 @@ var (
 	ErrMissingMaxIterations = errors.New("project.max_iterations is not set or is invalid; run `j settings set project.max_iterations=<positive-integer>`")
 )
 
-// defaultTaskMaxIterations matches `j verify`'s internal default and
-// is the fallback LoadTaskConfig returns when the setting is unset,
-// unparseable, or zero.
-const defaultTaskMaxIterations = 3
+// DefaultTaskMaxIterations is the fallback applied when
+// `project.max_iterations` is unset, unparseable, or zero. Exported
+// so the verifier shell-out agent and the `j verify` cobra flag
+// share a single source of truth.
+const DefaultTaskMaxIterations = 3
 
 // ProjectConfig bundles the runtime knobs `j run` and `j web` read
 // from the per-project settings store. Lives in the store package so
@@ -46,7 +47,7 @@ type ProjectConfig struct {
 // the cursor / claude binaries that the per-phase machinery spawns.
 type TaskConfig struct {
 	// MaxIterations bounds the verifier's internal worker→verifier
-	// fix loop. Defaults to defaultTaskMaxIterations (3) when the
+	// fix loop. Defaults to DefaultTaskMaxIterations (3) when the
 	// project setting is unset / unparseable / zero.
 	MaxIterations int
 }
@@ -130,13 +131,13 @@ func LoadProjectConfig() (ProjectConfig, error) {
 
 // LoadTaskConfig reads only `project.max_iterations` from the
 // per-project bbolt settings store. Missing file or missing key
-// surface as the documented default (defaultTaskMaxIterations) so a
+// surface as the documented default (DefaultTaskMaxIterations) so a
 // fresh project can run `j tasks start` end to end without setting
 // any project knobs. A genuine bbolt open / read error still surfaces
 // verbatim; only the "no settings yet" / "no value yet" cases are
 // silently defaulted.
 func LoadTaskConfig() (TaskConfig, error) {
-	cfg := TaskConfig{MaxIterations: defaultTaskMaxIterations}
+	cfg := TaskConfig{MaxIterations: DefaultTaskMaxIterations}
 	path, err := DefaultPath()
 	if err != nil {
 		return TaskConfig{}, err

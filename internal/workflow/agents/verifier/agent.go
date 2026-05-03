@@ -21,6 +21,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/verify"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/workflow/agents/shellevent"
 	"github.com/spacelions/j/internal/workflow/instructions"
 )
@@ -29,10 +30,6 @@ const (
 	Name      = "verifier"
 	OutputKey = "temp:review"
 )
-
-// defaultMaxIterations matches `j verify`'s internal default and is
-// the fallback when the workflow caller passes 0 / negative.
-const defaultMaxIterations = 3
 
 // Config carries the runtime knobs New uses to decide which flavour
 // of agent to return. Exactly one of LLM and TaskID should be set.
@@ -46,8 +43,8 @@ type Config struct {
 
 // New returns the configured verifier agent. See planner.New for the
 // full Config branching contract; the verifier additionally consumes
-// MaxIterations on the shell-out branch (defaulting to 3 when zero
-// or negative is supplied).
+// MaxIterations on the shell-out branch (defaulting to
+// store.DefaultTaskMaxIterations when zero or negative is supplied).
 func New(cfg Config) (agent.Agent, error) {
 	if cfg.LLM != nil && cfg.TaskID != "" {
 		return nil, errors.New("verifier: Config.LLM and Config.TaskID are mutually exclusive")
@@ -73,7 +70,7 @@ func New(cfg Config) (agent.Agent, error) {
 	}
 	maxIters := cfg.MaxIterations
 	if maxIters <= 0 {
-		maxIters = defaultMaxIterations
+		maxIters = store.DefaultTaskMaxIterations
 	}
 	taskID := cfg.TaskID
 	agents := cfg.Agents
