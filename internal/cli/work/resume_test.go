@@ -653,6 +653,95 @@ func TestBeginWorkTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	}
 }
 
+// TestRunResume_Work_InteractiveFromBucketTrue seeds the worker bucket
+// with `interactive=true` and asserts RunResume reads it (rather than
+// the cobra default) and propagates it to agent.Work.
+func TestRunResume_Work_InteractiveFromBucketTrue(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	seedWorkerInteractive(t, "true")
+	id, _ := seedResumableWork(t, nil)
+	agent := newScriptedAgent()
+	if err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("Interactive = false, want true (stored=true wins)")
+	}
+}
+
+// TestRunResume_Work_InteractiveFromBucketFalse seeds the worker bucket
+// with `interactive=false` and asserts RunResume runs the agent
+// headless. There is no --interactive flag; the stored value is
+// authoritative.
+func TestRunResume_Work_InteractiveFromBucketFalse(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	seedWorkerInteractive(t, "false")
+	id, _ := seedResumableWork(t, nil)
+	agent := newScriptedAgent()
+	if err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if agent.lastReq.Interactive {
+		t.Fatalf("Interactive = true, want false (stored=false wins)")
+	}
+}
+
+// TestRunResume_Work_InteractiveDefaultWhenBucketEmpty pins the
+// fallback: no stored entry -> Interactive=true.
+func TestRunResume_Work_InteractiveDefaultWhenBucketEmpty(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableWork(t, nil)
+	agent := newScriptedAgent()
+	if err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("Interactive = false, want true (default)")
+	}
+}
+
+// seedWorkerInteractive writes a literal `interactive` value into the
+// worker bucket so resume can read it.
+func seedWorkerInteractive(t *testing.T, value string) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.EnsureBucket(store.BucketWorker); err != nil {
+		t.Fatalf("EnsureBucket: %v", err)
+	}
+	if err := s.Put(store.BucketWorker, "interactive", value); err != nil {
+		t.Fatalf("Put interactive: %v", err)
+	}
+}
+
 // TestBeginWorkTaskResume_NilWorkBeginAtStampsFreshOne covers the
 // fallback path where an existing task somehow has a nil
 // WorkBeginAt; the helper must mint a fresh timestamp.

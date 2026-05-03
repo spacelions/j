@@ -655,6 +655,120 @@ func TestNewResumeCmd_RunEPropagates(t *testing.T) {
 	}
 }
 
+// TestRunResume_InteractiveFromBucketTrue seeds the planner bucket with
+// `interactive=true` and asserts RunResume reads that value (rather than
+// the cobra default) and propagates it to the agent.
+func TestRunResume_InteractiveFromBucketTrue(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	seedPlannerInteractive(t, "true")
+	id, _ := seedResumableTask(t, nil)
+	agent := newScriptedAgent()
+	if err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("Interactive = false, want true (stored=true wins)")
+	}
+	// Resume must NOT have written tool/model: it only reads.
+	tool, model := readPlannerToolModel(t)
+	if tool != "" || model != "" {
+		t.Fatalf("planner bucket gained tool/model from resume: tool=%q model=%q", tool, model)
+	}
+}
+
+// TestRunResume_InteractiveFromBucketFalse seeds the planner bucket with
+// `interactive=false` and asserts RunResume runs the agent headless. This
+// pins the precedence: stored value wins; resume has no --interactive
+// flag, so the user's stored choice is authoritative.
+func TestRunResume_InteractiveFromBucketFalse(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	seedPlannerInteractive(t, "false")
+	id, _ := seedResumableTask(t, nil)
+	agent := newScriptedAgent()
+	if err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if agent.lastReq.Interactive {
+		t.Fatalf("Interactive = true, want false (stored=false wins)")
+	}
+}
+
+// TestRunResume_InteractiveDefaultWhenBucketEmpty pins the fallback:
+// no stored entry -> Interactive=true.
+func TestRunResume_InteractiveDefaultWhenBucketEmpty(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableTask(t, nil)
+	agent := newScriptedAgent()
+	if err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if !agent.lastReq.Interactive {
+		t.Fatalf("Interactive = false, want true (default)")
+	}
+}
+
+// seedPlannerInteractive writes a literal `interactive` value into the
+// planner bucket so resume can read it. Reused across the bucket-
+// precedence tests.
+func seedPlannerInteractive(t *testing.T, value string) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.EnsureBucket(store.BucketPlanner); err != nil {
+		t.Fatalf("EnsureBucket: %v", err)
+	}
+	if err := s.Put(store.BucketPlanner, "interactive", value); err != nil {
+		t.Fatalf("Put interactive: %v", err)
+	}
+}
+
+// readPlannerToolModel returns the tool/model entries currently stored
+// in the planner bucket. Used to assert resume does not overwrite the
+// bucket.
+func readPlannerToolModel(t *testing.T) (string, string) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	tool, _, _ := s.Get(store.BucketPlanner, "tool")
+	model, _, _ := s.Get(store.BucketPlanner, "model")
+	return tool, model
+}
+
 // TestRunResume_RegisteredAsChild verifies `j plan resume` exists
 // as a cobra child of `j plan`, satisfying AC#A1.
 func TestRunResume_RegisteredAsChild(t *testing.T) {
