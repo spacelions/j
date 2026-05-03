@@ -220,8 +220,8 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 	if planErr == nil && pid > 0 {
 		lc.recordBackground(pid, agentLogPath)
 		fmt.Fprintf(opts.Stdout,
-			"J: cursor-agent running in background (PID=%d); see .j/tasks/%s/%s\n",
-			pid, taskID, tasklog.AgentLogFileName)
+			"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
+			agent.Name(), pid, taskID, tasklog.AgentLogFileName)
 		return nil
 	}
 
