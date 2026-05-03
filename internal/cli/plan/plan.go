@@ -521,7 +521,7 @@ func plannerResolveExplicit(ctx context.Context, opts Options) (codingagents.Age
 	if opts.Store != nil {
 		return agentpick.Resolve(ctx, opts.Store, store.BucketPlanner, opts.Agents, opts.Tool, opts.Model)
 	}
-	s, ok := openSettingsStore(opts.Stderr)
+	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
 		return agentpick.Resolve(ctx, nil, store.BucketPlanner, opts.Agents, opts.Tool, opts.Model)
 	}
@@ -540,7 +540,7 @@ func plannerFromStore(ctx context.Context, opts Options) (codingagents.Agent, st
 	if opts.Store != nil {
 		return agentpick.FromStore(ctx, opts.Store, store.BucketPlanner, opts.Agents)
 	}
-	s, ok := openSettingsStore(opts.Stderr)
+	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
 		return nil, "", agentpick.ErrNoStoredSelection
 	}
@@ -574,7 +574,7 @@ func persistPlannerSelection(opts Options, tool, model string) {
 		store.PersistAgentSelection(opts.Store, opts.Stderr, store.BucketPlanner, tool, model, interactive)
 		return
 	}
-	s, ok := openSettingsStore(opts.Stderr)
+	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
 		return
 	}
@@ -606,7 +606,7 @@ func storedPlannerInteractive(opts Options) (bool, bool) {
 	if opts.Store != nil {
 		return agentpick.StoredInteractive(opts.Store, store.BucketPlanner)
 	}
-	s, ok := openSettingsStore(opts.Stderr)
+	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
 		return false, false
 	}
@@ -635,22 +635,3 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
-// openSettingsStore opens `<cwd>/.j/settings` for the planner. It is
-// the post-init replacement for store.OpenDefault: pre-flight has
-// already created the layout, so failures here are real (e.g.
-// concurrent locks) and surface as a single "warning: ..." line on
-// stderr. Best-effort by design; nil store callers (no recorded
-// selection) are tolerated downstream.
-func openSettingsStore(stderr io.Writer) (*store.Store, bool) {
-	path, err := store.DefaultPath()
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: settings path: %v\n", err)
-		return nil, false
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: settings db: %v\n", err)
-		return nil, false
-	}
-	return s, true
-}

@@ -1567,7 +1567,7 @@ func TestRun_List_DecodeError(t *testing.T) {
 }
 
 // TestPersistVerifierSelection_NilStore_LazyOpenSucceeds exercises
-// the nil-Store branch when openSettingsStore can lay hands on a
+// the nil-Store branch when store.OpenSettings can lay hands on a
 // real `<cwd>/.j/settings`.
 func TestPersistVerifierSelection_NilStore_LazyOpenSucceeds(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -1599,7 +1599,7 @@ func TestPersistVerifierSelection_NilStore_LazyOpenSucceeds(t *testing.T) {
 }
 
 // TestPersistVerifierSelection_NilStore_LazyOpenFails covers the
-// early-return branch when openSettingsStore can't open the DB.
+// early-return branch when store.OpenSettings can't open the DB.
 func TestPersistVerifierSelection_NilStore_LazyOpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	var stderr bytes.Buffer
@@ -1849,7 +1849,7 @@ func TestRunVerifyLoop_WorkerWaitCtxCancelled(t *testing.T) {
 }
 
 // TestStoredVerifierInteractive_NilStore_LazyOpenSucceeds covers
-// the success branch where openSettingsStore lays hands on a real
+// the success branch where store.OpenSettings lays hands on a real
 // `<cwd>/.j/settings` and returns the recorded interactive flag.
 func TestStoredVerifierInteractive_NilStore_LazyOpenSucceeds(t *testing.T) {
 	t.Chdir(t.TempDir())

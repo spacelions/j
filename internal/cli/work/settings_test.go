@@ -148,7 +148,7 @@ func TestRun_FromStore_NilStore_EmptyStorePromptsPick(t *testing.T) {
 // open-fails branches: with no caller-supplied Store and a
 // `<cwd>/.j/settings` directory (instead of file) sabotaging
 // bolt.Open, workerFromStore and storedWorkerInteractive both
-// surface the openSettingsStore warning and fall back to the
+// surface the store.OpenSettings warning and fall back to the
 // prompted Pick path.
 func TestRun_FromStore_NilStore_SettingsOpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())

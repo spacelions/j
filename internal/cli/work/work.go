@@ -476,7 +476,7 @@ func workerResolveExplicit(ctx context.Context, opts Options) (codingagents.Agen
 	if opts.Store != nil {
 		return agentpick.Resolve(ctx, opts.Store, store.BucketWorker, opts.Agents, opts.Tool, opts.Model)
 	}
-	s, ok := openSettingsStore(opts.Stderr)
+	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
 		return agentpick.Resolve(ctx, nil, store.BucketWorker, opts.Agents, opts.Tool, opts.Model)
 	}
@@ -495,7 +495,7 @@ func workerFromStore(ctx context.Context, opts Options) (codingagents.Agent, str
 	if opts.Store != nil {
 		return agentpick.FromStore(ctx, opts.Store, store.BucketWorker, opts.Agents)
 	}
-	s, ok := openSettingsStore(opts.Stderr)
+	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
 		return nil, "", agentpick.ErrNoStoredSelection
 	}
@@ -526,7 +526,7 @@ func persistWorkerSelection(opts Options, tool, model string) {
 		store.PersistAgentSelection(opts.Store, opts.Stderr, store.BucketWorker, tool, model, interactive)
 		return
 	}
-	s, ok := openSettingsStore(opts.Stderr)
+	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
 		return
 	}
@@ -558,7 +558,7 @@ func storedWorkerInteractive(opts Options) (bool, bool) {
 	if opts.Store != nil {
 		return agentpick.StoredInteractive(opts.Store, store.BucketWorker)
 	}
-	s, ok := openSettingsStore(opts.Stderr)
+	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
 		return false, false
 	}
@@ -587,21 +587,3 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
-// openSettingsStore opens `<cwd>/.j/settings` for the worker. It is
-// the post-init replacement for store.OpenDefault: pre-flight has
-// already created the layout, so failures here are real (e.g.
-// concurrent locks) and surface as a single "warning: ..." line on
-// stderr.
-func openSettingsStore(stderr io.Writer) (*store.Store, bool) {
-	path, err := store.DefaultPath()
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: settings path: %v\n", err)
-		return nil, false
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: settings db: %v\n", err)
-		return nil, false
-	}
-	return s, true
-}

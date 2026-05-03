@@ -5,9 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
-	"strconv"
 
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/workflowagents/sequentialagent"
@@ -23,10 +20,6 @@ import (
 	"github.com/spacelions/j/internal/workflow/agents/worker"
 )
 
-// defaultTaskMaxIterations matches `j verify`'s internal default and
-// is the fallback when the project setting is missing or unparseable.
-const defaultTaskMaxIterations = 3
-
 // orchestratorAppName / orchestratorUserID name the synthetic
 // runner.Run session the SequentialAgent runs inside. The IDs are
 // internal to the orchestrator; nothing user-visible depends on
@@ -36,57 +29,6 @@ const (
 	orchestratorAppName = "j-tasks-orchestrate"
 	orchestratorUserID  = "j-tasks"
 )
-
-// TaskConfig is the relaxed runtime config consumed by RunForTask.
-// Only MaxIterations is meaningful; the Gemini knobs that LoadConfig
-// demands (`project.api_key`, `project.model`) are intentionally
-// absent because the shell-out path never instantiates a Gemini
-// model — the actual LLM calls happen inside the cursor / claude
-// binaries that the per-phase machinery spawns.
-type TaskConfig struct {
-	// MaxIterations bounds the verifier's internal worker→verifier
-	// fix loop. Defaults to defaultTaskMaxIterations (3) when the
-	// project setting is unset / unparseable / zero.
-	MaxIterations int
-}
-
-// LoadConfigForTask reads only `project.max_iterations` from the
-// per-project bbolt settings store. Missing file or missing key
-// surface as the documented default (3) so a fresh project can run
-// `j tasks start` end to end without setting any project knobs. A
-// genuine bbolt open / read error still surfaces verbatim; only the
-// "no settings yet" / "no value yet" cases are silently defaulted.
-func LoadConfigForTask() (TaskConfig, error) {
-	cfg := TaskConfig{MaxIterations: defaultTaskMaxIterations}
-	path, err := store.DefaultPath()
-	if err != nil {
-		return TaskConfig{}, err
-	}
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return cfg, nil
-		}
-		return TaskConfig{}, fmt.Errorf("workflow: stat %q: %w", path, err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		return TaskConfig{}, fmt.Errorf("workflow: open settings: %w", err)
-	}
-	defer func() { _ = s.Close() }()
-	raw, err := readSetting(s, "max_iterations")
-	if err != nil {
-		return TaskConfig{}, err
-	}
-	if raw == "" {
-		return cfg, nil
-	}
-	n, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil || n == 0 {
-		return cfg, nil
-	}
-	cfg.MaxIterations = int(n)
-	return cfg, nil
-}
 
 // RunForTask drives the planner → worker → verifier flow for an
 // already-seeded task end to end. The shape is a top-level
@@ -108,13 +50,13 @@ func LoadConfigForTask() (TaskConfig, error) {
 //
 // Lifecycle finalisation: after the SequentialAgent iterator
 // drains, the per-task row is read and — if the verifier left it
-// in `verifying` (i.e. FAIL on the last iteration with no error
-// surfaced) — flipped to `verify-done` so `j tasks` reflects the
-// terminal outcome without waiting for the reaper. The PASS path
-// is already finalised inside `verify.Run` to `completed`; the
-// `help` path is finalised by the failing phase's lifecycle. So
-// the only post-iter mop-up is the verify-FAIL / no-error case.
-func RunForTask(ctx context.Context, cfg TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer) error {
+// in `verifying` — flipped to `verify-done` so `j tasks` reflects
+// the terminal outcome without waiting for the reaper.
+//
+// MaxIterations defaults are owned by callers: production callers
+// fetch a sane default via store.LoadTaskConfig; tests that pass a
+// zero-value Config flow through verifier.New's own fallback.
+func RunForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer) error {
 	if taskID == "" {
 		return errors.New("workflow: task id required")
 	}
@@ -123,9 +65,6 @@ func RunForTask(ctx context.Context, cfg TaskConfig, taskID string, agents []cod
 	}
 	if stderr == nil {
 		stderr = io.Discard
-	}
-	if cfg.MaxIterations <= 0 {
-		cfg.MaxIterations = defaultTaskMaxIterations
 	}
 
 	plannerAgent, err := planner.New(planner.Config{
@@ -174,8 +113,7 @@ func RunForTask(ctx context.Context, cfg TaskConfig, taskID string, agents []cod
 
 // driveSequential constructs the smallest viable runner.New session
 // the SequentialAgent can run inside and drains the resulting event
-// iterator. The first error short-circuits with a wrapping that
-// names the offending phase (its agent.Author).
+// iterator. The first error short-circuits.
 //
 // The user message is empty: the shell-out custom agents read
 // everything they need from disk (per-task <id>/requirements.md /
@@ -208,16 +146,10 @@ func driveSequential(ctx context.Context, root agent.Agent) error {
 	return nil
 }
 
-// finaliseVerifyFailIfStuck flips a row that is still pinned at
-// `verifying` to `verify-done` after the orchestrator's
-// SequentialAgent drains. This covers the verifier-shell-FAIL /
-// no-error branch: verify.Run returned nil because the loop merely
-// exhausted iterations on FAIL, and `outcomeNoRetries` was already
-// finalised to `verify-done` by `verify.Run`'s finishVerify — but
-// when the final findings file is missing or unreadable we still
-// want the orchestrator to leave the row in a terminal state
-// rather than `verifying`. Best-effort: any read / write error
-// surfaces as a single warning on stderr and the helper returns.
+// finaliseVerifyFailIfStuck flips a row still pinned at `verifying`
+// to `verify-done` after the orchestrator's SequentialAgent drains.
+// Best-effort: any read / write error surfaces as a single warning
+// on stderr and the helper returns.
 func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
 	s, ok := tasklog.OpenTaskLog(stderr)
 	if !ok {

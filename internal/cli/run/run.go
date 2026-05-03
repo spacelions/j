@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/workflow"
 )
 
@@ -16,7 +17,7 @@ func New() *cobra.Command {
 		Use:   "run",
 		Short: "Run the agent in the ADK console (interactive)",
 		RunE: func(*cobra.Command, []string) error {
-			cfg, err := workflow.LoadConfig()
+			cfg, err := store.LoadProjectConfig()
 			if err != nil {
 				return err
 			}

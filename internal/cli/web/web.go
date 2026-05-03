@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/workflow"
 )
 
@@ -17,7 +18,7 @@ func New() *cobra.Command {
 		Short: "Run the local ADK web server (api + webui) for development",
 		Long:  "Starts the ADK web stack. For development and debugging only; not for production.",
 		RunE: func(*cobra.Command, []string) error {
-			cfg, err := workflow.LoadConfig()
+			cfg, err := store.LoadProjectConfig()
 			if err != nil {
 				return err
 			}

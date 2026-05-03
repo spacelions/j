@@ -16,97 +16,9 @@ import (
 	"github.com/spacelions/j/internal/testutil"
 )
 
-// TestLoadConfigForTask_DefaultsWhenNoSettings pins that a fresh
-// project (no .j layout at all) yields the documented default
-// MaxIterations=3 with no error so `j tasks start` can run end to
-// end without project knobs.
-func TestLoadConfigForTask_DefaultsWhenNoSettings(t *testing.T) {
-	t.Chdir(t.TempDir())
-	got, err := LoadConfigForTask()
-	if err != nil {
-		t.Fatalf("LoadConfigForTask: %v", err)
-	}
-	if got.MaxIterations != defaultTaskMaxIterations {
-		t.Fatalf("MaxIterations = %d, want %d", got.MaxIterations, defaultTaskMaxIterations)
-	}
-}
-
-// TestLoadConfigForTask_DefaultsWhenSettingMissing pins the
-// initialised-but-no-key branch.
-func TestLoadConfigForTask_DefaultsWhenSettingMissing(t *testing.T) {
-	t.Chdir(t.TempDir())
-	testutil.Init(t)
-	got, err := LoadConfigForTask()
-	if err != nil {
-		t.Fatalf("LoadConfigForTask: %v", err)
-	}
-	if got.MaxIterations != defaultTaskMaxIterations {
-		t.Fatalf("MaxIterations = %d, want %d", got.MaxIterations, defaultTaskMaxIterations)
-	}
-}
-
-// TestLoadConfigForTask_ParsesValue pins the read-and-parse path.
-func TestLoadConfigForTask_ParsesValue(t *testing.T) {
-	t.Chdir(t.TempDir())
-	testutil.Init(t)
-	putProjectMaxIters(t, "5")
-	got, err := LoadConfigForTask()
-	if err != nil {
-		t.Fatalf("LoadConfigForTask: %v", err)
-	}
-	if got.MaxIterations != 5 {
-		t.Fatalf("MaxIterations = %d, want 5", got.MaxIterations)
-	}
-}
-
-// TestLoadConfigForTask_DefaultsOnUnparseable pins that bogus
-// values (and "0" sentinel) fall back to the default rather than
-// surfacing as an error — we don't want the orchestrator path to
-// break because of stale settings.
-func TestLoadConfigForTask_DefaultsOnUnparseable(t *testing.T) {
-	t.Chdir(t.TempDir())
-	testutil.Init(t)
-	putProjectMaxIters(t, "not-a-number")
-	got, err := LoadConfigForTask()
-	if err != nil {
-		t.Fatalf("LoadConfigForTask: %v", err)
-	}
-	if got.MaxIterations != defaultTaskMaxIterations {
-		t.Fatalf("MaxIterations = %d, want %d (unparseable fallback)",
-			got.MaxIterations, defaultTaskMaxIterations)
-	}
-
-	putProjectMaxIters(t, "0")
-	got, err = LoadConfigForTask()
-	if err != nil {
-		t.Fatalf("LoadConfigForTask zero: %v", err)
-	}
-	if got.MaxIterations != defaultTaskMaxIterations {
-		t.Fatalf("zero-value MaxIterations = %d, want %d", got.MaxIterations, defaultTaskMaxIterations)
-	}
-}
-
-// TestLoadConfigForTask_StatErrorPropagates pins the non-ENOENT
-// stat-error branch.
-func TestLoadConfigForTask_StatErrorPropagates(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jDir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(jDir, []byte("not a dir"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, err = LoadConfigForTask()
-	if err == nil || !strings.Contains(err.Error(), "stat") {
-		t.Fatalf("err = %v, want wrapped stat error", err)
-	}
-}
-
 // TestRunForTask_RequiresTaskID pins the empty-id guard.
 func TestRunForTask_RequiresTaskID(t *testing.T) {
-	err := RunForTask(context.Background(), TaskConfig{}, "", []codingagents.Agent{stubChain("scripted")}, io.Discard)
+	err := RunForTask(context.Background(), store.TaskConfig{}, "", []codingagents.Agent{stubChain("scripted")}, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "task id required") {
 		t.Fatalf("err = %v", err)
 	}
@@ -114,7 +26,7 @@ func TestRunForTask_RequiresTaskID(t *testing.T) {
 
 // TestRunForTask_RequiresAgents pins the no-agents guard.
 func TestRunForTask_RequiresAgents(t *testing.T) {
-	err := RunForTask(context.Background(), TaskConfig{}, "t1", nil, io.Discard)
+	err := RunForTask(context.Background(), store.TaskConfig{}, "t1", nil, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "no coding agents") {
 		t.Fatalf("err = %v", err)
 	}
@@ -130,7 +42,7 @@ func TestRunForTask_PassFlow(t *testing.T) {
 	stub := stubChain("scripted")
 	stub.verdict = "VERDICT: PASS"
 
-	if err := RunForTask(context.Background(), TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard); err != nil {
+	if err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard); err != nil {
 		t.Fatalf("RunForTask: %v", err)
 	}
 	row := readChainTaskRow(t, id)
@@ -153,7 +65,7 @@ func TestRunForTask_FailFlow(t *testing.T) {
 	stub := stubChain("scripted")
 	stub.verdict = "VERDICT: FAIL"
 
-	if err := RunForTask(context.Background(), TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard); err != nil {
+	if err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard); err != nil {
 		t.Fatalf("RunForTask: %v", err)
 	}
 	row := readChainTaskRow(t, id)
@@ -172,7 +84,7 @@ func TestRunForTask_PlanFailsStopsChain(t *testing.T) {
 	stub := stubChain("scripted")
 	stub.planErr = errors.New("planning boom")
 
-	err := RunForTask(context.Background(), TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard)
+	err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "planning boom") {
 		t.Fatalf("err = %v, want planning boom propagation", err)
 	}
@@ -193,7 +105,7 @@ func TestRunForTask_NilStderrDefaultsDiscard(t *testing.T) {
 	id := seedChainTask(t, "scripted")
 	stub := stubChain("scripted")
 	stub.verdict = "VERDICT: PASS"
-	if err := RunForTask(context.Background(), TaskConfig{}, id, []codingagents.Agent{stub}, nil); err != nil {
+	if err := RunForTask(context.Background(), store.TaskConfig{}, id, []codingagents.Agent{stub}, nil); err != nil {
 		t.Fatalf("RunForTask: %v", err)
 	}
 }
@@ -209,7 +121,7 @@ func TestRunForTask_StderrReceivesPhaseOutput(t *testing.T) {
 	stub.verdict = "VERDICT: PASS"
 
 	var stderr bytes.Buffer
-	if err := RunForTask(context.Background(), TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, &stderr); err != nil {
+	if err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, &stderr); err != nil {
 		t.Fatalf("RunForTask: %v", err)
 	}
 	// The exact line is owned by plan / work / verify so we don't
@@ -268,23 +180,6 @@ func TestFinaliseVerifyFailIfStuck_MissingRow(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 	finaliseVerifyFailIfStuck(io.Discard, "no-such-id")
-}
-
-// putProjectMaxIters is the test-only writer for project.max_iterations.
-func putProjectMaxIters(t *testing.T, value string) {
-	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer func() { _ = s.Close() }()
-	if err := s.Put(store.BucketProject, "max_iterations", value); err != nil {
-		t.Fatalf("Put max_iterations: %v", err)
-	}
 }
 
 // seedChainTask seeds a task row + per-task dir with plan.md /

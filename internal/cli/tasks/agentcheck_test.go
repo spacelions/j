@@ -307,7 +307,7 @@ func TestNewHuhAgentSelector_NoOptions(t *testing.T) {
 }
 
 // TestEnsureAgentSelections_StoreOpenFailure simulates a corrupt
-// settings layout (a regular file at .j/settings) so openSettingsStore
+// settings layout (a regular file at .j/settings) so store.OpenSettings
 // fails. EnsureAgentSelections treats the open failure as
 // ErrNoStoredSelection (so the flow falls into Pick) and the persist
 // step also short-circuits silently — net effect: every bucket prompts,
@@ -346,7 +346,7 @@ func TestEnsureAgentSelections_StoreOpenFailure(t *testing.T) {
 
 // removeAndMkdir is a tiny helper that swaps a regular file for an
 // empty directory at path, used by TestEnsureAgentSelections_StoreOpenFailure
-// to break openSettingsStore.
+// to break store.OpenSettings.
 func removeAndMkdir(path string) error {
 	if err := os.RemoveAll(path); err != nil {
 		return err

@@ -100,7 +100,7 @@ func ensureBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket s
 // surfaces as ErrNoStoredSelection so the caller falls back to the
 // prompt path the same way an empty bucket would.
 func readBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket string) (codingagents.Agent, string, error) {
-	s, ok := openSettingsStore(opts.Stderr)
+	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
 		return nil, "", agentpick.ErrNoStoredSelection
 	}
@@ -113,33 +113,16 @@ func readBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket str
 // a sensible default; users that want headless resumes set it via the
 // parent commands' --interactive flag (which writes the same key).
 // Persistence is best-effort: a settings open failure is reported via
-// stderr by openSettingsStore and otherwise swallowed so the user's
+// stderr by store.OpenSettings and otherwise swallowed so the user's
 // just-confirmed pick is not lost on a transient lock error.
 func persistBucketSelection(opts AgentCheckOptions, bucket, tool, model string) error {
-	s, ok := openSettingsStore(opts.Stderr)
+	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
 		return nil
 	}
 	defer func() { _ = s.Close() }()
 	store.PersistAgentSelection(s, opts.Stderr, bucket, tool, model, true)
 	return nil
-}
-
-// openSettingsStore opens `<cwd>/.j/settings` and reports a single
-// "warning: ..." line on stderr if the open fails. The pattern matches
-// plan / work / verify openSettingsStore so the surfacing is uniform.
-func openSettingsStore(stderr io.Writer) (*store.Store, bool) {
-	path, err := store.DefaultPath()
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: settings path: %v\n", err)
-		return nil, false
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: settings db: %v\n", err)
-		return nil, false
-	}
-	return s, true
 }
 
 // huhAgentSelector is the huh-backed implementation of AgentSelector.

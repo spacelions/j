@@ -1523,7 +1523,7 @@ func TestRun_StoreLazyDefault(t *testing.T) {
 }
 
 // TestPersistWorkerSelection_NilStore_LazyOpenSucceeds exercises the
-// nil-Store branch when openSettingsStore can lay hands on a real
+// nil-Store branch when store.OpenSettings can lay hands on a real
 // `<cwd>/.j/settings`: the helper opens, persists, and closes
 // silently and the values land on disk.
 func TestPersistWorkerSelection_NilStore_LazyOpenSucceeds(t *testing.T) {
@@ -1556,7 +1556,7 @@ func TestPersistWorkerSelection_NilStore_LazyOpenSucceeds(t *testing.T) {
 }
 
 // TestPersistWorkerSelection_NilStore_LazyOpenFails covers the
-// early-return branch when openSettingsStore can't open the DB
+// early-return branch when store.OpenSettings can't open the DB
 // (no .j layout on disk): the helper warns once and returns
 // without panicking.
 func TestPersistWorkerSelection_NilStore_LazyOpenFails(t *testing.T) {

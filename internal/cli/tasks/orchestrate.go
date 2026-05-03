@@ -12,6 +12,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/workflow"
 )
 
@@ -51,7 +52,7 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 	if len(opts.Agents) == 0 {
 		return errors.New("tasks: no coding agents configured")
 	}
-	cfg, err := workflow.LoadConfigForTask()
+	cfg, err := store.LoadTaskConfig()
 	if err != nil {
 		return err
 	}

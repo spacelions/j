@@ -395,7 +395,7 @@ func TestRunOrchestrate_RegisteredAsChild(t *testing.T) {
 }
 
 // putProjectMaxIters writes project.max_iterations so
-// LoadConfigForTask picks up the supplied bound.
+// store.LoadTaskConfig picks up the supplied bound.
 func putProjectMaxIters(t *testing.T, value string) {
 	t.Helper()
 	path, err := store.DefaultPath()
