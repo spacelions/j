@@ -22,7 +22,7 @@ import (
 )
 
 // fakeUI is the scripted UI fake used by the orchestration tests.
-// confirmReturn / confirmErr program the ConfirmDelete response and
+// confirmReturn / confirmErr program the ConfirmDiscard response and
 // calls counts every invocation so tests can assert the prompt
 // fires (or is bypassed by --yes). pickReturn / pickErr program the
 // PickTask response and pickCalls / lastPickedFrom let tests
@@ -40,7 +40,7 @@ type fakeUI struct {
 	lastPickedFrom []store.Task
 }
 
-func (u *fakeUI) ConfirmDelete(_ context.Context, task store.Task) (bool, error) {
+func (u *fakeUI) ConfirmDiscard(_ context.Context, task store.Task) (bool, error) {
 	u.calls++
 	u.lastTaskID = task.ID
 	if u.confirmErr != nil {
@@ -66,7 +66,7 @@ func (u *fakeUI) PickTask(_ context.Context, tasks []store.Task) (string, bool, 
 // seedTask writes a Task row into the freshly-initialised tasks DB
 // and creates the matching <cwd>/.j/tasks/<id>/ subdirectory plus a
 // requirements.md sentinel inside it. Returns the absolute task dir
-// so callers can stat it after the delete and the underlying store
+// so callers can stat it after the discard and the underlying store
 // (closed before the run, reopened by callers when they need to
 // assert post-state).
 func seedTask(t *testing.T, id, summary string) string {
@@ -212,7 +212,7 @@ func readGitStubLogLines(t *testing.T, logFile string) []string {
 
 // taskExists reopens the bbolt DB and reports whether GetTask
 // returns the row (true), reports fs.ErrNotExist (false), or fails
-// (test failure). Callers use this after RunDelete to assert the
+// (test failure). Callers use this after RunDiscard to assert the
 // row was either removed or left intact.
 func taskExists(t *testing.T, id string) bool {
 	t.Helper()
@@ -236,19 +236,19 @@ func taskExists(t *testing.T, id string) bool {
 	return false
 }
 
-func TestRunDelete_HappyPath_ConfirmedRemovesRowAndDir(t *testing.T) {
+func TestRunDiscard_HappyPath_ConfirmedRemovesRowAndDir(t *testing.T) {
 	t.Chdir(t.TempDir())
 	taskDir := seedTask(t, "id-happy", "do the thing")
 	ui := &fakeUI{confirmReturn: true}
 	var stdout, stderr bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "id-happy",
 		Stdout: &stdout,
 		Stderr: &stderr,
 		UI:     ui,
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	if ui.calls != 1 {
 		t.Fatalf("UI calls = %d, want 1", ui.calls)
@@ -257,22 +257,22 @@ func TestRunDelete_HappyPath_ConfirmedRemovesRowAndDir(t *testing.T) {
 		t.Fatalf("UI last task = %q, want id-happy", ui.lastTaskID)
 	}
 	if taskExists(t, "id-happy") {
-		t.Fatal("task row should be gone after delete")
+		t.Fatal("task row should be gone after discard")
 	}
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone, stat err = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "J: deleted id-happy") {
-		t.Fatalf("stdout = %q, want J: deleted id-happy", stdout.String())
+	if !strings.Contains(stdout.String(), "J: discarded id-happy") {
+		t.Fatalf("stdout = %q, want J: discarded id-happy", stdout.String())
 	}
 }
 
-func TestRunDelete_YesFlag_SkipsPrompt(t *testing.T) {
+func TestRunDiscard_YesFlag_SkipsPrompt(t *testing.T) {
 	t.Chdir(t.TempDir())
 	taskDir := seedTask(t, "id-yes", "yes-flag bypass")
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "id-yes",
 		Yes:    true,
 		Stdout: &stdout,
@@ -280,7 +280,7 @@ func TestRunDelete_YesFlag_SkipsPrompt(t *testing.T) {
 		UI:     ui,
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	if ui.calls != 0 {
 		t.Fatalf("UI calls = %d, want 0 with --yes", ui.calls)
@@ -291,24 +291,24 @@ func TestRunDelete_YesFlag_SkipsPrompt(t *testing.T) {
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone with --yes")
 	}
-	if !strings.Contains(stdout.String(), "J: deleted id-yes") {
+	if !strings.Contains(stdout.String(), "J: discarded id-yes") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
 
-func TestRunDelete_Decline_LeavesRowAndDirIntact(t *testing.T) {
+func TestRunDiscard_Decline_LeavesRowAndDirIntact(t *testing.T) {
 	t.Chdir(t.TempDir())
 	taskDir := seedTask(t, "id-keep", "keep me")
 	ui := &fakeUI{confirmReturn: false}
 	var stdout bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "id-keep",
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	if ui.calls != 1 {
 		t.Fatalf("UI calls = %d, want 1", ui.calls)
@@ -324,19 +324,19 @@ func TestRunDelete_Decline_LeavesRowAndDirIntact(t *testing.T) {
 	}
 }
 
-func TestRunDelete_MissingTask_PrintsNoTask(t *testing.T) {
+func TestRunDiscard_MissingTask_PrintsNoTask(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "ghost",
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	if ui.calls != 0 {
 		t.Fatalf("UI calls = %d, want 0 on missing task", ui.calls)
@@ -347,15 +347,15 @@ func TestRunDelete_MissingTask_PrintsNoTask(t *testing.T) {
 	}
 }
 
-// TestRunDelete_UIErrorPropagates pins the explicit-error branch:
+// TestRunDiscard_UIErrorPropagates pins the explicit-error branch:
 // when the UI returns a non-nil error (something other than
 // huh.ErrUserAborted, which the implementation collapses into
-// (false, nil)), RunDelete must propagate it wrapped to the caller.
-func TestRunDelete_UIErrorPropagates(t *testing.T) {
+// (false, nil)), RunDiscard must propagate it wrapped to the caller.
+func TestRunDiscard_UIErrorPropagates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	seedTask(t, "id-ui-err", "boom")
 	boom := errors.New("ui boom")
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "id-ui-err",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -371,11 +371,11 @@ func TestRunDelete_UIErrorPropagates(t *testing.T) {
 	}
 }
 
-// TestRunDelete_GetTaskNonNotExistError exercises the propagate
-// branch in RunDelete: a non-NotExist GetTask error (here, a JSON
+// TestRunDiscard_GetTaskNonNotExistError exercises the propagate
+// branch in RunDiscard: a non-NotExist GetTask error (here, a JSON
 // decode error from a corrupted bucket value) must surface to the
 // caller and the store must be closed before the return.
-func TestRunDelete_GetTaskNonNotExistError(t *testing.T) {
+func TestRunDiscard_GetTaskNonNotExistError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 	path, err := store.DefaultTasksDBPath()
@@ -398,7 +398,7 @@ func TestRunDelete_GetTaskNonNotExistError(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	err = RunDelete(context.Background(), DeleteOptions{
+	err = RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "bad",
 		Yes:    true,
 		Stdout: io.Discard,
@@ -410,9 +410,9 @@ func TestRunDelete_GetTaskNonNotExistError(t *testing.T) {
 	}
 }
 
-// TestRunDelete_OpenError points the tasks DB path at an existing
+// TestRunDiscard_OpenError points the tasks DB path at an existing
 // directory so bolt.Open fails, exercising the open-error branch.
-func TestRunDelete_OpenError(t *testing.T) {
+func TestRunDiscard_OpenError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
@@ -421,7 +421,7 @@ func TestRunDelete_OpenError(t *testing.T) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	err = RunDelete(context.Background(), DeleteOptions{
+	err = RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "x",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -432,10 +432,10 @@ func TestRunDelete_OpenError(t *testing.T) {
 	}
 }
 
-// TestRunDelete_DefaultTasksPathError replaces cwd with one that we
+// TestRunDiscard_DefaultTasksPathError replaces cwd with one that we
 // remove so DefaultTasksDBPath -> os.Getwd fails. On macOS / FUSE
 // getwd may succeed via cached inodes; in that case the test skips.
-func TestRunDelete_DefaultTasksPathError(t *testing.T) {
+func TestRunDiscard_DefaultTasksPathError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("cwd cannot be removed while in use on windows")
 	}
@@ -455,7 +455,7 @@ func TestRunDelete_DefaultTasksPathError(t *testing.T) {
 	if _, err := os.Getwd(); err == nil {
 		t.Skip("os.Getwd unexpectedly succeeded")
 	}
-	if err := RunDelete(context.Background(), DeleteOptions{
+	if err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "x",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -465,12 +465,12 @@ func TestRunDelete_DefaultTasksPathError(t *testing.T) {
 	}
 }
 
-// TestRunDelete_RemoveTaskDirError exercises the on-disk teardown
+// TestRunDiscard_RemoveTaskDirError exercises the on-disk teardown
 // failure branch: the per-task dir exists, the bbolt row is
 // successfully removed, but RemoveTaskDir cannot unlink the
 // directory because its parent (.j/tasks) is read-only. Skipped on
 // root and Windows.
-func TestRunDelete_RemoveTaskDirError(t *testing.T) {
+func TestRunDiscard_RemoveTaskDirError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("unix file-mode semantics required")
 	}
@@ -485,7 +485,7 @@ func TestRunDelete_RemoveTaskDirError(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(tasksDir, 0o755) })
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "id-rm-fail",
 		Yes:    true,
 		Stdout: io.Discard,
@@ -495,27 +495,27 @@ func TestRunDelete_RemoveTaskDirError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected RemoveTaskDir to fail under read-only parent")
 	}
-	if !strings.Contains(err.Error(), "tasks delete") {
-		t.Fatalf("err = %v, want wrapped 'tasks delete' error", err)
+	if !strings.Contains(err.Error(), "tasks discard") {
+		t.Fatalf("err = %v, want wrapped 'tasks discard' error", err)
 	}
 }
 
-// TestNewDeleteCmd_Smoke pins the command shape: registered name
+// TestNewDiscardCmd_Smoke pins the command shape: registered name
 // and flags. The --id flag is no longer MarkFlagRequired (the
 // picker fallback covers the empty-id case) so the test asserts
 // the absence of the required annotation explicitly.
-func TestNewDeleteCmd_Smoke(t *testing.T) {
+func TestNewDiscardCmd_Smoke(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
-	cmd := newDeleteCmd()
+	cmd := newDiscardCmd()
 	if cmd == nil {
-		t.Fatal("newDeleteCmd returned nil")
+		t.Fatal("newDiscardCmd returned nil")
 	}
 	if !strings.Contains(cmd.Long, "git worktree remove") || !strings.Contains(cmd.Long, "git worktree list") {
 		t.Fatalf("Long should document worktree cleanup: %q", cmd.Long)
 	}
-	if cmd.Use != "delete" {
-		t.Fatalf("Use = %q, want delete", cmd.Use)
+	if cmd.Use != "discard" {
+		t.Fatalf("Use = %q, want discard", cmd.Use)
 	}
 	idFlag := cmd.Flags().Lookup("id")
 	if idFlag == nil {
@@ -532,14 +532,14 @@ func TestNewDeleteCmd_Smoke(t *testing.T) {
 	}
 }
 
-// TestNewDeleteCmd_FlagDefaults pins the registered defaults and
+// TestNewDiscardCmd_FlagDefaults pins the registered defaults and
 // viper bindings. The --id flag is now optional (no MarkFlagRequired)
 // so the test asserts both the empty default and the absence of the
 // required annotation.
-func TestNewDeleteCmd_FlagDefaults(t *testing.T) {
+func TestNewDiscardCmd_FlagDefaults(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
-	cmd := newDeleteCmd()
+	cmd := newDiscardCmd()
 	idFlag := cmd.Flags().Lookup("id")
 	if idFlag == nil || idFlag.DefValue != "" {
 		t.Fatalf("--id default = %q, want empty", idFlag.DefValue)
@@ -551,65 +551,65 @@ func TestNewDeleteCmd_FlagDefaults(t *testing.T) {
 	if yesFlag == nil || yesFlag.DefValue != "false" {
 		t.Fatalf("--yes default = %q, want false", yesFlag.DefValue)
 	}
-	if viper.GetBool("tasks.delete.yes") {
-		t.Error("tasks.delete.yes should default to false via BindPFlag")
+	if viper.GetBool("tasks.discard.yes") {
+		t.Error("tasks.discard.yes should default to false via BindPFlag")
 	}
 }
 
-// TestNewDeleteCmd_FlagEnv pins the env-var bindings: TASKS_DELETE_ID
-// and TASKS_DELETE_YES feed viper without an explicit flag.
-func TestNewDeleteCmd_FlagEnv(t *testing.T) {
+// TestNewDiscardCmd_FlagEnv pins the env-var bindings: TASKS_DISCARD_ID
+// and TASKS_DISCARD_YES feed viper without an explicit flag.
+func TestNewDiscardCmd_FlagEnv(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
-	t.Setenv("TASKS_DELETE_ID", "from-env")
-	t.Setenv("TASKS_DELETE_YES", "true")
-	_ = newDeleteCmd()
-	if got := viper.GetString("tasks.delete.id"); got != "from-env" {
-		t.Errorf("tasks.delete.id = %q, want from-env", got)
+	t.Setenv("TASKS_DISCARD_ID", "from-env")
+	t.Setenv("TASKS_DISCARD_YES", "true")
+	_ = newDiscardCmd()
+	if got := viper.GetString("tasks.discard.id"); got != "from-env" {
+		t.Errorf("tasks.discard.id = %q, want from-env", got)
 	}
-	if !viper.GetBool("tasks.delete.yes") {
-		t.Error("TASKS_DELETE_YES=true should make tasks.delete.yes true")
+	if !viper.GetBool("tasks.discard.yes") {
+		t.Error("TASKS_DISCARD_YES=true should make tasks.discard.yes true")
 	}
 }
 
-// TestNewDeleteCmd_RunE_ExecutesEnvYes drives the cobra command's
-// RunE with --id supplied as a flag and TASKS_DELETE_YES forcing
+// TestNewDiscardCmd_RunE_ExecutesEnvYes drives the cobra command's
+// RunE with --id supplied as a flag and TASKS_DISCARD_YES forcing
 // the prompt-skip path through the env binding. cobra's
 // MarkFlagRequired only inspects pflag's Changed state so --id
 // must come from argv (env-only wouldn't satisfy the required
 // guard); this test still exercises the env-fed --yes branch end
 // to end alongside the flag plumbing.
-func TestNewDeleteCmd_RunE_ExecutesEnvYes(t *testing.T) {
+func TestNewDiscardCmd_RunE_ExecutesEnvYes(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	t.Chdir(t.TempDir())
 	taskDir := seedTask(t, "id-env", "via env")
-	t.Setenv("TASKS_DELETE_YES", "true")
+	t.Setenv("TASKS_DISCARD_YES", "true")
 	root := New()
 	var stdout bytes.Buffer
 	root.SetIn(strings.NewReader(""))
 	root.SetOut(&stdout)
 	root.SetErr(io.Discard)
 	root.SetContext(context.Background())
-	root.SetArgs([]string{"delete", "--id", "id-env"})
+	root.SetArgs([]string{"discard", "--id", "id-env"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "J: deleted id-env") {
+	if !strings.Contains(stdout.String(), "J: discarded id-env") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 	if taskExists(t, "id-env") {
-		t.Fatal("task row should be gone after delete via env wiring")
+		t.Fatal("task row should be gone after discard via env wiring")
 	}
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone, stat err = %v", err)
 	}
 }
 
-// TestDeleteOptions_WithDefaults_FillsAllNilStreams exercises the
-// nil-default branches of the helper without invoking RunDelete.
-func TestDeleteOptions_WithDefaults_FillsAllNilStreams(t *testing.T) {
-	o := DeleteOptions{}.withDefaults()
+// TestDiscardOptions_WithDefaults_FillsAllNilStreams exercises the
+// nil-default branches of the helper without invoking RunDiscard.
+func TestDiscardOptions_WithDefaults_FillsAllNilStreams(t *testing.T) {
+	o := DiscardOptions{}.withDefaults()
 	if o.Stdin != os.Stdin {
 		t.Errorf("Stdin = %v, want os.Stdin", o.Stdin)
 	}
@@ -624,33 +624,33 @@ func TestDeleteOptions_WithDefaults_FillsAllNilStreams(t *testing.T) {
 	}
 }
 
-// TestDeleteOptions_WithDefaults_KeepsProvidedUI pins the non-nil
+// TestDiscardOptions_WithDefaults_KeepsProvidedUI pins the non-nil
 // branch in withDefaults: a caller-supplied UI is preserved instead
 // of being clobbered by newHuhUI.
-func TestDeleteOptions_WithDefaults_KeepsProvidedUI(t *testing.T) {
+func TestDiscardOptions_WithDefaults_KeepsProvidedUI(t *testing.T) {
 	custom := &fakeUI{}
-	o := DeleteOptions{UI: custom, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard}.withDefaults()
+	o := DiscardOptions{UI: custom, Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard}.withDefaults()
 	if o.UI != custom {
 		t.Errorf("UI = %v, want custom fake", o.UI)
 	}
 }
 
-// TestRunDelete_PickerHappyPath drives the picker fallback end to
+// TestRunDiscard_PickerHappyPath drives the picker fallback end to
 // end: with no --id, the scripted PickTask returns an existing id
-// and ConfirmDelete approves; the row + dir must be gone and stdout
-// must carry the deleted-id marker.
-func TestRunDelete_PickerHappyPath(t *testing.T) {
+// and ConfirmDiscard approves; the row + dir must be gone and stdout
+// must carry the discarded-id marker.
+func TestRunDiscard_PickerHappyPath(t *testing.T) {
 	t.Chdir(t.TempDir())
 	taskDir := seedTask(t, "id-pick", "pick me")
 	ui := &fakeUI{pickReturn: "id-pick", confirmReturn: true}
 	var stdout bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	if ui.pickCalls != 1 {
 		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
@@ -659,40 +659,40 @@ func TestRunDelete_PickerHappyPath(t *testing.T) {
 		t.Fatalf("PickTask received tasks = %v, want [id-pick]", ui.lastPickedFrom)
 	}
 	if ui.calls != 1 || ui.lastTaskID != "id-pick" {
-		t.Fatalf("ConfirmDelete calls = %d, lastTaskID = %q", ui.calls, ui.lastTaskID)
+		t.Fatalf("ConfirmDiscard calls = %d, lastTaskID = %q", ui.calls, ui.lastTaskID)
 	}
 	if taskExists(t, "id-pick") {
-		t.Fatal("task row should be gone after picker delete")
+		t.Fatal("task row should be gone after picker discard")
 	}
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone, stat err = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "J: deleted id-pick") {
-		t.Fatalf("stdout = %q, want J: deleted id-pick", stdout.String())
+	if !strings.Contains(stdout.String(), "J: discarded id-pick") {
+		t.Fatalf("stdout = %q, want J: discarded id-pick", stdout.String())
 	}
 }
 
-// TestRunDelete_PickerAbort exercises the cancel signal: PickTask
-// returns ("", nil); RunDelete must short-circuit before touching
-// ConfirmDelete or DeleteTask. Row and dir stay intact.
-func TestRunDelete_PickerAbort(t *testing.T) {
+// TestRunDiscard_PickerAbort exercises the cancel signal: PickTask
+// returns ("", nil); RunDiscard must short-circuit before touching
+// ConfirmDiscard or DeleteTask. Row and dir stay intact.
+func TestRunDiscard_PickerAbort(t *testing.T) {
 	t.Chdir(t.TempDir())
 	taskDir := seedTask(t, "id-abort", "keep me")
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	if ui.pickCalls != 1 {
 		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
 	}
 	if ui.calls != 0 {
-		t.Fatalf("ConfirmDelete calls = %d, want 0 on picker abort", ui.calls)
+		t.Fatalf("ConfirmDiscard calls = %d, want 0 on picker abort", ui.calls)
 	}
 	if !taskExists(t, "id-abort") {
 		t.Fatal("task row should remain after picker abort")
@@ -705,15 +705,15 @@ func TestRunDelete_PickerAbort(t *testing.T) {
 	}
 }
 
-// TestRunDelete_PickerErrorPropagates pins the error branch: a
+// TestRunDiscard_PickerErrorPropagates pins the error branch: a
 // non-aborted PickTask error must surface to the caller and leave
 // the row + dir intact.
-func TestRunDelete_PickerErrorPropagates(t *testing.T) {
+func TestRunDiscard_PickerErrorPropagates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	taskDir := seedTask(t, "id-pick-err", "boom")
 	boom := errors.New("picker boom")
 	ui := &fakeUI{pickErr: boom}
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -722,7 +722,7 @@ func TestRunDelete_PickerErrorPropagates(t *testing.T) {
 		t.Fatalf("err = %v, want %v", err, boom)
 	}
 	if ui.calls != 0 {
-		t.Fatalf("ConfirmDelete calls = %d, want 0 on picker error", ui.calls)
+		t.Fatalf("ConfirmDiscard calls = %d, want 0 on picker error", ui.calls)
 	}
 	if !taskExists(t, "id-pick-err") {
 		t.Fatal("task row should remain after picker error")
@@ -732,20 +732,20 @@ func TestRunDelete_PickerErrorPropagates(t *testing.T) {
 	}
 }
 
-// TestRunDelete_NoIDMissingDB exercises the "no list.db, no --id"
+// TestRunDiscard_NoIDMissingDB exercises the "no list.db, no --id"
 // short-circuit: emptyMessage on stdout, no UI invocation, return
 // nil.
-func TestRunDelete_NoIDMissingDB(t *testing.T) {
+func TestRunDiscard_NoIDMissingDB(t *testing.T) {
 	t.Chdir(t.TempDir())
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	if ui.pickCalls != 0 || ui.calls != 0 {
 		t.Fatalf("UI calls = pick=%d, confirm=%d, want both 0", ui.pickCalls, ui.calls)
@@ -756,21 +756,21 @@ func TestRunDelete_NoIDMissingDB(t *testing.T) {
 	}
 }
 
-// TestRunDelete_NoIDEmptyBucket exercises the empty-bucket branch:
+// TestRunDiscard_NoIDEmptyBucket exercises the empty-bucket branch:
 // list.db exists but holds no rows. No picker fires; emptyMessage
-// is printed and RunDelete returns nil.
-func TestRunDelete_NoIDEmptyBucket(t *testing.T) {
+// is printed and RunDiscard returns nil.
+func TestRunDiscard_NoIDEmptyBucket(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	if ui.pickCalls != 0 {
 		t.Fatalf("PickTask calls = %d, want 0 on empty bucket", ui.pickCalls)
@@ -781,10 +781,10 @@ func TestRunDelete_NoIDEmptyBucket(t *testing.T) {
 	}
 }
 
-// TestRunDelete_NoIDListDecodeError plants a non-JSON value into
+// TestRunDiscard_NoIDListDecodeError plants a non-JSON value into
 // the tasks bucket so ListTasks fails after the picker branch
 // opens the store. The error must propagate; no UI is invoked.
-func TestRunDelete_NoIDListDecodeError(t *testing.T) {
+func TestRunDiscard_NoIDListDecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 	path, err := store.DefaultTasksDBPath()
@@ -808,7 +808,7 @@ func TestRunDelete_NoIDListDecodeError(t *testing.T) {
 		t.Fatal(err)
 	}
 	ui := &fakeUI{}
-	err = RunDelete(context.Background(), DeleteOptions{
+	err = RunDiscard(context.Background(), DiscardOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -821,7 +821,7 @@ func TestRunDelete_NoIDListDecodeError(t *testing.T) {
 	}
 }
 
-func TestRunDelete_RemovesWorktreeOnConfirm(t *testing.T) {
+func TestRunDiscard_RemovesWorktreeOnConfirm(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("git stub requires POSIX /bin/sh")
 	}
@@ -834,9 +834,9 @@ func TestRunDelete_RemovesWorktreeOnConfirm(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("GIT_STUB_LIST_FILE", listFile)
-	taskDir := seedTaskWithWorktree(t, "id-wt-ok", "wt delete", "j-wt-happy")
+	taskDir := seedTaskWithWorktree(t, "id-wt-ok", "wt discard", "j-wt-happy")
 	var stdout, stderr bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "id-wt-ok",
 		Yes:    true,
 		Stdout: &stdout,
@@ -844,7 +844,7 @@ func TestRunDelete_RemovesWorktreeOnConfirm(t *testing.T) {
 		UI:     &fakeUI{},
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	lines := readGitStubLogLines(t, logFile)
 	if len(lines) != 2 {
@@ -862,7 +862,7 @@ func TestRunDelete_RemovesWorktreeOnConfirm(t *testing.T) {
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "J: deleted id-wt-ok") {
+	if !strings.Contains(stdout.String(), "J: discarded id-wt-ok") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 	if strings.Contains(stderr.String(), "warning: worktree remove:") {
@@ -870,13 +870,13 @@ func TestRunDelete_RemovesWorktreeOnConfirm(t *testing.T) {
 	}
 }
 
-// TestRunDelete_EmptyWorktree_FallsBackToComputedName covers the
+// TestRunDiscard_EmptyWorktree_FallsBackToComputedName covers the
 // legacy-row path: task.Worktree is empty (e.g. row created before
 // the persisted-worktree feature), but the on-disk worktree exists
 // under the deterministic slug WorktreeNameFor(project, task). The
 // fallback recomputes that slug from cwd basename + summary and the
 // `git worktree remove --force` runs against the matching path.
-func TestRunDelete_EmptyWorktree_FallsBackToComputedName(t *testing.T) {
+func TestRunDiscard_EmptyWorktree_FallsBackToComputedName(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("git stub requires POSIX /bin/sh")
 	}
@@ -898,7 +898,7 @@ func TestRunDelete_EmptyWorktree_FallsBackToComputedName(t *testing.T) {
 	t.Setenv("GIT_STUB_LIST_FILE", listFile)
 	taskDir := seedTask(t, "id-fallback", "do the thing")
 	var stdout, stderr bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "id-fallback",
 		Yes:    true,
 		Stdout: &stdout,
@@ -906,7 +906,7 @@ func TestRunDelete_EmptyWorktree_FallsBackToComputedName(t *testing.T) {
 		UI:     &fakeUI{},
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	lines := readGitStubLogLines(t, logFile)
 	if len(lines) != 2 {
@@ -924,7 +924,7 @@ func TestRunDelete_EmptyWorktree_FallsBackToComputedName(t *testing.T) {
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "J: deleted id-fallback") {
+	if !strings.Contains(stdout.String(), "J: discarded id-fallback") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 	if strings.Contains(stderr.String(), "warning: worktree remove:") {
@@ -932,11 +932,11 @@ func TestRunDelete_EmptyWorktree_FallsBackToComputedName(t *testing.T) {
 	}
 }
 
-// TestRunDelete_EmptyWorktree_NoComputedMatch_NoRemove confirms that
+// TestRunDiscard_EmptyWorktree_NoComputedMatch_NoRemove confirms that
 // when task.Worktree is empty AND the computed slug doesn't match any
 // listed worktree, the lookup runs but no `worktree remove` is
-// invoked. The row + dir are still deleted.
-func TestRunDelete_EmptyWorktree_NoComputedMatch_NoRemove(t *testing.T) {
+// invoked. The row + dir are still discarded.
+func TestRunDiscard_EmptyWorktree_NoComputedMatch_NoRemove(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("git stub requires POSIX /bin/sh")
 	}
@@ -955,7 +955,7 @@ func TestRunDelete_EmptyWorktree_NoComputedMatch_NoRemove(t *testing.T) {
 	t.Setenv("GIT_STUB_LIST_FILE", listFile)
 	taskDir := seedTask(t, "id-no-match", "no worktree field")
 	var stdout bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "id-no-match",
 		Yes:    true,
 		Stdout: &stdout,
@@ -963,7 +963,7 @@ func TestRunDelete_EmptyWorktree_NoComputedMatch_NoRemove(t *testing.T) {
 		UI:     &fakeUI{},
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	lines := readGitStubLogLines(t, logFile)
 	if len(lines) != 1 || lines[0] != "worktree|list|--porcelain" {
@@ -975,12 +975,12 @@ func TestRunDelete_EmptyWorktree_NoComputedMatch_NoRemove(t *testing.T) {
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "J: deleted id-no-match") {
+	if !strings.Contains(stdout.String(), "J: discarded id-no-match") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
 
-func TestRunDelete_WorktreeNotListed_NoRemove(t *testing.T) {
+func TestRunDiscard_WorktreeNotListed_NoRemove(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("git stub requires POSIX /bin/sh")
 	}
@@ -995,7 +995,7 @@ func TestRunDelete_WorktreeNotListed_NoRemove(t *testing.T) {
 	t.Setenv("GIT_STUB_LIST_FILE", listFile)
 	taskDir := seedTaskWithWorktree(t, "id-missing-wt", "ghost wt", "not-in-list")
 	var stdout bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "id-missing-wt",
 		Yes:    true,
 		Stdout: &stdout,
@@ -1003,7 +1003,7 @@ func TestRunDelete_WorktreeNotListed_NoRemove(t *testing.T) {
 		UI:     &fakeUI{},
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	lines := readGitStubLogLines(t, logFile)
 	if len(lines) != 1 || lines[0] != "worktree|list|--porcelain" {
@@ -1015,12 +1015,12 @@ func TestRunDelete_WorktreeNotListed_NoRemove(t *testing.T) {
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "J: deleted id-missing-wt") {
+	if !strings.Contains(stdout.String(), "J: discarded id-missing-wt") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
 
-func TestRunDelete_MultipleMatches_PicksFirstAndWarns(t *testing.T) {
+func TestRunDiscard_MultipleMatches_PicksFirstAndWarns(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("git stub requires POSIX /bin/sh")
 	}
@@ -1037,7 +1037,7 @@ func TestRunDelete_MultipleMatches_PicksFirstAndWarns(t *testing.T) {
 	t.Setenv("GIT_STUB_LIST_FILE", listFile)
 	taskDir := seedTaskWithWorktree(t, "id-dup", "dup basename", "dup-wt")
 	var stdout, stderr bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "id-dup",
 		Yes:    true,
 		Stdout: &stdout,
@@ -1045,7 +1045,7 @@ func TestRunDelete_MultipleMatches_PicksFirstAndWarns(t *testing.T) {
 		UI:     &fakeUI{},
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	lines := readGitStubLogLines(t, logFile)
 	if len(lines) != 2 {
@@ -1064,12 +1064,12 @@ func TestRunDelete_MultipleMatches_PicksFirstAndWarns(t *testing.T) {
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "J: deleted id-dup") {
+	if !strings.Contains(stdout.String(), "J: discarded id-dup") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
 
-func TestRunDelete_ListFails_WarnsAndContinues(t *testing.T) {
+func TestRunDiscard_ListFails_WarnsAndContinues(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("git stub requires POSIX /bin/sh")
 	}
@@ -1084,7 +1084,7 @@ func TestRunDelete_ListFails_WarnsAndContinues(t *testing.T) {
 	t.Setenv("GIT_STUB_LIST_EXIT", "1")
 	taskDir := seedTaskWithWorktree(t, "id-list-fail", "list fail", "any-wt")
 	var stdout, stderr bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "id-list-fail",
 		Yes:    true,
 		Stdout: &stdout,
@@ -1092,7 +1092,7 @@ func TestRunDelete_ListFails_WarnsAndContinues(t *testing.T) {
 		UI:     &fakeUI{},
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	lines := readGitStubLogLines(t, logFile)
 	if len(lines) != 1 || lines[0] != "worktree|list|--porcelain" {
@@ -1107,12 +1107,12 @@ func TestRunDelete_ListFails_WarnsAndContinues(t *testing.T) {
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "J: deleted id-list-fail") {
+	if !strings.Contains(stdout.String(), "J: discarded id-list-fail") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
 
-func TestRunDelete_RemoveFails_WarnsAndContinues(t *testing.T) {
+func TestRunDiscard_RemoveFails_WarnsAndContinues(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("git stub requires POSIX /bin/sh")
 	}
@@ -1128,7 +1128,7 @@ func TestRunDelete_RemoveFails_WarnsAndContinues(t *testing.T) {
 	t.Setenv("GIT_STUB_REMOVE_EXIT", "1")
 	taskDir := seedTaskWithWorktree(t, "id-rm-git", "remove fail", "wt-rm-fail")
 	var stdout, stderr bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "id-rm-git",
 		Yes:    true,
 		Stdout: &stdout,
@@ -1136,7 +1136,7 @@ func TestRunDelete_RemoveFails_WarnsAndContinues(t *testing.T) {
 		UI:     &fakeUI{},
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	if !strings.Contains(stderr.String(), "warning: worktree remove:") {
 		t.Fatalf("stderr = %q, want warning prefix", stderr.String())
@@ -1147,12 +1147,12 @@ func TestRunDelete_RemoveFails_WarnsAndContinues(t *testing.T) {
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "J: deleted id-rm-git") {
+	if !strings.Contains(stdout.String(), "J: discarded id-rm-git") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
 
-func TestRunDelete_GitMissing_WarnsAndContinues(t *testing.T) {
+func TestRunDiscard_GitMissing_WarnsAndContinues(t *testing.T) {
 	t.Chdir(t.TempDir())
 	emptyPath := filepath.Join(t.TempDir(), "no-binaries")
 	if err := os.MkdirAll(emptyPath, 0o755); err != nil {
@@ -1161,7 +1161,7 @@ func TestRunDelete_GitMissing_WarnsAndContinues(t *testing.T) {
 	t.Setenv("PATH", emptyPath)
 	taskDir := seedTaskWithWorktree(t, "id-no-git", "no git", "wt-x")
 	var stdout, stderr bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "id-no-git",
 		Yes:    true,
 		Stdout: &stdout,
@@ -1169,7 +1169,7 @@ func TestRunDelete_GitMissing_WarnsAndContinues(t *testing.T) {
 		UI:     &fakeUI{},
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	if !strings.Contains(stderr.String(), "warning: worktree remove:") {
 		t.Fatalf("stderr = %q, want warning prefix", stderr.String())
@@ -1180,12 +1180,12 @@ func TestRunDelete_GitMissing_WarnsAndContinues(t *testing.T) {
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "J: deleted id-no-git") {
+	if !strings.Contains(stdout.String(), "J: discarded id-no-git") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
 
-func TestRunDelete_BranchMatchFallback(t *testing.T) {
+func TestRunDiscard_BranchMatchFallback(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("git stub requires POSIX /bin/sh")
 	}
@@ -1200,7 +1200,7 @@ func TestRunDelete_BranchMatchFallback(t *testing.T) {
 	t.Setenv("GIT_STUB_LIST_FILE", listFile)
 	taskDir := seedTaskWithWorktree(t, "id-br", "branch match", "branch-slug")
 	var stdout bytes.Buffer
-	err := RunDelete(context.Background(), DeleteOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "id-br",
 		Yes:    true,
 		Stdout: &stdout,
@@ -1208,7 +1208,7 @@ func TestRunDelete_BranchMatchFallback(t *testing.T) {
 		UI:     &fakeUI{},
 	})
 	if err != nil {
-		t.Fatalf("RunDelete: %v", err)
+		t.Fatalf("RunDiscard: %v", err)
 	}
 	lines := readGitStubLogLines(t, logFile)
 	if len(lines) != 2 {
@@ -1223,7 +1223,7 @@ func TestRunDelete_BranchMatchFallback(t *testing.T) {
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "J: deleted id-br") {
+	if !strings.Contains(stdout.String(), "J: discarded id-br") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }

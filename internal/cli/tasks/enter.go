@@ -63,7 +63,7 @@ type EnterOptions struct {
 
 // withDefaults fills the nil Stdin/Stdout/Stderr with the process
 // streams and instantiates the huh-backed UI / defaultSpawner when
-// not supplied. The pattern matches DeleteOptions.withDefaults so
+// not supplied. The pattern matches DiscardOptions.withDefaults so
 // every j subcommand defaults uniformly.
 func (o EnterOptions) withDefaults() EnterOptions {
 	if o.Stdin == nil {
@@ -147,7 +147,7 @@ func RunEnter(ctx context.Context, opts EnterOptions) error {
 // only when ok is true. The supplied store handle is reused (no
 // second open) so the bbolt lock is acquired exactly once per
 // invocation. The picker branch delegates to pickFromStore so the
-// same selector body backs both `tasks enter` and `tasks delete`.
+// same selector body backs both `tasks enter` and `tasks discard`.
 func resolveEnterID(ctx context.Context, s *store.Store, opts EnterOptions) (string, bool, error) {
 	if opts.TaskID != "" {
 		if _, err := s.GetTask(opts.TaskID); err != nil {

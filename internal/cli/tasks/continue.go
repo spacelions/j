@@ -25,7 +25,7 @@ import (
 
 // ContinueOptions configures RunContinue. Stdin/Stdout/Stderr default
 // to the process streams; UI defaults to the same huh-backed task
-// picker used by `j tasks delete` / `j tasks enter`; Selector defaults
+// picker used by `j tasks discard` / `j tasks enter`; Selector defaults
 // to a huh-backed agent selector. Agents must be supplied by the
 // caller (the cobra wiring injects the cursor + claude pair, tests
 // inject scripted ones).
@@ -223,7 +223,7 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, task store.Task
 // still resumable. With no usable signal the dispatch errors instead
 // of silently skipping.
 //
-// `help` rows inherit the always-interactive + (for plan) mustread
+// `help` rows inherit the always-interactive + (for plan) must-read
 // + save-suffix contract from {plan,work,verify}.RunResume: those
 // helpers force Interactive=true on resume regardless of the bucket
 // value, so a help row whose first run went headless still lands in

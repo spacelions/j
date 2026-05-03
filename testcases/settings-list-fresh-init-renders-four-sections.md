@@ -14,7 +14,7 @@ Expected:
     output ends with the `[verifier]` line plus its terminating newline):
 
     [project]
-      mustread = 
+      must-read = 
     
     [planner]
     

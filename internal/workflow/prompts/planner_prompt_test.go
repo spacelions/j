@@ -27,10 +27,10 @@ func TestBuildPlanner(t *testing.T) {
 	}
 }
 
-// TestBuildPlanner_WithMustread asserts the bulleted must-read block
+// TestBuildPlanner_WithMustRead asserts the bulleted must-read block
 // appears once, preserves case verbatim, and sits between the
 // planner instruction and the read-the-request line.
-func TestBuildPlanner_WithMustread(t *testing.T) {
+func TestBuildPlanner_WithMustRead(t *testing.T) {
 	got := BuildPlanner("/tmp/feature.md", []string{"AGENTS.md", "CLAUDE.md"})
 
 	const header = "Before starting, read these project files for required context:"
@@ -132,12 +132,12 @@ func TestAppendPlannerSaveSuffix(t *testing.T) {
 	}
 }
 
-// TestBuildPlannerResume_WithMustread mirrors
-// TestBuildPlanner_WithMustread for the resume builder: the bulleted
+// TestBuildPlannerResume_WithMustRead mirrors
+// TestBuildPlanner_WithMustRead for the resume builder: the bulleted
 // must-read block must appear exactly once, preserve case verbatim,
 // and sit between the planner.Instruction body and the resume
 // framing line ("You are resuming…").
-func TestBuildPlannerResume_WithMustread(t *testing.T) {
+func TestBuildPlannerResume_WithMustRead(t *testing.T) {
 	got := BuildPlannerResume("/tmp/feature.md", []string{"AGENTS.md", "CLAUDE.md"})
 
 	const header = "Before starting, read these project files for required context:"

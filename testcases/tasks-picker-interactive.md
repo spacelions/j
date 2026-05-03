@@ -7,7 +7,7 @@ Prerequisites:
     two `plan-done` rows).
 
 Steps (MANUAL — requires a TTY):
-  - Run `./bin/j tasks delete` (no `--id`). The huh picker lists every
+  - Run `./bin/j tasks discard` (no `--id`). The huh picker lists every
     seeded task; pick one. The confirmation prompt appears (no `--yes`);
     accept with Enter / `y`.
   - Run `./bin/j tasks enter` (no `--id`). The huh picker reappears;
@@ -18,7 +18,7 @@ Steps (MANUAL — requires a TTY):
     directory and the command exits 0 without spawning a subshell.
 
 Expected:
-  - The `delete` flow removes the chosen row from `j tasks` output and
+  - The `discard` flow removes the chosen row from `j tasks` output and
     deletes `<cwd>/.j/tasks/<id>/` on disk; abort (Esc / Ctrl-C) exits
     0 and leaves the row intact.
   - The `enter` subshell drops the user inside the chosen task dir.

@@ -8,16 +8,17 @@ Prerequisites:
     `settings set` calls overwrite the empty value.
 
 Steps:
-  - Run `./bin/j settings set "project.mustread=AGENTS.md;CLAUDE.md"`.
+  - Run `./bin/j settings set "project.must-read=AGENTS.md;CLAUDE.md"`.
   - Run `./bin/j settings`.
-  - Run `./bin/j settings set project.mustread=AGENTS.md`.
+  - Run `./bin/j settings set project.must-read=AGENTS.md`.
   - Run `./bin/j settings`.
 
 Expected:
   - Each `set` invocation exits with code 0.
   - The first `j settings` listing renders, under the `[project]`
-    section header, the row `  mustread = AGENTS.md;CLAUDE.md`
-    exactly (case preserved, semicolon-delimited, two-space indent).
+    section header, the row `  must-read = AGENTS.md;CLAUDE.md`
+    exactly (case preserved on the value, semicolon-delimited,
+    two-space indent; the key is rendered in kebab-case).
   - The second `j settings` listing renders, under `[project]`,
-    the row `  mustread = AGENTS.md` (the previous value is
+    the row `  must-read = AGENTS.md` (the previous value is
     overwritten, not appended).

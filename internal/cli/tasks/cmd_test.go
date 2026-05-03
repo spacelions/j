@@ -84,17 +84,17 @@ func TestNew_Smoke(t *testing.T) {
 	}
 }
 
-// TestNew_HasDeleteSubcommand pins the registration of the delete
+// TestNew_HasDiscardSubcommand pins the registration of the discard
 // child so the parent's constructor always exposes it. Detailed
-// flag/runtime behavior of the child lives in delete_test.go.
-func TestNew_HasDeleteSubcommand(t *testing.T) {
+// flag/runtime behavior of the child lives in discard_test.go.
+func TestNew_HasDiscardSubcommand(t *testing.T) {
 	cmd := New()
 	for _, child := range cmd.Commands() {
-		if child.Name() == "delete" {
+		if child.Name() == "discard" {
 			return
 		}
 	}
-	t.Fatal("expected `delete` subcommand to be registered on `j tasks`")
+	t.Fatal("expected `discard` subcommand to be registered on `j tasks`")
 }
 
 // TestRun_NoTasksFile_PrintsEmptyMessage covers the defense-in-depth

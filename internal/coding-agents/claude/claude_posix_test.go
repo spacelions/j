@@ -561,11 +561,11 @@ func TestPlan_Interactive_Resume(t *testing.T) {
 	}
 }
 
-// TestPlan_Interactive_Resume_WithMustread mirrors the cursor
-// equivalent: project mustread bullets must reach the resume prompt
+// TestPlan_Interactive_Resume_WithMustRead mirrors the cursor
+// equivalent: project must-read bullets must reach the resume prompt
 // (case-preserved, exactly once) so a help-status row's resume turn
 // inherits the same project-wide must-read context the first run had.
-func TestPlan_Interactive_Resume_WithMustread(t *testing.T) {
+func TestPlan_Interactive_Resume_WithMustRead(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "spec.md")
 	if err := os.WriteFile(target, []byte("# task\nbody"), 0o600); err != nil {
@@ -583,7 +583,7 @@ func TestPlan_Interactive_Resume_WithMustread(t *testing.T) {
 		Interactive:            true,
 		ResumeChatID:           rid,
 		Resume:                 true,
-		Mustread:               []string{"AGENTS.md", "CLAUDE.md"},
+		MustRead:               []string{"AGENTS.md", "CLAUDE.md"},
 	})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)

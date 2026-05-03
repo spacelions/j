@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/mustread"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -314,11 +315,11 @@ func readProjectKey(t *testing.T, key string) (string, bool) {
 	return v, set
 }
 
-// readMustread is the legacy alias retained so the --must-read test
+// readMustRead is the legacy alias retained so the --must-read test
 // bodies stay terse.
-func readMustread(t *testing.T) (string, bool) {
+func readMustRead(t *testing.T) (string, bool) {
 	t.Helper()
-	return readProjectKey(t, "mustread")
+	return readProjectKey(t, mustread.Key)
 }
 
 // TestRun_FreshInit_SeedsMaxIterations pins the unconditional seed:
@@ -376,56 +377,56 @@ func TestRun_ResetReseedsMaxIterations(t *testing.T) {
 	}
 }
 
-// TestRun_MustreadFlag_SeedsValue pins the new --must-read flag: when
-// Options.Mustread is non-nil, Run persists the pointed-to string
-// verbatim under project.mustread so the next preflight-gated command
+// TestRun_MustReadFlag_SeedsValue pins the new --must-read flag: when
+// Options.MustRead is non-nil, Run persists the pointed-to string
+// verbatim under project.mustRead so the next preflight-gated command
 // short-circuits the prompt.
-func TestRun_MustreadFlag_SeedsValue(t *testing.T) {
+func TestRun_MustReadFlag_SeedsValue(t *testing.T) {
 	t.Chdir(t.TempDir())
 	v := "AGENTS.md;CLAUDE.md"
 	if err := Run(context.Background(), Options{
 		Yes:      true,
-		Mustread: &v,
+		MustRead: &v,
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		UI:       &scriptedUI{},
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	got, set := readMustread(t)
+	got, set := readMustRead(t)
 	if !set {
-		t.Fatal("project.mustread should be persisted")
+		t.Fatal("project.mustRead should be persisted")
 	}
 	if got != v {
-		t.Fatalf("project.mustread = %q, want %q (case-preserved)", got, v)
+		t.Fatalf("project.mustRead = %q, want %q (case-preserved)", got, v)
 	}
 }
 
-// TestRun_MustreadFlag_BlankIsPersisted pins the empty-string branch:
+// TestRun_MustReadFlag_BlankIsPersisted pins the empty-string branch:
 // `--must-read=""` seeds the empty string verbatim, mirroring the
 // "blank input is valid" preflight contract.
-func TestRun_MustreadFlag_BlankIsPersisted(t *testing.T) {
+func TestRun_MustReadFlag_BlankIsPersisted(t *testing.T) {
 	t.Chdir(t.TempDir())
 	empty := ""
 	if err := Run(context.Background(), Options{
 		Yes:      true,
-		Mustread: &empty,
+		MustRead: &empty,
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		UI:       &scriptedUI{},
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	got, set := readMustread(t)
+	got, set := readMustRead(t)
 	if !set || got != "" {
-		t.Fatalf("readMustread = (%q, %v), want (\"\", true)", got, set)
+		t.Fatalf("readMustRead = (%q, %v), want (\"\", true)", got, set)
 	}
 }
 
-// TestRun_MustreadFlag_AbsentLeavesUnset confirms Options.Mustread==nil
+// TestRun_MustReadFlag_AbsentLeavesUnset confirms Options.MustRead==nil
 // does NOT seed the key: the next preflight-gated command will still
 // surface the must-read prompt.
-func TestRun_MustreadFlag_AbsentLeavesUnset(t *testing.T) {
+func TestRun_MustReadFlag_AbsentLeavesUnset(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := Run(context.Background(), Options{
 		Yes:    true,
@@ -435,15 +436,15 @@ func TestRun_MustreadFlag_AbsentLeavesUnset(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if _, set := readMustread(t); set {
-		t.Fatal("project.mustread should be unset when --must-read is not passed")
+	if _, set := readMustRead(t); set {
+		t.Fatal("project.mustRead should be unset when --must-read is not passed")
 	}
 }
 
-// TestNew_MustreadFlagWiring exercises the cobra wiring: passing
-// --must-read on the command line populates Options.Mustread via
+// TestNew_MustReadFlagWiring exercises the cobra wiring: passing
+// --must-read on the command line populates Options.MustRead via
 // cmd.Flags().Changed, and the persisted value matches the flag.
-func TestNew_MustreadFlagWiring(t *testing.T) {
+func TestNew_MustReadFlagWiring(t *testing.T) {
 	t.Chdir(t.TempDir())
 	viper.Reset()
 	t.Cleanup(viper.Reset)
@@ -455,8 +456,8 @@ func TestNew_MustreadFlagWiring(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	got, set := readMustread(t)
+	got, set := readMustRead(t)
 	if !set || got != "AGENTS.md;CLAUDE.md" {
-		t.Fatalf("readMustread = (%q, %v), want (\"AGENTS.md;CLAUDE.md\", true)", got, set)
+		t.Fatalf("readMustRead = (%q, %v), want (\"AGENTS.md;CLAUDE.md\", true)", got, set)
 	}
 }

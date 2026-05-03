@@ -172,7 +172,7 @@ func runResetTargets(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(cmd.OutOrStdout(), "unset %s\n", t.bucket)
 				continue
 			}
-			if err := s.Delete(t.bucket, t.key); err != nil {
+			if err := s.Delete(t.bucket, storageKey(t.bucket, t.key)); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "unset %s.%s\n", t.bucket, t.key)

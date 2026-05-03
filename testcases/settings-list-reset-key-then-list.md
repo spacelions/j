@@ -14,7 +14,7 @@ Expected:
     and `[planner]` retains only `model = sonnet-4`:
 
     [project]
-      mustread = 
+      must-read = 
     
     [planner]
       model = sonnet-4

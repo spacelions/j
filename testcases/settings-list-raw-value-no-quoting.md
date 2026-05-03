@@ -3,7 +3,7 @@ Prerequisites:
   - `cd` into a fresh empty directory and run `./bin/j init --yes --must-read=`.
 
 Steps:
-  - Run `./bin/j settings set 'project.mustread=AGENTS.md;CLAUDE.md'`
+  - Run `./bin/j settings set 'project.must-read=AGENTS.md;CLAUDE.md'`
     (single-quote so the shell preserves the `;`).
   - Run `./bin/j settings`.
 
@@ -13,7 +13,7 @@ Expected:
     escaping:
 
     [project]
-      mustread = AGENTS.md;CLAUDE.md
+      must-read = AGENTS.md;CLAUDE.md
 
   - No surrounding double quotes, no backslash escapes, no whitespace
     trimming. The two-space indent and the `key = value` separator are

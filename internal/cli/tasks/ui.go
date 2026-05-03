@@ -13,18 +13,18 @@ import (
 	"github.com/spacelions/j/internal/store"
 )
 
-// UI lets `j tasks delete` and `j tasks enter` ask the user
+// UI lets `j tasks discard` and `j tasks enter` ask the user
 // questions. The default implementation drives huh forms; tests
 // substitute a scripted fake to avoid touching stdin. The pattern
 // mirrors initcmd.UI / preflight.UI so prompt testability stays
 // uniform across the j subcommands.
 type UI interface {
-	// ConfirmDelete asks whether to delete task. The boolean reports
+	// ConfirmDiscard asks whether to discard task. The boolean reports
 	// the user's choice (Enter / `y` -> true). Implementations must
 	// translate huh.ErrUserAborted into (false, nil) so a Ctrl-C
 	// during the prompt is indistinguishable from an explicit
 	// decline.
-	ConfirmDelete(ctx context.Context, task store.Task) (bool, error)
+	ConfirmDiscard(ctx context.Context, task store.Task) (bool, error)
 	// PickTask renders a select widget over the supplied tasks and
 	// returns the chosen task's id. The bool reports whether a row
 	// was actually selected: ok=false collapses both a user-abort
@@ -51,11 +51,11 @@ func newHuhUI(in io.Reader, out io.Writer) *huhUI {
 	return &huhUI{in: in, out: out}
 }
 
-func (u *huhUI) ConfirmDelete(ctx context.Context, task store.Task) (bool, error) {
+func (u *huhUI) ConfirmDiscard(ctx context.Context, task store.Task) (bool, error) {
 	v := true
 	err := huh.NewForm(huh.NewGroup(
 		huh.NewConfirm().
-			Title(fmt.Sprintf("Delete task %s?", task.ID)).
+			Title(fmt.Sprintf("Discard task %s?", task.ID)).
 			Description(task.Summary).
 			Affirmative("yes").
 			Negative("no").
@@ -65,7 +65,7 @@ func (u *huhUI) ConfirmDelete(ctx context.Context, task store.Task) (bool, error
 		return false, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("tasks delete: %w", err)
+		return false, fmt.Errorf("tasks discard: %w", err)
 	}
 	return v, nil
 }
@@ -74,7 +74,7 @@ func (u *huhUI) ConfirmDelete(ctx context.Context, task store.Task) (bool, error
 // so the label format and abort/empty contract stay uniform across
 // every j subcommand. The "Select a task" title is the same the
 // previous in-package implementation rendered, so the user-visible
-// prompt is unchanged on the `j tasks enter` / `j tasks delete`
+// prompt is unchanged on the `j tasks enter` / `j tasks discard`
 // flows.
 func (u *huhUI) PickTask(ctx context.Context, tasks []store.Task) (string, bool, error) {
 	return taskpick.Pick(ctx, u.in, u.out, "Select a task", tasks)
@@ -82,7 +82,7 @@ func (u *huhUI) PickTask(ctx context.Context, tasks []store.Task) (string, bool,
 
 // pickFromStore renders the shared task picker over the rows in s
 // and is the single picker entry point used by both `j tasks enter`
-// and `j tasks delete` when --id was not supplied. Behaviour:
+// and `j tasks discard` when --id was not supplied. Behaviour:
 //
 //   - Empty bucket: prints emptyMessage to stdout and returns
 //     ("", false, nil); callers short-circuit cleanly with no
@@ -95,7 +95,7 @@ func (u *huhUI) PickTask(ctx context.Context, tasks []store.Task) (string, bool,
 //     scripted UI / huh widget.
 //
 // Errors from ListTasks or the UI propagate; the UI wraps its own
-// errors via the taskpick package so RunDelete / RunEnter can
+// errors via the taskpick package so RunDiscard / RunEnter can
 // re-emit them without a second wrap.
 func pickFromStore(ctx context.Context, s *store.Store, ui UI, stdout io.Writer) (string, bool, error) {
 	tasks, err := s.ListTasks()

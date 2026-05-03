@@ -710,15 +710,15 @@ func TestRunResume_AlwaysInteractive(t *testing.T) {
 	}
 }
 
-// TestRunResume_ForwardsMustread pins AC: resume loads the project's
-// mustread setting and threads it into PlanRequest.Mustread so the
+// TestRunResume_ForwardsMustRead pins AC: resume loads the project's
+// mustRead setting and threads it into PlanRequest.MustRead so the
 // resume turn inherits the same project-wide context the first run
 // had. Without this, BuildPlannerResume would silently render a
 // must-read-less prompt on resume.
-func TestRunResume_ForwardsMustread(t *testing.T) {
+func TestRunResume_ForwardsMustRead(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	seedProjectMustread(t, "AGENTS.md;CLAUDE.md")
+	seedProjectMustRead(t, "AGENTS.md;CLAUDE.md")
 	id, _ := seedResumableTask(t, nil)
 	agent := newScriptedAgent()
 	if err := RunResume(context.Background(), ResumeOptions{
@@ -731,22 +731,22 @@ func TestRunResume_ForwardsMustread(t *testing.T) {
 		t.Fatalf("RunResume: %v", err)
 	}
 	want := []string{"AGENTS.md", "CLAUDE.md"}
-	if got := agent.lastReq.Mustread; len(got) != len(want) {
-		t.Fatalf("Mustread = %v, want %v", got, want)
+	if got := agent.lastReq.MustRead; len(got) != len(want) {
+		t.Fatalf("MustRead = %v, want %v", got, want)
 	} else {
 		for i, v := range want {
 			if got[i] != v {
-				t.Fatalf("Mustread[%d] = %q, want %q (case must be preserved)", i, got[i], v)
+				t.Fatalf("MustRead[%d] = %q, want %q (case must be preserved)", i, got[i], v)
 			}
 		}
 	}
 }
 
-// TestRunResume_MustreadUnsetYieldsNil covers the no-bucket-entry
+// TestRunResume_MustReadUnsetYieldsNil covers the no-bucket-entry
 // branch of mustread.LoadFromDefault: when the project has no
-// mustread setting, the resume call must still proceed and pass a
+// mustRead setting, the resume call must still proceed and pass a
 // nil/empty slice (mirroring what the first-run plan flow does).
-func TestRunResume_MustreadUnsetYieldsNil(t *testing.T) {
+func TestRunResume_MustReadUnsetYieldsNil(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id, _ := seedResumableTask(t, nil)
@@ -760,8 +760,8 @@ func TestRunResume_MustreadUnsetYieldsNil(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RunResume: %v", err)
 	}
-	if len(agent.lastReq.Mustread) != 0 {
-		t.Fatalf("Mustread = %v, want empty when bucket has no entry", agent.lastReq.Mustread)
+	if len(agent.lastReq.MustRead) != 0 {
+		t.Fatalf("MustRead = %v, want empty when bucket has no entry", agent.lastReq.MustRead)
 	}
 }
 
@@ -787,11 +787,11 @@ func seedPlannerInteractive(t *testing.T, value string) {
 	}
 }
 
-// seedProjectMustread writes a `;`-separated must-read list under the
+// seedProjectMustRead writes a `;`-separated must-read list under the
 // project bucket so resume's mustread.LoadFromDefault returns the
-// parsed slice. Mirrors preflight's putMustread helper without
+// parsed slice. Mirrors preflight's putMustRead helper without
 // depending on it across packages.
-func seedProjectMustread(t *testing.T, value string) {
+func seedProjectMustRead(t *testing.T, value string) {
 	t.Helper()
 	path, err := store.DefaultPath()
 	if err != nil {
@@ -806,7 +806,7 @@ func seedProjectMustread(t *testing.T, value string) {
 		t.Fatalf("EnsureBucket: %v", err)
 	}
 	if err := s.Put(store.BucketProject, mustread.Key, value); err != nil {
-		t.Fatalf("Put mustread: %v", err)
+		t.Fatalf("Put mustRead: %v", err)
 	}
 }
 

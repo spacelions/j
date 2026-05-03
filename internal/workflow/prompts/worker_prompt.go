@@ -17,16 +17,16 @@ import (
 // worker which git worktree to use for this task; an empty worktree
 // leaves the prompt unchanged so the worker behaves as before.
 //
-// mustread, when non-empty, is rendered as a bulleted "Before
+// mustRead, when non-empty, is rendered as a bulleted "Before
 // starting, read these project files…" block between the instruction
-// and the read-the-plan line. An empty / nil mustread leaves the
+// and the read-the-plan line. An empty / nil mustRead leaves the
 // prompt unchanged.
-func BuildWorker(planPath, worktree string, mustread []string) string {
+func BuildWorker(planPath, worktree string, mustRead []string) string {
 	return appendWorktreeLine(
 		fmt.Sprintf(
 			"%s%s\n\nRead the plan at %q before starting.",
 			strings.TrimSpace(worker.Instruction),
-			mustreadSuffix(mustread),
+			mustReadSuffix(mustRead),
 			planPath,
 		),
 		worktree,

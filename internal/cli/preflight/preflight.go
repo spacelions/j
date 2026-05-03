@@ -46,11 +46,11 @@ type UI interface {
 	// ConfirmInit asks the user whether to run `j init` now. The
 	// boolean reports the user's choice (Enter / `y` -> true).
 	ConfirmInit(ctx context.Context) (bool, error)
-	// AskMustread asks the user for the `;`-separated list of files
+	// AskMustRead asks the user for the `;`-separated list of files
 	// every coding-agent backend must read before starting. The raw
 	// answer is passed through verbatim (case preserved, empty input
 	// allowed); persistence happens in Ensure.
-	AskMustread(ctx context.Context) (string, error)
+	AskMustRead(ctx context.Context) (string, error)
 }
 
 // huhUI is the huh-backed implementation of UI. It is unexercised by
@@ -87,7 +87,7 @@ func (u *huhUI) ConfirmInit(ctx context.Context) (bool, error) {
 	return v, nil
 }
 
-func (u *huhUI) AskMustread(ctx context.Context) (string, error) {
+func (u *huhUI) AskMustRead(ctx context.Context) (string, error) {
 	var v string
 	err := huh.NewForm(huh.NewGroup(
 		huh.NewInput().
@@ -106,7 +106,7 @@ func (u *huhUI) AskMustread(ctx context.Context) (string, error) {
 }
 
 // Ensure runs the shared pre-flight check. When ProjectInitialized
-// returns true it short-circuits after capturing project.mustread
+// returns true it short-circuits after capturing project.mustRead
 // (asking the user once on first miss) and the caller proceeds
 // normally. Otherwise it prompts the user via ui:
 //
@@ -124,7 +124,7 @@ func Ensure(ctx context.Context, ui UI, stderr io.Writer) error {
 		return err
 	}
 	if initialized {
-		return ensureMustread(ctx, ui)
+		return ensureMustRead(ctx, ui)
 	}
 	confirm, err := ui.ConfirmInit(ctx)
 	if err != nil {
@@ -140,12 +140,12 @@ func Ensure(ctx context.Context, ui UI, stderr io.Writer) error {
 	return ErrNeedsRetry
 }
 
-// ensureMustread captures project.mustread the first time a
+// ensureMustRead captures project.mustRead the first time a
 // preflight-gated command runs after init. The setting persists
 // inline (no ErrNeedsRetry round-trip) so the user answers once and
 // their original command proceeds. An explicit empty answer is
 // stored verbatim so subsequent runs don't re-prompt.
-func ensureMustread(ctx context.Context, ui UI) error {
+func ensureMustRead(ctx context.Context, ui UI) error {
 	path, err := store.DefaultPath()
 	if err != nil {
 		return err
@@ -157,17 +157,17 @@ func ensureMustread(ctx context.Context, ui UI) error {
 	defer s.Close()
 	_, set, err := mustread.Load(s)
 	if err != nil {
-		return fmt.Errorf("preflight: load mustread: %w", err)
+		return fmt.Errorf("preflight: load mustRead: %w", err)
 	}
 	if set {
 		return nil
 	}
-	value, err := ui.AskMustread(ctx)
+	value, err := ui.AskMustRead(ctx)
 	if err != nil {
 		return err
 	}
 	if err := s.Put(store.BucketProject, mustread.Key, value); err != nil {
-		return fmt.Errorf("preflight: persist mustread: %w", err)
+		return fmt.Errorf("preflight: persist mustRead: %w", err)
 	}
 	return nil
 }

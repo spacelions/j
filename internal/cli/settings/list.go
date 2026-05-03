@@ -69,7 +69,7 @@ func runList(cmd *cobra.Command) error {
 				if b == store.BucketProject && kv.Key == "api_key" {
 					value = "****"
 				}
-				fmt.Fprintf(out, "  %s = %s\n", kv.Key, value)
+				fmt.Fprintf(out, "  %s = %s\n", displayKey(b, kv.Key), value)
 			}
 		}
 		return nil

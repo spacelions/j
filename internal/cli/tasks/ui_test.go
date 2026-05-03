@@ -7,8 +7,8 @@ import (
 
 // TestNewHuhUI_NotNil pins the constructor: it returns a non-nil
 // huh-backed UI implementation. Driving the form requires a TTY so
-// the body of ConfirmDelete is exercised through the UI interface
-// in the orchestration tests in delete_test.go. Label-format and
+// the body of ConfirmDiscard is exercised through the UI interface
+// in the orchestration tests in discard_test.go. Label-format and
 // picker-contract assertions live alongside the shared widget in
 // internal/cli/taskpick; the per-package picker delegate is just
 // a one-line passthrough.

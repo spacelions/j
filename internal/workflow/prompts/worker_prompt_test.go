@@ -30,10 +30,10 @@ func TestBuildWorker(t *testing.T) {
 	}
 }
 
-// TestBuildWorker_WithMustread pins the bulleted must-read block on
+// TestBuildWorker_WithMustRead pins the bulleted must-read block on
 // the worker prompt: it appears once, preserves case, and sits
 // between the worker instruction and the read-the-plan directive.
-func TestBuildWorker_WithMustread(t *testing.T) {
+func TestBuildWorker_WithMustRead(t *testing.T) {
 	got := BuildWorker("/tmp/feature.plan.md", "", []string{"AGENTS.md", "CLAUDE.md"})
 	const header = "Before starting, read these project files for required context:"
 	if strings.Count(got, header) != 1 {
