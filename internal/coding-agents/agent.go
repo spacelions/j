@@ -77,12 +77,13 @@ type Agent interface {
 	Verify(ctx context.Context, req VerifyRequest) (int, error)
 }
 
-// PlanRequest is the input to Agent.Plan. The caller pre-reads the
-// requirement markdown body so the agent can choose how to embed or
-// attach it without having to re-stat or re-read the file.
+// PlanRequest is the input to Agent.Plan.
 //
 // FromFilePath is the user-supplied requirement markdown path (from
-// `j plan -f`); RequirementsOutputPath and PlanOutputPath point inside
+// `j plan -f`); the agent reads it from disk (the backend prompt
+// builders cite the path rather than embedding the body, so the
+// orchestrator no longer pre-reads the markdown).
+// RequirementsOutputPath and PlanOutputPath point inside
 // `<cwd>/.j/tasks/<id>/` and are where the agent must write the
 // (possibly refined) requirements summary and the produced plan,
 // respectively, before exiting.
@@ -93,18 +94,17 @@ type Agent interface {
 // resume ignore it.
 type PlanRequest struct {
 	FromFilePath           string
-	Body                   string
 	Model                  string
 	RequirementsOutputPath string
 	PlanOutputPath         string
 	Interactive            bool
 	ResumeChatID           string
 	// Resume, when true, asks the backend to use its resume-only
-	// prompt template: skip the full planner instruction body and
-	// the save-from-scratch suffix and instead tell the previous
-	// session to inspect what was already done, summarise it for
-	// the user, and continue only the outstanding work. Independent
-	// of ResumeChatID, which still threads the backend's session id.
+	// prompt template: skip the save-from-scratch suffix and tell
+	// the previous session to inspect what was already done,
+	// summarise it for the user, and continue only the outstanding
+	// work. Independent of ResumeChatID, which still threads the
+	// backend's session id.
 	Resume bool
 	// AgentLogPath is the absolute path the headless backend MUST
 	// redirect stdout/stderr to when it spawns a fire-and-forget
@@ -121,11 +121,12 @@ type PlanRequest struct {
 	Mustread []string
 }
 
-// WorkRequest is the input to Agent.Work. The caller pre-reads the plan
-// markdown body so the agent can choose how to embed or attach it
-// without having to re-stat or re-read the file. There is no
-// OutputPath: the worker edits files in place, so the orchestrator does
-// not stat a single output file afterwards.
+// WorkRequest is the input to Agent.Work. There is no OutputPath:
+// the worker edits files in place, so the orchestrator does not
+// stat a single output file afterwards. The agent reads plan.md
+// itself from PlanPath; the backend prompt builders cite the path
+// rather than embedding the body, so the orchestrator no longer
+// pre-reads the plan markdown.
 //
 // PlanPath is always an absolute path inside `<cwd>/.j/tasks/<id>/`
 // (either an existing task directory for bbolt-sourced runs or a
@@ -135,23 +136,23 @@ type PlanRequest struct {
 // Agent.NewResumeID. Agents that have no notion of resume ignore it.
 type WorkRequest struct {
 	PlanPath     string
-	Body         string
 	Model        string
 	Interactive  bool
 	ResumeChatID string
 	// Resume, when true, asks the backend to use its resume-only
-	// prompt template: skip the full worker instruction body and
-	// instead tell the previous session to inspect what was already
-	// done, summarise it for the user, and continue only the
-	// outstanding work. Independent of ResumeChatID.
+	// prompt template that tells the previous session to inspect
+	// what was already done, summarise it for the user, and
+	// continue only the outstanding work. Independent of
+	// ResumeChatID.
 	Resume bool
-	// FixFindings, when non-empty, asks the backend to use a
-	// fix-only worker prompt that points the previous session at the
-	// supplied verifier findings markdown body and asks it to
-	// address every listed item without re-planning. Empty preserves
-	// today's first-run / resume behaviour. Used by `j verify`'s
-	// bounded fix loop after a verifier turn returned VERDICT: FAIL.
-	FixFindings string
+	// FixFindings, when true, asks the backend to use a fix-only
+	// worker prompt that points the previous session at the
+	// per-task verifier_findings.md (read by the agent itself) and
+	// asks it to address every listed item without re-planning.
+	// False preserves today's first-run / resume behaviour. Used
+	// by `j verify`'s bounded fix loop after a verifier turn
+	// returned VERDICT: FAIL.
+	FixFindings bool
 	// Worktree, when non-empty, is the bare git-worktree name the
 	// worker should operate against. The backend threads it into the
 	// prompt builders so the worker knows which worktree to `cd`
@@ -169,28 +170,23 @@ type WorkRequest struct {
 	Mustread []string
 }
 
-// VerifyRequest is the input to Agent.Verify. The caller pre-reads the
-// requirement and plan markdown bodies so the agent can choose how to
-// embed or attach them without re-stating the files. The verifier
-// writes its plan and findings markdown to the supplied output paths
-// inside `<cwd>/.j/tasks/<id>/`; the orchestrator reads the findings
+// VerifyRequest is the input to Agent.Verify. The verifier reads
+// the requirement and plan markdown itself from RequirementsPath
+// and PlanPath (the backend prompt builders cite the paths rather
+// than embedding bodies, so the orchestrator no longer pre-reads
+// the markdown). The verifier writes its plan and findings
+// markdown to the supplied output paths inside
+// `<cwd>/.j/tasks/<id>/`; the orchestrator reads the findings
 // afterwards to derive the VERDICT line.
 //
-// PreviousFindings, when non-empty, is the body of the prior
-// verifier_findings.md from an earlier loop iteration; the verifier
-// uses it as context only (e.g. to confirm the listed issues were
-// addressed) and is still expected to overwrite the findings file
-// with a fresh terminal verdict. ResumeChatID, when set, is the value
-// previously returned by Agent.NewResumeID; backends that have no
-// notion of resume ignore it.
+// ResumeChatID, when set, is the value previously returned by
+// Agent.NewResumeID; backends that have no notion of resume
+// ignore it.
 type VerifyRequest struct {
 	RequirementsPath           string
-	RequirementsBody           string
 	PlanPath                   string
-	PlanBody                   string
 	VerifierPlanOutputPath     string
 	VerifierFindingsOutputPath string
-	PreviousFindings           string
 	Model                      string
 	Interactive                bool
 	Resume                     bool

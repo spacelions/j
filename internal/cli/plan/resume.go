@@ -109,7 +109,6 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	taskDir := filepath.Join(tasksDir, task.ID)
 	requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
 	planPath := filepath.Join(taskDir, store.PlanFileName)
-	body := readBestEffort(requirementsPath)
 
 	resumeTask := planResumeBegin(task)
 	tasklog.PersistWarn(opts.Stderr, resumeTask)
@@ -120,7 +119,6 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	// the background spawn path.
 	_, planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           requirementsPath,
-		Body:                   body,
 		Model:                  task.InvokedModel,
 		RequirementsOutputPath: requirementsPath,
 		PlanOutputPath:         planPath,
@@ -241,21 +239,11 @@ func lookupResumeAgent(agents []codingagents.Agent, tool string) (codingagents.A
 	return nil, false
 }
 
-// readBestEffort reads path silently. Errors yield an empty string
-// because the resume flow tolerates a missing requirements.md
-// (e.g. the user deleted it between runs). Used to seed
-// PlanRequest.Body before the agent runs.
-func readBestEffort(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}
-
-// readBestEffortWarn is the post-run companion: a missing file
-// after the agent claimed success warrants a stderr breadcrumb so
-// users notice when cursor failed to write the expected output.
+// readBestEffortWarn reads path and returns the body. Errors yield
+// an empty string and a stderr breadcrumb so users notice when the
+// agent failed to write an expected output (e.g. requirements.md
+// after a successful plan resume). Used post-run to feed the
+// tasklog summary derivation.
 func readBestEffortWarn(stderr io.Writer, path string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {

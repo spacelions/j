@@ -5,28 +5,38 @@ import (
 	"strings"
 
 	"github.com/spacelions/j/internal/workflow/agents/verifier"
+	"github.com/spacelions/j/internal/workflow/agents/worker"
 )
 
-// BuildVerifier composes the verifier's shared instruction with the
-// requirement / plan markdown bodies and the two output paths the
-// agent must write before exiting (verifier_plan.md and
-// verifier_findings.md). Reusing verifier.Instruction keeps the
-// review rules in a single source of truth across every backend,
-// mirroring how BuildPlanner reuses planner.Instruction and
-// BuildWorker reuses worker.Instruction.
-func BuildVerifier(reqPath, reqBody, planPath, planBody, verifierPlanPath, findingsPath, worktree string, mustread []string) string {
+// BuildVerifier composes the verifier's shared instruction with
+// pointers to the requirement and plan markdown the agent must read,
+// plus the findings output path the agent must write before exiting.
+// The bodies are not embedded inline — the agent opens the files
+// itself so the prompt stays small and there is no risk of drift
+// between the rendered prompt and the on-disk markdown.
+//
+// Reusing verifier.Instruction keeps the review rules in a single
+// source of truth across every backend, mirroring how BuildPlanner
+// reuses planner.Instruction and BuildWorker reuses
+// worker.Instruction.
+//
+// verifierPlanPath stays in the signature even though the body does
+// not reference it: the value is the agent's draft plan output path
+// and the builder simply does not surface it in the prompt because
+// the agent learns the path through the same instruction body that
+// drives the save behaviour.
+func BuildVerifier(reqPath, planPath, verifierPlanPath, findingsPath, worktree string, mustread []string) string {
+	_ = verifierPlanPath
 	return appendVerifierWorktreeLine(
 		fmt.Sprintf(
 			"%s%s\n\n"+
-				"Requirements (from %q):\n%s\n\n"+
-				"Plan (from %q):\n%s\n\n"+
-				"and your final findings (with the terminal `VERDICT: PASS` or "+
+				"Read the requirements at %q and the plan at %q before starting. "+
+				"Save your final findings (with the terminal `VERDICT: PASS` or "+
 				"`VERDICT: FAIL` line) to %q (overwrite if it exists). "+
 				"Then exit.",
 			strings.TrimSpace(verifier.Instruction),
 			mustreadSuffix(mustread),
-			reqPath, reqBody,
-			planPath, planBody,
+			reqPath, planPath,
 			findingsPath,
 		),
 		worktree,
@@ -37,50 +47,59 @@ func BuildVerifier(reqPath, reqBody, planPath, planBody, verifierPlanPath, findi
 // asks the agent to inspect the previous verification session, check
 // what was already done, summarise the prior progress for the user,
 // and then continue only the outstanding verification work. The
-// requirement / plan paths and bodies are embedded for context only
-// — there is no instruction to re-verify from scratch and no
-// embedded verifier.Instruction body, mirroring BuildPlannerResume /
-// BuildWorkerResume.
-func BuildVerifierResume(reqPath, reqBody, planPath, planBody, worktree string) string {
+// requirement / plan paths are referenced for context only — there
+// is no instruction to re-verify from scratch.
+//
+// The full verifier.Instruction body is embedded so the resumed
+// session has the same review rules available as the first-run
+// BuildVerifier did. The instruction text itself opens with
+// "You are the verifier in a planner / worker / verifier workflow.",
+// so this builder relies on that opening as the role preamble
+// rather than emitting a duplicate sentence.
+func BuildVerifierResume(reqPath, planPath, worktree string) string {
 	return appendVerifierWorktreeLine(
 		fmt.Sprintf(
-			"You are resuming a previous verification session. "+
+			"%s\n\n"+
+				"You are resuming a previous verification session. "+
 				"Check what was already done in the previous turn, "+
 				"summarise the prior progress for the user in one short paragraph, "+
 				"and then continue only the verification work that is still outstanding. "+
 				"Do not re-verify from scratch and do not overwrite the saved "+
 				"verifier_findings.md unless new information forces a change.\n\n"+
-				"Requirements (from %q), provided for context only:\n%s\n\n"+
-				"Plan (from %q), provided for context only:\n%s",
-			reqPath, reqBody,
-			planPath, planBody,
+				"Read the requirements at %q for context, and read the plan at %q for context.",
+			strings.TrimSpace(verifier.Instruction),
+			reqPath, planPath,
 		),
 		worktree,
 	)
 }
 
-// BuildVerifierFix composes the worker-side fix prompt used when the
-// outer verify loop has observed a `VERDICT: FAIL` from the verifier
-// and wants the previous worker session to address the listed
-// findings without re-planning. The plan path and body are embedded
-// for context, the findings path and body provide the action items.
+// BuildVerifierFix composes the worker-side fix prompt used when
+// the outer verify loop has observed a `VERDICT: FAIL` from the
+// verifier and wants the previous worker session to address the
+// listed findings without re-planning. The plan path is referenced
+// for context, the findings path is the action list — both are read
+// from disk by the agent rather than being inlined into the prompt.
 //
-// As with the resume builders this does NOT include the full worker
-// instruction body; the resumed session was already seeded with the
-// coding rules on its first run.
-func BuildVerifierFix(planPath, planBody, findingsPath, findingsBody, worktree string) string {
+// A fix loop runs the worker (not the verifier), so the full
+// worker.Instruction body is embedded. The instruction text itself
+// opens with "You are the worker in a planner/worker/verifier
+// workflow.", so this builder relies on that opening as the role
+// preamble rather than emitting a duplicate sentence.
+func BuildVerifierFix(planPath, findingsPath, worktree string) string {
 	return appendWorktreeLine(
 		fmt.Sprintf(
-			"You are resuming a previous coding session. "+
+			"%s\n\n"+
+				"You are resuming a previous coding session. "+
 				"The verifier reviewed your work and reported `VERDICT: FAIL`. "+
-				"Read the findings below and address every listed issue by "+
-				"editing the project files in place. Do not re-plan from scratch, "+
+				"Address every item in the verifier findings by editing the "+
+				"project files in place. Do not re-plan from scratch, "+
 				"do not edit the verifier's findings file, and keep the change "+
 				"set focused on the reported issues.\n\n"+
-				"Plan (from %q), provided for context only:\n%s\n\n"+
-				"Verifier findings (from %q):\n%s",
-			planPath, planBody,
-			findingsPath, findingsBody,
+				"The plan lives at %q (read for context only). "+
+				"Address every item in the verifier findings at %q.",
+			strings.TrimSpace(worker.Instruction),
+			planPath, findingsPath,
 		),
 		worktree,
 	)

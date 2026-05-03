@@ -175,7 +175,6 @@ func Run(ctx context.Context, opts Options) (err error) {
 	}
 	pid, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:     res.PlanPath,
-		Body:         res.Body,
 		Model:        model,
 		Interactive:  *opts.Interactive,
 		ResumeChatID: resumeID,

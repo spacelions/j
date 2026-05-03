@@ -39,7 +39,11 @@ func newStartAgent() *startScriptedAgent {
 func (a *startScriptedAgent) Plan(_ context.Context, req codingagents.PlanRequest) (int, error) {
 	a.planned++
 	a.lastReq = req
-	if err := os.WriteFile(req.RequirementsOutputPath, []byte(req.Body), 0o644); err != nil {
+	body, err := os.ReadFile(req.FromFilePath)
+	if err != nil {
+		return 0, err
+	}
+	if err := os.WriteFile(req.RequirementsOutputPath, body, 0o644); err != nil {
 		return 0, err
 	}
 	if err := os.WriteFile(req.PlanOutputPath, []byte("1. step\n"), 0o644); err != nil {

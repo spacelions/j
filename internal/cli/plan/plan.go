@@ -206,7 +206,6 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 	taskDir := filepath.Join(tasksDir, existing.ID)
 	requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
 	planPath := filepath.Join(taskDir, store.PlanFileName)
-	body := readBestEffort(requirementsPath)
 
 	agent, model, err := selectPlanner(ctx, opts)
 	if err != nil {
@@ -225,7 +224,6 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 	lc := beginPlanTaskReuse(opts, agent, model, existing, resumeID)
 	pid, planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           requirementsPath,
-		Body:                   body,
 		Model:                  model,
 		RequirementsOutputPath: requirementsPath,
 		PlanOutputPath:         planPath,
@@ -415,7 +413,6 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 	lc := beginPlanTask(opts, agent, model, taskID, target, string(body), resumeID)
 	pid, planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           target,
-		Body:                   string(body),
 		Model:                  model,
 		RequirementsOutputPath: requirementsPath,
 		PlanOutputPath:         planPath,

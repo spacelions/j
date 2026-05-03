@@ -106,7 +106,6 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	}
 	taskDir := filepath.Join(tasksDir, task.ID)
 	planPath := filepath.Join(taskDir, store.PlanFileName)
-	body := readBestEffort(planPath)
 
 	lc := beginWorkTaskResume(Options{Stderr: opts.Stderr}, task)
 	// Resume reads the worker bucket's stored `interactive` value and
@@ -115,7 +114,6 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	// PID is always 0 since resume never goes headless.
 	_, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:     planPath,
-		Body:         body,
 		Model:        task.InvokedModel,
 		Interactive:  interactive,
 		ResumeChatID: task.WorkResumeCursor,
@@ -225,18 +223,6 @@ func lookupResumeAgent(agents []codingagents.Agent, tool string) (codingagents.A
 		}
 	}
 	return nil, false
-}
-
-// readBestEffort reads path silently. Errors yield an empty string
-// because the resume flow tolerates a missing plan.md (e.g. the
-// user deleted it between runs). Used to seed WorkRequest.Body
-// before the agent runs.
-func readBestEffort(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return string(data)
 }
 
 // resolveResumeInteractive returns the worker bucket's stored

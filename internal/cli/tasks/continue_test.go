@@ -51,7 +51,8 @@ func (a *continueAgent) Plan(_ context.Context, req codingagents.PlanRequest) (i
 	a.planned++
 	a.planReq = req
 	if req.RequirementsOutputPath != "" {
-		_ = os.WriteFile(req.RequirementsOutputPath, []byte(req.Body), 0o644)
+		body, _ := os.ReadFile(req.FromFilePath)
+		_ = os.WriteFile(req.RequirementsOutputPath, body, 0o644)
 	}
 	if req.PlanOutputPath != "" {
 		_ = os.WriteFile(req.PlanOutputPath, []byte("1. step\n"), 0o644)

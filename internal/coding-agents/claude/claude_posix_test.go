@@ -272,7 +272,6 @@ func TestPlan_Interactive(t *testing.T) {
 
 	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           target,
-		Body:                   "# task\nbody",
 		Model:                  "sonnet",
 		RequirementsOutputPath: reqOut,
 		PlanOutputPath:         planOut,
@@ -295,8 +294,11 @@ func TestPlan_Interactive(t *testing.T) {
 		}
 	}
 	prompt := argv[len(argv)-1]
-	if !strings.Contains(prompt, "# task") || !strings.Contains(prompt, target) {
-		t.Fatalf("prompt missing task/target: %q", prompt)
+	if !strings.Contains(prompt, "Read the user request at") || !strings.Contains(prompt, target) {
+		t.Fatalf("prompt missing read-the-request directive / target: %q", prompt)
+	}
+	if strings.Contains(prompt, "# task") {
+		t.Fatalf("prompt should not embed user-request body: %q", prompt)
 	}
 	if !strings.Contains(prompt, reqOut) {
 		t.Fatalf("prompt missing requirements path %q: %q", reqOut, prompt)
@@ -326,7 +328,6 @@ func TestPlan_Interactive_FirstRun_SessionID(t *testing.T) {
 	rid := "22222222-2222-4222-8222-222222222222"
 	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           target,
-		Body:                   "# task\nbody",
 		Model:                  "sonnet",
 		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
 		PlanOutputPath:         filepath.Join(dir, "plan.md"),
@@ -355,7 +356,6 @@ func TestPlan_Interactive_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
 	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           "/tmp/x.md",
-		Body:                   "x",
 		Model:                  "m",
 		RequirementsOutputPath: "/tmp/requirements.md",
 		PlanOutputPath:         "/tmp/plan.md",
@@ -385,7 +385,6 @@ func TestPlan_Headless(t *testing.T) {
 
 	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           target,
-		Body:                   "# task\nbody",
 		Model:                  "sonnet",
 		RequirementsOutputPath: reqOut,
 		PlanOutputPath:         planOut,
@@ -439,7 +438,6 @@ func TestPlan_Headless_FirstRun_SessionID(t *testing.T) {
 	rid := "33333333-3333-4333-8333-333333333333"
 	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           target,
-		Body:                   "# task\nbody",
 		Model:                  "sonnet",
 		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
 		PlanOutputPath:         filepath.Join(dir, "plan.md"),
@@ -483,7 +481,6 @@ func TestPlan_Headless_SpawnError(t *testing.T) {
 	}
 	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           "/tmp/x.md",
-		Body:                   "x",
 		Model:                  "m",
 		RequirementsOutputPath: "/tmp/requirements.md",
 		PlanOutputPath:         "/tmp/plan.md",
@@ -512,7 +509,6 @@ func TestPlan_Interactive_Resume(t *testing.T) {
 	rid := "66666666-6666-4666-8666-666666666666"
 	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           target,
-		Body:                   "# task\nbody",
 		Model:                  "sonnet",
 		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
 		PlanOutputPath:         filepath.Join(dir, "plan.md"),
@@ -543,8 +539,8 @@ func TestPlan_Interactive_Resume(t *testing.T) {
 			t.Fatalf("resume prompt missing %q: %q", marker, prompt)
 		}
 	}
-	if strings.Contains(prompt, strings.TrimSpace(planner.Instruction)) {
-		t.Fatalf("resume prompt should not include planner.Instruction: %q", prompt)
+	if !strings.Contains(prompt, strings.TrimSpace(planner.Instruction)) {
+		t.Fatalf("resume prompt should include planner.Instruction (its opening sentence doubles as the role preamble): %q", prompt)
 	}
 	for _, banned := range []string{"Save", "Then exit."} {
 		if strings.Contains(prompt, banned) {
@@ -563,7 +559,6 @@ func TestWork_Interactive(t *testing.T) {
 
 	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
 		PlanPath:    plan,
-		Body:        "1. step one\n2. step two",
 		Model:       "sonnet",
 		Interactive: true,
 	})
@@ -584,8 +579,11 @@ func TestWork_Interactive(t *testing.T) {
 		}
 	}
 	prompt := argv[len(argv)-1]
-	if !strings.Contains(prompt, "1. step one") {
-		t.Fatalf("prompt missing plan body: %q", prompt)
+	if !strings.Contains(prompt, "Read the plan at") {
+		t.Fatalf("prompt missing read-the-plan directive: %q", prompt)
+	}
+	if strings.Contains(prompt, "1. step one") {
+		t.Fatalf("prompt should not embed plan body: %q", prompt)
 	}
 	if !strings.Contains(prompt, plan) {
 		t.Fatalf("prompt missing plan path %q: %q", plan, prompt)
@@ -610,7 +608,6 @@ func TestWork_Interactive_Resume(t *testing.T) {
 	rid := "77777777-7777-4777-8777-777777777777"
 	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
 		PlanPath:     plan,
-		Body:         "1. step one\n2. step two",
 		Model:        "sonnet",
 		Interactive:  true,
 		ResumeChatID: rid,
@@ -639,8 +636,8 @@ func TestWork_Interactive_Resume(t *testing.T) {
 			t.Fatalf("resume prompt missing %q: %q", marker, prompt)
 		}
 	}
-	if strings.Contains(prompt, strings.TrimSpace(worker.Instruction)) {
-		t.Fatalf("resume prompt should not include worker.Instruction: %q", prompt)
+	if !strings.Contains(prompt, strings.TrimSpace(worker.Instruction)) {
+		t.Fatalf("resume prompt should include worker.Instruction (its opening sentence doubles as the role preamble): %q", prompt)
 	}
 }
 
@@ -655,7 +652,6 @@ func TestWork_Headless(t *testing.T) {
 
 	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
 		PlanPath:     plan,
-		Body:         "plan body",
 		Model:        "sonnet",
 		Interactive:  false,
 		AgentLogPath: logPath,
@@ -703,7 +699,6 @@ func TestWork_Headless_Resume(t *testing.T) {
 	rid := "55555555-5555-4555-8555-555555555555"
 	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
 		PlanPath:     plan,
-		Body:         "plan body",
 		Model:        "sonnet",
 		Interactive:  false,
 		ResumeChatID: rid,
@@ -739,7 +734,6 @@ func TestWork_Interactive_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
 	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
 		PlanPath:    "/tmp/x.plan.md",
-		Body:        "x",
 		Model:       "m",
 		Interactive: true,
 	})
@@ -760,7 +754,6 @@ func TestWork_Headless_SpawnError(t *testing.T) {
 	}
 	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
 		PlanPath:     "/tmp/x.plan.md",
-		Body:         "x",
 		Model:        "m",
 		Interactive:  false,
 		AgentLogPath: logPath,
@@ -774,8 +767,9 @@ func TestWork_Headless_SpawnError(t *testing.T) {
 }
 
 // TestWork_Interactive_FixFindings pins the fix-findings branch in
-// buildWorkPrompt: a non-empty FixFindings switches to BuildVerifierFix
-// and the prompt embeds the findings + forbids re-planning.
+// buildWorkPrompt: FixFindings=true switches to BuildVerifierFix,
+// which cites the per-task verifier_findings.md path (the agent
+// reads it from disk) and forbids re-planning.
 func TestWork_Interactive_FixFindings(t *testing.T) {
 	dir := t.TempDir()
 	plan := filepath.Join(dir, "spec.plan.md")
@@ -786,10 +780,9 @@ func TestWork_Interactive_FixFindings(t *testing.T) {
 
 	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
 		PlanPath:    plan,
-		Body:        "1. step one",
 		Model:       "sonnet",
 		Interactive: true,
-		FixFindings: "- missing tests for X\nVERDICT: FAIL",
+		FixFindings: true,
 	})
 	if err != nil {
 		t.Fatalf("Work: %v", err)
@@ -799,16 +792,19 @@ func TestWork_Interactive_FixFindings(t *testing.T) {
 	}
 	argv := readCalls(t, calls)
 	prompt := argv[len(argv)-1]
-	for _, want := range []string{"missing tests for X", "VERDICT: FAIL", plan, "verifier_findings.md"} {
+	for _, want := range []string{plan, "verifier_findings.md", "Address every item"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("fix prompt missing %q: %q", want, prompt)
 		}
 	}
-	if strings.Contains(prompt, strings.TrimSpace(worker.Instruction)) {
-		t.Fatalf("fix prompt should not include worker.Instruction: %q", prompt)
+	if !strings.Contains(prompt, strings.TrimSpace(worker.Instruction)) {
+		t.Fatalf("fix prompt should include worker.Instruction (its opening sentence doubles as the role preamble): %q", prompt)
 	}
 	if !strings.Contains(prompt, "Do not re-plan") {
 		t.Fatalf("fix prompt missing re-plan guard: %q", prompt)
+	}
+	if strings.Contains(prompt, "Verifier findings (from") {
+		t.Fatalf("fix prompt should not embed findings body: %q", prompt)
 	}
 }
 
@@ -823,19 +819,21 @@ func TestWork_FixFindings_BeatsResume(t *testing.T) {
 	calls, _ := installStub(t, "", 0)
 	_, err := New().Work(context.Background(), codingagents.WorkRequest{
 		PlanPath:    plan,
-		Body:        "1. step",
 		Model:       "m",
 		Interactive: true,
 		Resume:      true,
-		FixFindings: "- specific finding",
+		FixFindings: true,
 	})
 	if err != nil {
 		t.Fatalf("Work: %v", err)
 	}
 	argv := readCalls(t, calls)
 	prompt := argv[len(argv)-1]
-	if !strings.Contains(prompt, "specific finding") {
-		t.Fatalf("fix prompt missing findings body: %q", prompt)
+	if !strings.Contains(prompt, "Address every item") {
+		t.Fatalf("fix prompt should be the fix variant (cites findings path), got: %q", prompt)
+	}
+	if strings.Contains(prompt, "You are resuming a previous coding session. Check what was already implemented") {
+		t.Fatalf("fix prompt must not be the resume variant: %q", prompt)
 	}
 }
 
@@ -864,9 +862,7 @@ func TestVerify_Interactive(t *testing.T) {
 
 	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
 		RequirementsPath:           reqPath,
-		RequirementsBody:           "# req\nbody",
 		PlanPath:                   planPath,
-		PlanBody:                   "1. step",
 		VerifierPlanOutputPath:     verifierPlan,
 		VerifierFindingsOutputPath: findingsPath,
 		Model:                      "sonnet",
@@ -900,9 +896,14 @@ func TestVerify_Interactive(t *testing.T) {
 	if !strings.Contains(prompt, strings.TrimSpace(verifier.Instruction)) {
 		t.Fatalf("prompt missing verifier.Instruction: %q", prompt)
 	}
-	for _, want := range []string{reqPath, "# req", planPath, "1. step", findingsPath, "VERDICT: PASS", "VERDICT: FAIL", "j-verify-task", "git worktree list"} {
+	for _, want := range []string{reqPath, planPath, findingsPath, "VERDICT: PASS", "VERDICT: FAIL", "j-verify-task", "git worktree list", "Read the requirements at"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q: %q", want, prompt)
+		}
+	}
+	for _, banned := range []string{"# req", "Requirements (from", "Plan (from"} {
+		if strings.Contains(prompt, banned) {
+			t.Fatalf("prompt should not embed requirement/plan body (%q): %q", banned, prompt)
 		}
 	}
 	if strings.Contains(prompt, verifierPlan) {
@@ -920,9 +921,7 @@ func TestVerify_Interactive_Resume(t *testing.T) {
 
 	_, err := New().Verify(context.Background(), codingagents.VerifyRequest{
 		RequirementsPath:           filepath.Join(dir, "requirements.md"),
-		RequirementsBody:           "# req",
 		PlanPath:                   filepath.Join(dir, "plan.md"),
-		PlanBody:                   "plan body",
 		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
 		VerifierFindingsOutputPath: findingsPath,
 		Model:                      "m",
@@ -938,8 +937,8 @@ func TestVerify_Interactive_Resume(t *testing.T) {
 		t.Fatalf("argv missing --resume %q: %v", rid, argv)
 	}
 	prompt := argv[len(argv)-1]
-	if strings.Contains(prompt, strings.TrimSpace(verifier.Instruction)) {
-		t.Fatalf("resume prompt should not include verifier.Instruction: %q", prompt)
+	if !strings.Contains(prompt, strings.TrimSpace(verifier.Instruction)) {
+		t.Fatalf("resume prompt should include verifier.Instruction (its opening sentence doubles as the role preamble): %q", prompt)
 	}
 	for _, banned := range []string{"Save", "Then exit."} {
 		if strings.Contains(prompt, banned) {
@@ -979,9 +978,7 @@ func TestVerify_Headless(t *testing.T) {
 
 	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
 		RequirementsPath:           filepath.Join(dir, "requirements.md"),
-		RequirementsBody:           "# req",
 		PlanPath:                   filepath.Join(dir, "plan.md"),
-		PlanBody:                   "plan body",
 		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
 		VerifierFindingsOutputPath: findingsPath,
 		Model:                      "sonnet",
@@ -1128,7 +1125,6 @@ func TestPlan_Headless_RegressionGuard(t *testing.T) {
 	logPath := filepath.Join(dir, "agent.log")
 	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
 		FromFilePath:           target,
-		Body:                   "body",
 		Model:                  "sonnet",
 		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
 		PlanOutputPath:         filepath.Join(dir, "plan.md"),
@@ -1154,7 +1150,6 @@ func TestWork_Headless_RegressionGuard(t *testing.T) {
 	logPath := filepath.Join(dir, "agent.log")
 	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
 		PlanPath:     plan,
-		Body:         "plan body",
 		Model:        "sonnet",
 		Interactive:  false,
 		AgentLogPath: logPath,
