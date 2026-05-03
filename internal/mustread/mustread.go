@@ -18,8 +18,10 @@ import (
 )
 
 // Key is the bbolt key under store.BucketProject that holds the
-// `;`-separated must-read list.
-const Key = "mustread"
+// `;`-separated must-read list. The storage form is camelCase
+// `mustRead`; the settings package translates to/from the kebab
+// display form `must-read` users see in `j settings`.
+const Key = "mustRead"
 
 // Load wraps store.Get so callers don't need to remember the bucket
 // or key. The boolean is false when the key has never been set

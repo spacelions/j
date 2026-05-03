@@ -47,10 +47,10 @@ func TestBuildVerifier(t *testing.T) {
 	}
 }
 
-// TestBuildVerifier_WithMustread pins the bulleted must-read block on
+// TestBuildVerifier_WithMustRead pins the bulleted must-read block on
 // the verifier prompt: appears once, preserves case, and sits between
 // the verifier instruction and the read-the-requirements directive.
-func TestBuildVerifier_WithMustread(t *testing.T) {
+func TestBuildVerifier_WithMustRead(t *testing.T) {
 	got := BuildVerifier("r.md", "p.md", "vp.md", "vf.md", "", []string{"AGENTS.md", "CLAUDE.md"})
 	const header = "Before starting, read these project files for required context:"
 	if strings.Count(got, header) != 1 {

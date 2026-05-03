@@ -118,9 +118,9 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	resumeTask := planResumeBegin(task)
 	tasklog.PersistWarn(opts.Stderr, resumeTask)
 
-	mustreadFiles, mustreadErr := mustread.LoadFromDefault()
-	if mustreadErr != nil {
-		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustreadErr)
+	mustReadFiles, mustReadErr := mustread.LoadFromDefault()
+	if mustReadErr != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
 	}
 
 	// Resume always runs interactive — clarification answers need a
@@ -136,7 +136,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		Interactive:            true,
 		ResumeChatID:           task.PlanResumeCursor,
 		Resume:                 true,
-		Mustread:               mustreadFiles,
+		MustRead:               mustReadFiles,
 	})
 
 	var refinedReq, planMD string

@@ -17,16 +17,16 @@ import (
 )
 
 // scriptedUI is a deterministic UI fake that records prompt invocations
-// and answers ConfirmInit / AskMustread with pre-set values. The error
+// and answers ConfirmInit / AskMustRead with pre-set values. The error
 // fields let tests drive the "prompt errored" branches.
 type scriptedUI struct {
 	confirm bool
 	err     error
 	calls   int
 
-	mustreadValue string
-	mustreadErr   error
-	mustreadCalls int
+	mustReadValue string
+	mustReadErr   error
+	mustReadCalls int
 }
 
 func (u *scriptedUI) ConfirmInit(context.Context) (bool, error) {
@@ -37,19 +37,19 @@ func (u *scriptedUI) ConfirmInit(context.Context) (bool, error) {
 	return u.confirm, nil
 }
 
-func (u *scriptedUI) AskMustread(context.Context) (string, error) {
-	u.mustreadCalls++
-	if u.mustreadErr != nil {
-		return "", u.mustreadErr
+func (u *scriptedUI) AskMustRead(context.Context) (string, error) {
+	u.mustReadCalls++
+	if u.mustReadErr != nil {
+		return "", u.mustReadErr
 	}
-	return u.mustreadValue, nil
+	return u.mustReadValue, nil
 }
 
-// putMustread stores a project.mustread value into the freshly-init'd
+// putMustRead stores a project.mustRead value into the freshly-init'd
 // settings store at the current cwd so a subsequent Ensure call hits
 // the "already set" short-circuit. Used by tests that exercise the
 // initialized-and-already-asked path.
-func putMustread(t *testing.T, value string) {
+func putMustRead(t *testing.T, value string) {
 	t.Helper()
 	path, err := store.DefaultPath()
 	if err != nil {
@@ -68,9 +68,9 @@ func putMustread(t *testing.T, value string) {
 	}
 }
 
-// readMustread returns the stored project.mustread value plus a
+// readMustRead returns the stored project.mustRead value plus a
 // "set" flag from the current cwd's settings store.
-func readMustread(t *testing.T) (string, bool) {
+func readMustRead(t *testing.T) (string, bool) {
 	t.Helper()
 	path, err := store.DefaultPath()
 	if err != nil {
@@ -89,14 +89,14 @@ func readMustread(t *testing.T) (string, bool) {
 }
 
 // TestEnsure_AlreadyInitialized pins the happy path: with all four
-// artifacts present and project.mustread already set, Ensure returns
+// artifacts present and project.mustRead already set, Ensure returns
 // nil without ever invoking the UI.
 func TestEnsure_AlreadyInitialized(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	putMustread(t, "AGENTS.md;CLAUDE.md")
+	putMustRead(t, "AGENTS.md;CLAUDE.md")
 	ui := &scriptedUI{}
 	var stderr bytes.Buffer
 	if err := Ensure(context.Background(), ui, &stderr); err != nil {
@@ -105,8 +105,8 @@ func TestEnsure_AlreadyInitialized(t *testing.T) {
 	if ui.calls != 0 {
 		t.Fatalf("UI should not be prompted on initialized project: %d", ui.calls)
 	}
-	if ui.mustreadCalls != 0 {
-		t.Fatalf("AskMustread should not fire when mustread set: %d", ui.mustreadCalls)
+	if ui.mustReadCalls != 0 {
+		t.Fatalf("AskMustRead should not fire when mustRead set: %d", ui.mustReadCalls)
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr should stay empty: %q", stderr.String())
@@ -232,7 +232,7 @@ func TestEnsure_PropagatesProjectInitializedError(t *testing.T) {
 }
 
 // TestPreRunE_Initialized covers the cobra wiring on the happy path:
-// an already-initialized cwd with project.mustread set makes the helper
+// an already-initialized cwd with project.mustRead set makes the helper
 // return nil. The huh UI is constructed but never reached because
 // Ensure short-circuits.
 func TestPreRunE_Initialized(t *testing.T) {
@@ -240,7 +240,7 @@ func TestPreRunE_Initialized(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatal(err)
 	}
-	putMustread(t, "AGENTS.md")
+	putMustRead(t, "AGENTS.md")
 	cmd := &cobra.Command{}
 	cmd.SetIn(&bytes.Buffer{})
 	cmd.SetOut(&bytes.Buffer{})
@@ -258,7 +258,7 @@ func TestPreRunE_NoContextDefaults(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatal(err)
 	}
-	putMustread(t, "AGENTS.md")
+	putMustRead(t, "AGENTS.md")
 	cmd := &cobra.Command{}
 	cmd.SetIn(&bytes.Buffer{})
 	cmd.SetOut(&bytes.Buffer{})
@@ -268,87 +268,87 @@ func TestPreRunE_NoContextDefaults(t *testing.T) {
 	}
 }
 
-// TestEnsure_PromptsForMustreadWhenMissing pins the new branch:
-// project initialized but project.mustread unset → AskMustread fires
+// TestEnsure_PromptsForMustReadWhenMissing pins the new branch:
+// project initialized but project.mustRead unset → AskMustRead fires
 // once, value persisted verbatim, Ensure returns nil so the user's
 // original command proceeds without a re-run.
-func TestEnsure_PromptsForMustreadWhenMissing(t *testing.T) {
+func TestEnsure_PromptsForMustReadWhenMissing(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	ui := &scriptedUI{mustreadValue: "AGENTS.md;CLAUDE.md"}
+	ui := &scriptedUI{mustReadValue: "AGENTS.md;CLAUDE.md"}
 	var stderr bytes.Buffer
 	if err := Ensure(context.Background(), ui, &stderr); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
-	if ui.mustreadCalls != 1 {
-		t.Fatalf("mustreadCalls = %d, want 1", ui.mustreadCalls)
+	if ui.mustReadCalls != 1 {
+		t.Fatalf("mustReadCalls = %d, want 1", ui.mustReadCalls)
 	}
 	if ui.calls != 0 {
 		t.Fatalf("ConfirmInit should not fire when initialized: %d", ui.calls)
 	}
-	got, set := readMustread(t)
+	got, set := readMustRead(t)
 	if !set {
-		t.Fatal("project.mustread should be persisted")
+		t.Fatal("project.mustRead should be persisted")
 	}
 	if got != "AGENTS.md;CLAUDE.md" {
-		t.Fatalf("project.mustread = %q, want preserved-case value", got)
+		t.Fatalf("project.mustRead = %q, want preserved-case value", got)
 	}
 }
 
-// TestEnsure_BlankMustreadIsPersisted: an explicit empty answer is
+// TestEnsure_BlankMustReadIsPersisted: an explicit empty answer is
 // stored verbatim and a second Ensure call does NOT re-prompt.
-func TestEnsure_BlankMustreadIsPersisted(t *testing.T) {
+func TestEnsure_BlankMustReadIsPersisted(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	ui := &scriptedUI{mustreadValue: ""}
+	ui := &scriptedUI{mustReadValue: ""}
 	if err := Ensure(context.Background(), ui, &bytes.Buffer{}); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
-	if ui.mustreadCalls != 1 {
-		t.Fatalf("mustreadCalls = %d, want 1", ui.mustreadCalls)
+	if ui.mustReadCalls != 1 {
+		t.Fatalf("mustReadCalls = %d, want 1", ui.mustReadCalls)
 	}
-	got, set := readMustread(t)
+	got, set := readMustRead(t)
 	if !set || got != "" {
-		t.Fatalf("readMustread = (%q, %v), want (\"\", true)", got, set)
+		t.Fatalf("readMustRead = (%q, %v), want (\"\", true)", got, set)
 	}
 	if err := Ensure(context.Background(), ui, &bytes.Buffer{}); err != nil {
 		t.Fatalf("Ensure (second): %v", err)
 	}
-	if ui.mustreadCalls != 1 {
-		t.Fatalf("mustreadCalls after re-run = %d, want 1 (no re-prompt)", ui.mustreadCalls)
+	if ui.mustReadCalls != 1 {
+		t.Fatalf("mustReadCalls after re-run = %d, want 1 (no re-prompt)", ui.mustReadCalls)
 	}
 }
 
-// TestEnsure_DoesNotPromptWhenMustreadSet covers the short-circuit
-// when project.mustread is already populated.
-func TestEnsure_DoesNotPromptWhenMustreadSet(t *testing.T) {
+// TestEnsure_DoesNotPromptWhenMustReadSet covers the short-circuit
+// when project.mustRead is already populated.
+func TestEnsure_DoesNotPromptWhenMustReadSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	putMustread(t, "AGENTS.md")
+	putMustRead(t, "AGENTS.md")
 	ui := &scriptedUI{}
 	if err := Ensure(context.Background(), ui, &bytes.Buffer{}); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
-	if ui.mustreadCalls != 0 {
-		t.Fatalf("mustreadCalls = %d, want 0", ui.mustreadCalls)
+	if ui.mustReadCalls != 0 {
+		t.Fatalf("mustReadCalls = %d, want 0", ui.mustReadCalls)
 	}
 }
 
-// TestEnsure_MustreadUIError surfaces a UI error from AskMustread
+// TestEnsure_MustReadUIError surfaces a UI error from AskMustRead
 // verbatim so the caller sees the original failure.
-func TestEnsure_MustreadUIError(t *testing.T) {
+func TestEnsure_MustReadUIError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	boom := errors.New("mustread boom")
-	ui := &scriptedUI{mustreadErr: boom}
+	boom := errors.New("mustRead boom")
+	ui := &scriptedUI{mustReadErr: boom}
 	err := Ensure(context.Background(), ui, &bytes.Buffer{})
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want %v", err, boom)

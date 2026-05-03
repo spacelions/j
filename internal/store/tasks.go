@@ -206,7 +206,7 @@ func (s *Store) GetTask(id string) (Task, error) {
 
 // DeleteTask removes the JSON-encoded Task stored under id from
 // BucketTasks. The error wraps fs.ErrNotExist when the bucket is
-// missing or the key is absent so callers (notably `j tasks delete`)
+// missing or the key is absent so callers (notably `j tasks discard`)
 // can distinguish "no such task" from a transport error and surface
 // the correct user-facing message. Bolt-level failures (closed DB,
 // disk error) propagate verbatim from db.Update; PutTask follows

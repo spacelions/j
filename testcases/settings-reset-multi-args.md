@@ -21,11 +21,11 @@ Expected:
   - The final `j settings` listing has empty `[planner]`, `[worker]`
     and `[verifier]` sections (every previously-stored key is gone).
     `[project]` still carries the `max_iterations` row that `j init`
-    seeds plus the empty `mustread` row from `--must-read=`:
+    seeds plus the empty `must-read` row from `--must-read=`:
 
         [project]
           max_iterations = 3
-          mustread = 
+          must-read = 
 
         [planner]
 

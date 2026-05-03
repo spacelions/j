@@ -200,9 +200,9 @@ func (*Agent) Work(ctx context.Context, req codingagents.WorkRequest) (int, erro
 // help-status row whose first run skipped the artifacts must still
 // produce them on resume).
 func buildPlanPrompt(req codingagents.PlanRequest) string {
-	base := prompts.BuildPlanner(req.FromFilePath, req.Mustread)
+	base := prompts.BuildPlanner(req.FromFilePath, req.MustRead)
 	if req.Resume {
-		base = prompts.BuildPlannerResume(req.FromFilePath, req.Mustread)
+		base = prompts.BuildPlannerResume(req.FromFilePath, req.MustRead)
 	}
 	return prompts.AppendPlannerSaveSuffix(base, req.RequirementsOutputPath, req.PlanOutputPath)
 }
@@ -222,7 +222,7 @@ func buildWorkPrompt(req codingagents.WorkRequest) string {
 	if req.Resume {
 		return prompts.BuildWorkerResume(req.PlanPath, req.Worktree)
 	}
-	return prompts.BuildWorker(req.PlanPath, req.Worktree, req.Mustread)
+	return prompts.BuildWorker(req.PlanPath, req.Worktree, req.MustRead)
 }
 
 // Verify runs cursor-agent against the requirements + plan pair. The
@@ -287,7 +287,7 @@ func buildVerifyPrompt(req codingagents.VerifyRequest) string {
 		req.PlanPath,
 		req.VerifierPlanOutputPath, req.VerifierFindingsOutputPath,
 		req.Worktree,
-		req.Mustread,
+		req.MustRead,
 	)
 }
 

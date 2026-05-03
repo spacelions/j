@@ -19,15 +19,15 @@ import (
 // prompt stays small and there is no chance of drift between the
 // rendered prompt and the on-disk source.
 //
-// mustread, when non-empty, is rendered as a bulleted "Before
+// mustRead, when non-empty, is rendered as a bulleted "Before
 // starting, read these project files…" block between the instruction
-// and the user-request line. An empty / nil mustread leaves the
-// prompt byte-identical to the pre-mustread output.
-func BuildPlanner(targetPath string, mustread []string) string {
+// and the user-request line. An empty / nil mustRead leaves the
+// prompt byte-identical to the pre-must-read output.
+func BuildPlanner(targetPath string, mustRead []string) string {
 	return fmt.Sprintf(
 		"%s%s\n\nRead the user request at %q before planning.",
 		strings.TrimSpace(planner.Instruction),
-		mustreadSuffix(mustread),
+		mustReadSuffix(mustRead),
 		targetPath,
 	)
 }
@@ -69,11 +69,11 @@ func AppendPlannerSaveSuffix(base, requirementsPath, planPath string) string {
 // fresh-run and resume paths and the reaper sees identical
 // artifacts in either case.
 //
-// mustread, when non-empty, is rendered as a bulleted "Before
+// mustRead, when non-empty, is rendered as a bulleted "Before
 // starting, read these project files…" block between the
 // instruction and the resume framing line (mirroring BuildPlanner).
-// An empty / nil mustread keeps the prompt byte-identical to the
-// pre-mustread output.
+// An empty / nil mustRead keeps the prompt byte-identical to the
+// pre-must-read output.
 //
 // The full planner.Instruction body is embedded so the resumed
 // session has the same coding rules available as the first-run
@@ -81,7 +81,7 @@ func AppendPlannerSaveSuffix(base, requirementsPath, planPath string) string {
 // "You are the planner in a planner/worker/verifier workflow.",
 // so this builder relies on that opening as the role preamble
 // rather than emitting a duplicate sentence.
-func BuildPlannerResume(targetPath string, mustread []string) string {
+func BuildPlannerResume(targetPath string, mustRead []string) string {
 	return fmt.Sprintf(
 		"%s%s\n\n"+
 			"You are resuming a previous planning session. "+
@@ -91,7 +91,7 @@ func BuildPlannerResume(targetPath string, mustread []string) string {
 			"Do not re-plan from scratch.\n\n"+
 			"Original user request lives at %q; read it if you need context.",
 		strings.TrimSpace(planner.Instruction),
-		mustreadSuffix(mustread),
+		mustReadSuffix(mustRead),
 		targetPath,
 	)
 }

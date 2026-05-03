@@ -25,7 +25,7 @@ import (
 // and the builder simply does not surface it in the prompt because
 // the agent learns the path through the same instruction body that
 // drives the save behaviour.
-func BuildVerifier(reqPath, planPath, verifierPlanPath, findingsPath, worktree string, mustread []string) string {
+func BuildVerifier(reqPath, planPath, verifierPlanPath, findingsPath, worktree string, mustRead []string) string {
 	_ = verifierPlanPath
 	return appendVerifierWorktreeLine(
 		fmt.Sprintf(
@@ -35,7 +35,7 @@ func BuildVerifier(reqPath, planPath, verifierPlanPath, findingsPath, worktree s
 				"`VERDICT: FAIL` line) to %q (overwrite if it exists). "+
 				"Then exit.",
 			strings.TrimSpace(verifier.Instruction),
-			mustreadSuffix(mustread),
+			mustReadSuffix(mustRead),
 			reqPath, planPath,
 			findingsPath,
 		),

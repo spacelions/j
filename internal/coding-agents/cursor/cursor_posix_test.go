@@ -787,12 +787,12 @@ func TestPlan_Interactive_Resume(t *testing.T) {
 	}
 }
 
-// TestPlan_Interactive_Resume_WithMustread pins AC: the resume prompt
-// must thread the project mustread bullets (case-preserved, exactly
+// TestPlan_Interactive_Resume_WithMustRead pins AC: the resume prompt
+// must thread the project mustRead bullets (case-preserved, exactly
 // once) through to the agent, mirroring what BuildPlanner does for
 // fresh runs. Without this, a help-status row's resume turn would
 // silently drop the project-wide must-read context the first run had.
-func TestPlan_Interactive_Resume_WithMustread(t *testing.T) {
+func TestPlan_Interactive_Resume_WithMustRead(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "spec.md")
 	if err := os.WriteFile(target, []byte("# task\nbody"), 0o600); err != nil {
@@ -810,7 +810,7 @@ func TestPlan_Interactive_Resume_WithMustread(t *testing.T) {
 		Interactive:            true,
 		ResumeChatID:           rid,
 		Resume:                 true,
-		Mustread:               []string{"AGENTS.md", "CLAUDE.md"},
+		MustRead:               []string{"AGENTS.md", "CLAUDE.md"},
 	})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)

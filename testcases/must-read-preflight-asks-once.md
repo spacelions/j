@@ -18,6 +18,6 @@ Expected:
   - The second `j tasks` invocation does NOT re-prompt — the
     persisted value short-circuits the preflight check.
   - The `j settings` listing renders, under the `[project]` section
-    header, the row `  mustread = AGENTS.md;CLAUDE.md`.
+    header, the row `  must-read = AGENTS.md;CLAUDE.md`.
 
 Manual: yes (drives the huh input form).

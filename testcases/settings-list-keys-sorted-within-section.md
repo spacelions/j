@@ -17,4 +17,4 @@ Expected:
       tool = cursor
 
   - The other known sections render in fixed order with no entries
-    (except `[project]` which still carries the seeded `mustread = `).
+    (except `[project]` which still carries the seeded `must-read = `).

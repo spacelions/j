@@ -10,10 +10,10 @@ Steps:
 Expected:
   - Exit code 0.
   - Stdout renders the four known sections in TOML order, with the only
-    seeded row (`mustread = `) under `[project]`:
+    seeded row (`must-read = `) under `[project]`:
 
         [project]
-          mustread = 
+          must-read = 
         
         [planner]
         

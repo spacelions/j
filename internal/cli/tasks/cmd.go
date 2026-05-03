@@ -44,7 +44,7 @@ func New() *cobra.Command {
 			return listTasks(cmd.OutOrStdout())
 		},
 	}
-	cmd.AddCommand(newDeleteCmd())
+	cmd.AddCommand(newDiscardCmd())
 	cmd.AddCommand(newEnterCmd())
 	cmd.AddCommand(newStartCmd())
 	cmd.AddCommand(newContinueCmd())

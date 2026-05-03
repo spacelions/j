@@ -38,7 +38,7 @@ func runSet(cmd *cobra.Command, args []string) error {
 			if err := s.EnsureBucket(e.bucket); err != nil {
 				return err
 			}
-			if err := s.Put(e.bucket, e.key, e.value); err != nil {
+			if err := s.Put(e.bucket, storageKey(e.bucket, e.key), e.value); err != nil {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "set %s.%s = %s\n", e.bucket, e.key, e.value)
@@ -63,6 +63,11 @@ func parseKeyValue(arg string) (bucket, key, value string, err error) {
 	return bucket, key, arg[i+1:], nil
 }
 
+// parseBucketKey splits a `bucket.key` argument into its parts. The
+// returned key is the user-typed display form (kebab); callers
+// translate to the bbolt storage form via storageKey before hitting
+// *store.Store so the on-disk row uses the canonical camelCase name
+// while the echo-back / error wording keeps the form the user typed.
 func parseBucketKey(s string) (bucket, key string, err error) {
 	i := strings.IndexByte(s, '.')
 	if i < 0 {

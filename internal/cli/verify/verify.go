@@ -346,9 +346,9 @@ func confirmStatusOverride(ctx context.Context, opts Options, cmd string, t stor
 // fire-and-forget child cannot be safely killed by ctx cancellation.
 func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent codingagents.Agent, model, resumeID string, res resolved) (verifyOutcome, error) {
 	agentLogPath := filepath.Join(res.TaskDir, tasklog.AgentLogFileName)
-	mustreadFiles, mustreadErr := mustread.LoadFromDefault()
-	if mustreadErr != nil {
-		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustreadErr)
+	mustReadFiles, mustReadErr := mustread.LoadFromDefault()
+	if mustReadErr != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
 	}
 	for i := 0; i < opts.MaxIterations; i++ {
 		req := codingagents.VerifyRequest{
@@ -362,7 +362,7 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 			ResumeChatID:               resumeID,
 			Worktree:                   res.Task.Worktree,
 			AgentLogPath:               agentLogPath,
-			Mustread:                   mustreadFiles,
+			MustRead:                   mustReadFiles,
 		}
 		pid, err := verifierAgent.Verify(ctx, req)
 		if err != nil {

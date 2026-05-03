@@ -217,9 +217,9 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
 	}
 	agentLogPath := filepath.Join(taskDir, tasklog.AgentLogFileName)
-	mustreadFiles, mustreadErr := mustread.LoadFromDefault()
-	if mustreadErr != nil {
-		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustreadErr)
+	mustReadFiles, mustReadErr := mustread.LoadFromDefault()
+	if mustReadErr != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
 	}
 	lc := beginPlanTaskReuse(opts, agent, model, existing, resumeID)
 	pid, planErr := agent.Plan(ctx, codingagents.PlanRequest{
@@ -230,7 +230,7 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 		Interactive:            *opts.Interactive,
 		ResumeChatID:           resumeID,
 		AgentLogPath:           agentLogPath,
-		Mustread:               mustreadFiles,
+		MustRead:               mustReadFiles,
 	})
 
 	if planErr == nil && pid > 0 {
@@ -406,9 +406,9 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
 	}
 	agentLogPath := filepath.Join(taskDir, tasklog.AgentLogFileName)
-	mustreadFiles, mustreadErr := mustread.LoadFromDefault()
-	if mustreadErr != nil {
-		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustreadErr)
+	mustReadFiles, mustReadErr := mustread.LoadFromDefault()
+	if mustReadErr != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
 	}
 	lc := beginPlanTask(opts, agent, model, taskID, target, string(body), resumeID)
 	pid, planErr := agent.Plan(ctx, codingagents.PlanRequest{
@@ -419,7 +419,7 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		Interactive:            *opts.Interactive,
 		ResumeChatID:           resumeID,
 		AgentLogPath:           agentLogPath,
-		Mustread:               mustreadFiles,
+		MustRead:               mustReadFiles,
 	})
 
 	if planErr == nil && pid > 0 {

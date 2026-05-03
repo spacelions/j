@@ -169,9 +169,9 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 	taskID := workTaskID(res)
 	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), tasklog.AgentLogFileName)
-	mustreadFiles, mustreadErr := mustread.LoadFromDefault()
-	if mustreadErr != nil {
-		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustreadErr)
+	mustReadFiles, mustReadErr := mustread.LoadFromDefault()
+	if mustReadErr != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
 	}
 	pid, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:     res.PlanPath,
@@ -180,7 +180,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 		ResumeChatID: resumeID,
 		Worktree:     lc.task.Worktree,
 		AgentLogPath: agentLogPath,
-		Mustread:     mustreadFiles,
+		MustRead:     mustReadFiles,
 	})
 	if workErr == nil && pid > 0 {
 		lc.recordBackground(pid, agentLogPath)

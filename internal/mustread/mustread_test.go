@@ -82,7 +82,7 @@ func TestLoad_PathStability(t *testing.T) {
 	if store.BucketProject != "project" {
 		t.Fatalf("BucketProject = %q, want project", store.BucketProject)
 	}
-	if Key != "mustread" {
-		t.Fatalf("Key = %q, want mustread", Key)
+	if Key != "mustRead" {
+		t.Fatalf("Key = %q, want mustRead", Key)
 	}
 }
