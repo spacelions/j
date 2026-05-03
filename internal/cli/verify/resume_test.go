@@ -718,5 +718,93 @@ func TestBeginVerifyTaskResume_NilBeginAtStampsFresh(t *testing.T) {
 	}
 }
 
+// TestRunResume_Verify_InteractiveFromBucketTrue seeds the verifier
+// bucket with `interactive=true` and asserts RunResume reads it and
+// propagates it to agent.Verify.
+func TestRunResume_Verify_InteractiveFromBucketTrue(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	seedVerifierInteractive(t, "true")
+	id, _ := seedResumableVerify(t, nil)
+	agent := newScriptedAgent()
+	if err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if len(agent.verifiedReqs) != 1 || !agent.verifiedReqs[0].Interactive {
+		t.Fatalf("Interactive = false, want true (stored=true wins): %+v", agent.verifiedReqs)
+	}
+}
+
+// TestRunResume_Verify_InteractiveFromBucketFalse seeds the verifier
+// bucket with `interactive=false` and asserts RunResume runs the
+// agent headless.
+func TestRunResume_Verify_InteractiveFromBucketFalse(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	seedVerifierInteractive(t, "false")
+	id, _ := seedResumableVerify(t, nil)
+	agent := newScriptedAgent()
+	if err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if len(agent.verifiedReqs) != 1 || agent.verifiedReqs[0].Interactive {
+		t.Fatalf("Interactive = true, want false (stored=false wins): %+v", agent.verifiedReqs)
+	}
+}
+
+// TestRunResume_Verify_InteractiveDefaultWhenBucketEmpty pins the
+// fallback: no stored entry -> Interactive=true.
+func TestRunResume_Verify_InteractiveDefaultWhenBucketEmpty(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableVerify(t, nil)
+	agent := newScriptedAgent()
+	if err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if len(agent.verifiedReqs) != 1 || !agent.verifiedReqs[0].Interactive {
+		t.Fatalf("Interactive = false, want true (default): %+v", agent.verifiedReqs)
+	}
+}
+
+// seedVerifierInteractive writes a literal `interactive` value into
+// the verifier bucket so resume can read it.
+func seedVerifierInteractive(t *testing.T, value string) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.EnsureBucket(store.BucketVerifier); err != nil {
+		t.Fatalf("EnsureBucket: %v", err)
+	}
+	if err := s.Put(store.BucketVerifier, "interactive", value); err != nil {
+		t.Fatalf("Put interactive: %v", err)
+	}
+}
+
 // silence unused-import pseudo by referencing fmt in a dead path.
 var _ = fmt.Sprintf

@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/agentpick"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
@@ -81,6 +82,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	if len(opts.Agents) == 0 {
 		return errors.New("J: no coding agents configured")
 	}
+	interactive := resolveResumeInteractive(opts)
 
 	task, ok, err := resolveResumeTask(ctx, opts)
 	if err != nil {
@@ -111,9 +113,10 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	previousFindings := readBestEffort(findingsPath)
 
 	lc := beginVerifyTaskResume(Options{Stderr: opts.Stderr}, task)
-	// Resume is always interactive; the headless background spawn
-	// path never fires here. Discard the returned PID (always 0)
-	// so the orchestrator stays on the synchronous lifecycle.
+	// Resume reads the verifier bucket's stored `interactive` value
+	// and falls back to true when unset; there is no `--interactive`
+	// flag because the stored value is authoritative across resume
+	// runs. PID is always 0 since resume never goes headless.
 	_, runErr := agent.Verify(ctx, codingagents.VerifyRequest{
 		RequirementsPath:           requirementsPath,
 		RequirementsBody:           requirementsBody,
@@ -123,7 +126,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		VerifierFindingsOutputPath: findingsPath,
 		PreviousFindings:           previousFindings,
 		Model:                      task.InvokedModel,
-		Interactive:                true,
+		Interactive:                interactive,
 		ResumeChatID:               task.VerifyResumeCursor,
 		Resume:                     true,
 	})
@@ -218,6 +221,32 @@ func listResumableTasks(stderr io.Writer) ([]store.Task, error) {
 	return out, nil
 }
 
+// resolveResumeInteractive returns the verifier bucket's stored
+// `interactive` value, falling back to true when the bucket has
+// no usable entry. Resume intentionally has no `--interactive`
+// flag: the stored value is authoritative so users do not have to
+// re-supply the choice on every resume. Never writes the bucket.
+func resolveResumeInteractive(opts ResumeOptions) bool {
+	if v, ok := storedResumeInteractive(opts); ok {
+		return v
+	}
+	return true
+}
+
+// storedResumeInteractive looks up the verifier bucket's
+// `interactive` value. The settings DB is opened and closed solely
+// for this read so the lock is not held across the agent call. A
+// failed open or a missing / unparseable value yields (_, false)
+// so callers fall back to the default.
+func storedResumeInteractive(opts ResumeOptions) (bool, bool) {
+	s, ok := openSettingsStore(opts.Stderr)
+	if !ok {
+		return false, false
+	}
+	defer func() { _ = s.Close() }()
+	return agentpick.StoredInteractive(s, store.BucketVerifier)
+}
+
 // newResumeCmd builds the `j verify resume` cobra subcommand.
 //
 // viper.BindPFlag and viper.BindEnv only fail when their input is
@@ -228,11 +257,14 @@ func newResumeCmd() *cobra.Command {
 		Use:   "resume",
 		Short: "Resume a previously started verify session",
 		Long: "Lists tasks whose verify session is non-empty and resumes the chosen one " +
-			"in interactive mode using the tool/model recorded on the task row. " +
+			"using the tool/model recorded on the task row. " +
 			"Pass --from-task <id> (or VERIFY_RESUME_FROM_TASK) to skip the picker. " +
 			"With no eligible sessions, prints `J: there are no resumable verify sessions` " +
 			"and exits 0. The eligibility filter is intentionally permissive: tasks " +
-			"in any status are resumable as long as their verify_resume_cursor is non-empty.",
+			"in any status are resumable as long as their verify_resume_cursor is non-empty. " +
+			"Resume reads `interactive` from the verifier bucket and falls back to true " +
+			"when unset; there is no `--interactive` flag because the stored value is " +
+			"authoritative across resume runs.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return RunResume(cmd.Context(), ResumeOptions{
 				TaskID: viper.GetString("verify.resume.from_task"),
