@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/viper"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/mustread"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -656,42 +657,68 @@ func TestNewResumeCmd_RunEPropagates(t *testing.T) {
 	}
 }
 
-// TestRunResume_InteractiveFromBucketTrue seeds the planner bucket with
-// `interactive=true` and asserts RunResume reads that value (rather than
-// the cobra default) and propagates it to the agent.
-func TestRunResume_InteractiveFromBucketTrue(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	seedPlannerInteractive(t, "true")
-	id, _ := seedResumableTask(t, nil)
-	agent := newScriptedAgent()
-	if err := RunResume(context.Background(), ResumeOptions{
-		TaskID: id,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	}); err != nil {
-		t.Fatalf("RunResume: %v", err)
+// TestRunResume_AlwaysInteractive pins AC#A1: resume forces
+// Interactive=true on every run regardless of the planner bucket's
+// stored value (or absence thereof). The previous bucket-driven
+// behaviour was the root cause of the help-status recovery bug —
+// a help row whose first run went headless would otherwise re-spawn
+// headless and the user could never answer the clarification turn.
+//
+// Sub-cases cover the three observable bucket states (`true`,
+// `false`, unset); the "stored=false" case is the primary
+// regression guard. A side assertion checks resume is read-only:
+// it must not populate the planner bucket's tool/model entries.
+func TestRunResume_AlwaysInteractive(t *testing.T) {
+	cases := []struct {
+		name          string
+		seedBucket    bool
+		bucketValue   string
+		assertReadOnly bool
+	}{
+		{name: "stored-true", seedBucket: true, bucketValue: "true", assertReadOnly: true},
+		{name: "stored-false", seedBucket: true, bucketValue: "false"},
+		{name: "bucket-empty", seedBucket: false},
 	}
-	if !agent.lastReq.Interactive {
-		t.Fatalf("Interactive = false, want true (stored=true wins)")
-	}
-	// Resume must NOT have written tool/model: it only reads.
-	tool, model := readPlannerToolModel(t)
-	if tool != "" || model != "" {
-		t.Fatalf("planner bucket gained tool/model from resume: tool=%q model=%q", tool, model)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			mustInit(t)
+			if tc.seedBucket {
+				seedPlannerInteractive(t, tc.bucketValue)
+			}
+			id, _ := seedResumableTask(t, nil)
+			agent := newScriptedAgent()
+			if err := RunResume(context.Background(), ResumeOptions{
+				TaskID: id,
+				Stdout: io.Discard,
+				Stderr: io.Discard,
+				Agents: []codingagents.Agent{agent},
+				UI:     &scriptedUI{},
+			}); err != nil {
+				t.Fatalf("RunResume: %v", err)
+			}
+			if !agent.lastReq.Interactive {
+				t.Fatalf("Interactive = false, want true (resume always forces interactive, bucket=%q)", tc.bucketValue)
+			}
+			if tc.assertReadOnly {
+				tool, model := readPlannerToolModel(t)
+				if tool != "" || model != "" {
+					t.Fatalf("planner bucket gained tool/model from resume: tool=%q model=%q", tool, model)
+				}
+			}
+		})
 	}
 }
 
-// TestRunResume_InteractiveFromBucketFalse seeds the planner bucket with
-// `interactive=false` and asserts RunResume runs the agent headless. This
-// pins the precedence: stored value wins; resume has no --interactive
-// flag, so the user's stored choice is authoritative.
-func TestRunResume_InteractiveFromBucketFalse(t *testing.T) {
+// TestRunResume_ForwardsMustread pins AC: resume loads the project's
+// mustread setting and threads it into PlanRequest.Mustread so the
+// resume turn inherits the same project-wide context the first run
+// had. Without this, BuildPlannerResume would silently render a
+// must-read-less prompt on resume.
+func TestRunResume_ForwardsMustread(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	seedPlannerInteractive(t, "false")
+	seedProjectMustread(t, "AGENTS.md;CLAUDE.md")
 	id, _ := seedResumableTask(t, nil)
 	agent := newScriptedAgent()
 	if err := RunResume(context.Background(), ResumeOptions{
@@ -703,14 +730,23 @@ func TestRunResume_InteractiveFromBucketFalse(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RunResume: %v", err)
 	}
-	if agent.lastReq.Interactive {
-		t.Fatalf("Interactive = true, want false (stored=false wins)")
+	want := []string{"AGENTS.md", "CLAUDE.md"}
+	if got := agent.lastReq.Mustread; len(got) != len(want) {
+		t.Fatalf("Mustread = %v, want %v", got, want)
+	} else {
+		for i, v := range want {
+			if got[i] != v {
+				t.Fatalf("Mustread[%d] = %q, want %q (case must be preserved)", i, got[i], v)
+			}
+		}
 	}
 }
 
-// TestRunResume_InteractiveDefaultWhenBucketEmpty pins the fallback:
-// no stored entry -> Interactive=true.
-func TestRunResume_InteractiveDefaultWhenBucketEmpty(t *testing.T) {
+// TestRunResume_MustreadUnsetYieldsNil covers the no-bucket-entry
+// branch of mustread.LoadFromDefault: when the project has no
+// mustread setting, the resume call must still proceed and pass a
+// nil/empty slice (mirroring what the first-run plan flow does).
+func TestRunResume_MustreadUnsetYieldsNil(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id, _ := seedResumableTask(t, nil)
@@ -724,14 +760,14 @@ func TestRunResume_InteractiveDefaultWhenBucketEmpty(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RunResume: %v", err)
 	}
-	if !agent.lastReq.Interactive {
-		t.Fatalf("Interactive = false, want true (default)")
+	if len(agent.lastReq.Mustread) != 0 {
+		t.Fatalf("Mustread = %v, want empty when bucket has no entry", agent.lastReq.Mustread)
 	}
 }
 
 // seedPlannerInteractive writes a literal `interactive` value into the
-// planner bucket so resume can read it. Reused across the bucket-
-// precedence tests.
+// planner bucket. Reused by TestRunResume_AlwaysInteractive to prove
+// the stored value is intentionally ignored on resume.
 func seedPlannerInteractive(t *testing.T, value string) {
 	t.Helper()
 	path, err := store.DefaultPath()
@@ -748,6 +784,29 @@ func seedPlannerInteractive(t *testing.T, value string) {
 	}
 	if err := s.Put(store.BucketPlanner, "interactive", value); err != nil {
 		t.Fatalf("Put interactive: %v", err)
+	}
+}
+
+// seedProjectMustread writes a `;`-separated must-read list under the
+// project bucket so resume's mustread.LoadFromDefault returns the
+// parsed slice. Mirrors preflight's putMustread helper without
+// depending on it across packages.
+func seedProjectMustread(t *testing.T, value string) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.EnsureBucket(store.BucketProject); err != nil {
+		t.Fatalf("EnsureBucket: %v", err)
+	}
+	if err := s.Put(store.BucketProject, mustread.Key, value); err != nil {
+		t.Fatalf("Put mustread: %v", err)
 	}
 }
 

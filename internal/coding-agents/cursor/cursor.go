@@ -192,29 +192,19 @@ func (*Agent) Work(ctx context.Context, req codingagents.WorkRequest) (int, erro
 }
 
 // buildPlanPrompt picks the right planner prompt for req. On a fresh
-// run it composes the full planner instruction and the
-// "save requirements / save plan / then exit" suffix; on a resume run
-// it switches to the resume-only template that asks the previous
-// cursor session to inspect / report / continue without overwriting
-// the saved markdown. The non-resume suffix also pins the
-// requirements.md "first line is a one-line summary" rule so
-// `j tasks` no longer surfaces the literal heading "Requirements" as a
-// task summary.
+// run it composes the full planner instruction; on a resume run it
+// switches to the resume-only template that asks the previous cursor
+// session to inspect / report / continue. Both branches then receive
+// the same save-and-exit suffix via prompts.AppendPlannerSaveSuffix
+// so the reaper sees identical artifacts in either case (a
+// help-status row whose first run skipped the artifacts must still
+// produce them on resume).
 func buildPlanPrompt(req codingagents.PlanRequest) string {
-	if req.Resume {
-		return prompts.BuildPlannerResume(req.FromFilePath)
-	}
 	base := prompts.BuildPlanner(req.FromFilePath, req.Mustread)
-	return fmt.Sprintf(
-		"%s\n\nDuring this session you may clarify the requirements with the user. Before exiting:\n"+
-			"1. Save the (possibly refined) requirements summary to %q (overwrite if it exists). "+
-			"The first line of this file MUST be a concise one-line summary of the user task — "+
-			"do NOT use `# Requirements` (or any other heading) as the first line; "+
-			"subsequent sections may use any structure you prefer.\n"+
-			"2. Save the plan to %q (overwrite if it exists).\n"+
-			"Then exit.",
-		base, req.RequirementsOutputPath, req.PlanOutputPath,
-	)
+	if req.Resume {
+		base = prompts.BuildPlannerResume(req.FromFilePath, req.Mustread)
+	}
+	return prompts.AppendPlannerSaveSuffix(base, req.RequirementsOutputPath, req.PlanOutputPath)
 }
 
 // buildWorkPrompt picks the right worker prompt for req. The

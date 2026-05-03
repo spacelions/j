@@ -14,11 +14,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/agentpick"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/mustread"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -66,7 +66,13 @@ func (o ResumeOptions) withDefaults() ResumeOptions {
 // `j plan`'s markdown path with two key differences: the task is
 // reused in place (no new id, the original PlanBeginAt is
 // preserved) and the agent / model are read from the task row
-// instead of the picker / settings. Resume is always interactive.
+// instead of the picker / settings.
+//
+// Resume always runs interactive — clarification answers need a
+// TUI, and the planner bucket's `interactive` value is intentionally
+// ignored on resume (a help-status row whose first run went headless
+// would otherwise re-spawn headless and the user still couldn't
+// answer the clarification turn).
 //
 // The bbolt store is opened, written, and closed before agent.Plan
 // runs, then re-opened to write the terminal status; the agent
@@ -86,7 +92,6 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	if len(opts.Agents) == 0 {
 		return errors.New("J: no coding agents configured")
 	}
-	interactive := resolveResumeInteractive(opts)
 
 	task, ok, err := resolveResumeTask(ctx, opts)
 	if err != nil {
@@ -113,18 +118,25 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	resumeTask := planResumeBegin(task)
 	tasklog.PersistWarn(opts.Stderr, resumeTask)
 
-	// Resume Interactive precedence: explicit ResumeOptions.Interactive
-	// > planner bucket's stored interactive > cobra default true. The
-	// returned PID is always 0 because resume never goes headless via
-	// the background spawn path.
+	mustreadFiles, mustreadErr := mustread.LoadFromDefault()
+	if mustreadErr != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustreadErr)
+	}
+
+	// Resume always runs interactive — clarification answers need a
+	// TUI, and the planner bucket's `interactive` value is
+	// intentionally ignored on resume. The returned PID is always 0
+	// because resume never goes headless via the background spawn
+	// path.
 	_, planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           requirementsPath,
 		Model:                  task.InvokedModel,
 		RequirementsOutputPath: requirementsPath,
 		PlanOutputPath:         planPath,
-		Interactive:            interactive,
+		Interactive:            true,
 		ResumeChatID:           task.PlanResumeCursor,
 		Resume:                 true,
+		Mustread:               mustreadFiles,
 	})
 
 	var refinedReq, planMD string
@@ -289,32 +301,6 @@ func planResumeFinish(task store.Task, runErr error, refinedRequirements, planMa
 	return task
 }
 
-// resolveResumeInteractive returns the planner bucket's stored
-// `interactive` value, falling back to true when the bucket has
-// no usable entry. Resume intentionally has no `--interactive`
-// flag: the stored value is authoritative so users do not have to
-// re-supply the choice on every resume. Never writes the bucket.
-func resolveResumeInteractive(opts ResumeOptions) bool {
-	if v, ok := storedResumeInteractive(opts); ok {
-		return v
-	}
-	return true
-}
-
-// storedResumeInteractive looks up the planner bucket's
-// `interactive` value. The settings DB is opened and closed solely
-// for this read so the lock is not held across the agent call. A
-// failed open or a missing / unparseable value yields (_, false)
-// so callers fall back to the default.
-func storedResumeInteractive(opts ResumeOptions) (bool, bool) {
-	s, ok := openSettingsStore(opts.Stderr)
-	if !ok {
-		return false, false
-	}
-	defer func() { _ = s.Close() }()
-	return agentpick.StoredInteractive(s, store.BucketPlanner)
-}
-
 // newResumeCmd builds the `j plan resume` cobra subcommand. It
 // owns its own --from-task flag and the matching viper / env
 // bindings so the parent `j plan` Run is unchanged.
@@ -332,9 +318,8 @@ func newResumeCmd() *cobra.Command {
 			"Pass --from-task <id> (or PLAN_RESUME_FROM_TASK) to skip the picker. " +
 			"With no eligible sessions, prints `J: there are no resumable sessions` " +
 			"and exits 0. " +
-			"Resume reads `interactive` from the planner bucket and falls back to " +
-			"true when unset; there is no `--interactive` flag because the stored " +
-			"value is authoritative across resume runs.",
+			"Resume always runs interactive; the planner bucket's `interactive` " +
+			"value is ignored.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return RunResume(cmd.Context(), ResumeOptions{
 				TaskID: viper.GetString("plan.resume.from_task"),

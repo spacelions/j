@@ -197,28 +197,19 @@ func sessionArgs(id string, resume bool) []string {
 }
 
 // buildPlanPrompt picks the right planner prompt for req. Mirrors the
-// cursor backend: a fresh run composes the planner instruction plus
-// the "save requirements / save plan / then exit" suffix; a resume
-// run switches to the resume-only template that asks the previous
-// session to inspect / report / continue without overwriting the
-// saved markdown. The non-resume suffix also pins the requirements.md
-// "first line is a one-line summary" rule so `j tasks` does not
-// surface the literal `# Requirements` heading as the task summary.
+// cursor backend: a fresh run composes the planner instruction; a
+// resume run switches to the resume-only template that asks the
+// previous session to inspect / report / continue. Both branches
+// receive the same save-and-exit suffix via
+// prompts.AppendPlannerSaveSuffix so the reaper sees identical
+// artifacts in either case (a help-status row whose first run
+// skipped the artifacts must still produce them on resume).
 func buildPlanPrompt(req codingagents.PlanRequest) string {
-	if req.Resume {
-		return prompts.BuildPlannerResume(req.FromFilePath)
-	}
 	base := prompts.BuildPlanner(req.FromFilePath, req.Mustread)
-	return fmt.Sprintf(
-		"%s\n\nDuring this session you may clarify the requirements with the user. Before exiting:\n"+
-			"1. Save the (possibly refined) requirements summary to %q (overwrite if it exists). "+
-			"The first line of this file MUST be a concise one-line summary of the user task — "+
-			"do NOT use `# Requirements` (or any other heading) as the first line; "+
-			"subsequent sections may use any structure you prefer.\n"+
-			"2. Save the plan to %q (overwrite if it exists).\n"+
-			"Then exit.",
-		base, req.RequirementsOutputPath, req.PlanOutputPath,
-	)
+	if req.Resume {
+		base = prompts.BuildPlannerResume(req.FromFilePath, req.Mustread)
+	}
+	return prompts.AppendPlannerSaveSuffix(base, req.RequirementsOutputPath, req.PlanOutputPath)
 }
 
 // buildWorkPrompt picks the right worker prompt for req. The

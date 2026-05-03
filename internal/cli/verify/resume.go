@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/agentpick"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
@@ -70,12 +69,17 @@ func (o ResumeOptions) withDefaults() ResumeOptions {
 // eligibility filter is permissive — any task with a non-empty
 // VerifyResumeCursor qualifies, regardless of status.
 //
+// Resume always runs interactive — by definition resume is iterative
+// (the user drives the next step from the TUI), and headless mode
+// has no stdin path back to the human. The verifier bucket's
+// `interactive` value is intentionally ignored on resume.
+//
 // As with runVerifyLoop, RunResume blocks on the spawned verifier
-// child via run.WaitForExit before reading the findings file. A
-// non-zero PID from agent.Verify means the headless backend
-// detached a fire-and-forget child whose Wait was released; reading
-// findings before the child has finished writing them would race
-// the verdict line and produce a stale FAIL.
+// child via run.WaitForExit before reading the findings file. The
+// returned PID is always 0 on the always-interactive resume path
+// (interactive backends run synchronously and do not detach), so
+// WaitForExit is effectively a no-op; it stays in the call chain
+// for symmetry with the first-run flow.
 //
 // A user-abort in the resume picker (huh.ErrUserAborted) is
 // translated to a nil return by the deferred guard below so cancel
@@ -90,7 +94,6 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	if len(opts.Agents) == 0 {
 		return errors.New("J: no coding agents configured")
 	}
-	interactive := resolveResumeInteractive(opts)
 
 	task, ok, err := resolveResumeTask(ctx, opts)
 	if err != nil {
@@ -117,20 +120,18 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	findingsPath := filepath.Join(taskDir, store.VerifierFindingsFileName)
 
 	lc := beginVerifyTaskResume(Options{Stderr: opts.Stderr}, task)
-	// Resume reads the verifier bucket's stored `interactive` value
-	// and falls back to true when unset; there is no `--interactive`
-	// flag because the stored value is authoritative across resume
-	// runs. The PID is non-zero only when the agent went headless
-	// and detached a fire-and-forget child; WaitForExit blocks on
-	// it before parseVerdict reads the findings file so we never
-	// observe a stale verdict.
+	// Resume always runs interactive — the verifier bucket's
+	// `interactive` value is intentionally ignored on resume.
+	// PID is always 0 here (interactive backends run synchronously
+	// and do not detach), so WaitForExit below is a no-op; the call
+	// is preserved for symmetry with the first-run flow.
 	pid, runErr := agent.Verify(ctx, codingagents.VerifyRequest{
 		RequirementsPath:           requirementsPath,
 		PlanPath:                   planPath,
 		VerifierPlanOutputPath:     verifierPlanPath,
 		VerifierFindingsOutputPath: findingsPath,
 		Model:                      task.InvokedModel,
-		Interactive:                interactive,
+		Interactive:                true,
 		ResumeChatID:               task.VerifyResumeCursor,
 		Resume:                     true,
 	})
@@ -231,32 +232,6 @@ func listResumableTasks(stderr io.Writer) ([]store.Task, error) {
 	return out, nil
 }
 
-// resolveResumeInteractive returns the verifier bucket's stored
-// `interactive` value, falling back to true when the bucket has
-// no usable entry. Resume intentionally has no `--interactive`
-// flag: the stored value is authoritative so users do not have to
-// re-supply the choice on every resume. Never writes the bucket.
-func resolveResumeInteractive(opts ResumeOptions) bool {
-	if v, ok := storedResumeInteractive(opts); ok {
-		return v
-	}
-	return true
-}
-
-// storedResumeInteractive looks up the verifier bucket's
-// `interactive` value. The settings DB is opened and closed solely
-// for this read so the lock is not held across the agent call. A
-// failed open or a missing / unparseable value yields (_, false)
-// so callers fall back to the default.
-func storedResumeInteractive(opts ResumeOptions) (bool, bool) {
-	s, ok := openSettingsStore(opts.Stderr)
-	if !ok {
-		return false, false
-	}
-	defer func() { _ = s.Close() }()
-	return agentpick.StoredInteractive(s, store.BucketVerifier)
-}
-
 // newResumeCmd builds the `j verify resume` cobra subcommand.
 //
 // viper.BindPFlag and viper.BindEnv only fail when their input is
@@ -272,9 +247,8 @@ func newResumeCmd() *cobra.Command {
 			"With no eligible sessions, prints `J: there are no resumable verify sessions` " +
 			"and exits 0. The eligibility filter is intentionally permissive: tasks " +
 			"in any status are resumable as long as their verify_resume_cursor is non-empty. " +
-			"Resume reads `interactive` from the verifier bucket and falls back to true " +
-			"when unset; there is no `--interactive` flag because the stored value is " +
-			"authoritative across resume runs.",
+			"Resume always runs interactive; the verifier bucket's `interactive` value " +
+			"is ignored.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return RunResume(cmd.Context(), ResumeOptions{
 				TaskID: viper.GetString("verify.resume.from_task"),

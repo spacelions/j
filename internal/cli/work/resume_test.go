@@ -657,76 +657,50 @@ func TestBeginWorkTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	}
 }
 
-// TestRunResume_Work_InteractiveFromBucketTrue seeds the worker bucket
-// with `interactive=true` and asserts RunResume reads it (rather than
-// the cobra default) and propagates it to agent.Work.
-func TestRunResume_Work_InteractiveFromBucketTrue(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	seedWorkerInteractive(t, "true")
-	id, _ := seedResumableWork(t, nil)
-	agent := newScriptedAgent()
-	if err := RunResume(context.Background(), ResumeOptions{
-		TaskID: id,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	}); err != nil {
-		t.Fatalf("RunResume: %v", err)
+// TestRunResume_Work_AlwaysInteractive pins the always-interactive
+// contract for `j work resume`: regardless of the worker bucket's
+// stored `interactive` value (or absence thereof), resume forces
+// Interactive=true so the user can iterate via the TUI. Headless
+// resume has no stdin path back to the human, so respecting a
+// stored `interactive=false` would dead-end any clarification turn.
+func TestRunResume_Work_AlwaysInteractive(t *testing.T) {
+	cases := []struct {
+		name        string
+		seedBucket  bool
+		bucketValue string
+	}{
+		{name: "stored-true", seedBucket: true, bucketValue: "true"},
+		{name: "stored-false", seedBucket: true, bucketValue: "false"},
+		{name: "bucket-empty", seedBucket: false},
 	}
-	if !agent.lastReq.Interactive {
-		t.Fatalf("Interactive = false, want true (stored=true wins)")
-	}
-}
-
-// TestRunResume_Work_InteractiveFromBucketFalse seeds the worker bucket
-// with `interactive=false` and asserts RunResume runs the agent
-// headless. There is no --interactive flag; the stored value is
-// authoritative.
-func TestRunResume_Work_InteractiveFromBucketFalse(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	seedWorkerInteractive(t, "false")
-	id, _ := seedResumableWork(t, nil)
-	agent := newScriptedAgent()
-	if err := RunResume(context.Background(), ResumeOptions{
-		TaskID: id,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	}); err != nil {
-		t.Fatalf("RunResume: %v", err)
-	}
-	if agent.lastReq.Interactive {
-		t.Fatalf("Interactive = true, want false (stored=false wins)")
-	}
-}
-
-// TestRunResume_Work_InteractiveDefaultWhenBucketEmpty pins the
-// fallback: no stored entry -> Interactive=true.
-func TestRunResume_Work_InteractiveDefaultWhenBucketEmpty(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	id, _ := seedResumableWork(t, nil)
-	agent := newScriptedAgent()
-	if err := RunResume(context.Background(), ResumeOptions{
-		TaskID: id,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	}); err != nil {
-		t.Fatalf("RunResume: %v", err)
-	}
-	if !agent.lastReq.Interactive {
-		t.Fatalf("Interactive = false, want true (default)")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			mustInit(t)
+			if tc.seedBucket {
+				seedWorkerInteractive(t, tc.bucketValue)
+			}
+			id, _ := seedResumableWork(t, nil)
+			agent := newScriptedAgent()
+			if err := RunResume(context.Background(), ResumeOptions{
+				TaskID: id,
+				Stdout: io.Discard,
+				Stderr: io.Discard,
+				Agents: []codingagents.Agent{agent},
+				UI:     &scriptedUI{},
+			}); err != nil {
+				t.Fatalf("RunResume: %v", err)
+			}
+			if !agent.lastReq.Interactive {
+				t.Fatalf("Interactive = false, want true (resume always forces interactive, bucket=%q)", tc.bucketValue)
+			}
+		})
 	}
 }
 
 // seedWorkerInteractive writes a literal `interactive` value into the
-// worker bucket so resume can read it.
+// worker bucket. Reused by TestRunResume_Work_AlwaysInteractive to
+// prove the stored value is intentionally ignored on resume.
 func seedWorkerInteractive(t *testing.T, value string) {
 	t.Helper()
 	path, err := store.DefaultPath()

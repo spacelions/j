@@ -721,49 +721,44 @@ func TestBeginVerifyTaskResume_NilBeginAtStampsFresh(t *testing.T) {
 	}
 }
 
-// TestRunResume_Verify_InteractiveFromBucketTrue seeds the verifier
-// bucket with `interactive=true` and asserts RunResume reads it and
-// propagates it to agent.Verify.
-func TestRunResume_Verify_InteractiveFromBucketTrue(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	seedVerifierInteractive(t, "true")
-	id, _ := seedResumableVerify(t, nil)
-	agent := newScriptedAgent()
-	if err := RunResume(context.Background(), ResumeOptions{
-		TaskID: id,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	}); err != nil {
-		t.Fatalf("RunResume: %v", err)
+// TestRunResume_Verify_AlwaysInteractive pins the always-interactive
+// contract for `j verify resume`: regardless of the verifier bucket's
+// stored `interactive` value (or absence thereof), resume forces
+// Interactive=true. Headless resume has no stdin path back to the
+// human, so respecting a stored `interactive=false` would dead-end
+// any clarification turn.
+func TestRunResume_Verify_AlwaysInteractive(t *testing.T) {
+	cases := []struct {
+		name        string
+		seedBucket  bool
+		bucketValue string
+	}{
+		{name: "stored-true", seedBucket: true, bucketValue: "true"},
+		{name: "stored-false", seedBucket: true, bucketValue: "false"},
+		{name: "bucket-empty", seedBucket: false},
 	}
-	if len(agent.verifiedReqs) != 1 || !agent.verifiedReqs[0].Interactive {
-		t.Fatalf("Interactive = false, want true (stored=true wins): %+v", agent.verifiedReqs)
-	}
-}
-
-// TestRunResume_Verify_InteractiveFromBucketFalse seeds the verifier
-// bucket with `interactive=false` and asserts RunResume runs the
-// agent headless.
-func TestRunResume_Verify_InteractiveFromBucketFalse(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	seedVerifierInteractive(t, "false")
-	id, _ := seedResumableVerify(t, nil)
-	agent := newScriptedAgent()
-	if err := RunResume(context.Background(), ResumeOptions{
-		TaskID: id,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	}); err != nil {
-		t.Fatalf("RunResume: %v", err)
-	}
-	if len(agent.verifiedReqs) != 1 || agent.verifiedReqs[0].Interactive {
-		t.Fatalf("Interactive = true, want false (stored=false wins): %+v", agent.verifiedReqs)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			mustInit(t)
+			if tc.seedBucket {
+				seedVerifierInteractive(t, tc.bucketValue)
+			}
+			id, _ := seedResumableVerify(t, nil)
+			agent := newScriptedAgent()
+			if err := RunResume(context.Background(), ResumeOptions{
+				TaskID: id,
+				Stdout: io.Discard,
+				Stderr: io.Discard,
+				Agents: []codingagents.Agent{agent},
+				UI:     &scriptedUI{},
+			}); err != nil {
+				t.Fatalf("RunResume: %v", err)
+			}
+			if len(agent.verifiedReqs) != 1 || !agent.verifiedReqs[0].Interactive {
+				t.Fatalf("Interactive = false, want true (resume always forces interactive, bucket=%q): %+v", tc.bucketValue, agent.verifiedReqs)
+			}
+		})
 	}
 }
 
@@ -850,29 +845,9 @@ func TestRunResume_VerifierWaitCtxCancelled(t *testing.T) {
 	}
 }
 
-// TestRunResume_Verify_InteractiveDefaultWhenBucketEmpty pins the
-// fallback: no stored entry -> Interactive=true.
-func TestRunResume_Verify_InteractiveDefaultWhenBucketEmpty(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	id, _ := seedResumableVerify(t, nil)
-	agent := newScriptedAgent()
-	if err := RunResume(context.Background(), ResumeOptions{
-		TaskID: id,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	}); err != nil {
-		t.Fatalf("RunResume: %v", err)
-	}
-	if len(agent.verifiedReqs) != 1 || !agent.verifiedReqs[0].Interactive {
-		t.Fatalf("Interactive = false, want true (default): %+v", agent.verifiedReqs)
-	}
-}
-
 // seedVerifierInteractive writes a literal `interactive` value into
-// the verifier bucket so resume can read it.
+// the verifier bucket. Reused by TestRunResume_Verify_AlwaysInteractive
+// to prove the stored value is intentionally ignored on resume.
 func seedVerifierInteractive(t *testing.T, value string) {
 	t.Helper()
 	path, err := store.DefaultPath()

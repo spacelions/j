@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/agentpick"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
@@ -71,6 +70,11 @@ func (o ResumeOptions) withDefaults() ResumeOptions {
 // WorkResumeCursor qualifies, regardless of status. validateForWork
 // is intentionally NOT called.
 //
+// Resume always runs interactive — by definition resume is iterative
+// (the user drives the next step from the TUI), and headless mode
+// has no stdin path back to the human. The worker bucket's
+// `interactive` value is intentionally ignored on resume.
+//
 // A user-abort in the resume picker (huh.ErrUserAborted) is
 // translated to a nil return by the deferred guard below so cancel
 // exits cleanly without surfacing a "cancelled by user" line.
@@ -84,7 +88,6 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	if len(opts.Agents) == 0 {
 		return errors.New("J: no coding agents configured")
 	}
-	interactive := resolveResumeInteractive(opts)
 
 	task, ok, err := resolveResumeTask(ctx, opts)
 	if err != nil {
@@ -108,14 +111,14 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	planPath := filepath.Join(taskDir, store.PlanFileName)
 
 	lc := beginWorkTaskResume(Options{Stderr: opts.Stderr}, task)
-	// Resume reads the worker bucket's stored `interactive` value and
-	// falls back to true when unset; there is no `--interactive` flag
-	// because the stored value is authoritative across resume runs.
-	// PID is always 0 since resume never goes headless.
+	// Resume always runs interactive — clarification / iteration
+	// answers need a TUI, and the worker bucket's `interactive`
+	// value is intentionally ignored on resume. PID is always 0
+	// since resume never goes headless.
 	_, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:     planPath,
 		Model:        task.InvokedModel,
-		Interactive:  interactive,
+		Interactive:  true,
 		ResumeChatID: task.WorkResumeCursor,
 		Resume:       true,
 	})
@@ -225,32 +228,6 @@ func lookupResumeAgent(agents []codingagents.Agent, tool string) (codingagents.A
 	return nil, false
 }
 
-// resolveResumeInteractive returns the worker bucket's stored
-// `interactive` value, falling back to true when the bucket has
-// no usable entry. Resume intentionally has no `--interactive`
-// flag: the stored value is authoritative so users do not have to
-// re-supply the choice on every resume. Never writes the bucket.
-func resolveResumeInteractive(opts ResumeOptions) bool {
-	if v, ok := storedResumeInteractive(opts); ok {
-		return v
-	}
-	return true
-}
-
-// storedResumeInteractive looks up the worker bucket's
-// `interactive` value. The settings DB is opened and closed solely
-// for this read so the lock is not held across the agent call. A
-// failed open or a missing / unparseable value yields (_, false)
-// so callers fall back to the default.
-func storedResumeInteractive(opts ResumeOptions) (bool, bool) {
-	s, ok := openSettingsStore(opts.Stderr)
-	if !ok {
-		return false, false
-	}
-	defer func() { _ = s.Close() }()
-	return agentpick.StoredInteractive(s, store.BucketWorker)
-}
-
 // newResumeCmd builds the `j work resume` cobra subcommand. It
 // owns its own --from-task flag and the matching viper / env
 // bindings so the parent `j work` Run is unchanged.
@@ -270,9 +247,8 @@ func newResumeCmd() *cobra.Command {
 			"and exits 0. The eligibility filter is intentionally permissive: tasks " +
 			"in any status (including `working` and `work-done`) are resumable as " +
 			"long as their work_resume_cursor is non-empty. " +
-			"Resume reads `interactive` from the worker bucket and falls back to " +
-			"true when unset; there is no `--interactive` flag because the stored " +
-			"value is authoritative across resume runs.",
+			"Resume always runs interactive; the worker bucket's `interactive` " +
+			"value is ignored.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return RunResume(cmd.Context(), ResumeOptions{
 				TaskID: viper.GetString("work.resume.from_task"),
