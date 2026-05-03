@@ -1,6 +1,9 @@
 package settings
 
-import "github.com/spacelions/j/internal/store"
+import (
+	"github.com/spacelions/j/internal/mustread"
+	"github.com/spacelions/j/internal/store"
+)
 
 // displayKey maps a bbolt storage key to the kebab-cased form users see
 // in `j settings`. Centralising the mapping here means callers never
@@ -42,12 +45,17 @@ type keyMap struct {
 	toStorage map[string]string
 }
 
+// mustReadDisplay is the kebab-cased form of mustread.Key shown to
+// users in `j settings`. Centralising the literal here keeps the
+// display/storage round-trip in lockstep with the storage const.
+const mustReadDisplay = "must-read"
+
 // keyTable lists every bucket whose display form differs from its
 // storage form. Today only the project bucket has one such key
 // (`mustRead` ↔ `must-read`); future entries register here.
 var keyTable = map[string]*keyMap{
 	store.BucketProject: {
-		toDisplay: map[string]string{"mustRead": "must-read"},
-		toStorage: map[string]string{"must-read": "mustRead"},
+		toDisplay: map[string]string{mustread.Key: mustReadDisplay},
+		toStorage: map[string]string{mustReadDisplay: mustread.Key},
 	},
 }
