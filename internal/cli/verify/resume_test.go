@@ -766,6 +766,89 @@ func TestRunResume_Verify_InteractiveFromBucketFalse(t *testing.T) {
 	}
 }
 
+// TestRunResume_WaitsForSpawnedChild is the resume-flow analogue
+// of TestRunVerifyLoop_WaitsForSpawnedChild. The verifier child
+// sleeps before writing the findings file; without
+// run.WaitForExit, RunResume would parseVerdict before the child
+// has written PASS and finalise the row as verify-done.
+func TestRunResume_WaitsForSpawnedChild(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableVerify(t, nil)
+	// Drop the seeded findings so the test doesn't accidentally
+	// read a stale "FAIL" if WaitForExit were a no-op; only the
+	// freshly-spawned child's write should reach disk.
+	if err := os.Remove(filepath.Join(mustTasksDir(t), id, store.VerifierFindingsFileName)); err != nil {
+		t.Fatalf("remove findings: %v", err)
+	}
+	agent := &spawnVerifyAgent{
+		verdicts: []string{"PASS"},
+		sleepDur: "0.2",
+	}
+	var stdout bytes.Buffer
+	start := time.Now()
+	err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed < 150*time.Millisecond {
+		t.Fatalf("RunResume returned in %v, expected to wait for the spawned child's 200ms sleep", elapsed)
+	}
+	if !strings.Contains(stdout.String(), "verify resume on task "+id) {
+		t.Fatalf("stdout = %q, want resume line", stdout.String())
+	}
+	tasks := readTasks(t)
+	if tasks[0].Status != store.StatusCompleted {
+		t.Fatalf("Status = %q, want completed (PASS verdict from spawned child)", tasks[0].Status)
+	}
+	findings := filepath.Join(mustTasksDir(t), id, store.VerifierFindingsFileName)
+	data, readErr := os.ReadFile(findings)
+	if readErr != nil {
+		t.Fatalf("read findings: %v", readErr)
+	}
+	if !strings.Contains(string(data), "VERDICT: PASS") {
+		t.Fatalf("findings = %q, want PASS verdict", string(data))
+	}
+}
+
+// TestRunResume_VerifierWaitCtxCancelled covers the new
+// run.WaitForExit branch in RunResume: the verifier returns a
+// live PID, ctx is cancelled mid-poll, and the lifecycle finalises
+// the row as `help`.
+func TestRunResume_VerifierWaitCtxCancelled(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableVerify(t, nil)
+	pid := startLongChild(t)
+	agent := &liveChildAgent{pid: pid}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	err := RunResume(ctx, ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	tasks := readTasks(t)
+	if tasks[0].Status != store.StatusHelp {
+		t.Fatalf("Status = %q, want help", tasks[0].Status)
+	}
+}
+
 // TestRunResume_Verify_InteractiveDefaultWhenBucketEmpty pins the
 // fallback: no stored entry -> Interactive=true.
 func TestRunResume_Verify_InteractiveDefaultWhenBucketEmpty(t *testing.T) {

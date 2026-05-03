@@ -19,6 +19,7 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/util/run"
 )
 
 // ResumeOptions configures RunResume. Stdin/Stdout/Stderr default to
@@ -69,6 +70,13 @@ func (o ResumeOptions) withDefaults() ResumeOptions {
 // eligibility filter is permissive — any task with a non-empty
 // VerifyResumeCursor qualifies, regardless of status.
 //
+// As with runVerifyLoop, RunResume blocks on the spawned verifier
+// child via run.WaitForExit before reading the findings file. A
+// non-zero PID from agent.Verify means the headless backend
+// detached a fire-and-forget child whose Wait was released; reading
+// findings before the child has finished writing them would race
+// the verdict line and produce a stale FAIL.
+//
 // A user-abort in the resume picker (huh.ErrUserAborted) is
 // translated to a nil return by the deferred guard below so cancel
 // exits cleanly without surfacing a "cancelled by user" line.
@@ -116,8 +124,11 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	// Resume reads the verifier bucket's stored `interactive` value
 	// and falls back to true when unset; there is no `--interactive`
 	// flag because the stored value is authoritative across resume
-	// runs. PID is always 0 since resume never goes headless.
-	_, runErr := agent.Verify(ctx, codingagents.VerifyRequest{
+	// runs. The PID is non-zero only when the agent went headless
+	// and detached a fire-and-forget child; WaitForExit blocks on
+	// it before parseVerdict reads the findings file so we never
+	// observe a stale verdict.
+	pid, runErr := agent.Verify(ctx, codingagents.VerifyRequest{
 		RequirementsPath:           requirementsPath,
 		RequirementsBody:           requirementsBody,
 		PlanPath:                   planPath,
@@ -130,6 +141,9 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		ResumeChatID:               task.VerifyResumeCursor,
 		Resume:                     true,
 	})
+	if runErr == nil {
+		runErr = run.WaitForExit(ctx, pid)
+	}
 	outcome := outcomeNoRetries
 	if runErr == nil && parseVerdict(findingsPath) == "PASS" {
 		outcome = outcomeSuccess

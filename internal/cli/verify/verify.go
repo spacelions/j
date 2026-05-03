@@ -26,6 +26,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/mustread"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/util/run"
 )
 
 // Options configures Run. Stdin/Stdout/Stderr default to the process
@@ -343,6 +344,16 @@ func confirmStatusOverride(ctx context.Context, opts Options, cmd string, t stor
 // resume the worker with FixFindings populated, then re-run the
 // verifier with Resume=true so the prior verification context is
 // reused.
+//
+// The orchestrator blocks on every spawned child via run.WaitForExit
+// before reading findings or queuing the next worker turn. The
+// codingagents.Agent contract permits backends to return a non-zero
+// PID for fire-and-forget headless children whose Wait was released;
+// reading findings before the child has finished writing them would
+// race the verdict line and produce a stale FAIL. The wait honours
+// the contract documented on agent.go without binding child
+// lifetime to ctx — see run.Spawn's commentary on why a true
+// fire-and-forget child cannot be safely killed by ctx cancellation.
 func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent codingagents.Agent, model, resumeID string, res resolved) (verifyOutcome, error) {
 	agentLogPath := filepath.Join(res.TaskDir, tasklog.AgentLogFileName)
 	mustreadFiles, mustreadErr := mustread.LoadFromDefault()
@@ -366,7 +377,11 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 			AgentLogPath:               agentLogPath,
 			Mustread:                   mustreadFiles,
 		}
-		if _, err := verifierAgent.Verify(ctx, req); err != nil {
+		pid, err := verifierAgent.Verify(ctx, req)
+		if err != nil {
+			return outcomeNoRetries, err
+		}
+		if err := run.WaitForExit(ctx, pid); err != nil {
 			return outcomeNoRetries, err
 		}
 		verdict := parseVerdict(res.FindingsPath)
@@ -392,7 +407,11 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 			Worktree:     res.Task.Worktree,
 			AgentLogPath: agentLogPath,
 		}
-		if _, err := workerAgent.Work(ctx, workReq); err != nil {
+		workPID, err := workerAgent.Work(ctx, workReq)
+		if err != nil {
+			return outcomeNoRetries, err
+		}
+		if err := run.WaitForExit(ctx, workPID); err != nil {
 			return outcomeNoRetries, err
 		}
 	}
