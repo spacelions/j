@@ -182,13 +182,15 @@ func (s *scriptedUI) PickMarkdownInCwd(_ context.Context) (string, error) {
 }
 
 // PickTask dispatches by title prefix so the same scripted UI can
-// answer both flows: titles that contain "re-plan" honour replanID /
-// replanErr; titles that contain "resume" honour pickedID / pickErr.
-// Both branches use the (id, ok, err) contract: ok=false collapses
-// the user-abort path and the "no selection programmed" case so
-// leaving the matching id field empty signals cancel.
+// answer both flows: titles that contain "existing task" (the shared
+// source picker's task branch, used for re-plan in this command)
+// honour replanID / replanErr; everything else is treated as the
+// resume flow and honours pickedID / pickErr. Both branches use the
+// (id, ok, err) contract: ok=false collapses the user-abort path and
+// the "no selection programmed" case so leaving the matching id
+// field empty signals cancel.
 func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []store.Task) (string, bool, error) {
-	if strings.Contains(title, "re-plan") {
+	if strings.Contains(title, "existing task") {
 		s.replanCalls++
 		s.replanTasks = tasks
 		if s.replanErr != nil {

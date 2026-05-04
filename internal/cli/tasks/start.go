@@ -372,8 +372,8 @@ func newStartCmd() *cobra.Command {
 			"worker → verifier end to end before exiting. Pass " +
 			"--from-file/-f (or TASKS_START_FROM_FILE) to point at a markdown " +
 			"task description; when neither is set, the same source picker " +
-			"`j plan` shows is rendered (markdown | linear | re-plan an " +
-			"existing task). Every line written by the orchestrator and the " +
+			"`j plan` shows is rendered (markdown | linear | existing " +
+			"task). Every line written by the orchestrator and the " +
 			"per-phase coding-agent children appends to the same per-task " +
 			"<cwd>/.j/tasks/<id>/agent.log.",
 		PersistentPreRunE: preflight.PreRunE,

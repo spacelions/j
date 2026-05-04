@@ -18,7 +18,7 @@ type Source string
 const (
 	SourceMarkdown Source = "markdown"
 	SourceLinear   Source = "linear"
-	SourceTask     Source = "re-plan an existing task"
+	SourceTask     Source = "existing task"
 )
 
 // SourceResult bundles the typed outcome of PickSource: which source
@@ -71,9 +71,11 @@ func (p *Picker) SelectSource(ctx context.Context, allowed []Source) (Source, er
 }
 
 // PickSource drives the full source-picker chain in one call: prompt
-// for which source, then dispatch into the matching sub-picker.
-// listTasks is invoked only on the SourceTask branch; cli's that
-// don't allow SourceTask omit it from `allowed` and may pass
+// for which source, then dispatch into the matching sub-picker. The
+// SourceTask branch picks an existing task and returns its id;
+// callers decide what that id means in their flow (re-plan, resume,
+// inspect, etc.). listTasks is invoked only on that branch; cli's
+// that don't allow SourceTask omit it from `allowed` and may pass
 // listTasks=nil. A nil listTasks reached on the task branch surfaces
 // a misuse error so the bug is loud.
 //
@@ -109,7 +111,7 @@ func PickSource(ctx context.Context, ui SourceUI, allowed []Source, listTasks fu
 			}
 			return SourceResult{}, errors.New("picker: no tasks available")
 		}
-		id, ok, err := ui.PickTask(ctx, "Select a task to re-plan", tasks)
+		id, ok, err := ui.PickTask(ctx, "Select an existing task", tasks)
 		if err != nil {
 			return SourceResult{}, err
 		}
