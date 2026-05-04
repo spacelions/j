@@ -29,7 +29,7 @@ import (
 // prompt byte-identical to the pre-must-read output.
 func BuildPlanner(targetPath string, mustRead []string) string {
 	return fmt.Sprintf(
-		"%s%s\n\nRead the user request at %q before planning.",
+		"%s%s\n\n"+strings.TrimSpace(instructions.PlannerRequest),
 		strings.TrimSpace(instructions.Planner),
 		mustReadSuffix(mustRead),
 		targetPath,
@@ -49,13 +49,7 @@ func BuildPlanner(targetPath string, mustRead []string) string {
 // `# Requirements` as a task summary.
 func AppendPlannerSaveSuffix(base, requirementsPath, planPath string) string {
 	return fmt.Sprintf(
-		"%s\n\nDuring this session you may clarify the requirements with the user. Before exiting:\n"+
-			"1. Save the (possibly refined) requirements summary to %q (overwrite if it exists). "+
-			"The first line of this file MUST be a concise one-line summary of the user task — "+
-			"do NOT use `# Requirements` (or any other heading) as the first line; "+
-			"subsequent sections may use any structure you prefer.\n"+
-			"2. Save the plan to %q (overwrite if it exists).\n"+
-			"Then exit.",
+		"%s\n\n"+strings.TrimSpace(instructions.PlannerSaveSuffix),
 		base, requirementsPath, planPath,
 	)
 }
@@ -87,13 +81,7 @@ func AppendPlannerSaveSuffix(base, requirementsPath, planPath string) string {
 // rather than emitting a duplicate sentence.
 func BuildPlannerResume(targetPath string, mustRead []string) string {
 	return fmt.Sprintf(
-		"%s%s\n\n"+
-			"You are resuming a previous planning session. "+
-			"Check what was already done in the previous turn, "+
-			"summarise the prior progress for the user in one short paragraph, "+
-			"and then continue only the work that is still outstanding. "+
-			"Do not re-plan from scratch.\n\n"+
-			"Original user request lives at %q; read it if you need context.",
+		"%s%s\n\n"+strings.TrimSpace(instructions.PlannerResume),
 		strings.TrimSpace(instructions.Planner),
 		mustReadSuffix(mustRead),
 		targetPath,

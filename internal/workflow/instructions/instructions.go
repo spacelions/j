@@ -26,3 +26,80 @@ var Worker string
 //
 //go:embed verifier.md
 var Verifier string
+
+// PlannerRequest is the planner's read-the-request tail used by the
+// fresh-run BuildPlanner. Carries one %q placeholder for the user
+// request markdown path.
+//
+//go:embed planner_request.md
+var PlannerRequest string
+
+// PlannerSaveSuffix is the canonical save-and-exit suffix appended
+// to the planner prompt by AppendPlannerSaveSuffix. Carries two %q
+// placeholders for the requirements.md and plan.md paths.
+//
+//go:embed planner_save_suffix.md
+var PlannerSaveSuffix string
+
+// PlannerResume is the resume-only planner framing used by
+// BuildPlannerResume. Carries one %q placeholder for the original
+// user request markdown path.
+//
+//go:embed planner_resume.md
+var PlannerResume string
+
+// WorkerPlan is the worker's read-the-plan tail used by the
+// fresh-run BuildWorker. Carries one %q placeholder for the plan
+// markdown path.
+//
+//go:embed worker_plan.md
+var WorkerPlan string
+
+// WorkerResume is the resume-only worker framing used by
+// BuildWorkerResume. Carries one %q placeholder for the plan
+// markdown path.
+//
+//go:embed worker_resume.md
+var WorkerResume string
+
+// WorkerWorktree is the worker's `git worktree add` direction line
+// appended by appendWorktreeLine on a non-empty worktree. Carries
+// one %q placeholder for the worktree name.
+//
+//go:embed worker_worktree.md
+var WorkerWorktree string
+
+// VerifierRequest is the verifier's read-and-save block used by
+// BuildVerifier. Carries three %q placeholders for the requirements
+// path, the plan path, and the findings output path.
+//
+//go:embed verifier_request.md
+var VerifierRequest string
+
+// VerifierResume is the resume-only verifier framing used by
+// BuildVerifierResume. Carries two %q placeholders for the
+// requirements path and the plan path.
+//
+//go:embed verifier_resume.md
+var VerifierResume string
+
+// VerifierFix is the fix-loop worker framing used by
+// BuildVerifierFix when the verifier reports VERDICT: FAIL. Carries
+// two %q placeholders for the plan path and the findings path.
+//
+//go:embed verifier_fix.md
+var VerifierFix string
+
+// VerifierWorktree is the verifier's `git worktree list` direction
+// line appended by appendVerifierWorktreeLine on a non-empty
+// worktree. Carries one %q placeholder for the worktree name.
+//
+//go:embed verifier_worktree.md
+var VerifierWorktree string
+
+// MustReadHeader is the header line rendered above the bulleted
+// must-read project file list. The bullets themselves are produced
+// by mustReadSuffix in the prompts package (their content is dynamic).
+//
+//go:embed mustread_header.md
+var MustReadHeader string

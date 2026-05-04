@@ -1,0 +1,1 @@
+Before starting, read these project files for required context:

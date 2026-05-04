@@ -1,6 +1,10 @@
 package prompts
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/spacelions/j/internal/workflow/instructions"
+)
 
 // mustReadSuffix renders the project-wide must-read list as a leading
 // "\n\n"-prefixed bulleted block ready to be concatenated into a
@@ -15,7 +19,9 @@ func mustReadSuffix(files []string) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n\nBefore starting, read these project files for required context:\n")
+	b.WriteString("\n\n")
+	b.WriteString(strings.TrimSpace(instructions.MustReadHeader))
+	b.WriteString("\n")
 	for i, f := range files {
 		if i > 0 {
 			b.WriteString("\n")
