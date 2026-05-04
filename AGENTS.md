@@ -9,3 +9,4 @@
   - use `rg` to replace `grep`
   - use `bat` to replace `cat`
   - use `sd` to replace `sed`
+- Every non-test file must be ≤ 300 lines.
