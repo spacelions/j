@@ -416,6 +416,7 @@ func slugify(s string, max int) string {
 	out := strings.TrimRight(b.String(), "-")
 	return truncateRunes(out, max)
 }
+
 // PersistWarn opens `<cwd>/.j/tasks/list.db`, PutTask's the row, and
 // closes the store. Path-resolve, open, and put failures each surface
 // as a single `warning: tasks ...` line on stderr and the helper
