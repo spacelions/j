@@ -8,6 +8,7 @@ package planner
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"iter"
 
@@ -15,10 +16,10 @@ import (
 	"google.golang.org/adk/agent/llmagent"
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/session"
+	"google.golang.org/genai"
 
 	"github.com/spacelions/j/internal/cli/plan"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/workflow/agents/shellevent"
 	"github.com/spacelions/j/internal/workflow/instructions"
 )
 
@@ -79,7 +80,7 @@ func New(cfg Config) (agent.Agent, error) {
 		Run: func(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
 			return func(yield func(*session.Event, error) bool) {
 				interactive := false
-				err := plan.Run(ctx, plan.Options{
+				if err := plan.Run(ctx, plan.Options{
 					TaskID:            taskID,
 					Yes:               true,
 					Interactive:       &interactive,
@@ -87,8 +88,19 @@ func New(cfg Config) (agent.Agent, error) {
 					Stderr:            stderr,
 					Agents:            agents,
 					WaitForCompletion: true,
-				})
-				shellevent.Yield(ctx, yield, Name, "planner phase complete", err, false)
+				}); err != nil {
+					yield(nil, fmt.Errorf("%s: %w", Name, err))
+					return
+				}
+				ev := session.NewEvent(ctx.InvocationID())
+				ev.Author = Name
+				ev.LLMResponse = model.LLMResponse{
+					Content: &genai.Content{
+						Role:  genai.RoleUser,
+						Parts: []*genai.Part{{Text: "planner phase complete"}},
+					},
+				}
+				yield(ev, nil)
 			}
 		},
 	})
