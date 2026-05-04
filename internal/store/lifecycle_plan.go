@@ -38,6 +38,8 @@ func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement
 		Status:           StatusPlanning,
 		InvokedTool:      agentName,
 		InvokedModel:     model,
+		PlanTool:         agentName,
+		PlanModel:        model,
 		PlanResumeCursor: resumeID,
 		Summary:          Summary(requirement, target),
 		PlanBeginAt:      &begin,
@@ -65,6 +67,8 @@ func (t Task) BeginPlanReuse(stderr io.Writer, agentName, model, resumeID string
 	task.Status = StatusPlanning
 	task.InvokedTool = agentName
 	task.InvokedModel = model
+	task.PlanTool = agentName
+	task.PlanModel = model
 	task.PlanResumeCursor = resumeID
 	task.PlanEndAt = nil
 	task.DoneAt = nil

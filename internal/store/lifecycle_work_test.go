@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestNewWorkTask_RecordsRow pins the fresh work-row write: a fresh
@@ -27,8 +28,14 @@ func TestNewWorkTask_RecordsRow(t *testing.T) {
 	if got.WorkResumeCursor != "work-cursor" {
 		t.Fatalf("WorkResumeCursor = %q", got.WorkResumeCursor)
 	}
+	if got.WorkTool != "cursor" || got.WorkModel != "sonnet-4" {
+		t.Fatalf("work tool/model = %q/%q, want cursor/sonnet-4", got.WorkTool, got.WorkModel)
+	}
 	if got.PlanResumeCursor != "" {
 		t.Fatalf("PlanResumeCursor should stay empty for fresh work row: %q", got.PlanResumeCursor)
+	}
+	if got.PlanTool != "" || got.PlanModel != "" {
+		t.Fatalf("plan tool/model leaked onto fresh work row: %q/%q", got.PlanTool, got.PlanModel)
 	}
 	if got.WorkBeginAt == nil || got.WorkEndAt == nil {
 		t.Fatalf("work timestamps missing: %+v", got)
@@ -78,6 +85,9 @@ func TestTask_BeginWorkReuse_PreservesPlanPhase(t *testing.T) {
 	}
 	if got.InvokedModel != "gpt-5" {
 		t.Fatalf("InvokedModel = %q", got.InvokedModel)
+	}
+	if got.WorkTool != "cursor" || got.WorkModel != "gpt-5" {
+		t.Fatalf("work tool/model = %q/%q, want cursor/gpt-5 (reuse must restamp per-phase fields)", got.WorkTool, got.WorkModel)
 	}
 	if got.PlanBeginAt == nil || !got.PlanBeginAt.Equal(*prePlanBegin) {
 		t.Fatalf("PlanBeginAt = %v", got.PlanBeginAt)
@@ -285,6 +295,35 @@ func TestTask_BeginWorkReuse_PreservesPreExistingWorktree(t *testing.T) {
 	got := listAllTasks(t)[0]
 	if got.Worktree != "manual-override" {
 		t.Fatalf("Worktree = %q", got.Worktree)
+	}
+}
+
+// TestTask_BeginWorkResume_PreservesPerPhaseToolModel pins that the
+// resume helper does not touch WorkTool / WorkModel — they were
+// stamped on first run and must round-trip verbatim so a later
+// `j tasks work` re-run keeps using the same pair.
+func TestTask_BeginWorkResume_PreservesPerPhaseToolModel(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	begin := time.Now().UTC().Add(-time.Hour)
+	existing := Task{
+		ID:               NewTaskID(),
+		Status:           StatusWorkDone,
+		InvokedTool:      "cursor",
+		InvokedModel:     "sonnet-4",
+		WorkTool:         "cursor",
+		WorkModel:        "sonnet-4",
+		WorkResumeCursor: "w-cursor",
+		WorkBeginAt:      &begin,
+	}
+	PersistWarn(io.Discard, existing)
+	lc := existing.BeginWorkResume(io.Discard)
+	lc.Finish(nil)
+	got := listAllTasks(t)[0]
+	if got.WorkTool != "cursor" || got.WorkModel != "sonnet-4" {
+		t.Fatalf("work tool/model = %q/%q, want cursor/sonnet-4 (resume must preserve)", got.WorkTool, got.WorkModel)
 	}
 }
 

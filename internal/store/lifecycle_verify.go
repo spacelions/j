@@ -45,6 +45,8 @@ func (t Task) BeginVerify(stderr io.Writer, agentName, model, resumeID string) *
 	task.Status = StatusVerifying
 	task.InvokedTool = agentName
 	task.InvokedModel = model
+	task.VerifyTool = agentName
+	task.VerifyModel = model
 	task.VerifyResumeCursor = resumeID
 	task.VerifyBeginAt = &begin
 	task.VerifyEndAt = nil

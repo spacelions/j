@@ -47,6 +47,9 @@ func TestTask_BeginVerify_FlipsStatusAndStampsResume(t *testing.T) {
 	if got.VerifyResumeCursor != "fresh-verify-cursor" {
 		t.Fatalf("VerifyResumeCursor = %q", got.VerifyResumeCursor)
 	}
+	if got.VerifyTool != "cursor" || got.VerifyModel != "gpt-5" {
+		t.Fatalf("verify tool/model = %q/%q, want cursor/gpt-5", got.VerifyTool, got.VerifyModel)
+	}
 	if got.WorkResumeCursor != preWorkCursor {
 		t.Fatalf("WorkResumeCursor changed: %q vs %q", got.WorkResumeCursor, preWorkCursor)
 	}
@@ -299,6 +302,8 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 		Status:             StatusVerifyDone,
 		InvokedTool:        "cursor",
 		InvokedModel:       "sonnet-4",
+		VerifyTool:         "cursor",
+		VerifyModel:        "sonnet-4",
 		VerifyResumeCursor: "v-cursor",
 		VerifyBeginAt:      &begin,
 	}
@@ -317,6 +322,9 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 	}
 	if got.InvokedModel != "sonnet-4" {
 		t.Fatalf("InvokedModel = %q", got.InvokedModel)
+	}
+	if got.VerifyTool != "cursor" || got.VerifyModel != "sonnet-4" {
+		t.Fatalf("verify tool/model = %q/%q, want cursor/sonnet-4 (resume must preserve)", got.VerifyTool, got.VerifyModel)
 	}
 	if got.VerifyBeginAt == nil || !got.VerifyBeginAt.Equal(begin) {
 		t.Fatalf("VerifyBeginAt changed: %v", got.VerifyBeginAt)

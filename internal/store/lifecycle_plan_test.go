@@ -33,6 +33,9 @@ func TestNewPlanTask_RecordsAndFinish(t *testing.T) {
 	if got.InvokedTool != "cursor" || got.InvokedModel != "sonnet-4" {
 		t.Fatalf("tool/model = %q/%q", got.InvokedTool, got.InvokedModel)
 	}
+	if got.PlanTool != "cursor" || got.PlanModel != "sonnet-4" {
+		t.Fatalf("plan tool/model = %q/%q, want cursor/sonnet-4", got.PlanTool, got.PlanModel)
+	}
 	if got.PlanResumeCursor != "plan-cursor" {
 		t.Fatalf("PlanResumeCursor = %q", got.PlanResumeCursor)
 	}
@@ -237,6 +240,9 @@ func TestTask_BeginPlanReuse_PreservesLineage(t *testing.T) {
 	}
 	if got.InvokedModel != "gpt-5" {
 		t.Fatalf("InvokedModel = %q", got.InvokedModel)
+	}
+	if got.PlanTool != "cursor" || got.PlanModel != "gpt-5" {
+		t.Fatalf("plan tool/model = %q/%q, want cursor/gpt-5 (reuse must restamp per-phase fields)", got.PlanTool, got.PlanModel)
 	}
 	if got.PlanBeginAt == nil || !got.PlanBeginAt.Equal(*prePlanBegin) {
 		t.Fatalf("PlanBeginAt = %v, want %v", got.PlanBeginAt, prePlanBegin)

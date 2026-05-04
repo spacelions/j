@@ -35,6 +35,8 @@ func NewWorkTask(stderr io.Writer, agentName, model, taskID, planPath, requireme
 		Status:           StatusWorking,
 		InvokedTool:      agentName,
 		InvokedModel:     model,
+		WorkTool:         agentName,
+		WorkModel:        model,
 		WorkResumeCursor: resumeID,
 		Summary:          FromPlanAndRequirement(requirement, planBody, planPath),
 		WorkBeginAt:      &begin,
@@ -58,6 +60,8 @@ func (t Task) BeginWorkReuse(stderr io.Writer, agentName, model, resumeID string
 	task.Status = StatusWorking
 	task.InvokedTool = agentName
 	task.InvokedModel = model
+	task.WorkTool = agentName
+	task.WorkModel = model
 	task.WorkResumeCursor = resumeID
 	task.WorkBeginAt = &begin
 	task.WorkEndAt = nil

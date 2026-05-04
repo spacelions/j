@@ -103,6 +103,27 @@ type Task struct {
 	WorkResumeCursor   string `json:"work_resume_cursor"`
 	VerifyResumeCursor string `json:"verify_resume_cursor"`
 
+	// PlanTool / PlanModel / WorkTool / WorkModel / VerifyTool /
+	// VerifyModel are the per-phase mirrors of InvokedTool /
+	// InvokedModel. They are stamped on `begin` of each phase
+	// (NewPlanTask + BeginPlanReuse, NewWorkTask + BeginWorkReuse,
+	// BeginVerify) so a later `j tasks plan|work|verify` can
+	// re-run that single phase with the same tool/model the user
+	// previously chose, without reading the (potentially mutated)
+	// planner / worker / verifier bucket.
+	//
+	// Resume helpers (BeginWorkResume, BeginVerifyResume, plan
+	// resume) preserve the existing per-phase values verbatim. The
+	// `j tasks` listing keeps reading InvokedTool / InvokedModel,
+	// which always mirrors the latest phase, so the user-visible
+	// table is unchanged.
+	PlanTool    string `json:"plan_tool,omitempty"`
+	PlanModel   string `json:"plan_model,omitempty"`
+	WorkTool    string `json:"work_tool,omitempty"`
+	WorkModel   string `json:"work_model,omitempty"`
+	VerifyTool  string `json:"verify_tool,omitempty"`
+	VerifyModel string `json:"verify_model,omitempty"`
+
 	PlanBeginAt   *time.Time `json:"plan_begin_at,omitempty"`
 	PlanEndAt     *time.Time `json:"plan_end_at,omitempty"`
 	WorkBeginAt   *time.Time `json:"work_begin_at,omitempty"`
