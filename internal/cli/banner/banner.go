@@ -2,13 +2,13 @@
 // when a `j` subcommand forks the coding-agent into the background.
 // The banner is a square `lipgloss.NormalBorder()` box with the
 // subject + PID on the first row, a blank row, and the `tail -f
-// <agent-log>` invitation on the third row. Border + subject row
-// share a violet accent; the tail row is sky-blue so the copy-paste
-// command pops without competing with the headline. Centralising
-// the render here keeps every fork site (`j tasks start`, `j plan`,
-// `j work`) emitting the same shape so the user sees a consistent
-// prompt — and lipgloss/termenv auto-strips the colour when stdout
-// is not a TTY so pipes and tests still see clean text.
+// <agent-log>` invitation on the third row. The frame uses a neutral
+// grey border; the subject row uses a violet accent (no bold); the
+// tail row is sky-blue so the copy-paste command reads clearly.
+// Centralising the render here keeps every fork site (`j tasks start`,
+// `j plan`, `j work`) emitting the same shape so the user sees a
+// consistent prompt — and lipgloss/termenv auto-strips the colour when
+// stdout is not a TTY so pipes and tests still see clean text.
 package banner
 
 import (
@@ -22,19 +22,19 @@ import (
 )
 
 // Adaptive palette: light values target a white background, dark
-// values target a black one. Border + subject share an accent so
-// the headline and the frame read as one element; the tail row uses
-// a complementary cool tone to invite the eye to the copy-paste
-// command without screaming for attention.
+// values target a black one. The border is neutral grey; the subject
+// row uses violet accent text; the tail row uses a cool blue for the
+// copy-paste line.
 var (
+	borderColor = lipgloss.AdaptiveColor{Light: "#9CA3AF", Dark: "#6B7280"}
 	accentColor = lipgloss.AdaptiveColor{Light: "#7C3AED", Dark: "#C084FC"}
 	tailColor   = lipgloss.AdaptiveColor{Light: "#0369A1", Dark: "#38BDF8"}
 
-	subjectStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
+	subjectStyle = lipgloss.NewStyle().Foreground(accentColor)
 	tailStyle    = lipgloss.NewStyle().Foreground(tailColor)
 	boxStyle     = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
-			BorderForeground(accentColor).
+			BorderForeground(borderColor).
 			Padding(0, 1)
 )
 
