@@ -3,8 +3,8 @@
 //
 //   - agent picker: SelectTool + SelectModel leaves; PickAgent
 //     composite that walks tool → list models → model → CheckLogin;
-//     ResolveAgent / AgentFromStore / StoredInteractive non-UI
-//     helpers for the explicit-flag and stored-selection paths.
+//     AgentFromStore / StoredInteractive non-UI helpers for the
+//     stored-selection path.
 //   - source picker: Source enum + SelectSource leaf; PickMarkdownInCwd,
 //     PickTask leaves; PickSource composite that drives SelectSource
 //     and dispatches to the matching sub-picker.

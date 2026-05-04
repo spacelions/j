@@ -119,11 +119,11 @@ func AgentFromStore(ctx context.Context, s *store.Store, bucket string, agents [
 	return agent, model, nil
 }
 
-// ResolveAgent fills the missing half of the user-supplied --tool /
+// resolveAgent fills the missing half of the user-supplied --tool /
 // --model pair from the bucket and runs CheckLogin. The store is
 // never written. Both empty → ErrNoStoredSelection so the caller can
 // fall back to AgentFromStore or Agent.
-func ResolveAgent(ctx context.Context, s *store.Store, bucket string, agents []codingagents.Agent, explicitTool, explicitModel string) (codingagents.Agent, string, error) {
+func resolveAgent(ctx context.Context, s *store.Store, bucket string, agents []codingagents.Agent, explicitTool, explicitModel string) (codingagents.Agent, string, error) {
 	if explicitTool == "" && explicitModel == "" {
 		return nil, "", ErrNoStoredSelection
 	}
@@ -158,14 +158,14 @@ func ResolveAgent(ctx context.Context, s *store.Store, bucket string, agents []c
 
 func resolveExplicit(ctx context.Context, opts AgentOptions) (codingagents.Agent, string, error) {
 	if opts.Store != nil {
-		return ResolveAgent(ctx, opts.Store, opts.Bucket, opts.Agents, opts.ExplicitTool, opts.ExplicitModel)
+		return resolveAgent(ctx, opts.Store, opts.Bucket, opts.Agents, opts.ExplicitTool, opts.ExplicitModel)
 	}
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
-		return ResolveAgent(ctx, nil, opts.Bucket, opts.Agents, opts.ExplicitTool, opts.ExplicitModel)
+		return resolveAgent(ctx, nil, opts.Bucket, opts.Agents, opts.ExplicitTool, opts.ExplicitModel)
 	}
 	defer func() { _ = s.Close() }()
-	return ResolveAgent(ctx, s, opts.Bucket, opts.Agents, opts.ExplicitTool, opts.ExplicitModel)
+	return resolveAgent(ctx, s, opts.Bucket, opts.Agents, opts.ExplicitTool, opts.ExplicitModel)
 }
 
 func agentFromStoreLazy(ctx context.Context, opts AgentOptions) (codingagents.Agent, string, error) {
