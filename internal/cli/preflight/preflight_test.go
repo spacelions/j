@@ -45,7 +45,7 @@ func (u *scriptedUI) AskMustRead(context.Context) (string, error) {
 	return u.mustReadValue, nil
 }
 
-// putMustRead stores a project.mustRead value into the freshly-init'd
+// putMustRead stores a project.must_read value into the freshly-init'd
 // settings store at the current cwd so a subsequent Ensure call hits
 // the "already set" short-circuit. Used by tests that exercise the
 // initialized-and-already-asked path.
@@ -68,7 +68,7 @@ func putMustRead(t *testing.T, value string) {
 	}
 }
 
-// readMustRead returns the stored project.mustRead value plus a
+// readMustRead returns the stored project.must_read value plus a
 // "set" flag from the current cwd's settings store.
 func readMustRead(t *testing.T) (string, bool) {
 	t.Helper()
@@ -89,7 +89,7 @@ func readMustRead(t *testing.T) (string, bool) {
 }
 
 // TestEnsure_AlreadyInitialized pins the happy path: with all four
-// artifacts present and project.mustRead already set, Ensure returns
+// artifacts present and project.must_read already set, Ensure returns
 // nil without ever invoking the UI.
 func TestEnsure_AlreadyInitialized(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -106,7 +106,7 @@ func TestEnsure_AlreadyInitialized(t *testing.T) {
 		t.Fatalf("UI should not be prompted on initialized project: %d", ui.calls)
 	}
 	if ui.mustReadCalls != 0 {
-		t.Fatalf("AskMustRead should not fire when mustRead set: %d", ui.mustReadCalls)
+		t.Fatalf("AskMustRead should not fire when must_read set: %d", ui.mustReadCalls)
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr should stay empty: %q", stderr.String())
@@ -232,7 +232,7 @@ func TestEnsure_PropagatesProjectInitializedError(t *testing.T) {
 }
 
 // TestPreRunE_Initialized covers the cobra wiring on the happy path:
-// an already-initialized cwd with project.mustRead set makes the helper
+// an already-initialized cwd with project.must_read set makes the helper
 // return nil. The huh UI is constructed but never reached because
 // Ensure short-circuits.
 func TestPreRunE_Initialized(t *testing.T) {
@@ -269,7 +269,7 @@ func TestPreRunE_NoContextDefaults(t *testing.T) {
 }
 
 // TestEnsure_PromptsForMustReadWhenMissing pins the new branch:
-// project initialized but project.mustRead unset → AskMustRead fires
+// project initialized but project.must_read unset -> AskMustRead fires
 // once, value persisted verbatim, Ensure returns nil so the user's
 // original command proceeds without a re-run.
 func TestEnsure_PromptsForMustReadWhenMissing(t *testing.T) {
@@ -290,10 +290,10 @@ func TestEnsure_PromptsForMustReadWhenMissing(t *testing.T) {
 	}
 	got, set := readMustRead(t)
 	if !set {
-		t.Fatal("project.mustRead should be persisted")
+		t.Fatal("project.must_read should be persisted")
 	}
 	if got != "AGENTS.md;CLAUDE.md" {
-		t.Fatalf("project.mustRead = %q, want preserved-case value", got)
+		t.Fatalf("project.must_read = %q, want preserved-case value", got)
 	}
 }
 
@@ -324,7 +324,7 @@ func TestEnsure_BlankMustReadIsPersisted(t *testing.T) {
 }
 
 // TestEnsure_DoesNotPromptWhenMustReadSet covers the short-circuit
-// when project.mustRead is already populated.
+// when project.must_read is already populated.
 func TestEnsure_DoesNotPromptWhenMustReadSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {

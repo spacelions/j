@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -30,13 +31,18 @@ type Options struct {
 	// the init.yes viper key.
 	Yes bool
 
-	// MustRead, when non-nil, pre-seeds project.mustRead with the
+	// MustRead, when non-nil, pre-seeds project.must_read with the
 	// pointed-to string verbatim (case-preserved, including the empty
 	// string). nil leaves the key unset so the next preflight-gated
 	// command surfaces the "Files every agent must read first" prompt
 	// as before. Sourced from the --must-read CLI flag; the pointer
 	// distinguishes "flag absent" from "flag set to empty value".
 	MustRead *string
+
+	// PlanRequiresApproval, when non-nil, seeds
+	// project.plan_requires_approval with the pointed-to bool. nil
+	// uses store.DefaultPlanRequiresApproval.
+	PlanRequiresApproval *bool
 
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -71,13 +77,20 @@ func New() *cobra.Command {
 				v, _ := cmd.Flags().GetString("must-read")
 				opts.MustRead = &v
 			}
+			if cmd.Flags().Changed("plan-requires-approval") || envSet("INIT_PLAN_REQUIRES_APPROVAL") {
+				v := viper.GetBool("init.plan_requires_approval")
+				opts.PlanRequiresApproval = &v
+			}
 			return Run(cmd.Context(), opts)
 		},
 	}
 	cmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt and recreate the layout")
-	cmd.Flags().String("must-read", "", `Pre-seed project.must-read (skip the preflight prompt). Use --must-read="" to seed an empty value.`)
+	cmd.Flags().String("must-read", "", `Pre-seed project.must_read (skip the preflight prompt). Use --must-read="" to seed an empty value.`)
+	cmd.Flags().Bool("plan-requires-approval", store.DefaultPlanRequiresApproval, "Seed project.plan_requires_approval")
 	_ = viper.BindPFlag("init.yes", cmd.Flags().Lookup("yes"))
 	_ = viper.BindEnv("init.yes", "INIT_YES")
+	_ = viper.BindPFlag("init.plan_requires_approval", cmd.Flags().Lookup("plan-requires-approval"))
+	_ = viper.BindEnv("init.plan_requires_approval", "INIT_PLAN_REQUIRES_APPROVAL")
 	return cmd
 }
 
@@ -120,7 +133,7 @@ func Run(ctx context.Context, opts Options) error {
 	if err := store.EnsureProject(); err != nil {
 		return err
 	}
-	if err := seedDefaults(opts.MustRead); err != nil {
+	if err := seedDefaults(opts.MustRead, opts.PlanRequiresApproval); err != nil {
 		return err
 	}
 	jDir, err := store.DefaultDir()
@@ -138,13 +151,14 @@ const defaultMaxIterations = "3"
 
 // seedDefaults opens the freshly-created settings store once and
 // writes the project-bucket defaults: max_iterations is always
-// reseeded to defaultMaxIterations, and mustRead is persisted
+// reseeded to defaultMaxIterations, plan_requires_approval is always
+// reseeded, and must_read is persisted
 // verbatim when the caller passed --must-read (mustRead != nil). A
 // nil mustRead leaves the key unset so the next preflight-gated
 // command surfaces the "Files every agent must read first" prompt.
 // The empty string is stored as-is to honour the "blank input is
 // valid" contract.
-func seedDefaults(mustRead *string) error {
+func seedDefaults(mustRead *string, planRequiresApproval *bool) error {
 	path, err := store.DefaultPath()
 	if err != nil {
 		return err
@@ -153,20 +167,33 @@ func seedDefaults(mustRead *string) error {
 	if err != nil {
 		return err
 	}
-	if err := s.Put(store.BucketProject, "max_iterations", defaultMaxIterations); err != nil {
+	if err := s.Put(store.BucketProject, store.KeyMaxIterations, defaultMaxIterations); err != nil {
 		_ = s.Close()
 		return fmt.Errorf("init: persist max_iterations: %w", err)
+	}
+	approval := store.DefaultPlanRequiresApproval
+	if planRequiresApproval != nil {
+		approval = *planRequiresApproval
+	}
+	if err := s.Put(store.BucketProject, store.KeyPlanRequiresApproval, strconv.FormatBool(approval)); err != nil {
+		_ = s.Close()
+		return fmt.Errorf("init: persist plan_requires_approval: %w", err)
 	}
 	if mustRead != nil {
 		if err := s.Put(store.BucketProject, resolver.KeyMustRead, *mustRead); err != nil {
 			_ = s.Close()
-			return fmt.Errorf("init: persist mustRead: %w", err)
+			return fmt.Errorf("init: persist must_read: %w", err)
 		}
 	}
 	if err := s.Close(); err != nil {
 		return fmt.Errorf("init: close store: %w", err)
 	}
 	return nil
+}
+
+func envSet(name string) bool {
+	_, ok := os.LookupEnv(name)
+	return ok
 }
 
 func (o Options) withDefaults() Options {

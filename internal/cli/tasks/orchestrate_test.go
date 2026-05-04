@@ -153,6 +153,16 @@ func readOrchestrateTaskRow(t *testing.T, id string) store.Task {
 	return got
 }
 
+func noPlanApproval() *bool {
+	v := false
+	return &v
+}
+
+func requirePlanApproval() *bool {
+	v := true
+	return &v
+}
+
 // TestRunOrchestrate_RequiresTaskID pins the empty-id guard.
 func TestRunOrchestrate_RequiresTaskID(t *testing.T) {
 	err := RunOrchestrate(context.Background(), OrchestrateOptions{
@@ -190,11 +200,12 @@ func TestRunOrchestrate_PassFirstTry(t *testing.T) {
 	stub.verdicts = []string{"VERDICT: PASS"}
 
 	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
-		TaskID: id,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{stub},
+		TaskID:               id,
+		PlanRequiresApproval: noPlanApproval(),
+		Stdin:                strings.NewReader(""),
+		Stdout:               io.Discard,
+		Stderr:               io.Discard,
+		Agents:               []codingagents.Agent{stub},
 	}); err != nil {
 		t.Fatalf("RunOrchestrate: %v", err)
 	}
@@ -226,11 +237,12 @@ func TestRunOrchestrate_FailRetryPass(t *testing.T) {
 	stub.verdicts = []string{"VERDICT: FAIL", "VERDICT: PASS"}
 
 	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
-		TaskID: id,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{stub},
+		TaskID:               id,
+		PlanRequiresApproval: noPlanApproval(),
+		Stdin:                strings.NewReader(""),
+		Stdout:               io.Discard,
+		Stderr:               io.Discard,
+		Agents:               []codingagents.Agent{stub},
 	}); err != nil {
 		t.Fatalf("RunOrchestrate: %v", err)
 	}
@@ -258,11 +270,12 @@ func TestRunOrchestrate_FailExhausts(t *testing.T) {
 	stub.verdicts = []string{"VERDICT: FAIL"}
 
 	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
-		TaskID: id,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{stub},
+		TaskID:               id,
+		PlanRequiresApproval: noPlanApproval(),
+		Stdin:                strings.NewReader(""),
+		Stdout:               io.Discard,
+		Stderr:               io.Discard,
+		Agents:               []codingagents.Agent{stub},
 	}); err != nil {
 		t.Fatalf("RunOrchestrate: %v", err)
 	}
@@ -282,11 +295,12 @@ func TestRunOrchestrate_PlanFailsHelp(t *testing.T) {
 	stub.planErr = errors.New("planning boom")
 
 	err := RunOrchestrate(context.Background(), OrchestrateOptions{
-		TaskID: id,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{stub},
+		TaskID:               id,
+		PlanRequiresApproval: noPlanApproval(),
+		Stdin:                strings.NewReader(""),
+		Stdout:               io.Discard,
+		Stderr:               io.Discard,
+		Agents:               []codingagents.Agent{stub},
 	})
 	if err == nil || !strings.Contains(err.Error(), "planning boom") {
 		t.Fatalf("err = %v, want planning boom propagation", err)
@@ -297,6 +311,38 @@ func TestRunOrchestrate_PlanFailsHelp(t *testing.T) {
 	row := readOrchestrateTaskRow(t, id)
 	if row.Status != store.StatusHelp {
 		t.Fatalf("Status = %q, want help", row.Status)
+	}
+}
+
+// TestRunOrchestrate_PlanApprovalStopsAfterPlan pins the approval
+// gate: when enabled, the detached child runs planner only and leaves
+// the row at plan-done for `j tasks continue`.
+func TestRunOrchestrate_PlanApprovalStopsAfterPlan(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedOrchestrateTask(t, "scripted")
+	stub := newChainAgent("scripted")
+
+	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+		TaskID:               id,
+		PlanRequiresApproval: requirePlanApproval(),
+		Stdin:                strings.NewReader(""),
+		Stdout:               io.Discard,
+		Stderr:               io.Discard,
+		Agents:               []codingagents.Agent{stub},
+	}); err != nil {
+		t.Fatalf("RunOrchestrate: %v", err)
+	}
+	row := readOrchestrateTaskRow(t, id)
+	if row.Status != store.StatusPlanDone {
+		t.Fatalf("Status = %q, want plan-done", row.Status)
+	}
+	if stub.planCalls.Load() != 1 {
+		t.Fatalf("plan calls = %d, want 1", stub.planCalls.Load())
+	}
+	if stub.workCalls.Load() != 0 || stub.verifyCalls.Load() != 0 {
+		t.Fatalf("worker/verifier should not run with approval gate: work=%d verify=%d",
+			stub.workCalls.Load(), stub.verifyCalls.Load())
 	}
 }
 
@@ -331,12 +377,14 @@ func TestNewOrchestrateCmd_FlagDefaults(t *testing.T) {
 	}
 	var names []string
 	cmd.Flags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
-	if len(names) != 1 || names[0] != "id" {
-		t.Fatalf("flags = %v, want only [id]", names)
+	want := []string{"id", "plan-requires-approval"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("flags = %v, want %v", names, want)
 	}
 }
 
-// TestNewOrchestrateCmd_FlagsBindToViper covers --id viper binding.
+// TestNewOrchestrateCmd_FlagsBindToViper covers --id and
+// --plan-requires-approval viper bindings.
 func TestNewOrchestrateCmd_FlagsBindToViper(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
@@ -347,16 +395,54 @@ func TestNewOrchestrateCmd_FlagsBindToViper(t *testing.T) {
 	if got := viper.GetString("tasks.orchestrate.id"); got != "01ABC" {
 		t.Errorf("tasks.orchestrate.id = %q", got)
 	}
+	if err := cmd.Flags().Set("plan-requires-approval", "true"); err != nil {
+		t.Fatalf("Flags().Set plan-requires-approval: %v", err)
+	}
+	if got := viper.GetBool("tasks.orchestrate.plan_requires_approval"); !got {
+		t.Errorf("tasks.orchestrate.plan_requires_approval = false, want true")
+	}
 }
 
-// TestNewOrchestrateCmd_EnvBindings covers TASKS_ORCHESTRATE_ID.
+// TestNewOrchestrateCmd_EnvBindings covers TASKS_ORCHESTRATE_ID and
+// TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL.
 func TestNewOrchestrateCmd_EnvBindings(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	t.Setenv("TASKS_ORCHESTRATE_ID", "01ENV")
+	t.Setenv("TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL", "true")
 	_ = newOrchestrateCmd()
 	if got := viper.GetString("tasks.orchestrate.id"); got != "01ENV" {
 		t.Errorf("tasks.orchestrate.id = %q", got)
+	}
+	if got := viper.GetBool("tasks.orchestrate.plan_requires_approval"); !got {
+		t.Errorf("tasks.orchestrate.plan_requires_approval = false, want true")
+	}
+}
+
+func TestOrchestratePlanRequiresApprovalOverride_NoFlag(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	cmd := newOrchestrateCmd()
+	got, err := orchestratePlanRequiresApprovalOverride(cmd)
+	if err != nil {
+		t.Fatalf("orchestratePlanRequiresApprovalOverride: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("override = %v, want nil", *got)
+	}
+}
+
+func TestOrchestratePlanRequiresApprovalOverride_Env(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Setenv("TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL", "true")
+	cmd := newOrchestrateCmd()
+	got, err := orchestratePlanRequiresApprovalOverride(cmd)
+	if err != nil {
+		t.Fatalf("orchestratePlanRequiresApprovalOverride: %v", err)
+	}
+	if got == nil || !*got {
+		t.Fatalf("override = %v, want true", got)
 	}
 }
 

@@ -31,8 +31,21 @@ const (
 )
 
 // RunForTask drives the planner → worker → verifier flow for an
-// already-seeded task end to end. The shape is a top-level
-// SequentialAgent over three shell-out custom agents constructed
+// already-seeded task end to end.
+func RunForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer) error {
+	return runForTask(ctx, cfg, taskID, agents, stderr, false)
+}
+
+// RunForTaskWithGate drives an already-seeded task, stopping after the
+// planner when planRequiresApproval is true. A gated run leaves the
+// row at plan-done so `j tasks continue --from-task <id>` can pick up
+// the existing dispatch path.
+func RunForTaskWithGate(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval bool) error {
+	return runForTask(ctx, cfg, taskID, agents, stderr, planRequiresApproval)
+}
+
+// runForTask builds a top-level SequentialAgent over shell-out custom
+// agents constructed
 // directly from each agents/{planner,worker,verifier} package's
 // New(Config{...}) shell-out branch. The verifier flips Escalate on
 // `VERDICT: PASS` so the structure stays compatible with a future
@@ -56,7 +69,7 @@ const (
 // MaxIterations defaults are owned by callers: production callers
 // fetch a sane default via store.LoadTaskConfig; tests that pass a
 // zero-value Config flow through verifier.New's own fallback.
-func RunForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer) error {
+func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval bool) error {
 	if taskID == "" {
 		return errors.New("workflow: task id required")
 	}
@@ -67,37 +80,16 @@ func RunForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents
 		stderr = io.Discard
 	}
 
-	plannerAgent, err := planner.New(planner.Config{
-		TaskID: taskID,
-		Agents: agents,
-		Stderr: stderr,
-	})
+	subAgents, err := taskSubAgents(cfg, taskID, agents, stderr, planRequiresApproval)
 	if err != nil {
-		return fmt.Errorf("workflow: planner: %w", err)
-	}
-	workerAgent, err := worker.New(worker.Config{
-		TaskID: taskID,
-		Agents: agents,
-		Stderr: stderr,
-	})
-	if err != nil {
-		return fmt.Errorf("workflow: worker: %w", err)
-	}
-	verifierAgent, err := verifier.New(verifier.Config{
-		TaskID:        taskID,
-		Agents:        agents,
-		Stderr:        stderr,
-		MaxIterations: cfg.MaxIterations,
-	})
-	if err != nil {
-		return fmt.Errorf("workflow: verifier: %w", err)
+		return err
 	}
 
 	root, err := sequentialagent.New(sequentialagent.Config{
 		AgentConfig: agent.Config{
 			Name:        "planner_worker_verifier_task",
 			Description: "Drives planner → worker → verifier for a single seeded task.",
-			SubAgents:   []agent.Agent{plannerAgent, workerAgent, verifierAgent},
+			SubAgents:   subAgents,
 		},
 	})
 	if err != nil {
@@ -109,6 +101,38 @@ func RunForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents
 	}
 	finaliseVerifyFailIfStuck(stderr, taskID)
 	return nil
+}
+
+func taskSubAgents(cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval bool) ([]agent.Agent, error) {
+	plannerAgent, err := planner.New(planner.Config{
+		TaskID: taskID,
+		Agents: agents,
+		Stderr: stderr,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("workflow: planner: %w", err)
+	}
+	if planRequiresApproval {
+		return []agent.Agent{plannerAgent}, nil
+	}
+	workerAgent, err := worker.New(worker.Config{
+		TaskID: taskID,
+		Agents: agents,
+		Stderr: stderr,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("workflow: worker: %w", err)
+	}
+	verifierAgent, err := verifier.New(verifier.Config{
+		TaskID:        taskID,
+		Agents:        agents,
+		Stderr:        stderr,
+		MaxIterations: cfg.MaxIterations,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("workflow: verifier: %w", err)
+	}
+	return []agent.Agent{plannerAgent, workerAgent, verifierAgent}, nil
 }
 
 // driveSequential constructs the smallest viable runner.New session

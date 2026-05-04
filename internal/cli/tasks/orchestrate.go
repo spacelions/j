@@ -25,6 +25,11 @@ type OrchestrateOptions struct {
 	// chain this invocation drives end to end. Required.
 	TaskID string
 
+	// PlanRequiresApproval, when non-nil, is the resolved gate value
+	// passed by `j tasks start`. nil makes direct/internal callers
+	// inherit project.plan_requires_approval.
+	PlanRequiresApproval *bool
+
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
@@ -37,9 +42,10 @@ type OrchestrateOptions struct {
 
 // RunOrchestrate is the body of `j tasks orchestrate --id <id>`. It
 // reads the relaxed per-project task config (`project.max_iterations`
-// only — `project.api_key` / `project.model` are NOT required on
-// this path because the shell-out branch never instantiates a
-// Gemini model), then drives planner → worker → verifier via
+// plus `project.plan_requires_approval` — `project.api_key` /
+// `project.model` are NOT required on this path because the shell-out
+// branch never instantiates a Gemini model), then drives planner only
+// or planner → worker → verifier via
 // workflow.RunForTask. The agent.log redirection is the parent's
 // concern: `j tasks start` opens the per-task log with O_APPEND and
 // passes its fd as our stdout/stderr, so any line the chain writes
@@ -56,7 +62,11 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 	if err != nil {
 		return err
 	}
-	return workflow.RunForTask(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
+	planRequiresApproval, err := resolvePlanRequiresApproval(opts.PlanRequiresApproval)
+	if err != nil {
+		return err
+	}
+	return workflow.RunForTaskWithGate(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, planRequiresApproval)
 }
 
 func (o OrchestrateOptions) withDefaults() OrchestrateOptions {
@@ -76,7 +86,8 @@ func (o OrchestrateOptions) withDefaults() OrchestrateOptions {
 // subcommand. It is hidden because users never invoke it directly:
 // `j tasks start` forks a detached child that re-executes the j
 // binary with this sub-command, so help output should not advertise
-// it. The flag surface is just `--id` (plus an env binding for
+// it. The flag surface is `--id` plus the resolved plan-approval gate
+// (both with env bindings for
 // completeness).
 func newOrchestrateCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -89,18 +100,33 @@ func newOrchestrateCmd() *cobra.Command {
 		// No PersistentPreRunE: the detached child has no terminal,
 		// and the parent's `j tasks start` already ran preflight.
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			approval, err := orchestratePlanRequiresApprovalOverride(cmd)
+			if err != nil {
+				return err
+			}
 			return RunOrchestrate(cmd.Context(), OrchestrateOptions{
-				TaskID: viper.GetString("tasks.orchestrate.id"),
-				Stdin:  cmd.InOrStdin(),
-				Stdout: cmd.OutOrStdout(),
-				Stderr: cmd.ErrOrStderr(),
-				Agents: []codingagents.Agent{cursor.New(), claude.New()},
+				TaskID:               viper.GetString("tasks.orchestrate.id"),
+				PlanRequiresApproval: approval,
+				Stdin:                cmd.InOrStdin(),
+				Stdout:               cmd.OutOrStdout(),
+				Stderr:               cmd.ErrOrStderr(),
+				Agents:               []codingagents.Agent{cursor.New(), claude.New()},
 			})
 		},
 	}
 	cmd.Flags().String("id", "", "Task id whose planner→worker→verifier chain to drive")
+	cmd.Flags().Bool("plan-requires-approval", false, "Resolved project.plan_requires_approval value")
 	_ = viper.BindPFlag("tasks.orchestrate.id", cmd.Flags().Lookup("id"))
 	_ = viper.BindEnv("tasks.orchestrate.id", "TASKS_ORCHESTRATE_ID")
+	_ = viper.BindPFlag("tasks.orchestrate.plan_requires_approval", cmd.Flags().Lookup("plan-requires-approval"))
+	_ = viper.BindEnv("tasks.orchestrate.plan_requires_approval", "TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL")
 	return cmd
 }
 
+func orchestratePlanRequiresApprovalOverride(cmd *cobra.Command) (*bool, error) {
+	if cmd.Flags().Changed("plan-requires-approval") || envSet("TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL") {
+		v := viper.GetBool("tasks.orchestrate.plan_requires_approval")
+		return &v, nil
+	}
+	return nil, nil
+}

@@ -9,11 +9,12 @@ Steps:
 
 Expected:
   - Exit code 0.
-  - Stdout renders the four known sections in TOML order, with the only
-    seeded row (`must-read = `) under `[project]`:
+  - Stdout renders the four known sections in TOML order, with the seeded
+    project rows under `[project]`:
 
         [project]
-          must-read = 
+          must_read = 
+          plan_requires_approval = true
         
         [planner]
         

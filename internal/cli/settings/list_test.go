@@ -60,9 +60,8 @@ func TestList_MissingDB(t *testing.T) {
 	}
 }
 
-// TestList_EmptyDB pins the listing after mustInit: the only seeded
-// row is the project.mustRead placeholder rendered as the kebab
-// display key `must-read`; the four known sections always render in
+// TestList_EmptyDB pins the listing after mustInit: the seeded row is
+// the project.must_read placeholder; the four known sections always render in
 // fixed order even when empty.
 func TestList_EmptyDB(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -73,7 +72,7 @@ func TestList_EmptyDB(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 	want := "[project]\n" +
-		"  must-read = \n" +
+		"  must_read = \n" +
 		"\n" +
 		"[planner]\n" +
 		"\n" +
@@ -125,7 +124,7 @@ func TestList_PrintsSortedEntries(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 	want := "[project]\n" +
-		"  must-read = \n" +
+		"  must_read = \n" +
 		"\n" +
 		"[planner]\n" +
 		"  model = sonnet-4\n" +
@@ -183,7 +182,7 @@ func TestList_StatNonENOENT(t *testing.T) {
 // TestList_MasksAPIKey pins the secret-redaction behaviour: when the
 // project bucket carries an `api_key` entry, the list output renders
 // it as the fixed mask `****` so the real value never echoes onto the
-// terminal. Other project keys (model, max_iterations, mustRead) are
+// terminal. Other project keys (model, max_iterations, must_read) are
 // rendered verbatim alongside it.
 func TestList_MasksAPIKey(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -231,7 +230,7 @@ func TestList_MasksAPIKey(t *testing.T) {
 // a DB whose only bucket is empty and unknown renders just the four
 // known section headers, with no entries and no [ghost] section.
 // Bypasses the cobra preflight (which would otherwise seed
-// project.mustRead and pollute the "only empty buckets" premise).
+// project.must_read and pollute the "only empty buckets" premise).
 func TestList_OnlyEmptyBuckets(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {

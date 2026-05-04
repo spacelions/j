@@ -8,6 +8,7 @@ Steps:
   - Run `./bin/j help work`.
   - Run `./bin/j help verify`.
   - Run `./bin/j help tasks`.
+  - Run `./bin/j help tasks start`.
   - Run `./bin/j help settings`.
 
 Expected:
@@ -24,5 +25,8 @@ Expected:
   - `help tasks` stdout mentions the bbolt task log
     (`<cwd>/.j/tasks/list.db`) and lists the `delete` and `enter`
     subcommands.
+  - `help tasks start` stdout lists `--from-file` and
+    `--plan-requires-approval`; it does NOT list
+    `--no-plan-requires-approval`.
   - `help settings` stdout mentions `<cwd>/.j/settings` and lists the
     `reset` and `set` subcommands.

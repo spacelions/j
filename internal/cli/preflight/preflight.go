@@ -106,7 +106,7 @@ func (u *huhUI) AskMustRead(ctx context.Context) (string, error) {
 }
 
 // Ensure runs the shared pre-flight check. When ProjectInitialized
-// returns true it short-circuits after capturing project.mustRead
+// returns true it short-circuits after capturing project.must_read
 // (asking the user once on first miss) and the caller proceeds
 // normally. Otherwise it prompts the user via ui:
 //
@@ -140,7 +140,7 @@ func Ensure(ctx context.Context, ui UI, stderr io.Writer) error {
 	return ErrNeedsRetry
 }
 
-// ensureMustRead captures project.mustRead the first time a
+// ensureMustRead captures project.must_read the first time a
 // preflight-gated command runs after init. The setting persists
 // inline (no ErrNeedsRetry round-trip) so the user answers once and
 // their original command proceeds. An explicit empty answer is
@@ -157,7 +157,7 @@ func ensureMustRead(ctx context.Context, ui UI) error {
 	defer s.Close()
 	_, set, err := s.Get(store.BucketProject, resolver.KeyMustRead)
 	if err != nil {
-		return fmt.Errorf("preflight: load mustRead: %w", err)
+		return fmt.Errorf("preflight: load must_read: %w", err)
 	}
 	if set {
 		return nil
@@ -167,7 +167,7 @@ func ensureMustRead(ctx context.Context, ui UI) error {
 		return err
 	}
 	if err := s.Put(store.BucketProject, resolver.KeyMustRead, value); err != nil {
-		return fmt.Errorf("preflight: persist mustRead: %w", err)
+		return fmt.Errorf("preflight: persist must_read: %w", err)
 	}
 	return nil
 }

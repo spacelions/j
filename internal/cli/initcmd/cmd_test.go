@@ -261,6 +261,16 @@ func TestNew_FlagDefaults(t *testing.T) {
 	if viper.GetBool("init.yes") {
 		t.Error("init.yes should default to false via BindPFlag")
 	}
+	if f := cmd.Flags().Lookup("must-read"); f == nil {
+		t.Fatal("--must-read flag was not registered")
+	}
+	approval := cmd.Flags().Lookup("plan-requires-approval")
+	if approval == nil {
+		t.Fatal("--plan-requires-approval flag was not registered")
+	}
+	if approval.DefValue != "true" {
+		t.Fatalf("--plan-requires-approval default = %q, want true", approval.DefValue)
+	}
 }
 
 // TestNew_FlagEnv covers the env-var binding so INIT_YES=true flips
@@ -269,9 +279,13 @@ func TestNew_FlagEnv(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	t.Setenv("INIT_YES", "true")
+	t.Setenv("INIT_PLAN_REQUIRES_APPROVAL", "false")
 	_ = New()
 	if !viper.GetBool("init.yes") {
 		t.Error("INIT_YES=true should make init.yes true")
+	}
+	if viper.GetBool("init.plan_requires_approval") {
+		t.Error("INIT_PLAN_REQUIRES_APPROVAL=false should make init.plan_requires_approval false")
 	}
 }
 
@@ -315,8 +329,7 @@ func readProjectKey(t *testing.T, key string) (string, bool) {
 	return v, set
 }
 
-// readMustRead is the legacy alias retained so the --must-read test
-// bodies stay terse.
+// readMustRead keeps the --must-read test bodies terse.
 func readMustRead(t *testing.T) (string, bool) {
 	t.Helper()
 	return readProjectKey(t, resolver.KeyMustRead)
@@ -334,9 +347,43 @@ func TestRun_FreshInit_SeedsMaxIterations(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	got, set := readProjectKey(t, "max_iterations")
+	got, set := readProjectKey(t, store.KeyMaxIterations)
 	if !set || got != "3" {
 		t.Fatalf("project.max_iterations = (%q, %v), want (\"3\", true)", got, set)
+	}
+}
+
+// TestRun_FreshInit_SeedsPlanRequiresApproval pins the default gate:
+// fresh projects pause after planning unless the user opts out.
+func TestRun_FreshInit_SeedsPlanRequiresApproval(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := Run(context.Background(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got, set := readProjectKey(t, store.KeyPlanRequiresApproval)
+	if !set || got != "true" {
+		t.Fatalf("project.plan_requires_approval = (%q, %v), want (\"true\", true)", got, set)
+	}
+}
+
+func TestRun_PlanRequiresApprovalFalse_SeedsFalse(t *testing.T) {
+	t.Chdir(t.TempDir())
+	v := false
+	if err := Run(context.Background(), Options{
+		PlanRequiresApproval: &v,
+		Stdout:               io.Discard,
+		Stderr:               io.Discard,
+		UI:                   &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got, set := readProjectKey(t, store.KeyPlanRequiresApproval)
+	if !set || got != "false" {
+		t.Fatalf("project.plan_requires_approval = (%q, %v), want (\"false\", true)", got, set)
 	}
 }
 
@@ -371,7 +418,7 @@ func TestRun_ResetReseedsMaxIterations(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	got, set := readProjectKey(t, "max_iterations")
+	got, set := readProjectKey(t, store.KeyMaxIterations)
 	if !set || got != "3" {
 		t.Fatalf("project.max_iterations after reset = (%q, %v), want (\"3\", true)", got, set)
 	}
@@ -379,7 +426,7 @@ func TestRun_ResetReseedsMaxIterations(t *testing.T) {
 
 // TestRun_MustReadFlag_SeedsValue pins the new --must-read flag: when
 // Options.MustRead is non-nil, Run persists the pointed-to string
-// verbatim under project.mustRead so the next preflight-gated command
+// verbatim under project.must_read so the next preflight-gated command
 // short-circuits the prompt.
 func TestRun_MustReadFlag_SeedsValue(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -395,10 +442,10 @@ func TestRun_MustReadFlag_SeedsValue(t *testing.T) {
 	}
 	got, set := readMustRead(t)
 	if !set {
-		t.Fatal("project.mustRead should be persisted")
+		t.Fatal("project.must_read should be persisted")
 	}
 	if got != v {
-		t.Fatalf("project.mustRead = %q, want %q (case-preserved)", got, v)
+		t.Fatalf("project.must_read = %q, want %q (case-preserved)", got, v)
 	}
 }
 
@@ -437,7 +484,7 @@ func TestRun_MustReadFlag_AbsentLeavesUnset(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	if _, set := readMustRead(t); set {
-		t.Fatal("project.mustRead should be unset when --must-read is not passed")
+		t.Fatal("project.must_read should be unset when --must-read is not passed")
 	}
 }
 
@@ -459,5 +506,23 @@ func TestNew_MustReadFlagWiring(t *testing.T) {
 	got, set := readMustRead(t)
 	if !set || got != "AGENTS.md;CLAUDE.md" {
 		t.Fatalf("readMustRead = (%q, %v), want (\"AGENTS.md;CLAUDE.md\", true)", got, set)
+	}
+}
+
+func TestNew_PlanRequiresApprovalFlagWiring(t *testing.T) {
+	t.Chdir(t.TempDir())
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	cmd := New()
+	cmd.SetArgs([]string{"--yes", "--plan-requires-approval=false"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got, set := readProjectKey(t, store.KeyPlanRequiresApproval)
+	if !set || got != "false" {
+		t.Fatalf("project.plan_requires_approval = (%q, %v), want (\"false\", true)", got, set)
 	}
 }
