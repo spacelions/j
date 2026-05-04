@@ -2,9 +2,13 @@
 // when a `j` subcommand forks the coding-agent into the background.
 // The banner is a square `lipgloss.NormalBorder()` box with the
 // subject + PID on the first row, a blank row, and the `tail -f
-// <agent-log>` invitation on the third row. Centralising the render
-// here keeps every fork site (`j tasks start`, `j plan`, `j work`)
-// emitting the same shape so the user sees a consistent prompt.
+// <agent-log>` invitation on the third row. Border + subject row
+// share a violet accent; the tail row is sky-blue so the copy-paste
+// command pops without competing with the headline. Centralising
+// the render here keeps every fork site (`j tasks start`, `j plan`,
+// `j work`) emitting the same shape so the user sees a consistent
+// prompt — and lipgloss/termenv auto-strips the colour when stdout
+// is not a TTY so pipes and tests still see clean text.
 package banner
 
 import (
@@ -17,6 +21,23 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Adaptive palette: light values target a white background, dark
+// values target a black one. Border + subject share an accent so
+// the headline and the frame read as one element; the tail row uses
+// a complementary cool tone to invite the eye to the copy-paste
+// command without screaming for attention.
+var (
+	accentColor = lipgloss.AdaptiveColor{Light: "#7C3AED", Dark: "#C084FC"}
+	tailColor   = lipgloss.AdaptiveColor{Light: "#0369A1", Dark: "#38BDF8"}
+
+	subjectStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
+	tailStyle    = lipgloss.NewStyle().Foreground(tailColor)
+	boxStyle     = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(accentColor).
+			Padding(0, 1)
+)
+
 // RunningInBackground writes the bordered background-fork banner to
 // w. subject is the human-readable noun used in row one (e.g.
 // "task <id>" or the coding-agent name). pid is the spawned child's
@@ -25,15 +46,11 @@ import (
 // log lives under cwd, falling back to the absolute path otherwise.
 func RunningInBackground(w io.Writer, subject string, pid int, absLogPath string) {
 	block := strings.Join([]string{
-		fmt.Sprintf("J: %s running in background (PID=%d)", subject, pid),
+		subjectStyle.Render(fmt.Sprintf("J: %s running in background (PID=%d)", subject, pid)),
 		"",
-		fmt.Sprintf("tail -f %s", displayLogPath(absLogPath)),
+		tailStyle.Render(fmt.Sprintf("tail -f %s", displayLogPath(absLogPath))),
 	}, "\n")
-	rendered := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		Padding(0, 1).
-		Render(block)
-	fmt.Fprintln(w, rendered)
+	fmt.Fprintln(w, boxStyle.Render(block))
 }
 
 // displayLogPath returns the form of absLogPath shown to the user.
