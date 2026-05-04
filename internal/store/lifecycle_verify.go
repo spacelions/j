@@ -79,6 +79,7 @@ func (t Task) BeginVerifyResume(stderr io.Writer) *VerifyLifecycle {
 func openVerifyLifecycle(stderr io.Writer, task Task) *VerifyLifecycle {
 	lc := &VerifyLifecycle{stderr: stderr, task: task}
 	PersistWarn(stderr, task)
+	emitPhaseBegin(stderr, "verify", task)
 	return lc
 }
 
@@ -113,15 +114,19 @@ func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
 	lc.closed = true
 	end := time.Now().UTC()
 	lc.task.VerifyEndAt = &end
+	markerOutcome := "fail"
 	switch {
 	case runErr != nil:
 		lc.task.Status = StatusHelp
+		markerOutcome = "help"
 	case outcome == VerifyOutcomeSuccess:
 		lc.task.Status = StatusCompleted
 		done := time.Now().UTC()
 		lc.task.DoneAt = &done
+		markerOutcome = "pass"
 	default:
 		lc.task.Status = StatusVerifyDone
 	}
 	PersistWarn(lc.stderr, lc.task)
+	emitPhaseEnd(lc.stderr, "verify", lc.task.VerifyBeginAt, lc.task, markerOutcome)
 }

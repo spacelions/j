@@ -5,6 +5,7 @@ package run
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -275,18 +276,66 @@ func TestSpawnIn_PlumbsCwd(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		data, readErr := os.ReadFile(logPath)
-		if readErr == nil && len(strings.TrimSpace(string(data))) > 0 {
-			got, evalErr := filepath.EvalSymlinks(strings.TrimSpace(string(data)))
-			if evalErr != nil {
-				got = strings.TrimSpace(string(data))
+		if readErr == nil {
+			if firstLine := firstNonMarkerLine(string(data)); firstLine != "" {
+				got, evalErr := filepath.EvalSymlinks(firstLine)
+				if evalErr != nil {
+					got = firstLine
+				}
+				if got != want {
+					t.Fatalf("cwd = %q, want %q", got, want)
+				}
+				return
 			}
-			if got != want {
-				t.Fatalf("cwd = %q, want %q", got, want)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timeout: log = %q (err=%v)", data, readErr)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// firstNonMarkerLine returns the first non-empty line of data that is
+// not an agentlog `>>> J ` marker. SpawnIn now appends a child_exit
+// marker after the child reaps, so tests that consume the child's
+// own stdout must skip marker lines to avoid mixing the two streams.
+func firstNonMarkerLine(data string) string {
+	for _, line := range strings.Split(data, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, ">>> J ") {
+			continue
+		}
+		return trimmed
+	}
+	return ""
+}
+
+// TestSpawn_AppendsChildExitMarker pins the child_exit marker
+// invariant: after a Spawn-ed child exits, the reap goroutine must
+// append one `>>> J {"event":"child_exit",...}` line to the same log
+// so a tailer can see the child's exit code without opening bbolt.
+func TestSpawn_AppendsChildExitMarker(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "out.log")
+	pid, err := Spawn(context.Background(), logPath, "sh", "-c", "exit 0")
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		data, _ := os.ReadFile(logPath)
+		if strings.Contains(string(data), `"event":"child_exit"`) {
+			if !strings.Contains(string(data), `"exit_code":0`) {
+				t.Fatalf("missing exit_code in marker: %q", data)
+			}
+			pidNeedle := fmt.Sprintf(`"pid":%d`, pid)
+			if !strings.Contains(string(data), pidNeedle) {
+				t.Fatalf("missing pid %d in marker: %q", pid, data)
 			}
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("timeout: log = %q (err=%v)", data, readErr)
+			t.Fatalf("timeout waiting for child_exit marker: log=%q", data)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

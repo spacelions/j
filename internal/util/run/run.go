@@ -18,6 +18,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/spacelions/j/internal/util/agentlog"
 )
 
 // waitForExitPollInterval is the polling cadence WaitForExit uses to
@@ -131,6 +133,7 @@ func SpawnIn(ctx context.Context, dir, logPath, name string, args ...string) (in
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	applyDetachAttrs(cmd)
+	started := time.Now()
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("%s: %w", name, err)
 	}
@@ -144,9 +147,30 @@ func SpawnIn(ctx context.Context, dir, logPath, name string, args ...string) (in
 	// — it just lets the kernel drop the zombie so IsAlive flips to
 	// false promptly. In the fire-and-forget path the parent exits
 	// before this goroutine runs and the orphan is reparented to init,
-	// which reaps it exactly as before.
-	go func() { _ = cmd.Wait() }()
+	// which reaps it exactly as before. After Wait, append a
+	// `child_exit` marker to the same agent.log so a tailer sees the
+	// child's exit code without opening bbolt.
+	go func() {
+		_ = cmd.Wait()
+		emitChildExit(logPath, name, pid, cmd.ProcessState, started)
+	}()
 	return pid, nil
+}
+
+// emitChildExit appends one `child_exit` marker line to logPath.
+// Errors are intentionally swallowed: the child has already exited
+// and the parent is already reaping; a missing marker is strictly
+// less harmful than a noisy logger goroutine.
+func emitChildExit(logPath, name string, pid int, state *os.ProcessState, started time.Time) {
+	fields := map[string]any{
+		"name":        name,
+		"pid":         pid,
+		"duration_ms": time.Since(started).Milliseconds(),
+	}
+	if state != nil {
+		fields["exit_code"] = state.ExitCode()
+	}
+	_ = agentlog.EmitTo(logPath, "child_exit", fields)
 }
 
 // WaitForExit blocks until the OS process identified by pid is no

@@ -175,6 +175,7 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", mustReadErr)
 	}
 	for i := 0; i < opts.MaxIterations; i++ {
+		emitIterationBegin(opts.Stderr, res.Task.ID, i, opts.MaxIterations)
 		req := codingagents.VerifyRequest{
 			RequirementsPath:           res.RequirementsPath,
 			PlanPath:                   res.PlanPath,
@@ -196,6 +197,8 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 			return store.VerifyOutcomeNoRetries, err
 		}
 		verdict := resolver.ParseVerdict(res.FindingsPath)
+		emitVerdict(opts.Stderr, res.Task.ID, i, verdict, res.FindingsPath)
+		emitIterationEnd(opts.Stderr, res.Task.ID, i, verdict)
 		if verdict == "PASS" {
 			return store.VerifyOutcomeSuccess, nil
 		}

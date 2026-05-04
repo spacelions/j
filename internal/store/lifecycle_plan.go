@@ -44,6 +44,7 @@ func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement
 	}
 	lc := &PlanLifecycle{stderr: stderr, task: task}
 	PersistWarn(stderr, task)
+	emitPhaseBegin(stderr, "plan", task)
 	return lc
 }
 
@@ -72,6 +73,7 @@ func (t Task) BeginPlanReuse(stderr io.Writer, agentName, model, resumeID string
 	}
 	lc := &PlanLifecycle{stderr: stderr, task: task}
 	PersistWarn(stderr, task)
+	emitPhaseBegin(stderr, "plan", task)
 	return lc
 }
 
@@ -109,13 +111,16 @@ func (lc *PlanLifecycle) Finish(runErr error, refinedRequirements, planMarkdown,
 	lc.closed = true
 	end := time.Now().UTC()
 	lc.task.PlanEndAt = &end
+	outcome := "done"
 	if runErr != nil {
 		lc.task.Status = StatusHelp
+		outcome = "help"
 	} else {
 		lc.task.Status = StatusPlanDone
 		lc.task.Summary = Summary(PickSource(refinedRequirements, planMarkdown), target)
 	}
 	PersistWarn(lc.stderr, lc.task)
+	emitPhaseEnd(lc.stderr, "plan", lc.task.PlanBeginAt, lc.task, outcome)
 }
 
 // Task returns the in-memory snapshot of the task row. The plan flow

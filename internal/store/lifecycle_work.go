@@ -95,6 +95,7 @@ func (t Task) BeginWorkResume(stderr io.Writer) *WorkLifecycle {
 func openWorkLifecycle(stderr io.Writer, task Task) *WorkLifecycle {
 	lc := &WorkLifecycle{stderr: stderr, task: task}
 	PersistWarn(stderr, task)
+	emitPhaseBegin(stderr, "work", task)
 	return lc
 }
 
@@ -142,12 +143,15 @@ func (lc *WorkLifecycle) Finish(runErr error) {
 	lc.closed = true
 	end := time.Now().UTC()
 	lc.task.WorkEndAt = &end
+	outcome := "done"
 	if runErr != nil {
 		lc.task.Status = StatusHelp
+		outcome = "help"
 	} else {
 		lc.task.Status = StatusWorkDone
 	}
 	PersistWarn(lc.stderr, lc.task)
+	emitPhaseEnd(lc.stderr, "work", lc.task.WorkBeginAt, lc.task, outcome)
 }
 
 // Task returns the in-memory snapshot of the work task row. Used by
