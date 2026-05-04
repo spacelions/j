@@ -74,6 +74,43 @@ func TestRunForTask_FailFlow(t *testing.T) {
 	}
 }
 
+func TestTaskSubAgents_PlanApprovalGate(t *testing.T) {
+	agents := []codingagents.Agent{stubChain("scripted")}
+	gated, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, true)
+	if err != nil {
+		t.Fatalf("taskSubAgents gated: %v", err)
+	}
+	if len(gated) != 1 {
+		t.Fatalf("gated SubAgents length = %d, want 1", len(gated))
+	}
+	full, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, false)
+	if err != nil {
+		t.Fatalf("taskSubAgents full: %v", err)
+	}
+	if len(full) != 3 {
+		t.Fatalf("full SubAgents length = %d, want 3", len(full))
+	}
+}
+
+func TestRunForTaskWithGate_PlanOnly(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := seedChainTask(t, "scripted")
+	stub := stubChain("scripted")
+
+	if err := RunForTaskWithGate(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, true); err != nil {
+		t.Fatalf("RunForTaskWithGate: %v", err)
+	}
+	row := readChainTaskRow(t, id)
+	if row.Status != store.StatusPlanDone {
+		t.Fatalf("Status = %q, want plan-done", row.Status)
+	}
+	if stub.planCalls.Load() != 1 || stub.workCalls.Load() != 0 || stub.verifyCalls.Load() != 0 {
+		t.Fatalf("call counts: plan=%d work=%d verify=%d",
+			stub.planCalls.Load(), stub.workCalls.Load(), stub.verifyCalls.Load())
+	}
+}
+
 // TestRunForTask_PlanFailsStopsChain pins the failure short-circuit.
 // A scripted Plan error must propagate via the runner iterator and
 // abort the SequentialAgent before worker / verifier fire.

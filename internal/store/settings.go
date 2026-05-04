@@ -26,6 +26,16 @@ var (
 // share a single source of truth.
 const DefaultTaskMaxIterations = 3
 
+// Project bucket keys shared by init, settings loaders, and tests.
+const (
+	KeyMaxIterations        = "max_iterations"
+	KeyPlanRequiresApproval = "plan_requires_approval"
+)
+
+// DefaultPlanRequiresApproval is the task-orchestrator gate default.
+// Fresh projects pause after planning unless the user opts out.
+const DefaultPlanRequiresApproval = true
+
 // ProjectConfig bundles the runtime knobs `j run` and `j web` read
 // from the per-project settings store. Lives in the store package so
 // callers don't drag in an unrelated import path just to construct
@@ -114,7 +124,7 @@ func LoadProjectConfig() (ProjectConfig, error) {
 	if model == "" {
 		return ProjectConfig{}, ErrMissingModel
 	}
-	rawIters, err := readSetting(s, "max_iterations")
+	rawIters, err := readSetting(s, KeyMaxIterations)
 	if err != nil {
 		return ProjectConfig{}, err
 	}
@@ -153,7 +163,7 @@ func LoadTaskConfig() (TaskConfig, error) {
 		return TaskConfig{}, fmt.Errorf("store: open settings: %w", err)
 	}
 	defer func() { _ = s.Close() }()
-	raw, err := readSetting(s, "max_iterations")
+	raw, err := readSetting(s, KeyMaxIterations)
 	if err != nil {
 		return TaskConfig{}, err
 	}
@@ -166,6 +176,40 @@ func LoadTaskConfig() (TaskConfig, error) {
 	}
 	cfg.MaxIterations = int(n)
 	return cfg, nil
+}
+
+// LoadPlanRequiresApproval reads `project.plan_requires_approval`.
+// Missing settings, missing keys, and unparseable values all fall
+// back to DefaultPlanRequiresApproval so stale project settings never
+// block the detached task orchestrator.
+func LoadPlanRequiresApproval() (bool, error) {
+	path, err := DefaultPath()
+	if err != nil {
+		return false, err
+	}
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return DefaultPlanRequiresApproval, nil
+		}
+		return false, fmt.Errorf("store: stat %q: %w", path, err)
+	}
+	s, err := Open(path)
+	if err != nil {
+		return false, fmt.Errorf("store: open settings: %w", err)
+	}
+	defer func() { _ = s.Close() }()
+	raw, err := readSetting(s, KeyPlanRequiresApproval)
+	if err != nil {
+		return false, err
+	}
+	if raw == "" {
+		return DefaultPlanRequiresApproval, nil
+	}
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		return DefaultPlanRequiresApproval, nil
+	}
+	return v, nil
 }
 
 // PersistAgentSelection writes tool/model/interactive into bucket as

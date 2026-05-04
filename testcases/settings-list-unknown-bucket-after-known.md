@@ -13,10 +13,11 @@ Expected:
     `[planner]`, `[worker]`, `[verifier]`).
   - The two unknown buckets appear AFTER `[verifier]`, in alphabetical
     order: `[alpha]` before `[zeta]`.
-  - Stdout (modulo the seeded `must-read = `) is:
+  - Stdout (modulo the seeded `[project]` rows) is:
 
     [project]
-      must-read = 
+      must_read = 
+      plan_requires_approval = true
     
     [planner]
     

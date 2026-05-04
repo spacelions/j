@@ -39,7 +39,7 @@ const BucketVerifier = "verifier"
 
 // BucketProject holds project-wide settings that aren't tied to a
 // single role (planner / worker / verifier). The first key under it is
-// "mustRead", a `;`-separated list of files every agent should read
+// "must_read", a `;`-separated list of files every agent should read
 // before starting.
 const BucketProject = "project"
 

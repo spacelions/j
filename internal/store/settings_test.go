@@ -9,7 +9,7 @@ import (
 )
 
 // putProject is the shared one-line writer used across the
-// LoadProjectConfig / LoadTaskConfig tests. The settings store has
+// LoadProjectConfig / LoadTaskConfig / LoadPlanRequiresApproval tests. The settings store has
 // already been laid down by EnsureProject / Init at the call site;
 // this helper just opens, puts, closes.
 func putProject(t *testing.T, key, value string) {
@@ -190,7 +190,7 @@ func TestLoadProjectConfig_UnparseableMaxIterations(t *testing.T) {
 	}
 	putProject(t, "api_key", "k")
 	putProject(t, "model", "m")
-	putProject(t, "max_iterations", "not-a-number")
+	putProject(t, KeyMaxIterations, "not-a-number")
 	_, err := LoadProjectConfig()
 	if !errors.Is(err, ErrMissingMaxIterations) {
 		t.Fatalf("err = %v, want ErrMissingMaxIterations", err)
@@ -208,7 +208,7 @@ func TestLoadProjectConfig_ZeroMaxIterations(t *testing.T) {
 	}
 	putProject(t, "api_key", "k")
 	putProject(t, "model", "m")
-	putProject(t, "max_iterations", "0")
+	putProject(t, KeyMaxIterations, "0")
 	_, err := LoadProjectConfig()
 	if !errors.Is(err, ErrMissingMaxIterations) {
 		t.Fatalf("err = %v, want ErrMissingMaxIterations", err)
@@ -222,7 +222,7 @@ func TestLoadProjectConfig_Success(t *testing.T) {
 	}
 	putProject(t, "api_key", "  k  ")
 	putProject(t, "model", "  gemini-2.5-flash  ")
-	putProject(t, "max_iterations", "5")
+	putProject(t, KeyMaxIterations, "5")
 	got, err := LoadProjectConfig()
 	if err != nil {
 		t.Fatalf("LoadProjectConfig: %v", err)
@@ -289,7 +289,7 @@ func TestLoadTaskConfig_DefaultsOnUnparseable(t *testing.T) {
 	if err := EnsureProject(); err != nil {
 		t.Fatal(err)
 	}
-	putProject(t, "max_iterations", "not-a-number")
+	putProject(t, KeyMaxIterations, "not-a-number")
 	got, err := LoadTaskConfig()
 	if err != nil {
 		t.Fatalf("LoadTaskConfig: %v", err)
@@ -299,7 +299,7 @@ func TestLoadTaskConfig_DefaultsOnUnparseable(t *testing.T) {
 			got.MaxIterations, DefaultTaskMaxIterations)
 	}
 
-	putProject(t, "max_iterations", "0")
+	putProject(t, KeyMaxIterations, "0")
 	got, err = LoadTaskConfig()
 	if err != nil {
 		t.Fatalf("LoadTaskConfig zero: %v", err)
@@ -322,6 +322,70 @@ func TestLoadTaskConfig_StatErrorPropagates(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = LoadTaskConfig()
+	if err == nil || !strings.Contains(err.Error(), "stat") {
+		t.Fatalf("err = %v, want wrapped stat error", err)
+	}
+}
+
+func TestLoadPlanRequiresApproval_DefaultsWhenNoSettings(t *testing.T) {
+	t.Chdir(t.TempDir())
+	got, err := LoadPlanRequiresApproval()
+	if err != nil {
+		t.Fatalf("LoadPlanRequiresApproval: %v", err)
+	}
+	if got != DefaultPlanRequiresApproval {
+		t.Fatalf("LoadPlanRequiresApproval = %v, want default %v", got, DefaultPlanRequiresApproval)
+	}
+}
+
+func TestLoadPlanRequiresApproval_ReadsFalse(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	putProject(t, KeyPlanRequiresApproval, "false")
+	got, err := LoadPlanRequiresApproval()
+	if err != nil {
+		t.Fatalf("LoadPlanRequiresApproval: %v", err)
+	}
+	if got {
+		t.Fatal("LoadPlanRequiresApproval = true, want false")
+	}
+}
+
+func TestLoadPlanRequiresApproval_DefaultsOnMissingOrUnparseable(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadPlanRequiresApproval()
+	if err != nil {
+		t.Fatalf("LoadPlanRequiresApproval missing: %v", err)
+	}
+	if got != DefaultPlanRequiresApproval {
+		t.Fatalf("missing key = %v, want default %v", got, DefaultPlanRequiresApproval)
+	}
+	putProject(t, KeyPlanRequiresApproval, "not-a-bool")
+	got, err = LoadPlanRequiresApproval()
+	if err != nil {
+		t.Fatalf("LoadPlanRequiresApproval bogus: %v", err)
+	}
+	if got != DefaultPlanRequiresApproval {
+		t.Fatalf("bogus key = %v, want default %v", got, DefaultPlanRequiresApproval)
+	}
+}
+
+func TestLoadPlanRequiresApproval_StatErrorPropagates(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jDir, err := DefaultDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(jDir, []byte("not a dir"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = LoadPlanRequiresApproval()
 	if err == nil || !strings.Contains(err.Error(), "stat") {
 		t.Fatalf("err = %v, want wrapped stat error", err)
 	}

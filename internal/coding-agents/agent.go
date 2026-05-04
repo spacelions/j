@@ -114,7 +114,7 @@ type PlanRequest struct {
 	// their detached spawn helper.
 	AgentLogPath string
 	// MustRead is the project-wide list of files every agent must
-	// read before starting (sourced from the project.mustRead
+	// read before starting (sourced from the project.must_read
 	// setting). Backends thread it into the first-run planner prompt
 	// builder; resume runs ignore it. Empty preserves byte-identical
 	// pre-must-read output.

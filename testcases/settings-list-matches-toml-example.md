@@ -3,7 +3,7 @@ Prerequisites:
   - `cd` into a fresh empty directory and run `./bin/j init --yes --must-read=`.
 
 Steps:
-  - Run `./bin/j settings set project.must-read=path/one;path/two`
+  - Run `./bin/j settings set project.must_read=path/one;path/two`
     (quote the value in the shell so the `;` is not interpreted).
   - Run `./bin/j settings set planner.tool=cursor planner.model=opus planner.interactive=false`.
   - Run `./bin/j settings`.
@@ -13,7 +13,8 @@ Expected:
   - Stdout matches the user's example layout exactly:
 
     [project]
-      must-read = path/one;path/two
+      must_read = path/one;path/two
+      plan_requires_approval = true
     
     [planner]
       interactive = false

@@ -579,7 +579,6 @@ func TestPlanResumeFinish_StatusBranches(t *testing.T) {
 	}
 }
 
-
 // TestNewResumeCmd_FromTaskFlowsToViper mirrors
 // TestNew_FromTaskFlowsToViper for the resume cobra child: setting
 // the flag must populate the new viper key.
@@ -670,9 +669,9 @@ func TestNewResumeCmd_RunEPropagates(t *testing.T) {
 // it must not populate the planner bucket's tool/model entries.
 func TestRunResume_AlwaysInteractive(t *testing.T) {
 	cases := []struct {
-		name          string
-		seedBucket    bool
-		bucketValue   string
+		name           string
+		seedBucket     bool
+		bucketValue    string
 		assertReadOnly bool
 	}{
 		{name: "stored-true", seedBucket: true, bucketValue: "true", assertReadOnly: true},
@@ -806,7 +805,7 @@ func seedProjectMustRead(t *testing.T, value string) {
 		t.Fatalf("EnsureBucket: %v", err)
 	}
 	if err := s.Put(store.BucketProject, resolver.KeyMustRead, value); err != nil {
-		t.Fatalf("Put mustRead: %v", err)
+		t.Fatalf("Put must_read: %v", err)
 	}
 }
 
