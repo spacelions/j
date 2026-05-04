@@ -16,11 +16,12 @@ Expected:
     the empty string (does NOT reject blank input).
   - The second `j tasks` run does NOT re-prompt — empty value with
     `set=true` skips the question per the requirement
-    "if user leaves it blank, then it is `must-read=`".
+    "if user leaves it blank, then it is `must_read=`".
   - The `j settings` listing renders, under the `[project]` section
-    header, a row that reads exactly `  must-read = ` (two-space
+    header, a row that reads exactly `  must_read = ` (two-space
     indent, key present, value empty). The trailing space is
     significant: the rendering is `  <key> = <value>`, and an
-    empty value yields no characters after `= `.
+    empty value yields no characters after `= `. The seeded
+    `  plan_requires_approval = true` row remains present too.
 
 Manual: yes (drives the huh input form).

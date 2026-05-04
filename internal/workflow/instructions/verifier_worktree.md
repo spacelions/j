@@ -1,0 +1,1 @@
+Verify the code in the git worktree named %q (run `git worktree list` from the repository root to find its absolute path).

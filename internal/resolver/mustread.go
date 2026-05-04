@@ -8,10 +8,9 @@ import (
 )
 
 // KeyMustRead is the bbolt key under store.BucketProject that holds
-// the `;`-separated must-read list. Storage form is camelCase
-// `mustRead`; settings/display.go translates to/from the kebab display
-// form `must-read` users see in `j settings`.
-const KeyMustRead = "mustRead"
+// the `;`-separated must-read list. The storage form matches the
+// `j settings` key: project.must_read.
+const KeyMustRead = "must_read"
 
 // MustRead opens the per-project settings store, reads the must-read
 // value, and returns it parsed into a list of files.

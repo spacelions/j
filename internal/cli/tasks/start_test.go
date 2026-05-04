@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -58,6 +59,33 @@ func noopJBinary(t *testing.T) string {
 	return p
 }
 
+// argvJBinary writes a tiny shell script that records its argv, one
+// argument per line. RunStart spawns it detached, so tests poll the
+// output file after RunStart returns.
+func argvJBinary(t *testing.T, outputPath string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "j-argv-stub.sh")
+	body := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" > %q\n", outputPath)
+	if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func readSpawnedArgv(t *testing.T, path string) []string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(path)
+		if err == nil && len(data) > 0 {
+			return strings.Split(strings.TrimSpace(string(data)), "\n")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("spawned argv was not written to %s", path)
+	return nil
+}
+
 // readTaskFromBolt opens the per-project tasks DB and returns the
 // task row for id (or fails the test if missing).
 func readTaskFromBolt(t *testing.T, id string) store.Task {
@@ -76,6 +104,22 @@ func readTaskFromBolt(t *testing.T, id string) store.Task {
 		t.Fatalf("GetTask: %v", err)
 	}
 	return got
+}
+
+func putProjectPlanRequiresApproval(t *testing.T, value string) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.Put(store.BucketProject, store.KeyPlanRequiresApproval, value); err != nil {
+		t.Fatalf("Put plan_requires_approval: %v", err)
+	}
 }
 
 // firstSeededTaskID lists every task in the bbolt store and returns
@@ -215,6 +259,55 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 		if tool != "cursor" || model != "sonnet-4" {
 			t.Fatalf("bucket %q = (%q, %q)", bucket, tool, model)
 		}
+	}
+}
+
+func TestRunStart_ForwardsResolvedPlanApproval(t *testing.T) {
+	boolPtr := func(v bool) *bool { return &v }
+	tests := []struct {
+		name     string
+		setting  string
+		override *bool
+		want     string
+	}{
+		{name: "inherits_true_setting", setting: "true", want: "true"},
+		{name: "explicit_false_overrides_true", setting: "true", override: boolPtr(false), want: "false"},
+		{name: "explicit_true_overrides_false", setting: "false", override: boolPtr(true), want: "true"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			mustInit(t)
+			putProjectPlanRequiresApproval(t, tc.setting)
+			for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+				seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+			}
+			target := writeStartFile(t, "# task\nbody")
+			argvPath := filepath.Join(t.TempDir(), "argv.txt")
+			if err := RunStart(context.Background(), StartOptions{
+				FromFile:             target,
+				PlanRequiresApproval: tc.override,
+				Stdin:                strings.NewReader(""),
+				Stdout:               io.Discard,
+				Stderr:               io.Discard,
+				Agents:               []codingagents.Agent{newScriptedAgent()},
+				Selector:             &testutil.SelectorFake{},
+				UI:                   &scriptedStartUI{},
+				JBinary:              argvJBinary(t, argvPath),
+			}); err != nil {
+				t.Fatalf("RunStart: %v", err)
+			}
+			args := readSpawnedArgv(t, argvPath)
+			if len(args) < 6 {
+				t.Fatalf("argv = %v, want orchestrate args plus plan approval flag", args)
+			}
+			if got := args[len(args)-2]; got != "--plan-requires-approval" {
+				t.Fatalf("approval flag arg = %q, argv=%v", got, args)
+			}
+			if got := args[len(args)-1]; got != tc.want {
+				t.Fatalf("approval flag value = %q, want %q; argv=%v", got, tc.want, args)
+			}
+		})
 	}
 }
 
@@ -617,8 +710,9 @@ func TestNewStartCmd_FlagDefaults(t *testing.T) {
 	}
 	var names []string
 	cmd.Flags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
-	if len(names) != 1 || names[0] != "from-file" {
-		t.Fatalf("flags = %v, want only [from-file]", names)
+	want := []string{"from-file", "plan-requires-approval"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("flags = %v, want %v", names, want)
 	}
 	if cmd.Flags().Lookup("interactive") != nil {
 		t.Fatal("--interactive should not be registered on `j tasks start`")
@@ -637,16 +731,56 @@ func TestNewStartCmd_FlagsBindToViper(t *testing.T) {
 	if got := viper.GetString("tasks.start.from_file"); got != "/tmp/foo.md" {
 		t.Errorf("tasks.start.from_file = %q", got)
 	}
+	if err := cmd.Flags().Set("plan-requires-approval", "true"); err != nil {
+		t.Fatalf("Flags().Set plan-requires-approval: %v", err)
+	}
+	if got := viper.GetBool("tasks.start.plan_requires_approval"); !got {
+		t.Errorf("tasks.start.plan_requires_approval = false, want true")
+	}
 }
 
-// TestNewStartCmd_EnvBindings covers TASKS_START_FROM_FILE.
+// TestNewStartCmd_EnvBindings covers TASKS_START_FROM_FILE and
+// TASKS_START_PLAN_REQUIRES_APPROVAL.
 func TestNewStartCmd_EnvBindings(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	t.Setenv("TASKS_START_FROM_FILE", "/env/foo.md")
+	t.Setenv("TASKS_START_PLAN_REQUIRES_APPROVAL", "true")
 	_ = newStartCmd()
 	if got := viper.GetString("tasks.start.from_file"); got != "/env/foo.md" {
 		t.Errorf("tasks.start.from_file = %q", got)
+	}
+	if got := viper.GetBool("tasks.start.plan_requires_approval"); !got {
+		t.Errorf("tasks.start.plan_requires_approval = false, want true")
+	}
+}
+
+func TestStartPlanRequiresApprovalOverride_NoFlag(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	cmd := newStartCmd()
+	got, err := startPlanRequiresApprovalOverride(cmd)
+	if err != nil {
+		t.Fatalf("startPlanRequiresApprovalOverride: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("override = %v, want nil", *got)
+	}
+}
+
+func TestStartPlanRequiresApprovalOverride_ExplicitFalse(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	cmd := newStartCmd()
+	if err := cmd.Flags().Set("plan-requires-approval", "false"); err != nil {
+		t.Fatalf("Flags().Set: %v", err)
+	}
+	got, err := startPlanRequiresApprovalOverride(cmd)
+	if err != nil {
+		t.Fatalf("startPlanRequiresApprovalOverride: %v", err)
+	}
+	if got == nil || *got {
+		t.Fatalf("override = %v, want false", got)
 	}
 }
 

@@ -14,7 +14,8 @@ Expected:
     and `[planner]` retains only `model = sonnet-4`:
 
     [project]
-      must-read = 
+      must_read = 
+      plan_requires_approval = true
     
     [planner]
       model = sonnet-4

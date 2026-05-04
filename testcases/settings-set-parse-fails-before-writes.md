@@ -12,11 +12,13 @@ Expected:
   - The first command exits non-zero and prints an error mentioning
     `"bad-no-equals"` and `missing '='`.
   - The `j settings` listing renders the four known sections, with
-    `[project]` carrying only the seeded row `  must-read = ` and the
+    `[project]` carrying the seeded `  must_read = ` and
+    `  plan_requires_approval = true` rows and the
     other three sections empty:
 
         [project]
-          must-read = 
+          must_read = 
+          plan_requires_approval = true
         
         [planner]
         

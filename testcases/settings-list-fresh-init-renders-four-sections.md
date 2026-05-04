@@ -9,12 +9,13 @@ Steps:
 
 Expected:
   - Exit code 0.
-  - Stdout is exactly the following 8 lines (each header on its own line,
+  - Stdout is exactly the following 9 lines (each header on its own line,
     a single blank line between sections, no trailing blank line; the file
     output ends with the `[verifier]` line plus its terminating newline):
 
     [project]
-      must-read = 
+      must_read = 
+      plan_requires_approval = true
     
     [planner]
     

@@ -20,11 +20,11 @@ Steps (MANUAL — requires a TTY and a real coding-agent backend):
     that the same prompt no longer carries the bulleted block.
 
 Expected:
-  - With `project.must-read = AGENTS.md;CLAUDE.md`, the planner
+  - With `project.must_read = AGENTS.md;CLAUDE.md`, the planner
     first-run prompt contains the bulleted block exactly once,
     case-preserved, between the planner instruction and the user
     request line.
-  - With `project.must-read =` (empty), the same flow produces a
+  - With `project.must_read =` (empty), the same flow produces a
     prompt that does NOT contain the "Before starting, read these
     project files" header — the prompt is byte-identical to the
     pre-mustread output.

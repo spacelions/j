@@ -1,0 +1,3 @@
+You are resuming a previous verification session. Check what was already done in the previous turn, summarise the prior progress for the user in one short paragraph, and then continue only the verification work that is still outstanding. Do not re-verify from scratch and do not overwrite the saved verifier_findings.md unless new information forces a change.
+
+Read the requirements at %q for context, and read the plan at %q for context.

@@ -15,11 +15,13 @@ Steps:
 
 Expected:
   - Directory 1: `j settings` renders `[project]` with the row
-    `  must-read = AGENTS.md;CLAUDE.md` (case-preserved on the value;
-    the key is rendered as the kebab display form).
+    `  must_read = AGENTS.md;CLAUDE.md` (case-preserved on the value;
+    the key is rendered as `must_read`) plus
+    `  plan_requires_approval = true`.
   - Directory 2: `j settings` renders `[project]` with the row
-    `  must-read = ` (empty value persisted); `[planner]`, `[worker]`,
-    and `[verifier]` render as empty section headers.
+    `  must_read = ` (empty value persisted) plus
+    `  plan_requires_approval = true`; `[planner]`, `[worker]`, and
+    `[verifier]` render as empty section headers.
   - Directory 3: the preflight prompt fires for `j settings` because
     `--must-read` was not passed; the flag is opt-in.
 

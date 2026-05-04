@@ -6,12 +6,9 @@ import (
 	"github.com/spacelions/j/internal/store"
 )
 
-// TestDisplayKey covers the three branches of displayKey: a registered
-// bucket+storage pair (project.mustRead -> "must-read"), a registered
-// bucket with an unregistered storage key (passthrough), and an
-// unregistered bucket (passthrough). Pinning these explicitly keeps the
-// settings list/reset/set output stable when new project keys are
-// added without an explicit table entry.
+// TestDisplayKey covers the passthrough behaviour for buckets/keys
+// without an explicit table entry. Pinning this keeps settings output
+// stable while the keyTable is empty.
 func TestDisplayKey(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -20,16 +17,10 @@ func TestDisplayKey(t *testing.T) {
 		want      string
 	}{
 		{
-			name:      "registered_bucket_and_key",
+			name:      "project_bucket_passthrough",
 			bucket:    store.BucketProject,
-			storedKey: "mustRead",
-			want:      "must-read",
-		},
-		{
-			name:      "registered_bucket_unmapped_key",
-			bucket:    store.BucketProject,
-			storedKey: "model",
-			want:      "model",
+			storedKey: "must_read",
+			want:      "must_read",
 		},
 		{
 			name:      "unregistered_bucket",
@@ -47,10 +38,9 @@ func TestDisplayKey(t *testing.T) {
 	}
 }
 
-// TestStorageKey is the inverse of TestDisplayKey: it covers the three
-// branches of storageKey so a user-typed display key like
-// "project.must-read" maps to the bbolt storage form "mustRead",
-// while unregistered buckets/keys pass through unchanged.
+// TestStorageKey is the inverse of TestDisplayKey: it covers
+// passthrough behaviour for keys without explicit storage/display
+// divergence.
 func TestStorageKey(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -59,16 +49,10 @@ func TestStorageKey(t *testing.T) {
 		want       string
 	}{
 		{
-			name:       "registered_bucket_and_key",
+			name:       "project_bucket_passthrough",
 			bucket:     store.BucketProject,
-			displayKey: "must-read",
-			want:       "mustRead",
-		},
-		{
-			name:       "registered_bucket_unmapped_key",
-			bucket:     store.BucketProject,
-			displayKey: "model",
-			want:      "model",
+			displayKey: "must_read",
+			want:       "must_read",
 		},
 		{
 			name:       "unregistered_bucket",

@@ -1,0 +1,3 @@
+You are resuming a previous coding session. The verifier reviewed your work and reported `VERDICT: FAIL`. Address every item in the verifier findings by editing the project files in place. Do not re-plan from scratch, do not edit the verifier's findings file, and keep the change set focused on the reported issues.
+
+The plan lives at %q (read for context only). Address every item in the verifier findings at %q.

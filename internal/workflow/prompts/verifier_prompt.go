@@ -28,11 +28,7 @@ func BuildVerifier(reqPath, planPath, verifierPlanPath, findingsPath, worktree s
 	_ = verifierPlanPath
 	return appendVerifierWorktreeLine(
 		fmt.Sprintf(
-			"%s%s\n\n"+
-				"Read the requirements at %q and the plan at %q before starting. "+
-				"Save your final findings (with the terminal `VERDICT: PASS` or "+
-				"`VERDICT: FAIL` line) to %q (overwrite if it exists). "+
-				"Then exit.",
+			"%s%s\n\n"+strings.TrimSpace(instructions.VerifierRequest),
 			strings.TrimSpace(instructions.Verifier),
 			mustReadSuffix(mustRead),
 			reqPath, planPath,
@@ -64,14 +60,7 @@ func BuildVerifier(reqPath, planPath, verifierPlanPath, findingsPath, worktree s
 func BuildVerifierResume(reqPath, planPath, worktree string, mustRead []string) string {
 	return appendVerifierWorktreeLine(
 		fmt.Sprintf(
-			"%s%s\n\n"+
-				"You are resuming a previous verification session. "+
-				"Check what was already done in the previous turn, "+
-				"summarise the prior progress for the user in one short paragraph, "+
-				"and then continue only the verification work that is still outstanding. "+
-				"Do not re-verify from scratch and do not overwrite the saved "+
-				"verifier_findings.md unless new information forces a change.\n\n"+
-				"Read the requirements at %q for context, and read the plan at %q for context.",
+			"%s%s\n\n"+strings.TrimSpace(instructions.VerifierResume),
 			strings.TrimSpace(instructions.Verifier),
 			mustReadSuffix(mustRead),
 			reqPath, planPath,
@@ -95,15 +84,7 @@ func BuildVerifierResume(reqPath, planPath, worktree string, mustRead []string) 
 func BuildVerifierFix(planPath, findingsPath, worktree string) string {
 	return appendWorktreeLine(
 		fmt.Sprintf(
-			"%s\n\n"+
-				"You are resuming a previous coding session. "+
-				"The verifier reviewed your work and reported `VERDICT: FAIL`. "+
-				"Address every item in the verifier findings by editing the "+
-				"project files in place. Do not re-plan from scratch, "+
-				"do not edit the verifier's findings file, and keep the change "+
-				"set focused on the reported issues.\n\n"+
-				"The plan lives at %q (read for context only). "+
-				"Address every item in the verifier findings at %q.",
+			"%s\n\n"+strings.TrimSpace(instructions.VerifierFix),
 			strings.TrimSpace(instructions.Worker),
 			planPath, findingsPath,
 		),
@@ -122,9 +103,7 @@ func appendVerifierWorktreeLine(prompt, worktree string) string {
 		return prompt
 	}
 	return fmt.Sprintf(
-		"%s\n\nVerify the code in the git worktree named %q "+
-			"(run `git worktree list` from the repository root to "+
-			"find its absolute path).",
+		"%s\n\n"+strings.TrimSpace(instructions.VerifierWorktree),
 		prompt, worktree,
 	)
 }

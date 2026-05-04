@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/charmbracelet/huh"
@@ -64,6 +65,11 @@ type StartOptions struct {
 	// `j tasks orchestrate --id <id>`. Empty falls back to
 	// os.Executable. Tests inject a path-resolvable stub.
 	JBinary string
+
+	// PlanRequiresApproval, when non-nil, overrides
+	// project.plan_requires_approval for this start. nil means inherit
+	// the project setting.
+	PlanRequiresApproval *bool
 }
 
 // startTarget is the resolved outcome of resolveStartTarget: which
@@ -93,8 +99,9 @@ type startTarget struct {
 // onto an existing row), and forks a detached
 // `j tasks orchestrate --id <id>` subprocess whose stdout/stderr are
 // appended to <cwd>/.j/tasks/<id>/agent.log. The detached child
-// drives planner → worker → verifier end to end; RunStart records
-// the child's PID and returns immediately.
+// drives planner only when plan approval is required, otherwise
+// planner → worker → verifier end to end. RunStart records the
+// child's PID and returns immediately.
 //
 // Steps:
 //  1. Defer a huh.ErrUserAborted → nil guard so a Ctrl-C in any
@@ -136,6 +143,10 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 		// Linear source or aborted picker — exit cleanly.
 		return nil
 	}
+	planRequiresApproval, err := resolvePlanRequiresApproval(opts.PlanRequiresApproval)
+	if err != nil {
+		return err
+	}
 
 	agentLogPath, err := prepareTaskFiles(target)
 	if err != nil {
@@ -146,7 +157,11 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	if err != nil {
 		return err
 	}
-	pid, err := run.SpawnIn(ctx, "", agentLogPath, binary, "tasks", "orchestrate", "--id", target.taskID)
+	pid, err := run.SpawnIn(ctx, "", agentLogPath, binary,
+		"tasks", "orchestrate",
+		"--id", target.taskID,
+		"--plan-requires-approval", strconv.FormatBool(planRequiresApproval),
+	)
 	if err != nil {
 		return err
 	}
@@ -209,7 +224,6 @@ func newTargetFromMarkdown(raw string) (startTarget, error) {
 		source: abs,
 	}, nil
 }
-
 
 // listAllTasks opens the per-project tasks bbolt store, reads every
 // row, sorts via store.SortTasks, and closes before returning. The
@@ -303,6 +317,13 @@ func resolveJBinary(override string) (string, error) {
 	return exe, nil
 }
 
+func resolvePlanRequiresApproval(override *bool) (bool, error) {
+	if override != nil {
+		return *override, nil
+	}
+	return store.LoadPlanRequiresApproval()
+}
+
 func (o StartOptions) withDefaults() StartOptions {
 	if o.Stdin == nil {
 		o.Stdin = os.Stdin
@@ -323,7 +344,8 @@ func (o StartOptions) withDefaults() StartOptions {
 }
 
 // newStartCmd builds the `j tasks start` cobra subcommand. The flag
-// surface is just --from-file; when empty, the same source picker
+// surface is --from-file plus the plan-approval override; when empty,
+// the same source picker
 // `j plan` shows is rendered against the parent's terminal before
 // the detached fork. The bucket-stored `interactive` value is never
 // consulted on this path: the orchestrator forces Interactive=false
@@ -333,11 +355,12 @@ func (o StartOptions) withDefaults() StartOptions {
 func newStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start",
-		Short: "Start a new task: drive planner → worker → verifier in the background",
+		Short: "Start a new task: drive planner, then pause for approval or continue in the background",
 		Long: "Validates that every agent bucket (planner, worker, verifier) " +
 			"has a tool/model selection — prompting once per missing bucket — " +
 			"then forks a detached `j tasks orchestrate --id <id>` child that " +
-			"drives planner → worker → verifier end to end and exits. Pass " +
+			"runs the planner and, when plan approval is not required, drives " +
+			"worker → verifier end to end before exiting. Pass " +
 			"--from-file/-f (or TASKS_START_FROM_FILE) to point at a markdown " +
 			"task description; when neither is set, the same source picker " +
 			"`j plan` shows is rendered (markdown | linear | re-plan an " +
@@ -346,17 +369,39 @@ func newStartCmd() *cobra.Command {
 			"<cwd>/.j/tasks/<id>/agent.log.",
 		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			approval, err := startPlanRequiresApprovalOverride(cmd)
+			if err != nil {
+				return err
+			}
 			return RunStart(cmd.Context(), StartOptions{
-				FromFile: viper.GetString("tasks.start.from_file"),
-				Stdin:    cmd.InOrStdin(),
-				Stdout:   cmd.OutOrStdout(),
-				Stderr:   cmd.ErrOrStderr(),
-				Agents:   []codingagents.Agent{cursor.New(), claude.New()},
+				FromFile:             viper.GetString("tasks.start.from_file"),
+				PlanRequiresApproval: approval,
+				Stdin:                cmd.InOrStdin(),
+				Stdout:               cmd.OutOrStdout(),
+				Stderr:               cmd.ErrOrStderr(),
+				Agents:               []codingagents.Agent{cursor.New(), claude.New()},
 			})
 		},
 	}
 	cmd.Flags().StringP("from-file", "f", "", "Path to a markdown file describing the task")
+	cmd.Flags().Bool("plan-requires-approval", false, "Override project.plan_requires_approval for this run (use =false to skip once)")
 	_ = viper.BindPFlag("tasks.start.from_file", cmd.Flags().Lookup("from-file"))
 	_ = viper.BindEnv("tasks.start.from_file", "TASKS_START_FROM_FILE")
+	_ = viper.BindPFlag("tasks.start.plan_requires_approval", cmd.Flags().Lookup("plan-requires-approval"))
+	_ = viper.BindEnv("tasks.start.plan_requires_approval", "TASKS_START_PLAN_REQUIRES_APPROVAL")
 	return cmd
+}
+
+func startPlanRequiresApprovalOverride(cmd *cobra.Command) (*bool, error) {
+	approvalSet := cmd.Flags().Changed("plan-requires-approval") || envSet("TASKS_START_PLAN_REQUIRES_APPROVAL")
+	if approvalSet {
+		v := viper.GetBool("tasks.start.plan_requires_approval")
+		return &v, nil
+	}
+	return nil, nil
+}
+
+func envSet(name string) bool {
+	_, ok := os.LookupEnv(name)
+	return ok
 }

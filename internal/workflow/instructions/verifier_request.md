@@ -1,0 +1,1 @@
+Read the requirements at %q and the plan at %q before starting. Save your final findings (with the terminal `VERDICT: PASS` or `VERDICT: FAIL` line) to %q (overwrite if it exists). Then exit.

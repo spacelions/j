@@ -24,7 +24,7 @@ import (
 func BuildWorker(planPath, worktree string, mustRead []string) string {
 	return appendWorktreeLine(
 		fmt.Sprintf(
-			"%s%s\n\nRead the plan at %q before starting.",
+			"%s%s\n\n"+strings.TrimSpace(instructions.WorkerPlan),
 			strings.TrimSpace(instructions.Worker),
 			mustReadSuffix(mustRead),
 			planPath,
@@ -55,13 +55,7 @@ func BuildWorker(planPath, worktree string, mustRead []string) string {
 func BuildWorkerResume(planPath, worktree string, mustRead []string) string {
 	return appendWorktreeLine(
 		fmt.Sprintf(
-			"%s%s\n\n"+
-				"You are resuming a previous coding session. "+
-				"Check what was already implemented in the previous turn, "+
-				"summarise the prior progress for the user in one short paragraph, "+
-				"and then continue only the work that is still outstanding. "+
-				"Do not re-implement from scratch.\n\n"+
-				"The plan lives at %q; read it for context only.",
+			"%s%s\n\n"+strings.TrimSpace(instructions.WorkerResume),
 			strings.TrimSpace(instructions.Worker),
 			mustReadSuffix(mustRead),
 			planPath,
@@ -81,8 +75,7 @@ func appendWorktreeLine(prompt, worktree string) string {
 		return prompt
 	}
 	return fmt.Sprintf(
-		"%s\n\nUse the git worktree named %q for this task; "+
-			"create it via `git worktree add` if it does not yet exist.",
+		"%s\n\n"+strings.TrimSpace(instructions.WorkerWorktree),
 		prompt, worktree,
 	)
 }
