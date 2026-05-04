@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -128,16 +129,13 @@ func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
 type scriptedUI struct {
 	testutil.SelectorFake
 
-	fromFile     string
 	pickedID     string
 	resumePicked string
-	askErr       error
 	pickErr      error
 	resumeErr    error
 	confirm      bool
 	confirmErr   error
 
-	askCalls        int
 	pickCalls       int
 	pickResumeCalls int
 	confirmCalls    int
@@ -147,14 +145,6 @@ type scriptedUI struct {
 	confirmCmd       string
 	confirmTaskID    string
 	confirmStatus    string
-}
-
-func (s *scriptedUI) AskFromFile(context.Context) (string, error) {
-	s.askCalls++
-	if s.askErr != nil {
-		return "", s.askErr
-	}
-	return s.fromFile, nil
 }
 
 // PickTask dispatches by title prefix so the same scripted UI can
@@ -372,8 +362,8 @@ func TestRun_ByTaskID_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if ui.askCalls != 0 || ui.pickCalls != 0 {
-		t.Fatalf("UI should be silent: ask=%d pick=%d", ui.askCalls, ui.pickCalls)
+	if ui.pickCalls != 0 {
+		t.Fatalf("UI should be silent: pick=%d", ui.pickCalls)
 	}
 	if agent.worked != 1 {
 		t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
@@ -696,8 +686,8 @@ func TestRun_AutoPicksLatestPlanDone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if ui.askCalls != 0 || ui.pickCalls != 0 {
-		t.Fatalf("UI should be silent for single-task auto-pick: ask=%d pick=%d", ui.askCalls, ui.pickCalls)
+	if ui.pickCalls != 0 {
+		t.Fatalf("UI should be silent for single-task auto-pick: pick=%d", ui.pickCalls)
 	}
 	tasks := readTasks(t)
 	if len(tasks) != 1 || tasks[0].ID != id || tasks[0].Status != store.StatusWorkDone {
@@ -766,113 +756,23 @@ func TestRun_PickerError(t *testing.T) {
 	}
 }
 
-// TestRun_NoPlanDoneFallsBackToAskFromFile pins the empty-bbolt path:
-// when no plan-done task exists, Run prompts AskFromFile.
-func TestRun_NoPlanDoneFallsBackToAskFromFile(t *testing.T) {
+// TestRun_NoTasksErrors pins the empty-bbolt path now that work only
+// operates on existing planned tasks.
+func TestRun_NoTasksErrors(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	plan := writePlan(t, "legacy plan body")
 	agent := newScriptedAgent()
-	ui := &scriptedUI{fromFile: plan}
-
 	err := Run(context.Background(), Options{
-		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
-		UI:     ui,
+		UI:     &scriptedUI{},
 	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "no tasks to work") {
+		t.Fatalf("err = %v", err)
 	}
-	if ui.askCalls != 1 {
-		t.Fatalf("AskFromFile = %d, want 1", ui.askCalls)
-	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusWorkDone {
-		t.Fatalf("tasks = %+v, want one work-done task from legacy import", tasks)
-	}
-}
-
-// TestRun_FromFile_LegacyImport exercises the legacy file path:
-// passing --from-file imports the file into a new .j/tasks/<id>/
-// folder and creates a fresh task row.
-func TestRun_FromFile_LegacyImport(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	dir := t.TempDir()
-	planSrc := filepath.Join(dir, "spec.plan.md")
-	if err := os.WriteFile(planSrc, []byte("# legacy plan\nstep"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	reqSrc := filepath.Join(dir, "spec.md")
-	if err := os.WriteFile(reqSrc, []byte("# legacy requirement\nbody"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	var stdout bytes.Buffer
-
-	err := Run(context.Background(), Options{
-		FromFile: planSrc,
-		Stdout:   &stdout,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{agent},
-		UI:       &scriptedUI{},
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(stdout.String(), "J: coding on ") {
-		t.Fatalf("stdout = %q", stdout.String())
-	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 {
-		t.Fatalf("expected one new task row, got %+v", tasks)
-	}
-	got := tasks[0]
-	if got.Status != store.StatusWorkDone {
-		t.Fatalf("Status = %q, want work-done", got.Status)
-	}
-	if got.Summary != "legacy requirement" {
-		t.Fatalf("Summary = %q, want sidecar heading", got.Summary)
-	}
-	planPath := taskFilePath(t, got.ID, store.PlanFileName)
-	if data, err := os.ReadFile(planPath); err != nil {
-		t.Fatalf("read imported plan: %v", err)
-	} else if !strings.Contains(string(data), "legacy plan") {
-		t.Fatalf("imported plan = %q", string(data))
-	}
-	reqPath := taskFilePath(t, got.ID, store.RequirementsFileName)
-	if data, err := os.ReadFile(reqPath); err != nil {
-		t.Fatalf("read imported requirements: %v", err)
-	} else if !strings.Contains(string(data), "legacy requirement") {
-		t.Fatalf("imported requirements = %q", string(data))
-	}
-}
-
-// TestRun_FromFile_NoSidecar covers the legacy file path when there
-// is no `<stem>.md` sidecar; the imported task gets only plan.md.
-func TestRun_FromFile_NoSidecar(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	plan := writePlan(t, "## plan only")
-	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
-		FromFile: plan,
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{agent},
-		UI:       &scriptedUI{},
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 {
-		t.Fatalf("len(tasks) = %d", len(tasks))
-	}
-	if tasks[0].Summary != "plan only" {
-		t.Fatalf("Summary = %q, want plan-body fallback", tasks[0].Summary)
+	if agent.worked != 0 {
+		t.Fatalf("agent.Work calls = %d, want 0", agent.worked)
 	}
 }
 
@@ -923,73 +823,6 @@ func TestRun_ThreadsWorktreeIntoWorkRequest(t *testing.T) {
 	}
 	if agent.lastReq.Worktree != "myproj-do-the-thing" {
 		t.Fatalf("Worktree = %q, want %q", agent.lastReq.Worktree, "myproj-do-the-thing")
-	}
-}
-
-func TestRun_AskFromFileError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	agent := newScriptedAgent()
-	ui := &scriptedUI{askErr: errors.New("ask boom")}
-	err := Run(context.Background(), Options{
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     ui,
-	})
-	if err == nil || !strings.Contains(err.Error(), "ask boom") {
-		t.Fatalf("err = %v", err)
-	}
-	if agent.listed != 0 {
-		t.Fatal("agent should not be invoked when AskFromFile errored")
-	}
-}
-
-func TestRun_FromFile_ValidationError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	dir := t.TempDir()
-	bad := filepath.Join(dir, "spec.txt")
-	if err := os.WriteFile(bad, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
-		FromFile: bad,
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{agent},
-		UI:       &scriptedUI{},
-	})
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-	if !strings.Contains(err.Error(), "not a markdown") {
-		t.Fatalf("err = %v", err)
-	}
-	if agent.worked != 0 {
-		t.Fatal("agent.Work should not have been invoked")
-	}
-}
-
-func TestRun_FromFile_PlanReadError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	plan := writePlan(t, "x")
-	if err := os.Chmod(plan, 0o000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(plan, 0o600) })
-
-	err := Run(context.Background(), Options{
-		FromFile: plan,
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{newScriptedAgent()},
-		UI:       &scriptedUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "read plan") {
-		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -1622,33 +1455,6 @@ func TestRun_ListPlanDoneTasks_DecodeError(t *testing.T) {
 	}
 }
 
-// TestRun_FromFile_EnsureTaskDirError covers the resolveFromFile
-// branch where store.EnsureTaskDir errors out (legacy regular file at
-// .j/tasks blocks creating new task subdirs).
-func TestRun_FromFile_EnsureTaskDirError(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	plan := writePlan(t, "x")
-	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
-		FromFile: plan,
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{agent},
-		UI:       &scriptedUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "ensure task dir") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestOpenLifecycle_PutTaskErrorWarns drives the put-error branch
 // inside the work lifecycle helper by handing it a Task with an empty
 // ID, which store.PutTask rejects without ever reaching bbolt. The
@@ -1691,7 +1497,7 @@ func TestAllowedForWork(t *testing.T) {
 		{store.TaskStatus("nonsense"), false},
 	}
 	for _, c := range cases {
-		got := allowedForWork(store.Task{ID: "x", Status: c.status})
+		got := resolver.ReplanAllowed(store.Task{ID: "x", Status: c.status})
 		if got != c.want {
 			t.Errorf("allowedForWork(%q) = %v, want %v", c.status, got, c.want)
 		}
@@ -1758,126 +1564,59 @@ func TestRun_BackgroundSpawn_RecordsPID(t *testing.T) {
 	}
 }
 
-// TestRun_BackgroundSpawn_NewTask_RecordsPID covers the legacy
-// file-import path with a backgrounded headless work run: the new
-// task id is minted by resolveFromFile and then carried through to
-// the agent log path / row.
-func TestRun_BackgroundSpawn_NewTask_RecordsPID(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	plan := writePlan(t, "## plan body")
-	agent := newScriptedAgent()
-	agent.workPID = 27182
-	var stdout bytes.Buffer
-
-	err := Run(context.Background(), Options{
-		FromFile:    plan,
-		Interactive: false,
-		Stdout:      &stdout,
-		Stderr:      io.Discard,
-		Agents:      []codingagents.Agent{agent},
-		UI:          &scriptedUI{},
-	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !strings.Contains(stdout.String(), "PID=27182") {
-		t.Fatalf("stdout = %q", stdout.String())
-	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 {
-		t.Fatalf("len(tasks) = %d", len(tasks))
-	}
-	got := tasks[0]
-	if got.Status != store.StatusWorking {
-		t.Fatalf("Status = %q, want working", got.Status)
-	}
-	if got.BackgroundPID != 27182 {
-		t.Fatalf("BackgroundPID = %d", got.BackgroundPID)
-	}
-	if !strings.Contains(got.AgentLogPath, got.ID) {
-		t.Fatalf("AgentLogPath %q should reference task id %q", got.AgentLogPath, got.ID)
-	}
-}
-
 // TestRun_DoesNotHoldFileLocks_DuringAgentWork is the regression
 // guard for the open-write-close refactor: while agent.Work is
 // running, both `<cwd>/.j/settings` and `<cwd>/.j/tasks/list.db`
 // must be openable by another caller without hitting the bbolt
-// 2-second openTimeout. Two scenarios are exercised: the
-// `--from-task` reuse path and the legacy `--from-file` import.
+// 2-second openTimeout.
 func TestRun_DoesNotHoldFileLocks_DuringAgentWork(t *testing.T) {
-	cases := []struct {
-		name string
-		opts func(t *testing.T) Options
-	}{
-		{
-			name: "from-task",
-			opts: func(t *testing.T) Options {
-				id := seedPlanDoneTask(t, "x", "plan body", "# req\nbody")
-				return Options{TaskID: id}
-			},
-		},
-		{
-			name: "from-file",
-			opts: func(t *testing.T) Options {
-				dir := t.TempDir()
-				p := filepath.Join(dir, "spec.plan.md")
-				if err := os.WriteFile(p, []byte("# legacy plan\nstep"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-				return Options{FromFile: p}
-			},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Chdir(t.TempDir())
-			mustInit(t)
-			settingsPath, err := store.DefaultPath()
-			if err != nil {
-				t.Fatalf("DefaultPath: %v", err)
-			}
-			tasksPath, err := store.DefaultTasksDBPath()
-			if err != nil {
-				t.Fatalf("DefaultTasksDBPath: %v", err)
-			}
+	t.Run("from-task", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		mustInit(t)
+		settingsPath, err := store.DefaultPath()
+		if err != nil {
+			t.Fatalf("DefaultPath: %v", err)
+		}
+		tasksPath, err := store.DefaultTasksDBPath()
+		if err != nil {
+			t.Fatalf("DefaultTasksDBPath: %v", err)
+		}
 
-			opts := tc.opts(t)
-			opts.Interactive = true
-			opts.Stdout = io.Discard
-			opts.Stderr = io.Discard
-			opts.UI = &scriptedUI{}
-			agent := newScriptedAgent()
-			agent.workHook = func(_ codingagents.WorkRequest) error {
-				s, err := store.Open(settingsPath)
-				if err != nil {
-					return fmt.Errorf("settings db should not be locked: %w", err)
-				}
-				if err := s.Close(); err != nil {
-					return fmt.Errorf("close settings: %w", err)
-				}
-				s, err = store.Open(tasksPath)
-				if err != nil {
-					return fmt.Errorf("tasks db should not be locked: %w", err)
-				}
-				if err := s.Close(); err != nil {
-					return fmt.Errorf("close tasks: %w", err)
-				}
-				return nil
+		id := seedPlanDoneTask(t, "x", "plan body", "# req\nbody")
+		opts := Options{TaskID: id}
+		opts.Interactive = true
+		opts.Stdout = io.Discard
+		opts.Stderr = io.Discard
+		opts.UI = &scriptedUI{}
+		agent := newScriptedAgent()
+		agent.workHook = func(_ codingagents.WorkRequest) error {
+			s, err := store.Open(settingsPath)
+			if err != nil {
+				return fmt.Errorf("settings db should not be locked: %w", err)
 			}
-			opts.Agents = []codingagents.Agent{agent}
+			if err := s.Close(); err != nil {
+				return fmt.Errorf("close settings: %w", err)
+			}
+			s, err = store.Open(tasksPath)
+			if err != nil {
+				return fmt.Errorf("tasks db should not be locked: %w", err)
+			}
+			if err := s.Close(); err != nil {
+				return fmt.Errorf("close tasks: %w", err)
+			}
+			return nil
+		}
+		opts.Agents = []codingagents.Agent{agent}
 
-			if err := Run(context.Background(), opts); err != nil {
-				t.Fatalf("Run: %v (a non-nil err here means a bbolt lock was held across agent.Work)", err)
-			}
-			if agent.worked != 1 {
-				t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
-			}
-			tasks := readTasks(t)
-			if len(tasks) != 1 || tasks[0].Status != store.StatusWorkDone {
-				t.Fatalf("tasks = %+v, want one work-done task", tasks)
-			}
-		})
-	}
+		if err := Run(context.Background(), opts); err != nil {
+			t.Fatalf("Run: %v (a non-nil err here means a bbolt lock was held across agent.Work)", err)
+		}
+		if agent.worked != 1 {
+			t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
+		}
+		tasks := readTasks(t)
+		if len(tasks) != 1 || tasks[0].Status != store.StatusWorkDone {
+			t.Fatalf("tasks = %+v, want one work-done task", tasks)
+		}
+	})
 }

@@ -2,11 +2,11 @@ package tasks
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/run"
 )
@@ -75,7 +75,7 @@ func removeTaskWorktree(ctx context.Context, stderr io.Writer, task store.Task) 
 	}
 	out, err := run.Output(ctx, "git", "worktree", "list", "--porcelain")
 	if err != nil {
-		fmt.Fprintf(stderr, "warning: worktree remove: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: worktree remove: %v\n", err)
 		return
 	}
 	refsHead := "refs/heads/" + name
@@ -89,11 +89,11 @@ func removeTaskWorktree(ctx context.Context, stderr io.Writer, task store.Task) 
 		return
 	}
 	if len(matches) > 1 {
-		fmt.Fprintf(stderr, "warning: worktree remove: multiple worktrees matched %q; using %s\n", name, matches[0].path)
+		banner.DangerousFprintf(stderr, "J: warning: worktree remove: multiple worktrees matched %q; using %s\n", name, matches[0].path)
 	}
 	path := matches[0].path
 	_, err = run.Output(ctx, "git", "worktree", "remove", "--force", path)
 	if err != nil {
-		fmt.Fprintf(stderr, "warning: worktree remove: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: worktree remove: %v\n", err)
 	}
 }

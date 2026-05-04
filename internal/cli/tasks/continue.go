@@ -118,7 +118,7 @@ func resolveContinueTask(ctx context.Context, opts ContinueOptions) (store.Task,
 	}
 	if opts.TaskID == "" {
 		if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
-			fmt.Fprintln(opts.Stdout, emptyMessage)
+			banner.Fprintln(opts.Stdout, emptyMessage)
 			return store.Task{}, false, nil
 		}
 	}
@@ -140,7 +140,7 @@ func resolveContinueTaskFromStore(ctx context.Context, s *store.Store, opts Cont
 		task, err := s.GetTask(opts.TaskID)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
-				fmt.Fprintln(opts.Stdout, noTaskMessage)
+				banner.Fprintln(opts.Stdout, noTaskMessage)
 				return store.Task{}, false, nil
 			}
 			return store.Task{}, false, err
@@ -209,7 +209,7 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, task store.Task
 			Agents: opts.Agents,
 		})
 	case store.StatusVerifyDone, store.StatusCompleted:
-		fmt.Fprintf(opts.Stdout, "J: task %s already finished\n", task.ID)
+		banner.Fprintf(opts.Stdout, "J: task %s already finished\n", task.ID)
 		return nil
 	case store.StatusHelp:
 		return dispatchHelp(ctx, opts, task)
@@ -250,24 +250,24 @@ func resumeFromPlanDone(ctx context.Context, opts ContinueOptions, taskID string
 func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: tasks path: %v\n", err)
 		return
 	}
 	s, err := store.Open(path)
 	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: tasks db: %v\n", err)
 		return
 	}
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(taskID)
 	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks get %q: %v\n", taskID, err)
+		banner.DangerousFprintf(stderr, "J: warning: tasks get %q: %v\n", taskID, err)
 		return
 	}
 	row.AgentLogPath = agentLogPath
 	row.BackgroundPID = pid
 	if err := s.PutTask(row); err != nil {
-		fmt.Fprintf(stderr, "warning: tasks put: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: tasks put: %v\n", err)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -41,7 +42,7 @@ func runSet(cmd *cobra.Command, args []string) error {
 			if err := s.Put(e.bucket, storageKey(e.bucket, e.key), e.value); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "set %s.%s = %s\n", e.bucket, e.key, e.value)
+			banner.Fprintf(cmd.OutOrStdout(), "J: set %s.%s = %s\n", e.bucket, e.key, e.value)
 		}
 		return nil
 	})

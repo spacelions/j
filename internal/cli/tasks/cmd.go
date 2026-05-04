@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/preflight"
 	"github.com/spacelions/j/internal/store"
 )
@@ -70,7 +71,7 @@ func listTasks(stdout io.Writer) error {
 		return err
 	}
 	if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
-		fmt.Fprintln(stdout, emptyMessage)
+		banner.Fprintln(stdout, emptyMessage)
 		return nil
 	}
 	s, err := store.Open(path)
@@ -84,7 +85,7 @@ func listTasks(stdout io.Writer) error {
 		return err
 	}
 	if len(tasks) == 0 {
-		fmt.Fprintln(stdout, emptyMessage)
+		banner.Fprintln(stdout, emptyMessage)
 		return nil
 	}
 	tasksDir, err := store.DefaultTasksDir()

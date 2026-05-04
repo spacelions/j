@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
@@ -101,7 +101,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return err
 	}
 	if !ok {
-		fmt.Fprintln(opts.Stdout, "J: there are no resumable verify sessions")
+		banner.Fprintln(opts.Stdout, "J: there are no resumable verify sessions")
 		return nil
 	}
 
@@ -123,7 +123,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	lc := task.BeginVerifyResume(opts.Stderr)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
+		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", mustReadErr)
 	}
 	// Resume always runs interactive — the verifier bucket's
 	// `interactive` value is intentionally ignored on resume.
@@ -145,7 +145,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		runErr = run.WaitForExit(ctx, pid)
 	}
 	outcome := store.VerifyOutcomeNoRetries
-	if runErr == nil && ParseVerdict(findingsPath) == "PASS" {
+	if runErr == nil && resolver.ParseVerdict(findingsPath) == "PASS" {
 		outcome = store.VerifyOutcomeSuccess
 	}
 	lc.Finish(outcome, runErr)
@@ -153,7 +153,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return runErr
 	}
 
-	fmt.Fprintf(opts.Stdout, "J: verify resume on task %s\n", task.ID)
+	banner.Fprintf(opts.Stdout, "J: verify resume on task %s\n", task.ID)
 	return nil
 }
 
@@ -196,16 +196,8 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 // "task %q not found" wrapping; an empty cursor becomes
 // "task %q has no verify session".
 func resolveResumeByID(id string) (store.Task, bool, error) {
-	s, err := openTasks()
+	task, err := resolver.TaskByID("verify", id)
 	if err != nil {
-		return store.Task{}, false, err
-	}
-	defer func() { _ = s.Close() }()
-	task, err := s.GetTask(id)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return store.Task{}, false, fmt.Errorf("J: task %q not found", id)
-		}
 		return store.Task{}, false, err
 	}
 	if task.VerifyResumeCursor == "" {
@@ -219,16 +211,10 @@ func resolveResumeByID(id string) (store.Task, bool, error) {
 // store.SortTasks. validateForVerify is intentionally NOT applied
 // here: resume is permissive by design.
 func listResumableTasks() ([]store.Task, error) {
-	s, err := openTasks()
+	all, err := resolver.ListAllTasks()
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = s.Close() }()
-	all, err := s.ListTasks()
-	if err != nil {
-		return nil, err
-	}
-	store.SortTasks(all)
 	out := all[:0]
 	for _, t := range all {
 		if t.VerifyResumeCursor != "" {

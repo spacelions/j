@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/spacelions/j/internal/cli/banner"
 )
 
 // Sentinel errors returned by LoadProjectConfig when a required
@@ -76,12 +78,12 @@ type TaskConfig struct {
 func OpenSettings(stderr io.Writer) (*Store, bool) {
 	path, err := DefaultPath()
 	if err != nil {
-		fmt.Fprintf(stderr, "warning: settings path: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: settings path: %v\n", err)
 		return nil, false
 	}
 	s, err := Open(path)
 	if err != nil {
-		fmt.Fprintf(stderr, "warning: settings db: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: settings db: %v\n", err)
 		return nil, false
 	}
 	return s, true
@@ -229,7 +231,7 @@ func PersistAgentSelection(s *Store, stderr io.Writer, bucket, tool, model strin
 	}
 	for _, kv := range entries {
 		if err := s.Put(bucket, kv[0], kv[1]); err != nil {
-			fmt.Fprintf(stderr, "warning: persist %s: %v\n", kv[0], err)
+			banner.DangerousFprintf(stderr, "J: warning: persist %s: %v\n", kv[0], err)
 			return
 		}
 	}

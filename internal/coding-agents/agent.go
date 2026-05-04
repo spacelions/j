@@ -128,9 +128,7 @@ type PlanRequest struct {
 // rather than embedding the body, so the orchestrator no longer
 // pre-reads the plan markdown.
 //
-// PlanPath is always an absolute path inside `<cwd>/.j/tasks/<id>/`
-// (either an existing task directory for bbolt-sourced runs or a
-// freshly-imported one for legacy `--from-file` runs).
+// PlanPath is always an absolute path inside `<cwd>/.j/tasks/<id>/`.
 //
 // ResumeChatID, when set, is the value previously returned by
 // Agent.NewResumeID. Agents that have no notion of resume ignore it.

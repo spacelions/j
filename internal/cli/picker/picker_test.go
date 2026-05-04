@@ -54,12 +54,3 @@ func TestPickMarkdownInCwd_NoFiles(t *testing.T) {
 		t.Fatalf("err = %v, want 'no markdown files'", err)
 	}
 }
-
-func TestErrEmptyFromFile(t *testing.T) {
-	if ErrEmptyFromFile == nil {
-		t.Fatal("ErrEmptyFromFile sentinel must not be nil")
-	}
-	if !strings.Contains(ErrEmptyFromFile.Error(), "no markdown") {
-		t.Fatalf("error = %q, want to mention 'no markdown'", ErrEmptyFromFile.Error())
-	}
-}

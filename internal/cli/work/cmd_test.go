@@ -76,7 +76,6 @@ func TestNew_ToolEnv(t *testing.T) {
 	}
 }
 
-
 // TestNew_FromTaskFlowsToViper confirms BindPFlag wires the renamed
 // --from-task flag into the work.from_task viper key.
 func TestNew_FromTaskFlowsToViper(t *testing.T) {
@@ -119,8 +118,8 @@ func TestNew_Smoke(t *testing.T) {
 	if cmd.RunE == nil {
 		t.Fatal("RunE is nil")
 	}
-	if f := cmd.Flags().Lookup("from-file"); f == nil {
-		t.Error("--from-file flag was not registered")
+	if f := cmd.Flags().Lookup("from-file"); f != nil {
+		t.Error("--from-file flag should not be registered")
 	}
 	if f := cmd.Flags().Lookup("target"); f != nil {
 		t.Error("--target should no longer be registered after rename")
@@ -142,21 +141,23 @@ func TestNew_Smoke(t *testing.T) {
 // TestNew_RunE_PropagatesWorkError invokes the RunE closure inside the
 // same package so its body (calling Run with an Options built from
 // viper + cursor.New()) is exercised by work_test coverage. We use a
-// bogus --from-file path so resolvePlan short-circuits before any
-// agent or UI is touched.
+// missing --from-task id so resolution short-circuits before any agent
+// or UI is touched.
 func TestNew_RunE_PropagatesWorkError(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
+	t.Chdir(t.TempDir())
+	mustInit(t)
 
 	cmd := New()
-	if err := cmd.Flags().Set("from-file", "/this/path/does/not/exist.md"); err != nil {
+	if err := cmd.Flags().Set("from-task", "missing"); err != nil {
 		t.Fatalf("Flags().Set: %v", err)
 	}
 	cmd.SetContext(context.Background())
 
 	err := cmd.RunE(cmd, nil)
 	if err == nil {
-		t.Fatal("expected error from bogus --from-file path")
+		t.Fatal("expected error from missing --from-task id")
 	}
 }
 

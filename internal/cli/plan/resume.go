@@ -5,15 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
@@ -44,6 +43,29 @@ type ResumeOptions struct {
 
 	Agents []codingagents.Agent
 	UI     UI
+}
+
+func newResumeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "resume",
+		Short: "Resume a previously started plan session",
+		Long: "Lists tasks whose plan session is non-empty and resumes the chosen one " +
+			"using the tool/model recorded on the task row. Pass --from-task <id> " +
+			"(or PLAN_RESUME_FROM_TASK) to skip the picker.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return RunResume(cmd.Context(), ResumeOptions{
+				TaskID: viper.GetString("plan.resume.from_task"),
+				Stdin:  cmd.InOrStdin(),
+				Stdout: cmd.OutOrStdout(),
+				Stderr: cmd.ErrOrStderr(),
+				Agents: []codingagents.Agent{cursor.New(), claude.New()},
+			})
+		},
+	}
+	cmd.Flags().String("from-task", "", "Resume the named task without showing the picker")
+	_ = viper.BindPFlag("plan.resume.from_task", cmd.Flags().Lookup("from-task"))
+	_ = viper.BindEnv("plan.resume.from_task", "PLAN_RESUME_FROM_TASK")
+	return cmd
 }
 
 func (o ResumeOptions) withDefaults() ResumeOptions {
@@ -98,7 +120,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return err
 	}
 	if !ok {
-		fmt.Fprintln(opts.Stdout, "J: there are no resumable sessions")
+		banner.Fprintln(opts.Stdout, "J: there are no resumable sessions")
 		return nil
 	}
 
@@ -120,7 +142,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
+		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", mustReadErr)
 	}
 
 	// Resume always runs interactive — clarification answers need a
@@ -149,7 +171,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return planErr
 	}
 
-	fmt.Fprintf(opts.Stdout, "J: plan resume on task %s\n", task.ID)
+	banner.Fprintf(opts.Stdout, "J: plan resume on task %s\n", task.ID)
 	return nil
 }
 
@@ -195,16 +217,8 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 // "task %q not found" wrapping the way callers expect; an empty
 // cursor becomes "task %q has no plan session".
 func resolveResumeByID(id string) (store.Task, bool, error) {
-	s, err := openTasks()
+	task, err := resolver.TaskByID("plan", id)
 	if err != nil {
-		return store.Task{}, false, err
-	}
-	defer func() { _ = s.Close() }()
-	task, err := s.GetTask(id)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return store.Task{}, false, fmt.Errorf("J: task %q not found", id)
-		}
 		return store.Task{}, false, err
 	}
 	if task.PlanResumeCursor == "" {
@@ -220,16 +234,10 @@ func resolveResumeByID(id string) (store.Task, bool, error) {
 // returned so the agent invocation downstream does not contend on
 // the file lock.
 func listResumableTasks() ([]store.Task, error) {
-	s, err := openTasks()
+	all, err := resolver.ListAllTasks()
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = s.Close() }()
-	all, err := s.ListTasks()
-	if err != nil {
-		return nil, err
-	}
-	store.SortTasks(all)
 	out := all[:0]
 	for _, t := range all {
 		if t.PlanResumeCursor != "" {
@@ -256,82 +264,3 @@ func lookupResumeAgent(agents []codingagents.Agent, tool string) (codingagents.A
 // agent failed to write an expected output (e.g. requirements.md
 // after a successful plan resume). Used post-run to feed the
 // tasklog summary derivation.
-func readBestEffortWarn(stderr io.Writer, path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: read %s: %v\n", path, err)
-		return ""
-	}
-	return string(data)
-}
-
-// planResumeBegin returns a copy of existing mutated for the resume
-// case: status -> planning, PlanEndAt cleared so the finalize step
-// stamps a fresh value, but the original PlanBeginAt is preserved
-// exactly as the plan asks (a fresh timestamp is only minted when
-// the existing row had none, e.g. for partial-state task rows).
-// Tool/model/PlanResumeCursor are kept verbatim because resume by
-// definition reuses them.
-func planResumeBegin(existing store.Task) store.Task {
-	task := existing
-	task.Status = store.StatusPlanning
-	task.PlanEndAt = nil
-	if task.PlanBeginAt == nil {
-		begin := time.Now().UTC()
-		task.PlanBeginAt = &begin
-	}
-	return task
-}
-
-// planResumeFinish stamps the terminal state on a resume run. On
-// success the status flips to plan-done and the summary is
-// re-derived from the (possibly refined) requirements / plan
-// markdown so the row reflects the latest body. On failure the
-// status flips to help and the summary is left as-is so users can
-// still recognise the row in `j tasks`.
-func planResumeFinish(task store.Task, runErr error, refinedRequirements, planMarkdown, target string) store.Task {
-	end := time.Now().UTC()
-	task.PlanEndAt = &end
-	if runErr != nil {
-		task.Status = store.StatusHelp
-		return task
-	}
-	task.Status = store.StatusPlanDone
-	task.Summary = store.Summary(store.PickSource(refinedRequirements, planMarkdown), target)
-	return task
-}
-
-// newResumeCmd builds the `j plan resume` cobra subcommand. It
-// owns its own --from-task flag and the matching viper / env
-// bindings so the parent `j plan` Run is unchanged.
-//
-// viper.BindPFlag and viper.BindEnv only fail when their input is
-// nil or empty — programmer errors that this function does not
-// produce — so their returned errors are intentionally discarded
-// (mirroring the parent New).
-func newResumeCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "resume",
-		Short: "Resume a previously started plan session",
-		Long: "Lists tasks whose plan session is non-empty and resumes the chosen one " +
-			"using the tool/model recorded on the task row. " +
-			"Pass --from-task <id> (or PLAN_RESUME_FROM_TASK) to skip the picker. " +
-			"With no eligible sessions, prints `J: there are no resumable sessions` " +
-			"and exits 0. " +
-			"Resume always runs interactive; the planner bucket's `interactive` " +
-			"value is ignored.",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return RunResume(cmd.Context(), ResumeOptions{
-				TaskID: viper.GetString("plan.resume.from_task"),
-				Stdin:  cmd.InOrStdin(),
-				Stdout: cmd.OutOrStdout(),
-				Stderr: cmd.ErrOrStderr(),
-				Agents: []codingagents.Agent{cursor.New(), claude.New()},
-			})
-		},
-	}
-	cmd.Flags().String("from-task", "", "Resume the named task without showing the picker")
-	_ = viper.BindPFlag("plan.resume.from_task", cmd.Flags().Lookup("from-task"))
-	_ = viper.BindEnv("plan.resume.from_task", "PLAN_RESUME_FROM_TASK")
-	return cmd
-}

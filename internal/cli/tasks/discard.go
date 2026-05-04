@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -23,7 +24,7 @@ const noTaskMessage = "J: no task"
 // abortedMessage is the single line printed to stdout when the user
 // declines the confirmation prompt. Same lockstep concern as
 // noTaskMessage.
-const abortedMessage = "discard aborted"
+const abortedMessage = "J: discard aborted"
 
 // DiscardOptions configures RunDiscard. Stdin/Stdout/Stderr default to
 // the process streams; UI defaults to the huh-backed implementation.
@@ -110,7 +111,7 @@ func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 	}
 	if opts.TaskID == "" {
 		if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
-			fmt.Fprintln(opts.Stdout, emptyMessage)
+			banner.Fprintln(opts.Stdout, emptyMessage)
 			return nil
 		}
 	}
@@ -134,7 +135,7 @@ func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 	task, err := s.GetTask(opts.TaskID)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			fmt.Fprintln(opts.Stdout, noTaskMessage)
+			banner.Fprintln(opts.Stdout, noTaskMessage)
 			return nil
 		}
 		return err
@@ -145,7 +146,7 @@ func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 			return err
 		}
 		if !ok {
-			fmt.Fprintln(opts.Stdout, abortedMessage)
+			banner.DangerousFprintln(opts.Stdout, abortedMessage)
 			return nil
 		}
 	}
@@ -156,7 +157,7 @@ func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 	if err := store.RemoveTaskDir(opts.TaskID); err != nil {
 		return fmt.Errorf("tasks discard: %w", err)
 	}
-	fmt.Fprintf(opts.Stdout, "J: discarded %s\n", opts.TaskID)
+	banner.DangerousFprintf(opts.Stdout, "J: discarded %s\n", opts.TaskID)
 	return nil
 }
 

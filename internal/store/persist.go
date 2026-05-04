@@ -1,8 +1,9 @@
 package store
 
 import (
-	"fmt"
 	"io"
+
+	"github.com/spacelions/j/internal/cli/banner"
 )
 
 // PersistWarn opens `<cwd>/.j/tasks/list.db`, PutTask's the row, and
@@ -17,16 +18,16 @@ import (
 func PersistWarn(stderr io.Writer, task Task) {
 	path, err := DefaultTasksDBPath()
 	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: tasks path: %v\n", err)
 		return
 	}
 	s, err := Open(path)
 	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: tasks db: %v\n", err)
 		return
 	}
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(task); err != nil {
-		fmt.Fprintf(stderr, "warning: tasks put: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: tasks put: %v\n", err)
 	}
 }

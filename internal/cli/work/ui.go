@@ -9,11 +9,8 @@ import (
 // UI is the slice of picker methods `j work` calls. *picker.Picker
 // satisfies it via duck typing; tests inject a scripted fake. `j work`
 // does not surface a top-level source picker (it operates on tasks,
-// not free-form markdown), so SelectSource is absent. AskFromFile
-// remains for the legacy `--from-file` fallback when the store has
-// no plan-done tasks.
+// not free-form markdown), so SelectSource is absent.
 type UI interface {
-	AskFromFile(ctx context.Context) (string, error)
 	PickTask(ctx context.Context, title string, tasks []store.Task) (string, bool, error)
 	SelectTool(ctx context.Context, options []string) (string, error)
 	SelectModel(ctx context.Context, options []string) (string, error)

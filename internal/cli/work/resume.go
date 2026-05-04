@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
@@ -95,7 +95,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return err
 	}
 	if !ok {
-		fmt.Fprintln(opts.Stdout, "J: there are no resumable sessions")
+		banner.Fprintln(opts.Stdout, "J: there are no resumable sessions")
 		return nil
 	}
 
@@ -114,7 +114,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	lc := task.BeginWorkResume(opts.Stderr)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
+		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", mustReadErr)
 	}
 	// Resume always runs interactive — clarification / iteration
 	// answers need a TUI, and the worker bucket's `interactive`
@@ -133,7 +133,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return workErr
 	}
 
-	fmt.Fprintf(opts.Stdout, "J: work resume on task %s\n", task.ID)
+	banner.Fprintf(opts.Stdout, "J: work resume on task %s\n", task.ID)
 	return nil
 }
 
@@ -178,16 +178,8 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 // "task %q not found" wrapping the way callers expect; an empty
 // cursor becomes "task %q has no work session".
 func resolveResumeByID(id string) (store.Task, bool, error) {
-	s, err := openTasks()
+	task, err := resolver.TaskByID("work", id)
 	if err != nil {
-		return store.Task{}, false, err
-	}
-	defer func() { _ = s.Close() }()
-	task, err := s.GetTask(id)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return store.Task{}, false, fmt.Errorf("J: task %q not found", id)
-		}
 		return store.Task{}, false, err
 	}
 	if task.WorkResumeCursor == "" {
@@ -203,16 +195,10 @@ func resolveResumeByID(id string) (store.Task, bool, error) {
 // resume is permissive by design, so `working` / `work-done` rows
 // are also resumable.
 func listResumableTasks() ([]store.Task, error) {
-	s, err := openTasks()
+	all, err := resolver.ListAllTasks()
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = s.Close() }()
-	all, err := s.ListTasks()
-	if err != nil {
-		return nil, err
-	}
-	store.SortTasks(all)
 	out := all[:0]
 	for _, t := range all {
 		if t.WorkResumeCursor != "" {

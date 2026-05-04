@@ -15,6 +15,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -89,7 +90,7 @@ func TestAllowedForReplan(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.status), func(t *testing.T) {
-			got := allowedForReplan(store.Task{Status: tc.status})
+			got := resolver.ReplanAllowed(store.Task{Status: tc.status})
 			if got != tc.want {
 				t.Fatalf("allowedForReplan(%q) = %v, want %v", tc.status, got, tc.want)
 			}
@@ -102,10 +103,10 @@ func TestAllowedForReplan(t *testing.T) {
 // without invoking the UI.
 func TestConfirmStatusOverride_AllowedShortCircuits(t *testing.T) {
 	ui := &scriptedUI{}
-	proceed, err := confirmStatusOverride(context.Background(), Options{UI: ui},
+	proceed, err := resolver.ConfirmStatusOverride(context.Background(), ui, false,
 		"re-plan",
 		store.Task{ID: "id1", Status: store.StatusPlanDone},
-		allowedForReplan)
+		resolver.ReplanAllowed)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -122,11 +123,11 @@ func TestConfirmStatusOverride_AllowedShortCircuits(t *testing.T) {
 // the UI is left untouched.
 func TestConfirmStatusOverride_YesFlagSkipsPrompt(t *testing.T) {
 	ui := &scriptedUI{}
-	proceed, err := confirmStatusOverride(context.Background(),
-		Options{UI: ui, Yes: true},
+	proceed, err := resolver.ConfirmStatusOverride(context.Background(),
+		ui, true,
 		"re-plan",
 		store.Task{ID: "id1", Status: store.StatusWorking},
-		allowedForReplan)
+		resolver.ReplanAllowed)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -143,11 +144,11 @@ func TestConfirmStatusOverride_YesFlagSkipsPrompt(t *testing.T) {
 // proceed=true.
 func TestConfirmStatusOverride_PromptYes(t *testing.T) {
 	ui := &scriptedUI{confirm: true}
-	proceed, err := confirmStatusOverride(context.Background(),
-		Options{UI: ui},
+	proceed, err := resolver.ConfirmStatusOverride(context.Background(),
+		ui, false,
 		"re-plan",
 		store.Task{ID: "id1", Status: store.StatusWorking},
-		allowedForReplan)
+		resolver.ReplanAllowed)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -167,11 +168,11 @@ func TestConfirmStatusOverride_PromptYes(t *testing.T) {
 // proceed=false and a nil error.
 func TestConfirmStatusOverride_PromptNo(t *testing.T) {
 	ui := &scriptedUI{confirm: false}
-	proceed, err := confirmStatusOverride(context.Background(),
-		Options{UI: ui},
+	proceed, err := resolver.ConfirmStatusOverride(context.Background(),
+		ui, false,
 		"re-plan",
 		store.Task{ID: "id1", Status: store.StatusWorking},
-		allowedForReplan)
+		resolver.ReplanAllowed)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -184,11 +185,11 @@ func TestConfirmStatusOverride_PromptNo(t *testing.T) {
 // without consulting Yes (the prompt is the source of truth here).
 func TestConfirmStatusOverride_PromptError(t *testing.T) {
 	ui := &scriptedUI{confirmErr: errors.New("confirm boom")}
-	proceed, err := confirmStatusOverride(context.Background(),
-		Options{UI: ui},
+	proceed, err := resolver.ConfirmStatusOverride(context.Background(),
+		ui, false,
 		"re-plan",
 		store.Task{ID: "id1", Status: store.StatusWorking},
-		allowedForReplan)
+		resolver.ReplanAllowed)
 	if err == nil || !strings.Contains(err.Error(), "confirm boom") {
 		t.Fatalf("err = %v", err)
 	}

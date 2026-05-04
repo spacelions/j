@@ -12,6 +12,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/workflow/agents/planner"
@@ -202,12 +203,12 @@ func driveSequential(ctx context.Context, root agent.Agent) error {
 func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: tasks path: %v\n", err)
 		return
 	}
 	s, err := store.Open(path)
 	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: tasks db: %v\n", err)
 		return
 	}
 	defer func() { _ = s.Close() }()
@@ -220,6 +221,6 @@ func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
 	}
 	t.Status = store.StatusVerifyDone
 	if err := s.PutTask(t); err != nil {
-		fmt.Fprintf(stderr, "warning: tasks put: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: tasks put: %v\n", err)
 	}
 }
