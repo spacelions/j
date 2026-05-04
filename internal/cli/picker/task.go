@@ -2,23 +2,58 @@ package picker
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 
-	"github.com/spacelions/j/internal/cli/taskpick"
+	"github.com/charmbracelet/huh"
+
 	"github.com/spacelions/j/internal/store"
 )
 
-// PickTask renders the shared task-list picker with the supplied
-// title. The title differentiates flows ("Select a task to re-plan",
-// "Select a task to work on", etc.) without duplicating the widget
-// itself; every cli that needs a task-list prompt routes through
-// here so the label format ("<id> — <status> — <summary>") and the
-// (id, ok, error) abort/empty contract stay single-sourced.
+// PickTask renders the shared task-list select with the supplied
+// title. Labels follow "<id> — <status> — <summary>"; an empty
+// summary collapses to "(no summary)" so every row stays selectable.
 //
-// tasks is expected to be non-empty and pre-sorted by the caller
-// (typically via store.SortTasks). The bool return reports whether
-// a row was actually selected: ok=false collapses both a user-abort
-// (Ctrl-C / Esc) and a defensive empty-input case so callers treat
-// them uniformly as "no selection".
+// Contract:
+//   - empty tasks      → ("", false, nil)
+//   - huh.ErrUserAborted (Ctrl-C / Esc) → ("", false, nil)
+//   - chosen           → (id, true, nil)
+//   - other UI error   → ("", false, wrapped)
+//
+// tasks is expected to be pre-sorted by the caller (orchestrators run
+// store.SortTasks first). ok=false collapses the abort and empty
+// branches so callers treat them uniformly as "no selection".
 func (p *Picker) PickTask(ctx context.Context, title string, tasks []store.Task) (string, bool, error) {
-	return taskpick.Pick(ctx, p.in, p.out, title, tasks)
+	if len(tasks) == 0 {
+		return "", false, nil
+	}
+	labels, byLabel := formatTaskLabels(tasks)
+	chosen, err := p.choose(ctx, title, labels)
+	if errors.Is(err, huh.ErrUserAborted) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	id, ok := byLabel[chosen]
+	if !ok {
+		return "", false, fmt.Errorf("picker: unknown selection %q", chosen)
+	}
+	return id, true, nil
+}
+
+func formatTaskLabels(tasks []store.Task) ([]string, map[string]string) {
+	labels := make([]string, 0, len(tasks))
+	byLabel := make(map[string]string, len(tasks))
+	for _, t := range tasks {
+		summary := strings.TrimSpace(t.Summary)
+		if summary == "" {
+			summary = "(no summary)"
+		}
+		label := fmt.Sprintf("%s — %s — %s", t.ID, t.Status, summary)
+		labels = append(labels, label)
+		byLabel[label] = t.ID
+	}
+	return labels, byLabel
 }

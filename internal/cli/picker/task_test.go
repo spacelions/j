@@ -1,4 +1,4 @@
-package taskpick
+package picker
 
 import (
 	"context"
@@ -9,16 +9,12 @@ import (
 	"github.com/spacelions/j/internal/store"
 )
 
-// TestFormatLabels_StatusAndSummary pins the label shape:
-// "<id> — <status> — <summary>" and the byLabel reverse map round-
-// trip. The label is the only user-facing string the helper
-// produces, so this is the authoritative contract test.
-func TestFormatLabels_StatusAndSummary(t *testing.T) {
+func TestFormatTaskLabels_StatusAndSummary(t *testing.T) {
 	tasks := []store.Task{
 		{ID: "01A", Status: store.StatusPlanDone, Summary: "first"},
 		{ID: "01B", Status: store.StatusWorking, Summary: "second"},
 	}
-	labels, byLabel := FormatLabels(tasks)
+	labels, byLabel := formatTaskLabels(tasks)
 	want := []string{
 		"01A — plan-done — first",
 		"01B — working — second",
@@ -42,16 +38,12 @@ func TestFormatLabels_StatusAndSummary(t *testing.T) {
 	}
 }
 
-// TestFormatLabels_EmptySummaryFallback covers the "(no summary)"
-// fallback so an unsummarised row still renders as a selectable
-// label (and a stray whitespace-only summary collapses to the
-// same fallback rather than a blank tail).
-func TestFormatLabels_EmptySummaryFallback(t *testing.T) {
+func TestFormatTaskLabels_EmptySummaryFallback(t *testing.T) {
 	tasks := []store.Task{
 		{ID: "01A", Status: store.StatusPlanning, Summary: ""},
 		{ID: "01B", Status: store.StatusHelp, Summary: "   \t\n"},
 	}
-	labels, _ := FormatLabels(tasks)
+	labels, _ := formatTaskLabels(tasks)
 	for _, got := range labels {
 		if !strings.HasSuffix(got, "(no summary)") {
 			t.Fatalf("label = %q, want trailing (no summary)", got)
@@ -59,11 +51,8 @@ func TestFormatLabels_EmptySummaryFallback(t *testing.T) {
 	}
 }
 
-// TestFormatLabels_EmptyInput pins the zero-input branch: callers
-// should pre-screen but the helper is safe with an empty slice
-// (no allocations beyond the empty backing arrays).
-func TestFormatLabels_EmptyInput(t *testing.T) {
-	labels, byLabel := FormatLabels(nil)
+func TestFormatTaskLabels_EmptyInput(t *testing.T) {
+	labels, byLabel := formatTaskLabels(nil)
 	if len(labels) != 0 {
 		t.Fatalf("labels = %v, want empty", labels)
 	}
@@ -72,12 +61,9 @@ func TestFormatLabels_EmptyInput(t *testing.T) {
 	}
 }
 
-// TestPick_EmptyTasks asserts the "defensive" empty-input branch:
-// callers should pre-screen but if a stray empty slice reaches
-// Pick the helper collapses to ("", false, nil). No huh form is
-// rendered, so the test is hermetic without a TTY.
-func TestPick_EmptyTasks(t *testing.T) {
-	id, ok, err := Pick(context.Background(), strings.NewReader(""), io.Discard, "Select a task", nil)
+func TestPickTask_EmptyTasks(t *testing.T) {
+	p := New(strings.NewReader(""), io.Discard)
+	id, ok, err := p.PickTask(context.Background(), "Select a task", nil)
 	if err != nil {
 		t.Fatalf("err = %v, want nil", err)
 	}

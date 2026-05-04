@@ -50,7 +50,7 @@ func (u *fakeUI) ConfirmDiscard(_ context.Context, task store.Task) (bool, error
 }
 
 // PickTask matches the new (id, ok, err) contract shared with
-// taskpick / plan / work / verify. ok mirrors "a non-empty
+// picker / plan / work / verify. ok mirrors "a non-empty
 // pickReturn was set" so existing call sites that pre-date the
 // contract (which programmed the cancel case via an empty
 // pickReturn) continue to work without a parallel pickOk knob.

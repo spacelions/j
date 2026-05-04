@@ -8,7 +8,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 
-	"github.com/spacelions/j/internal/cli/taskpick"
+	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store"
 )
@@ -26,15 +26,11 @@ type UI interface {
 	// decline.
 	ConfirmDiscard(ctx context.Context, task store.Task) (bool, error)
 	// PickTask renders a select widget over the supplied tasks and
-	// returns the chosen task's id. The bool reports whether a row
-	// was actually selected: ok=false collapses both a user-abort
-	// (Ctrl-C / Esc) and a defensive empty-input case so callers
-	// treat them uniformly as "no selection". The slice is expected
-	// to be non-empty and pre-sorted by the caller (the
-	// orchestrator already screens the empty-store case before
-	// invoking the picker). Behaviour and label format are
-	// delegated to internal/cli/taskpick so plan / work / verify /
-	// tasks all share one widget.
+	// returns the chosen task's id. ok=false collapses both a
+	// user-abort (Ctrl-C / Esc) and a defensive empty-input case so
+	// callers treat them uniformly as "no selection". Label format
+	// and behaviour delegate to internal/cli/picker so every j
+	// subcommand renders one widget.
 	PickTask(ctx context.Context, tasks []store.Task) (string, bool, error)
 }
 
@@ -70,14 +66,11 @@ func (u *huhUI) ConfirmDiscard(ctx context.Context, task store.Task) (bool, erro
 	return v, nil
 }
 
-// PickTask delegates to the shared internal/cli/taskpick.Pick widget
-// so the label format and abort/empty contract stay uniform across
-// every j subcommand. The "Select a task" title is the same the
-// previous in-package implementation rendered, so the user-visible
-// prompt is unchanged on the `j tasks enter` / `j tasks discard`
-// flows.
+// PickTask delegates to the shared picker.PickTask widget so the
+// label format and abort/empty contract stay uniform across every j
+// subcommand.
 func (u *huhUI) PickTask(ctx context.Context, tasks []store.Task) (string, bool, error) {
-	return taskpick.Pick(ctx, u.in, u.out, "Select a task", tasks)
+	return picker.New(u.in, u.out).PickTask(ctx, "Select a task", tasks)
 }
 
 // pickFromStore renders the shared task picker over the rows in s
@@ -95,8 +88,8 @@ func (u *huhUI) PickTask(ctx context.Context, tasks []store.Task) (string, bool,
 //     scripted UI / huh widget.
 //
 // Errors from ListTasks or the UI propagate; the UI wraps its own
-// errors via the taskpick package so RunDiscard / RunEnter can
-// re-emit them without a second wrap.
+// errors so RunDiscard / RunEnter can re-emit them without a second
+// wrap.
 func pickFromStore(ctx context.Context, s *store.Store, ui UI, stdout io.Writer) (string, bool, error) {
 	tasks, err := s.ListTasks()
 	if err != nil {

@@ -188,7 +188,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 // and the downstream confirm prompt handles the wrong-status case.
 //
 // The bool return is the "proceed" signal from the unified
-// taskpick contract: ok=false means the user cancelled the picker
+// picker contract: ok=false means the user cancelled the picker
 // (Ctrl-C / Esc) and Run should exit cleanly without invoking the
 // agent. ok=true means the resolved struct is populated and Run
 // can continue.
