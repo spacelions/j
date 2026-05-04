@@ -18,6 +18,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -112,6 +113,10 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	planPath := filepath.Join(taskDir, store.PlanFileName)
 
 	lc := beginWorkTaskResume(Options{Stderr: opts.Stderr}, task)
+	mustReadFiles, mustReadErr := resolver.MustRead()
+	if mustReadErr != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
+	}
 	// Resume always runs interactive — clarification / iteration
 	// answers need a TUI, and the worker bucket's `interactive`
 	// value is intentionally ignored on resume. PID is always 0
@@ -122,6 +127,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		Interactive:  true,
 		ResumeChatID: task.WorkResumeCursor,
 		Resume:       true,
+		MustRead:     mustReadFiles,
 	})
 	lc.finishWork(workErr)
 	if workErr != nil {

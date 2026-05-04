@@ -82,7 +82,7 @@ func TestBuildWorker_WithWorktree(t *testing.T) {
 // without inlining the body, and differ from BuildWorker.
 func TestBuildWorkerResume(t *testing.T) {
 	const planPath = "/tmp/feature.plan.md"
-	got := BuildWorkerResume(planPath, "")
+	got := BuildWorkerResume(planPath, "", nil)
 	if got == "" {
 		t.Fatal("BuildWorkerResume returned empty string")
 	}
@@ -114,16 +114,58 @@ func TestBuildWorkerResume(t *testing.T) {
 	if strings.Contains(strings.ToLower(got), "git worktree") {
 		t.Fatalf("empty worktree should not emit worktree line: %q", got)
 	}
+	if strings.Contains(got, "Before starting, read these project files") {
+		t.Fatalf("resume prompt should not include must-read block when nil: %q", got)
+	}
 }
 
 // TestBuildWorkerResume_WithWorktree pins the worktree-direction suffix
 // on the resume path, mirroring TestBuildWorker_WithWorktree.
 func TestBuildWorkerResume_WithWorktree(t *testing.T) {
-	got := BuildWorkerResume("p.md", "j-my-task")
+	got := BuildWorkerResume("p.md", "j-my-task", nil)
 	if !strings.Contains(got, "j-my-task") {
 		t.Fatalf("resume worktree prompt missing worktree name: %q", got)
 	}
 	if !strings.Contains(got, "git worktree add") {
 		t.Fatalf("resume worktree prompt missing `git worktree add` hint: %q", got)
+	}
+}
+
+// TestBuildWorkerResume_WithMustRead mirrors
+// TestBuildWorker_WithMustRead for the resume builder: the bulleted
+// must-read block must appear exactly once, preserve case verbatim,
+// and sit between the instructions.Worker body and the resume framing
+// line ("You are resuming…").
+func TestBuildWorkerResume_WithMustRead(t *testing.T) {
+	got := BuildWorkerResume("/tmp/feature.plan.md", "", []string{"AGENTS.md", "CLAUDE.md"})
+
+	const header = "Before starting, read these project files for required context:"
+	if strings.Count(got, header) != 1 {
+		t.Fatalf("must-read header should appear exactly once: %q", got)
+	}
+	if !strings.Contains(got, "- AGENTS.md") || !strings.Contains(got, "- CLAUDE.md") {
+		t.Fatalf("must-read block missing entries: %q", got)
+	}
+	if strings.Contains(got, "- agents.md") || strings.Contains(got, "- claude.md") {
+		t.Fatalf("must-read block lowercased entries: %q", got)
+	}
+	const framing = "You are resuming a previous coding session."
+	if strings.Index(got, header) > strings.Index(got, framing) {
+		t.Fatalf("must-read block must precede resume framing line: %q", got)
+	}
+	if strings.Index(got, strings.TrimSpace(instructions.Worker)) > strings.Index(got, header) {
+		t.Fatalf("must-read block must follow instructions.Worker body: %q", got)
+	}
+}
+
+// TestBuildWorkerResume_NilMustReadByteIdentical pins AC: passing
+// nil/empty mustRead leaves the prompt byte-identical to the
+// pre-must-read output (the must-read block must not bleed in via
+// some default).
+func TestBuildWorkerResume_NilMustReadByteIdentical(t *testing.T) {
+	withNil := BuildWorkerResume("/tmp/feature.plan.md", "", nil)
+	withEmpty := BuildWorkerResume("/tmp/feature.plan.md", "", []string{})
+	if withNil != withEmpty {
+		t.Fatalf("nil and empty must-read slices must produce identical output: nil=%q empty=%q", withNil, withEmpty)
 	}
 }

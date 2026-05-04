@@ -223,7 +223,7 @@ func buildWorkPrompt(req codingagents.WorkRequest) string {
 		return prompts.BuildVerifierFix(req.PlanPath, "verifier_findings.md", req.Worktree)
 	}
 	if req.Resume {
-		return prompts.BuildWorkerResume(req.PlanPath, req.Worktree)
+		return prompts.BuildWorkerResume(req.PlanPath, req.Worktree, req.MustRead)
 	}
 	return prompts.BuildWorker(req.PlanPath, req.Worktree, req.MustRead)
 }
@@ -233,7 +233,7 @@ func buildWorkPrompt(req codingagents.WorkRequest) string {
 // verifier instruction with the save-plan / save-findings suffix.
 func buildVerifyPrompt(req codingagents.VerifyRequest) string {
 	if req.Resume {
-		return prompts.BuildVerifierResume(req.RequirementsPath, req.PlanPath, req.Worktree)
+		return prompts.BuildVerifierResume(req.RequirementsPath, req.PlanPath, req.Worktree, req.MustRead)
 	}
 	return prompts.BuildVerifier(
 		req.RequirementsPath,

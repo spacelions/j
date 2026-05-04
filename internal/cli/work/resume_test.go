@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/viper"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -695,6 +696,83 @@ func TestRunResume_Work_AlwaysInteractive(t *testing.T) {
 				t.Fatalf("Interactive = false, want true (resume always forces interactive, bucket=%q)", tc.bucketValue)
 			}
 		})
+	}
+}
+
+// TestRunResume_Work_ForwardsMustRead pins AC: `j work resume`
+// loads the project's mustRead setting and threads it into
+// WorkRequest.MustRead so the resume turn inherits the same
+// project-wide context the first run had. Without this,
+// BuildWorkerResume would silently render a must-read-less prompt.
+func TestRunResume_Work_ForwardsMustRead(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	seedProjectMustRead(t, "AGENTS.md;CLAUDE.md")
+	id, _ := seedResumableWork(t, nil)
+	agent := newScriptedAgent()
+	if err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	want := []string{"AGENTS.md", "CLAUDE.md"}
+	if got := agent.lastReq.MustRead; len(got) != len(want) {
+		t.Fatalf("MustRead = %v, want %v", got, want)
+	} else {
+		for i, v := range want {
+			if got[i] != v {
+				t.Fatalf("MustRead[%d] = %q, want %q (case must be preserved)", i, got[i], v)
+			}
+		}
+	}
+}
+
+// TestRunResume_Work_MustReadUnsetYieldsNil covers the
+// no-bucket-entry branch of resolver.MustRead: when the project has
+// no mustRead setting, the resume call must still proceed and pass a
+// nil/empty slice (mirroring what the first-run work flow does).
+func TestRunResume_Work_MustReadUnsetYieldsNil(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableWork(t, nil)
+	agent := newScriptedAgent()
+	if err := RunResume(context.Background(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if len(agent.lastReq.MustRead) != 0 {
+		t.Fatalf("MustRead = %v, want empty when bucket has no entry", agent.lastReq.MustRead)
+	}
+}
+
+// seedProjectMustRead writes a `;`-separated must-read list under the
+// project bucket so resume's resolver.MustRead returns the parsed
+// slice. Mirrors the helper in internal/cli/plan/resume_test.go.
+func seedProjectMustRead(t *testing.T, value string) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.EnsureBucket(store.BucketProject); err != nil {
+		t.Fatalf("EnsureBucket: %v", err)
+	}
+	if err := s.Put(store.BucketProject, resolver.KeyMustRead, value); err != nil {
+		t.Fatalf("Put mustRead: %v", err)
 	}
 }
 

@@ -51,11 +51,18 @@ func BuildVerifier(reqPath, planPath, verifierPlanPath, findingsPath, worktree s
 // "You are the verifier in a planner / worker / verifier workflow.",
 // so this builder relies on that opening as the role preamble
 // rather than emitting a duplicate sentence.
-func BuildVerifierResume(reqPath, planPath, worktree string) string {
+//
+// mustRead, when non-empty, is rendered as a bulleted "Before
+// starting, read these project files…" block between the
+// instruction and the resume framing line (mirroring
+// BuildPlannerResume). An empty / nil mustRead leaves the prompt
+// byte-identical to the pre-must-read output.
+func BuildVerifierResume(reqPath, planPath, worktree string, mustRead []string) string {
 	return appendVerifierWorktreeLine(
 		fmt.Sprintf(
-			"%s\n\n"+strings.TrimSpace(instructions.VerifierResume),
+			"%s%s\n\n"+strings.TrimSpace(instructions.VerifierResume),
 			strings.TrimSpace(instructions.Verifier),
+			mustReadSuffix(mustRead),
 			reqPath, planPath,
 		),
 		worktree,

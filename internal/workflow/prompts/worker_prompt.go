@@ -46,11 +46,18 @@ func BuildWorker(planPath, worktree string, mustRead []string) string {
 // so this builder relies on that opening as the role preamble
 // rather than emitting a duplicate sentence. A non-empty worktree
 // appends the same worktree-direction line as BuildWorker.
-func BuildWorkerResume(planPath, worktree string) string {
+//
+// mustRead, when non-empty, is rendered as a bulleted "Before
+// starting, read these project files…" block between the
+// instruction and the resume framing line (mirroring
+// BuildPlannerResume). An empty / nil mustRead leaves the prompt
+// byte-identical to the pre-must-read output.
+func BuildWorkerResume(planPath, worktree string, mustRead []string) string {
 	return appendWorktreeLine(
 		fmt.Sprintf(
-			"%s\n\n"+strings.TrimSpace(instructions.WorkerResume),
+			"%s%s\n\n"+strings.TrimSpace(instructions.WorkerResume),
 			strings.TrimSpace(instructions.Worker),
+			mustReadSuffix(mustRead),
 			planPath,
 		),
 		worktree,
