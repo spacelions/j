@@ -15,13 +15,16 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 )
 
 // writeStartFile writes a markdown task description into the test's
-// temp dir and returns its absolute path.
+// temp dir and returns its absolute path. Used by the --from-file
+// happy path; the source picker tests prefer writeStartFileInCwd
+// because mdfile.ListInDir scans the current working directory.
 func writeStartFile(t *testing.T, body string) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "spec.md")
@@ -31,11 +34,20 @@ func writeStartFile(t *testing.T, body string) string {
 	return p
 }
 
+// writeStartFileInCwd writes a markdown task description into the
+// current working directory under name and returns its basename.
+// Used by the source-picker tests so mdfile.ListInDir surfaces the
+// file when RunStart drives pickMarkdownTarget.
+func writeStartFileInCwd(t *testing.T, name, body string) string {
+	t.Helper()
+	if err := os.WriteFile(name, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return name
+}
+
 // noopJBinary writes a tiny shell script that exits zero into the
-// test's temp dir and returns its absolute path. Used as the
-// JBinary override on RunStart so the orchestrator child is a
-// quick no-op (avoids running the real `j` binary or recursing
-// into the test process).
+// test's temp dir and returns its absolute path.
 func noopJBinary(t *testing.T) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "j-stub.sh")
@@ -67,9 +79,18 @@ func readTaskFromBolt(t *testing.T, id string) store.Task {
 
 // firstSeededTaskID lists every task in the bbolt store and returns
 // the only id (failing the test if the count is not exactly one).
-// The detached-spawn flow mints the id internally, so tests recover
-// it by enumeration.
 func firstSeededTaskID(t *testing.T) string {
+	t.Helper()
+	rows := allTaskRows(t)
+	if len(rows) != 1 {
+		t.Fatalf("ListTasks = %d rows, want 1: %+v", len(rows), rows)
+	}
+	return rows[0].ID
+}
+
+// allTaskRows returns every row in the bbolt store; helper for the
+// source-picker tests that need to assert "no new row created."
+func allTaskRows(t *testing.T) []store.Task {
 	t.Helper()
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
@@ -84,17 +105,47 @@ func firstSeededTaskID(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 {
-		t.Fatalf("ListTasks = %d rows, want 1: %+v", len(rows), rows)
-	}
-	return rows[0].ID
+	return rows
 }
 
-// TestRunStart_HappyPath_FromFile pins the new detached-spawn shape:
-// EnsureAgentSelections fills empty buckets, requirements.md is
-// staged, the task row is seeded with Status=planning + AgentLogPath
-// + BackgroundPID, and RunStart returns immediately (well under a
-// second in this stubbed path).
+// scriptedStartUI is the in-package fake satisfying StartUI. Each
+// method returns a configured value (or error) and records call
+// counts so tests can assert which branch fired.
+type scriptedStartUI struct {
+	source             picker.Source
+	sourceErr          error
+	sourceCalls        int
+	pickedMarkdownPath string
+	pickedMarkdownErr  error
+	markdownCalls      int
+	pickedTaskID       string
+	pickedTaskOK       bool
+	taskErr            error
+	taskCalls          int
+}
+
+func (u *scriptedStartUI) SelectSource(_ context.Context, _ []picker.Source) (picker.Source, error) {
+	u.sourceCalls++
+	return u.source, u.sourceErr
+}
+
+func (u *scriptedStartUI) PickMarkdownInCwd(_ context.Context) (string, error) {
+	u.markdownCalls++
+	if u.pickedMarkdownErr != nil {
+		return "", u.pickedMarkdownErr
+	}
+	return u.pickedMarkdownPath, nil
+}
+
+func (u *scriptedStartUI) PickTask(_ context.Context, _ string, _ []store.Task) (string, bool, error) {
+	u.taskCalls++
+	if u.taskErr != nil {
+		return "", false, u.taskErr
+	}
+	return u.pickedTaskID, u.pickedTaskOK, nil
+}
+
+// TestRunStart_HappyPath_FromFile pins the --from-file shortcut.
 func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -112,6 +163,7 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 		Stderr:   &stderr,
 		Agents:   []codingagents.Agent{stub},
 		Selector: sel,
+		UI:       &scriptedStartUI{},
 		JBinary:  binary,
 	})
 	elapsed := time.Since(start)
@@ -144,8 +196,6 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 		t.Fatalf("Summary should be derived from the markdown body")
 	}
 
-	// requirements.md is staged so the orchestrator can re-plan
-	// against it.
 	tasksDir, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
@@ -159,8 +209,6 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 		t.Fatalf("requirements.md missing user body: %q", body)
 	}
 
-	// Each agent bucket is populated so the orchestrator child sees
-	// a tool/model pair.
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		tool, model, _ := readAgentBucket(t, bucket)
 		if tool != "cursor" || model != "sonnet-4" {
@@ -188,6 +236,7 @@ func TestRunStart_PrePopulatedSkipsPrompts(t *testing.T) {
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
 		Selector: sel,
+		UI:       &scriptedStartUI{},
 		JBinary:  binary,
 	})
 	if err != nil {
@@ -211,27 +260,220 @@ func TestRunStart_NoAgents(t *testing.T) {
 	}
 }
 
-// TestRunStart_MissingFromFile pins the new --from-file required
-// branch: the detached child has no terminal so a markdown picker
-// is not viable.
-func TestRunStart_MissingFromFile(t *testing.T) {
+// TestRunStart_NoFromFile_PicksMarkdown drives the source picker
+// happy path: empty FromFile + UI.SelectSource returns
+// SourceMarkdown + UI.PickFromFile returns the staged .md basename.
+// A new task row should be seeded just like the --from-file path.
+func TestRunStart_NoFromFile_PicksMarkdown(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+	}
+	writeStartFileInCwd(t, "spec.md", "# task\nbody line")
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ui := &scriptedStartUI{
+		source:             picker.SourceMarkdown,
+		pickedMarkdownPath: filepath.Join(cwd, "spec.md"),
+	}
+
+	err = RunStart(context.Background(), StartOptions{
+		Stdin:    strings.NewReader(""),
+		Stdout:   io.Discard,
+		Stderr:   io.Discard,
+		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Selector: &scriptedSelector{},
+		UI:       ui,
+		JBinary:  noopJBinary(t),
+	})
+	if err != nil {
+		t.Fatalf("RunStart: %v", err)
+	}
+	if ui.sourceCalls != 1 {
+		t.Fatalf("SelectSource calls = %d, want 1", ui.sourceCalls)
+	}
+	if ui.markdownCalls != 1 {
+		t.Fatalf("PickMarkdownInCwd calls = %d, want 1", ui.markdownCalls)
+	}
+	id := firstSeededTaskID(t)
+	row := readTaskFromBolt(t, id)
+	if row.Status != store.StatusPlanning {
+		t.Fatalf("Status = %q, want planning", row.Status)
+	}
+	if row.BackgroundPID == 0 {
+		t.Fatalf("BackgroundPID = 0; want non-zero")
+	}
+}
+
+// TestRunStart_NoFromFile_PicksTask drives the re-plan branch:
+// pre-seed a task in bbolt; UI.SelectSource returns SourceTask;
+// UI.PickReplanTask returns the existing task's ID. RunStart must
+// NOT mint a new task and must update the existing row's
+// BackgroundPID + AgentLogPath in place.
+func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+	}
+	existingID := store.NewTaskID()
+	if _, err := store.EnsureTaskDir(existingID); err != nil {
+		t.Fatal(err)
+	}
+	seedTaskRowDirect(t, store.Task{
+		ID:          existingID,
+		Status:      store.StatusPlanDone,
+		InvokedTool: "cursor",
+		Summary:     "existing task",
+	})
+	ui := &scriptedStartUI{
+		source:       picker.SourceTask,
+		pickedTaskID: existingID,
+		pickedTaskOK: true,
+	}
+
 	err := RunStart(context.Background(), StartOptions{
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
 		Selector: &scriptedSelector{},
+		UI:       ui,
+		JBinary:  noopJBinary(t),
 	})
-	if err == nil || !strings.Contains(err.Error(), "--from-file is required") {
-		t.Fatalf("err = %v", err)
+	if err != nil {
+		t.Fatalf("RunStart: %v", err)
+	}
+	if ui.taskCalls != 1 {
+		t.Fatalf("PickReplanTask calls = %d, want 1", ui.taskCalls)
+	}
+	rows := allTaskRows(t)
+	if len(rows) != 1 {
+		t.Fatalf("ListTasks = %d rows, want exactly 1 (re-plan must reuse the existing task)", len(rows))
+	}
+	if rows[0].ID != existingID {
+		t.Fatalf("row id = %q, want %q (no new task should have been minted)", rows[0].ID, existingID)
+	}
+	row := readTaskFromBolt(t, existingID)
+	if row.BackgroundPID == 0 {
+		t.Fatalf("existing row's BackgroundPID = 0; want non-zero PID stamped on re-plan")
+	}
+	if row.AgentLogPath == "" {
+		t.Fatalf("existing row's AgentLogPath = %q; want non-empty", row.AgentLogPath)
+	}
+	if row.Status != store.StatusPlanDone {
+		t.Fatalf("Status = %q; the orchestrator updates this asynchronously, the parent must leave it as-is", row.Status)
+	}
+	if row.Summary != "existing task" {
+		t.Fatalf("Summary clobbered to %q; want %q", row.Summary, "existing task")
+	}
+}
+
+// TestRunStart_NoFromFile_PicksLinear pins the linear no-op branch:
+// SelectSource returns SourceLinear; RunStart prints a message and
+// returns nil with no spawn fired and no row created.
+func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+	}
+	ui := &scriptedStartUI{source: picker.SourceLinear}
+	var stdout bytes.Buffer
+
+	err := RunStart(context.Background(), StartOptions{
+		Stdin:    strings.NewReader(""),
+		Stdout:   &stdout,
+		Stderr:   io.Discard,
+		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Selector: &scriptedSelector{},
+		UI:       ui,
+		JBinary:  noopJBinary(t),
+	})
+	if err != nil {
+		t.Fatalf("RunStart: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "linear source is not yet wired up") {
+		t.Fatalf("stdout = %q, want unwired-source message", stdout.String())
+	}
+	if rows := allTaskRows(t); len(rows) != 0 {
+		t.Fatalf("ListTasks = %d, want 0 (linear branch must not create a row)", len(rows))
+	}
+}
+
+// (No empty-cwd test here: that branch lives inside
+// picker.PickMarkdownInCwd and is exercised by
+// internal/cli/picker/picker_test.go::TestPickMarkdownInCwd_NoFiles.)
+
+// TestRunStart_NoFromFile_NoExistingTasks pins the empty-bbolt
+// branch on the re-plan source: SourceTask + no rows → wrapped
+// error from pickReplanTarget; no spawn.
+func TestRunStart_NoFromFile_NoExistingTasks(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+	}
+	ui := &scriptedStartUI{source: picker.SourceTask}
+
+	err := RunStart(context.Background(), StartOptions{
+		Stdin:    strings.NewReader(""),
+		Stdout:   io.Discard,
+		Stderr:   io.Discard,
+		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Selector: &scriptedSelector{},
+		UI:       ui,
+		JBinary:  noopJBinary(t),
+	})
+	if err == nil || !strings.Contains(err.Error(), "no tasks to re-plan") {
+		t.Fatalf("err = %v, want no-tasks-to-replan wrap", err)
+	}
+}
+
+// TestRunStart_NoFromFile_TaskPickerCancelled pins the picker-abort
+// path on the re-plan source: PickReplanTask returns ok=false →
+// RunStart exits cleanly with no spawn.
+func TestRunStart_NoFromFile_TaskPickerCancelled(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+	}
+	existingID := store.NewTaskID()
+	if _, err := store.EnsureTaskDir(existingID); err != nil {
+		t.Fatal(err)
+	}
+	seedTaskRowDirect(t, store.Task{
+		ID:          existingID,
+		Status:      store.StatusPlanDone,
+		InvokedTool: "cursor",
+		Summary:     "existing",
+	})
+	ui := &scriptedStartUI{source: picker.SourceTask, pickedTaskOK: false}
+
+	err := RunStart(context.Background(), StartOptions{
+		Stdin:    strings.NewReader(""),
+		Stdout:   io.Discard,
+		Stderr:   io.Discard,
+		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Selector: &scriptedSelector{},
+		UI:       ui,
+		JBinary:  noopJBinary(t),
+	})
+	if err != nil {
+		t.Fatalf("err = %v, want nil (cancelled picker exits cleanly)", err)
+	}
+	row := readTaskFromBolt(t, existingID)
+	if row.BackgroundPID != 0 {
+		t.Fatalf("existing row's BackgroundPID = %d, want 0 (picker cancel must not fire spawn)", row.BackgroundPID)
 	}
 }
 
 // TestRunStart_SelectorAbortIsClean pins the deferred huh.ErrUserAborted
-// guard: a Ctrl-C in the agent-pick prompt translates to a nil exit
-// and the orchestrator is never spawned.
+// guard for the agent-pick prompt.
 func TestRunStart_SelectorAbortIsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -244,25 +486,12 @@ func TestRunStart_SelectorAbortIsClean(t *testing.T) {
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
 		Selector: sel,
+		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
 	}); err != nil {
 		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
 	}
-	// No row should have been seeded because we bailed before mint.
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows, err := s.ListTasks()
-	_ = s.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 0 {
+	if rows := allTaskRows(t); len(rows) != 0 {
 		t.Fatalf("ListTasks = %d, want 0 after abort", len(rows))
 	}
 }
@@ -283,6 +512,7 @@ func TestRunStart_ResolveSourceFails(t *testing.T) {
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
 		Selector: &scriptedSelector{},
+		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
 	})
 	if err == nil {
@@ -290,9 +520,7 @@ func TestRunStart_ResolveSourceFails(t *testing.T) {
 	}
 }
 
-// TestRunStart_SpawnFails pins the SpawnIn error branch: pointing
-// JBinary at a path that does not exist makes the spawn fail and
-// RunStart surfaces the wrapped error.
+// TestRunStart_SpawnFails pins the SpawnIn error branch.
 func TestRunStart_SpawnFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -307,6 +535,7 @@ func TestRunStart_SpawnFails(t *testing.T) {
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
 		Selector: &scriptedSelector{},
+		UI:       &scriptedStartUI{},
 		JBinary:  "/no/such/binary-xyzzy",
 	})
 	if err == nil {
@@ -315,8 +544,9 @@ func TestRunStart_SpawnFails(t *testing.T) {
 }
 
 // TestRunStart_AppliesDefaults exercises StartOptions.withDefaults
-// (the nil-stdin / nil-stdout / nil-stderr / nil-Selector branches)
-// by running with populated buckets so the selector is never invoked.
+// (the nil-stdin / nil-stdout / nil-stderr / nil-Selector / nil-UI
+// branches) by running with populated buckets so the selector + UI
+// are never invoked.
 func TestRunStart_AppliesDefaults(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -336,13 +566,10 @@ func TestRunStart_AppliesDefaults(t *testing.T) {
 // TestRunStart_BucketInteractiveUntouched pins one of the plan's
 // acceptance criteria: the planner / worker / verifier buckets'
 // stored `interactive` flag must be unchanged before vs. after
-// `j tasks start`. Manual `j plan|work|verify` continue to honour
-// their bucket values.
+// `j tasks start`.
 func TestRunStart_BucketInteractiveUntouched(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	// Pre-seed every bucket including a non-default `interactive`
-	// value; then assert RunStart leaves it alone.
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
 		path, err := store.DefaultPath()
@@ -366,6 +593,7 @@ func TestRunStart_BucketInteractiveUntouched(t *testing.T) {
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
 		Selector: &scriptedSelector{},
+		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
 	}); err != nil {
 		t.Fatalf("RunStart: %v", err)
@@ -378,9 +606,7 @@ func TestRunStart_BucketInteractiveUntouched(t *testing.T) {
 	}
 }
 
-// TestNewStartCmd_FlagDefaults pins the registered flag set and
-// viper bindings for `j tasks start`. Only --from-file is exposed;
-// the interactive mode is owned by the per-phase commands.
+// TestNewStartCmd_FlagDefaults pins the registered flag set.
 func TestNewStartCmd_FlagDefaults(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
@@ -424,8 +650,7 @@ func TestNewStartCmd_EnvBindings(t *testing.T) {
 }
 
 // TestNewStartCmd_RunE_PropagatesError exercises the RunE closure
-// end to end. We point the cmd at a nonexistent --from-file so
-// readStartSource fails and the closure surfaces the wrapped error.
+// end to end with a nonexistent --from-file path.
 func TestNewStartCmd_RunE_PropagatesError(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
@@ -482,10 +707,7 @@ func TestResolveJBinary_Override(t *testing.T) {
 	}
 }
 
-// TestRunStart_ContextCancellable pins that a cancelled ctx does
-// not leak the spawn: SpawnIn binds the child to ctx only for the
-// brief window before Start, so a cancelled-then-passed ctx fails
-// the spawn.
+// TestRunStart_ContextCancellable pins ctx-cancellation propagation.
 func TestRunStart_ContextCancellable(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -502,16 +724,33 @@ func TestRunStart_ContextCancellable(t *testing.T) {
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
 		Selector: &scriptedSelector{},
+		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
 	})
 	if err == nil {
-		// Cancelled ctx may either short-circuit before spawn (err)
-		// or race past it on a fast machine. Both are valid; if no
-		// error surfaced ensure the row is still queryable.
 		_ = firstSeededTaskID(t)
 		return
 	}
 	if !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "context canceled") {
 		t.Fatalf("err = %v, want context-cancellation propagation", err)
+	}
+}
+
+// seedTaskRowDirect inserts a Task row via the per-project tasks
+// bbolt DB. Used by the re-plan tests to pre-seed an existing task
+// without going through any phase lifecycle.
+func seedTaskRowDirect(t *testing.T, row store.Task) {
+	t.Helper()
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.PutTask(row); err != nil {
+		t.Fatalf("PutTask: %v", err)
 	}
 }

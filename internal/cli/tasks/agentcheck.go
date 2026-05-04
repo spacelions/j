@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/charmbracelet/huh"
-
 	"github.com/spacelions/j/internal/cli/agentpick"
-	"github.com/spacelions/j/internal/cli/uitheme"
+	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 )
@@ -114,7 +112,7 @@ func readBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket str
 // parent commands' --interactive flag (which writes the same key).
 // Persistence is best-effort: a settings open failure is reported via
 // stderr by store.OpenSettings and otherwise swallowed so the user's
-// just-confirmed pick is not lost on a transient lock error.
+// pick is not lost on a transient lock error.
 func persistBucketSelection(opts AgentCheckOptions, bucket, tool, model string) error {
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
@@ -125,50 +123,9 @@ func persistBucketSelection(opts AgentCheckOptions, bucket, tool, model string) 
 	return nil
 }
 
-// huhAgentSelector is the huh-backed implementation of AgentSelector.
-// It is the default UI when EnsureAgentSelections is not given an
-// explicit selector. Tests substitute a scripted fake.
-type huhAgentSelector struct {
-	in  io.Reader
-	out io.Writer
-}
-
-func newHuhAgentSelector(in io.Reader, out io.Writer) *huhAgentSelector {
-	return &huhAgentSelector{in: in, out: out}
-}
-
-func (u *huhAgentSelector) SelectTool(ctx context.Context, options []string) (string, error) {
-	return u.choose(ctx, "Select coding agent tool", options)
-}
-
-func (u *huhAgentSelector) SelectModel(ctx context.Context, options []string) (string, error) {
-	return u.choose(ctx, "Select model", options)
-}
-
-func (u *huhAgentSelector) choose(ctx context.Context, title string, options []string) (string, error) {
-	if len(options) == 0 {
-		return "", fmt.Errorf("tasks: %s: no options available", title)
-	}
-	var v string
-	err := huh.NewForm(huh.NewGroup(
-		huh.NewSelect[string]().
-			Title(title).
-			Options(huh.NewOptions(options...)...).
-			Filtering(true).
-			Value(&v),
-	)).WithInput(u.in).WithOutput(u.out).WithTheme(uitheme.Theme()).RunWithContext(ctx)
-	if errors.Is(err, huh.ErrUserAborted) {
-		return "", huh.ErrUserAborted
-	}
-	if err != nil {
-		return "", fmt.Errorf("tasks ui: %w", err)
-	}
-	return v, nil
-}
-
 func (o AgentCheckOptions) withDefaults() AgentCheckOptions {
 	if o.UI == nil {
-		o.UI = newHuhAgentSelector(o.Stdin, o.Stderr)
+		o.UI = picker.New(o.Stdin, o.Stderr)
 	}
 	return o
 }

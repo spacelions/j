@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/plan"
 	"github.com/spacelions/j/internal/cli/preflight"
 	"github.com/spacelions/j/internal/cli/verify"
@@ -316,7 +317,7 @@ func (o ContinueOptions) withDefaults() ContinueOptions {
 		o.UI = newHuhUI(o.Stdin, o.Stderr)
 	}
 	if o.Selector == nil {
-		o.Selector = newHuhAgentSelector(o.Stdin, o.Stderr)
+		o.Selector = picker.New(o.Stdin, o.Stderr)
 	}
 	return o
 }

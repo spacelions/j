@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
@@ -57,7 +58,7 @@ func (o ResumeOptions) withDefaults() ResumeOptions {
 		o.Stderr = os.Stderr
 	}
 	if o.UI == nil {
-		o.UI = newHuhUI(o.Stdin, o.Stderr)
+		o.UI = picker.New(o.Stdin, o.Stderr)
 	}
 	return o
 }
@@ -152,7 +153,7 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 	case 1:
 		return tasks[0], true, nil
 	}
-	chosen, ok, err := opts.UI.PickWorkTask(ctx, tasks)
+	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to resume", tasks)
 	if err != nil {
 		return store.Task{}, false, err
 	}

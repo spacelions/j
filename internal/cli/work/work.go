@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/spacelions/j/internal/cli/agentpick"
+	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/mustread"
@@ -269,7 +270,7 @@ func resolvePlan(ctx context.Context, opts Options) (resolved, bool, error) {
 		r, err := resolveByTaskID(opts, id)
 		return r, err == nil, err
 	}
-	chosen, ok, err := opts.UI.PickPlanTask(ctx, tasks)
+	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to work", tasks)
 	if err != nil {
 		return resolved{}, false, err
 	}
@@ -379,11 +380,10 @@ func resolveFromFile(opts Options, raw string) (resolved, error) {
 }
 
 // listResolvableWorkTasks returns every task in bbolt sorted via
-// store.SortTasks. The picker now surfaces every row regardless of
+// store.SortTasks. The picker surfaces every row regardless of
 // status; the downstream confirm prompt handles the wrong-status
-// case (per the re-plan / re-work contract). The happy-path
-// auto-pick still kicks in via autoPickAllowed when exactly one of
-// the rows is in the work allowlist.
+// case (per the re-plan / re-work contract). autoPickAllowed
+// auto-picks when exactly one row is in the work allowlist.
 func listResolvableWorkTasks(opts Options) ([]store.Task, error) {
 	s, ok := tasklog.OpenTaskLog(opts.Stderr)
 	if !ok {
@@ -503,10 +503,10 @@ func workerFromStore(ctx context.Context, opts Options) (codingagents.Agent, str
 	return agentpick.FromStore(ctx, s, store.BucketWorker, opts.Agents)
 }
 
-// persistWorkerSelection writes the just-confirmed tool/model and the
-// interactive flag to the worker bucket. The plan path (the work
-// "source") is intentionally NOT persisted so the user picks one per
-// run. Persistence is best-effort: errors warn on opts.Stderr and
+// persistWorkerSelection writes the tool/model and interactive flag
+// to the worker bucket. The plan path (the work "source") is
+// intentionally NOT persisted so the user picks one per run.
+// Persistence is best-effort: errors warn on opts.Stderr and
 // don't abort the run. When opts.Store is non-nil it is used directly
 // (test injection); otherwise this opens `<cwd>/.j/settings` for the
 // duration of the write and closes it immediately so the file lock
@@ -582,7 +582,7 @@ func (o Options) withDefaults() Options {
 		o.Stderr = os.Stderr
 	}
 	if o.UI == nil {
-		o.UI = newHuhUI(o.Stdin, o.Stderr)
+		o.UI = picker.New(o.Stdin, o.Stderr)
 	}
 	return o
 }

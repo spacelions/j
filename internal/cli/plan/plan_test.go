@@ -8,13 +8,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/charmbracelet/huh"
 
+	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/testutil"
@@ -106,72 +105,64 @@ exit 1
 
 // scriptedUI returns predetermined answers for each prompt and tracks how
 // many times each prompt was invoked. The zero value picks the markdown
-// source (SourceMarkdown == 0) so existing tests that exercise the
+// source (picker.SourceMarkdown == 0) so existing tests that exercise the
 // markdown flow keep working without explicit setup.
 //
 // pickedFile is the basename returned from PickFromFile. When empty the
 // fake selects options[0] so single-entry pickers "just work" in tests
-// that only care about the rest of the flow. pickFileOptions captures
+// that only care about the rest of the flow. _ captures
 // the option slice the orchestrator offered so tests can assert the
 // scan + filter contract end-to-end.
 type scriptedUI struct {
-	source       PlanSource
-	pickedFile   string
-	tool         string
-	model        string
-	pickedID     string
-	replanID     string
-	sourceErr    error
-	pickFileErr  error
-	toolErr      error
-	modelErr     error
-	pickErr      error
-	replanErr    error
-	confirm      bool
-	confirmErr   error
+	source             picker.Source
+	pickedMarkdownPath string
+	tool               string
+	model              string
+	pickedID           string
+	replanID           string
+	sourceErr          error
+	pickedMarkdownErr  error
+	toolErr            error
+	modelErr           error
+	pickErr            error
+	replanErr          error
+	confirm            bool
+	confirmErr         error
 
-	sourceCalls   int
-	pickFileCalls int
-	toolCalls     int
-	modelCalls    int
-	pickCalls     int
-	replanCalls   int
-	confirmCalls  int
+	sourceCalls         int
+	pickedMarkdownCalls int
+	toolCalls           int
+	modelCalls          int
+	pickCalls           int
+	replanCalls         int
+	confirmCalls        int
 
 	// toolHook, when non-nil, runs at the start of SelectTool so
 	// tests can mutate shared state (e.g. close the injected store)
 	// between Pick and the post-Pick persist step.
 	toolHook func()
 
-	pickFileOptions []string
-	pickedTasks     []store.Task
-	replanTasks     []store.Task
-	confirmCmd      string
-	confirmTaskID   string
-	confirmStatus   string
+	pickedTasks   []store.Task
+	replanTasks   []store.Task
+	confirmCmd    string
+	confirmTaskID string
+	confirmStatus string
 }
 
-func (s *scriptedUI) SelectSource(context.Context) (PlanSource, error) {
+func (s *scriptedUI) SelectSource(_ context.Context, _ []picker.Source) (picker.Source, error) {
 	s.sourceCalls++
 	if s.sourceErr != nil {
-		return 0, s.sourceErr
+		return "", s.sourceErr
 	}
 	return s.source, nil
 }
 
-func (s *scriptedUI) PickFromFile(_ context.Context, options []string) (string, error) {
-	s.pickFileCalls++
-	s.pickFileOptions = append([]string(nil), options...)
-	if s.pickFileErr != nil {
-		return "", s.pickFileErr
+func (s *scriptedUI) PickMarkdownInCwd(_ context.Context) (string, error) {
+	s.pickedMarkdownCalls++
+	if s.pickedMarkdownErr != nil {
+		return "", s.pickedMarkdownErr
 	}
-	if s.pickedFile != "" {
-		return s.pickedFile, nil
-	}
-	if len(options) == 0 {
-		return "", errors.New("scriptedUI: no markdown options")
-	}
-	return options[0], nil
+	return s.pickedMarkdownPath, nil
 }
 
 func (s *scriptedUI) SelectTool(_ context.Context, options []string) (string, error) {
@@ -199,21 +190,33 @@ func (s *scriptedUI) SelectModel(_ context.Context, options []string) (string, e
 	return options[0], nil
 }
 
-// PickReplanTask matches the unified taskpick contract:
-// (id, ok, err). ok=false collapses both the user-abort path
-// and the "no selection programmed" case so leaving replanID
-// empty signals cancel, matching the production huhUI behaviour.
-// Tests that want a happy-path pick must set replanID explicitly.
-func (s *scriptedUI) PickReplanTask(_ context.Context, tasks []store.Task) (string, bool, error) {
-	s.replanCalls++
-	s.replanTasks = tasks
-	if s.replanErr != nil {
-		return "", false, s.replanErr
+// PickTask dispatches by title prefix so the same scripted UI can
+// answer both flows: titles that contain "re-plan" honour replanID /
+// replanErr; titles that contain "resume" honour pickedID / pickErr.
+// Both branches use the (id, ok, err) contract: ok=false collapses
+// the user-abort path and the "no selection programmed" case so
+// leaving the matching id field empty signals cancel.
+func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []store.Task) (string, bool, error) {
+	if strings.Contains(title, "re-plan") {
+		s.replanCalls++
+		s.replanTasks = tasks
+		if s.replanErr != nil {
+			return "", false, s.replanErr
+		}
+		if s.replanID == "" {
+			return "", false, nil
+		}
+		return s.replanID, true, nil
 	}
-	if s.replanID == "" {
+	s.pickCalls++
+	s.pickedTasks = tasks
+	if s.pickErr != nil {
+		return "", false, s.pickErr
+	}
+	if s.pickedID == "" {
 		return "", false, nil
 	}
-	return s.replanID, true, nil
+	return s.pickedID, true, nil
 }
 
 func (s *scriptedUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, status string) (bool, error) {
@@ -227,21 +230,6 @@ func (s *scriptedUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, statu
 	return s.confirm, nil
 }
 
-// PickPlanTask matches the unified taskpick contract:
-// (id, ok, err). See PickReplanTask above for the rationale —
-// empty pickedID means cancel; tests that exercise the
-// happy-path pick must set pickedID explicitly.
-func (s *scriptedUI) PickPlanTask(_ context.Context, tasks []store.Task) (string, bool, error) {
-	s.pickCalls++
-	s.pickedTasks = tasks
-	if s.pickErr != nil {
-		return "", false, s.pickErr
-	}
-	if s.pickedID == "" {
-		return "", false, nil
-	}
-	return s.pickedID, true, nil
-}
 
 // scriptedAgent stands in for any codingagents.Agent in tests.
 type scriptedAgent struct {
@@ -393,8 +381,8 @@ func TestRun_Success_WithFlag(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if ui.pickFileCalls != 0 {
-		t.Fatalf("PickFromFile called %d times, want 0", ui.pickFileCalls)
+	if ui.pickedMarkdownCalls != 0 {
+		t.Fatalf("PickFromFile called %d times, want 0", ui.pickedMarkdownCalls)
 	}
 	if ui.toolCalls != 1 || ui.modelCalls != 1 {
 		t.Fatalf("tool=%d model=%d", ui.toolCalls, ui.modelCalls)
@@ -507,7 +495,7 @@ func TestRun_PromptsForTarget_WhenFlagMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceMarkdown}
+	ui := &scriptedUI{source: picker.SourceMarkdown, pickedMarkdownPath: target}
 
 	err := Run(context.Background(), Options{
 		Stdin:  strings.NewReader(""),
@@ -522,12 +510,8 @@ func TestRun_PromptsForTarget_WhenFlagMissing(t *testing.T) {
 	if ui.sourceCalls != 1 {
 		t.Fatalf("SelectSource called %d times, want 1", ui.sourceCalls)
 	}
-	if ui.pickFileCalls != 1 {
-		t.Fatalf("PickFromFile called %d times, want 1", ui.pickFileCalls)
-	}
-	want := []string{"spec.md"}
-	if !reflect.DeepEqual(ui.pickFileOptions, want) {
-		t.Fatalf("PickFromFile options = %v, want %v", ui.pickFileOptions, want)
+	if ui.pickedMarkdownCalls != 1 {
+		t.Fatalf("PickMarkdownInCwd called %d times, want 1", ui.pickedMarkdownCalls)
 	}
 	if agent.lastReq.FromFilePath != target {
 		t.Fatalf("FromFilePath = %q, want %q", agent.lastReq.FromFilePath, target)
@@ -562,7 +546,7 @@ func TestRun_Linear_NoOp(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceLinear}
+	ui := &scriptedUI{source: picker.SourceLinear}
 	var stdout bytes.Buffer
 	err := Run(context.Background(), Options{
 		Stdout: &stdout,
@@ -595,18 +579,18 @@ func TestRun_SelectSourceError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "source boom") {
 		t.Fatalf("err = %v", err)
 	}
-	if ui.pickFileCalls != 0 || agent.listed != 0 {
+	if ui.pickedMarkdownCalls != 0 || agent.listed != 0 {
 		t.Fatal("nothing past SelectSource should have been touched")
 	}
 }
 
 // TestRun_UnsupportedSource pins the default branch in Run so adding a
-// new PlanSource constant without a switch arm fails loudly in tests.
+// new picker.Source constant without a switch arm fails loudly in tests.
 func TestRun_UnsupportedSource(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	agent := newScriptedAgent()
-	ui := &scriptedUI{source: PlanSource(99)}
+	ui := &scriptedUI{source: picker.Source("garbage")}
 	err := Run(context.Background(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -685,7 +669,7 @@ func TestRun_PickFromFileError(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent := newScriptedAgent()
-	ui := &scriptedUI{pickFileErr: errors.New("pick boom")}
+	ui := &scriptedUI{source: picker.SourceMarkdown, pickedMarkdownErr: errors.New("pick boom")}
 	err := Run(context.Background(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -730,7 +714,8 @@ func TestRun_MarkdownPicker_FiltersAndExcludes(t *testing.T) {
 	}
 
 	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceMarkdown, pickedFile: "spec.md"}
+	wantTarget := filepath.Join(dir, "spec.md")
+	ui := &scriptedUI{source: picker.SourceMarkdown, pickedMarkdownPath: wantTarget}
 
 	err := Run(context.Background(), Options{
 		Stdin:  strings.NewReader(""),
@@ -743,11 +728,10 @@ func TestRun_MarkdownPicker_FiltersAndExcludes(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	wantOptions := []string{"notes.markdown", "spec.md"}
-	if !reflect.DeepEqual(ui.pickFileOptions, wantOptions) {
-		t.Fatalf("PickFromFile options = %v, want %v", ui.pickFileOptions, wantOptions)
-	}
-	wantTarget := filepath.Join(dir, "spec.md")
+	// Picker owns the filtering of cwd's markdown files (mdfile.ListInDir
+	// behaviour is exercised in mdfile_test.go). The cli-level
+	// invariant we pin here is that the picker's chosen path flows
+	// through to agent.Plan as the absolute FromFilePath.
 	if agent.lastReq.FromFilePath != wantTarget {
 		t.Fatalf("FromFilePath = %q, want %q", agent.lastReq.FromFilePath, wantTarget)
 	}
@@ -756,110 +740,15 @@ func TestRun_MarkdownPicker_FiltersAndExcludes(t *testing.T) {
 	}
 }
 
-// TestRun_MarkdownPicker_UnknownSelection covers the defensive
-// byBase miss in pickMarkdownTarget: a UI that returns a basename
-// the orchestrator never offered surfaces a clean error and the
-// agent stays untouched. Triggered via the scriptedUI returning an
-// out-of-band basename; in production the huh selector cannot
-// emit a value outside the supplied options.
-func TestRun_MarkdownPicker_UnknownSelection(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	mustInit(t)
-	if err := os.WriteFile(filepath.Join(dir, "spec.md"), []byte("body"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceMarkdown, pickedFile: "ghost.md"}
-
-	err := Run(context.Background(), Options{
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     ui,
-	})
-	if err == nil || !strings.Contains(err.Error(), "unknown markdown selection") {
-		t.Fatalf("err = %v, want 'unknown markdown selection' error", err)
-	}
-	if agent.planned != 0 {
-		t.Fatalf("agent.planned = %d, want 0", agent.planned)
-	}
-}
-
-// TestRun_MarkdownPicker_ScanError pins the wrap-the-os.ReadDir
-// branch in pickMarkdownTarget. We can't ergonomically hand the
-// orchestrator a missing cwd via t.Chdir (Go re-resolves it), so
-// we point ListInDir at a removed directory by replacing the cwd
-// after mustInit and before Run. The orchestrator must surface a
-// `plan: scan ...` wrap and skip the agent.
-func TestRun_MarkdownPicker_ScanError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("relies on POSIX semantics for a removed cwd")
-	}
-	dir := t.TempDir()
-	t.Chdir(dir)
-	mustInit(t)
-	// Removing the cwd directory makes os.ReadDir (and therefore
-	// ListInDir) fail with ENOENT while os.Getwd still succeeds
-	// from the kernel's per-process record on POSIX.
-	if err := os.RemoveAll(dir); err != nil {
-		t.Fatalf("RemoveAll: %v", err)
-	}
-	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceMarkdown}
-	err := Run(context.Background(), Options{
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     ui,
-	})
-	if err == nil {
-		t.Fatal("expected scan error")
-	}
-	if !strings.Contains(err.Error(), "plan: scan") && !strings.Contains(err.Error(), "plan: getwd") {
-		t.Fatalf("err = %v, want scan/getwd wrap", err)
-	}
-	if agent.planned != 0 {
-		t.Fatalf("agent.planned = %d, want 0", agent.planned)
-	}
-}
-
-// TestRun_MarkdownPicker_EmptyDirectory pins the empty-scan branch:
-// a cwd with only an AGENTS.md (which is excluded) must produce a
-// single user-facing error mentioning the cwd, the picker is never
-// invoked, and the agent stays untouched.
-func TestRun_MarkdownPicker_EmptyDirectory(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	mustInit(t)
-	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceMarkdown}
-
-	err := Run(context.Background(), Options{
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     ui,
-	})
-	if err == nil || !strings.Contains(err.Error(), "no markdown files") {
-		t.Fatalf("err = %v, want 'no markdown files' error", err)
-	}
-	if !strings.Contains(err.Error(), dir) {
-		t.Fatalf("err = %v, want it to mention cwd %q", err, dir)
-	}
-	if ui.pickFileCalls != 0 {
-		t.Fatalf("PickFromFile called %d times, want 0", ui.pickFileCalls)
-	}
-	if agent.planned != 0 {
-		t.Fatalf("agent.planned = %d, want 0", agent.planned)
-	}
-}
+// Markdown-picker error / scan / empty-dir / unknown-selection tests
+// moved to internal/cli/picker (see picker_test.go::
+// TestPickMarkdownInCwd_NoFiles and friends): those branches now
+// live inside picker.PickMarkdownInCwd, exercised through the picker
+// package's own unit tests rather than from the cli boundary.
+// The cli-level invariants — that a picker error short-circuits Run
+// without invoking the agent, and that the picker's chosen path
+// flows into agent.Plan as FromFilePath — are pinned by
+// TestRun_PickFromFileError + TestRun_MarkdownPicker_FiltersAndExcludes.
 
 func TestRun_SelectModelError(t *testing.T) {
 	t.Chdir(t.TempDir())

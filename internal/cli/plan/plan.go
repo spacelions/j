@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/spacelions/j/internal/cli/agentpick"
+	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/mustread"
@@ -25,6 +26,17 @@ import (
 	"github.com/spacelions/j/internal/util/mdfile"
 	"github.com/spacelions/j/internal/util/run"
 )
+
+// UI is the slice of picker methods `j plan` calls. *picker.Picker
+// satisfies it via duck typing; tests inject scripted fakes.
+type UI interface {
+	SelectSource(ctx context.Context, allowed []picker.Source) (picker.Source, error)
+	PickMarkdownInCwd(ctx context.Context) (string, error)
+	PickTask(ctx context.Context, title string, tasks []store.Task) (string, bool, error)
+	SelectTool(ctx context.Context, options []string) (string, error)
+	SelectModel(ctx context.Context, options []string) (string, error)
+	ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error)
+}
 
 // Options configures Run. Stdin/Stdout/Stderr default to the process
 // streams. UI defaults to the huh implementation. Agents must be
@@ -132,21 +144,23 @@ func Run(ctx context.Context, opts Options) (err error) {
 		return runMarkdown(ctx, opts, opts.FromFile)
 	}
 
-	src, err := opts.UI.SelectSource(ctx)
+	src, err := opts.UI.SelectSource(ctx, []picker.Source{
+		picker.SourceMarkdown, picker.SourceLinear, picker.SourceTask,
+	})
 	if err != nil {
 		return err
 	}
 	switch src {
-	case SourceMarkdown:
-		target, err := pickMarkdownTarget(ctx, opts)
+	case picker.SourceMarkdown:
+		target, err := opts.UI.PickMarkdownInCwd(ctx)
 		if err != nil {
 			return err
 		}
 		return runMarkdown(ctx, opts, target)
-	case SourceLinear:
+	case picker.SourceLinear:
 		fmt.Fprintln(opts.Stdout, "plan: linear source is not yet wired up; nothing to do")
 		return nil
-	case SourceTask:
+	case picker.SourceTask:
 		id, err := pickReplanTarget(ctx, opts)
 		if err != nil {
 			return err
@@ -161,14 +175,9 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 // pickReplanTarget lists every task in bbolt (sorted via
 // store.SortTasks) and asks the user to pick one for the re-plan
-// flow. An empty list surfaces a clean error mentioning the cwd
-// so users see why nothing is available; otherwise the chosen id
-// is returned for runReplanTask. The picker now uses the unified
-// (id, ok, err) contract from internal/cli/taskpick: ok=false
-// (user aborted Ctrl-C / Esc) collapses to ("", nil) so Run can
-// short-circuit cleanly without relying on the deferred
-// huh.ErrUserAborted guard for this hop. Genuine UI errors
-// propagate verbatim.
+// flow. An empty list surfaces a clean error mentioning the cwd.
+// ok=false from PickTask (user aborted Ctrl-C / Esc) collapses to
+// ("", nil) so Run can short-circuit cleanly.
 func pickReplanTarget(ctx context.Context, opts Options) (string, error) {
 	tasks, err := listAllTasks(opts)
 	if err != nil {
@@ -177,7 +186,7 @@ func pickReplanTarget(ctx context.Context, opts Options) (string, error) {
 	if len(tasks) == 0 {
 		return "", errors.New("plan: no tasks to re-plan; run `j plan` first")
 	}
-	id, ok, err := opts.UI.PickReplanTask(ctx, tasks)
+	id, ok, err := opts.UI.PickTask(ctx, "Select a task to re-plan", tasks)
 	if err != nil {
 		return "", err
 	}
@@ -345,45 +354,6 @@ func confirmStatusOverride(ctx context.Context, opts Options, cmd string, t stor
 	return opts.UI.ConfirmStatusOverride(ctx, cmd, t.ID, string(t.Status))
 }
 
-// pickMarkdownTarget scans the current working directory for markdown
-// files and asks the UI to choose one. Replaces the legacy free-text
-// prompt: the user can no longer mistype a path, and AGENTS.md /
-// README.md / hidden files / non-`.md` files never appear. An empty
-// scan surfaces a clean error mentioning the cwd so the agent is
-// never invoked. The chosen basename is mapped back to the matching
-// absolute path before being handed to runMarkdown so downstream
-// behaviour (mdfile.Resolve, agent.Plan) is identical to the old
-// typed-input flow.
-func pickMarkdownTarget(ctx context.Context, opts Options) (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("plan: getwd: %w", err)
-	}
-	abs, err := mdfile.ListInDir(cwd)
-	if err != nil {
-		return "", fmt.Errorf("plan: scan %s: %w", cwd, err)
-	}
-	if len(abs) == 0 {
-		return "", fmt.Errorf("plan: no markdown files in %s (excluding AGENTS.md/README.md)", cwd)
-	}
-	basenames := make([]string, len(abs))
-	byBase := make(map[string]string, len(abs))
-	for i, p := range abs {
-		base := filepath.Base(p)
-		basenames[i] = base
-		byBase[base] = p
-	}
-	chosen, err := opts.UI.PickFromFile(ctx, basenames)
-	if err != nil {
-		return "", err
-	}
-	target, ok := byBase[chosen]
-	if !ok {
-		return "", fmt.Errorf("plan: unknown markdown selection %q", chosen)
-	}
-	return target, nil
-}
-
 // runMarkdown is the markdown-file flow: resolve and read the source,
 // pick a tool/model, mint a task ID, ensure `<cwd>/.j/tasks/<id>/`
 // exists, and ask the agent to save both the (possibly refined)
@@ -548,10 +518,10 @@ func plannerFromStore(ctx context.Context, opts Options) (codingagents.Agent, st
 	return agentpick.FromStore(ctx, s, store.BucketPlanner, opts.Agents)
 }
 
-// persistPlannerSelection writes the just-confirmed tool/model and
-// the interactive flag to the planner bucket. The plan source and the
-// markdown source path are intentionally NOT persisted: the user must
-// pick those manually each run.
+// persistPlannerSelection writes the tool/model and interactive flag
+// to the planner bucket. The plan source and the markdown source path
+// are intentionally NOT persisted: the user must pick those manually
+// each run.
 //
 // Persistence is best-effort: any error is reported to opts.Stderr
 // and otherwise swallowed so plan can keep running. When opts.Store
@@ -630,7 +600,7 @@ func (o Options) withDefaults() Options {
 		o.Stderr = os.Stderr
 	}
 	if o.UI == nil {
-		o.UI = newHuhUI(o.Stdin, o.Stderr)
+		o.UI = picker.New(o.Stdin, o.Stderr)
 	}
 	return o
 }

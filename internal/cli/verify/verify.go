@@ -22,6 +22,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/spacelions/j/internal/cli/agentpick"
+	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/mustread"
@@ -207,7 +208,7 @@ func resolveTask(ctx context.Context, opts Options) (resolved, bool, error) {
 		r, err := resolveByTaskID(opts, id)
 		return r, err == nil, err
 	}
-	chosen, ok, err := opts.UI.PickWorkDoneTask(ctx, tasks)
+	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to verify", tasks)
 	if err != nil {
 		return resolved{}, false, err
 	}
@@ -274,11 +275,10 @@ func resolveByTaskID(opts Options, id string) (resolved, error) {
 }
 
 // listResolvableVerifyTasks returns every task in bbolt sorted via
-// store.SortTasks. The picker now surfaces every row regardless of
+// store.SortTasks. The picker surfaces every row regardless of
 // status; the downstream confirm prompt handles the wrong-status
-// case (per the re-verify contract). The happy-path auto-pick still
-// kicks in via autoPickAllowed when exactly one of the rows is in
-// the verify allowlist.
+// case (per the re-verify contract). autoPickAllowed auto-picks
+// when exactly one row is in the verify allowlist.
 func listResolvableVerifyTasks(opts Options) ([]store.Task, error) {
 	s, ok := tasklog.OpenTaskLog(opts.Stderr)
 	if !ok {
@@ -504,9 +504,8 @@ func verifierFromStore(ctx context.Context, opts Options) (codingagents.Agent, s
 	return agentpick.FromStore(ctx, s, store.BucketVerifier, opts.Agents)
 }
 
-// persistVerifierSelection writes the just-confirmed tool/model and
-// the interactive flag to the verifier bucket. Mirrors
-// persistWorkerSelection in `j work`.
+// persistVerifierSelection writes the tool/model and interactive flag
+// to the verifier bucket. Mirrors persistWorkerSelection in `j work`.
 func persistVerifierSelection(opts Options, tool, model string) {
 	interactive := true
 	if opts.Interactive != nil {
@@ -578,7 +577,7 @@ func (o Options) withDefaults() Options {
 		o.Stderr = os.Stderr
 	}
 	if o.UI == nil {
-		o.UI = newHuhUI(o.Stdin, o.Stderr)
+		o.UI = picker.New(o.Stdin, o.Stderr)
 	}
 	if o.MaxIterations <= 0 {
 		o.MaxIterations = defaultMaxIterations

@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/preflight"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
@@ -23,15 +24,28 @@ import (
 	"github.com/spacelions/j/internal/util/run"
 )
 
+// StartUI is the slice of picker methods RunStart drives when
+// `--from-file` is empty: SelectSource (markdown | linear | task),
+// PickMarkdownInCwd (markdown branch), PickTask (re-plan branch).
+// *picker.Picker satisfies this surface; tests inject a scripted
+// fake.
+type StartUI interface {
+	SelectSource(ctx context.Context, allowed []picker.Source) (picker.Source, error)
+	PickMarkdownInCwd(ctx context.Context) (string, error)
+	PickTask(ctx context.Context, title string, tasks []store.Task) (string, bool, error)
+}
+
 // StartOptions configures RunStart. Stdin/Stdout/Stderr default to the
 // process streams; Agents must be supplied by the caller (the cobra
 // wiring injects `[]codingagents.Agent{cursor.New(), claude.New()}`,
 // tests inject scripted ones); Selector defaults to a huh-backed
-// adapter so the agent-pick prompts can run on a real terminal.
+// adapter so the agent-pick prompts can run on a real terminal; UI
+// defaults to picker.New so the source / file / re-plan pickers
+// match `j plan` exactly.
 type StartOptions struct {
-	// FromFile is the markdown task description path. Required:
-	// `j tasks start` runs detached so there is no terminal for the
-	// markdown source picker.
+	// FromFile is the markdown task description path. When set, the
+	// source picker is skipped and the markdown branch fires
+	// directly. When empty, RunStart drives UI.SelectSource.
 	FromFile string
 
 	Stdin  io.Reader
@@ -42,6 +56,9 @@ type StartOptions struct {
 	// Selector is the agent-pick UI used by EnsureAgentSelections to
 	// prompt for any missing planner / worker / verifier bucket.
 	Selector AgentSelector
+	// UI drives the source / file / re-plan pickers when FromFile is
+	// empty. Defaults to picker.New.
+	UI StartUI
 
 	// JBinary is the absolute path to the j binary re-executed as
 	// `j tasks orchestrate --id <id>`. Empty falls back to
@@ -49,28 +66,48 @@ type StartOptions struct {
 	JBinary string
 }
 
-// RunStart implements `j tasks start`. It mints a fresh task id,
-// stages the user's markdown into <cwd>/.j/tasks/<id>/requirements.md,
-// seeds the bbolt task row at status `planning`, and forks a detached
+// startTarget is the resolved outcome of resolveStartTarget: which
+// task to chain against, plus any per-source side-information the
+// seed step needs.
+type startTarget struct {
+	// taskID is the task this RunStart will spawn the orchestrator
+	// against. Empty means "exit cleanly with no spawn" (linear
+	// branch or aborted picker).
+	taskID string
+	// isNew distinguishes a freshly minted task (markdown source,
+	// requirements.md needs writing, fresh row needs persisting)
+	// from an existing one (re-plan source, no file writes, just
+	// stamp PID + AgentLogPath onto the existing row).
+	isNew bool
+	// body is the markdown bytes to write to <task-dir>/requirements.md.
+	// Set only when isNew is true.
+	body string
+	// source is the absolute path of the user's markdown source. Used
+	// for summary derivation. Set only when isNew is true.
+	source string
+}
+
+// RunStart implements `j tasks start`. It mints (or re-uses) a task
+// id, optionally stages the user's markdown into requirements.md,
+// seeds the bbolt task row at status `planning` (or stamps the PID
+// onto an existing row), and forks a detached
 // `j tasks orchestrate --id <id>` subprocess whose stdout/stderr are
-// appended to <cwd>/.j/tasks/<id>/agent.log. The detached child drives
-// planner → worker → verifier end to end; RunStart records the child's
-// PID on the task row and returns immediately so the user gets their
-// shell prompt back.
+// appended to <cwd>/.j/tasks/<id>/agent.log. The detached child
+// drives planner → worker → verifier end to end; RunStart records
+// the child's PID and returns immediately.
 //
 // Steps:
-//  1. Defer a huh.ErrUserAborted → nil guard so a Ctrl-C in the
-//     agent-pick prompt exits cleanly.
-//  2. Call EnsureAgentSelections so every bucket (planner, worker,
-//     verifier) carries a tool/model pair before the orchestrator
-//     fires. Already-populated buckets are no-ops; missing buckets
-//     prompt once each. The bucket-stored `interactive` value is
-//     never consulted by this command and never written here.
-//  3. Resolve --from-file (required), read the user's markdown.
-//  4. Mint a task id, EnsureTaskDir, write requirements.md.
-//  5. Seed the task row with Status=planning + AgentLogPath.
-//  6. Spawn the detached orchestrator. Record BackgroundPID.
-//  7. Print "task <id> started; tail -f <agent.log>" and return.
+//  1. Defer a huh.ErrUserAborted → nil guard so a Ctrl-C in any
+//     prompt exits cleanly.
+//  2. Call EnsureAgentSelections so every bucket has a tool/model
+//     pair before the orchestrator fires.
+//  3. resolveStartTarget: branch on FromFile (markdown new) or
+//     UI.SelectSource (markdown new | task re-plan | linear no-op).
+//  4. For new tasks: EnsureTaskDir + write requirements.md.
+//     For re-plans: load the existing row.
+//  5. Spawn the detached orchestrator. Record BackgroundPID +
+//     AgentLogPath on the row.
+//  6. Print "task <id> started; tail -f <agent.log>" and return.
 func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	defer func() {
 		if errors.Is(err, huh.ErrUserAborted) {
@@ -80,9 +117,6 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
 		return errors.New("J: no coding agents configured")
-	}
-	if opts.FromFile == "" {
-		return errors.New("J: --from-file is required (j tasks start runs detached and cannot prompt)")
 	}
 	if err := EnsureAgentSelections(ctx, AgentCheckOptions{
 		Stdin:  opts.Stdin,
@@ -94,56 +128,190 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 		return err
 	}
 
-	source, body, err := readStartSource(opts.FromFile)
+	target, err := resolveStartTarget(ctx, opts)
 	if err != nil {
 		return err
 	}
-	taskID := store.NewTaskID()
-	taskDir, err := store.EnsureTaskDir(taskID)
+	if target.taskID == "" {
+		// Linear source or aborted picker — exit cleanly.
+		return nil
+	}
+
+	agentLogPath, err := prepareTaskFiles(target)
 	if err != nil {
-		return fmt.Errorf("J: ensure task dir: %w", err)
+		return err
 	}
-	requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
-	if err := os.WriteFile(requirementsPath, []byte(body), 0o644); err != nil {
-		return fmt.Errorf("J: stage requirements: %w", err)
-	}
-	agentLogPath := filepath.Join(taskDir, tasklog.AgentLogFileName)
 
 	binary, err := resolveJBinary(opts.JBinary)
 	if err != nil {
 		return err
 	}
-	pid, err := run.SpawnIn(ctx, "", agentLogPath, binary, "tasks", "orchestrate", "--id", taskID)
+	pid, err := run.SpawnIn(ctx, "", agentLogPath, binary, "tasks", "orchestrate", "--id", target.taskID)
 	if err != nil {
 		return err
 	}
-	begin := time.Now().UTC()
-	tasklog.PersistWarn(opts.Stderr, store.Task{
-		ID:            taskID,
-		Status:        store.StatusPlanning,
-		Summary:       tasklog.Summary(body, source),
-		PlanBeginAt:   &begin,
-		AgentLogPath:  agentLogPath,
-		BackgroundPID: pid,
-	})
+	persistStartRow(opts.Stderr, target, agentLogPath, pid)
 
-	fmt.Fprintf(opts.Stdout, "J: task %s started; tail -f %s\n", taskID, agentLogPath)
+	fmt.Fprintf(opts.Stdout, "J: task %s started; tail -f %s\n", target.taskID, agentLogPath)
 	return nil
 }
 
-// readStartSource resolves the --from-file path and reads the body
-// once so RunStart's downstream calls (writeFile to requirements.md,
-// summary derivation) operate on a single in-memory copy.
-func readStartSource(raw string) (string, string, error) {
+// resolveStartTarget decides whether RunStart spawns the orchestrator
+// against a freshly minted task (markdown source) or an existing task
+// (re-plan source), or exits cleanly (linear source / aborted picker).
+//
+//   - opts.FromFile != "" → markdown shortcut (mint new task).
+//   - opts.FromFile == "" → opts.UI.SelectSource:
+//   - SourceMarkdown → pickMarkdownTarget → mint new task.
+//   - SourceTask    → pickReplanTarget   → existing task.
+//   - SourceLinear  → print, return ("", false, …).
+func resolveStartTarget(ctx context.Context, opts StartOptions) (startTarget, error) {
+	if opts.FromFile != "" {
+		return newTargetFromMarkdown(opts.FromFile)
+	}
+	src, err := opts.UI.SelectSource(ctx, []picker.Source{
+		picker.SourceMarkdown, picker.SourceLinear, picker.SourceTask,
+	})
+	if err != nil {
+		return startTarget{}, err
+	}
+	switch src {
+	case picker.SourceMarkdown:
+		path, err := opts.UI.PickMarkdownInCwd(ctx)
+		if err != nil {
+			return startTarget{}, err
+		}
+		return newTargetFromMarkdown(path)
+	case picker.SourceTask:
+		id, err := pickReplanTarget(ctx, opts)
+		if err != nil {
+			return startTarget{}, err
+		}
+		return startTarget{taskID: id, isNew: false}, nil
+	case picker.SourceLinear:
+		fmt.Fprintln(opts.Stdout, "tasks: linear source is not yet wired up; nothing to do")
+		return startTarget{}, nil
+	}
+	return startTarget{}, fmt.Errorf("tasks: unsupported source %s", src)
+}
+
+// newTargetFromMarkdown reads the markdown body once and packages it
+// into a startTarget for the new-task branch. Mints the task ID here
+// so callers see a populated target on success.
+func newTargetFromMarkdown(raw string) (startTarget, error) {
 	abs, err := mdfile.Resolve(raw)
 	if err != nil {
-		return "", "", err
+		return startTarget{}, err
 	}
 	body, err := os.ReadFile(abs)
 	if err != nil {
-		return "", "", fmt.Errorf("J: read source: %w", err)
+		return startTarget{}, fmt.Errorf("J: read source: %w", err)
 	}
-	return abs, string(body), nil
+	return startTarget{
+		taskID: store.NewTaskID(),
+		isNew:  true,
+		body:   string(body),
+		source: abs,
+	}, nil
+}
+
+
+// pickReplanTarget lists every existing task and asks the user to
+// pick one for the re-plan flow. Empty list surfaces a clean error
+// mentioning the cwd. Returned id "" with err nil means the user
+// aborted the picker.
+func pickReplanTarget(ctx context.Context, opts StartOptions) (string, error) {
+	tasks, err := listAllTasks(opts.Stderr)
+	if err != nil {
+		return "", err
+	}
+	if len(tasks) == 0 {
+		return "", errors.New("tasks: no tasks to re-plan; run `j tasks start --from-file <md>` first")
+	}
+	id, ok, err := opts.UI.PickTask(ctx, "Select a task to re-plan", tasks)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", nil
+	}
+	return id, nil
+}
+
+// listAllTasks opens the per-project tasks bbolt store, reads every
+// row, sorts via store.SortTasks, and closes before returning. The
+// settings store is closed before the picker runs so the bbolt file
+// lock is not held across the long-running prompt.
+func listAllTasks(stderr io.Writer) ([]store.Task, error) {
+	s, ok := tasklog.OpenTaskLog(stderr)
+	if !ok {
+		return nil, errors.New("tasks: tasks db unavailable")
+	}
+	defer func() { _ = s.Close() }()
+	all, err := s.ListTasks()
+	if err != nil {
+		return nil, err
+	}
+	store.SortTasks(all)
+	return all, nil
+}
+
+// prepareTaskFiles ensures the per-task directory exists and, for
+// new tasks, stages requirements.md from the in-memory body.
+// Returns the absolute path to the per-task agent.log so the caller
+// can hand it to run.SpawnIn. For re-plan targets, requirements.md
+// is left untouched — the user is re-planning against the existing
+// requirements.
+func prepareTaskFiles(target startTarget) (string, error) {
+	taskDir, err := store.EnsureTaskDir(target.taskID)
+	if err != nil {
+		return "", fmt.Errorf("J: ensure task dir: %w", err)
+	}
+	if target.isNew {
+		requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
+		if err := os.WriteFile(requirementsPath, []byte(target.body), 0o644); err != nil {
+			return "", fmt.Errorf("J: stage requirements: %w", err)
+		}
+	}
+	return filepath.Join(taskDir, tasklog.AgentLogFileName), nil
+}
+
+// persistStartRow records the spawned PID + AgentLogPath onto the
+// task row. New tasks get a freshly built row at status `planning`;
+// existing tasks (re-plan branch) get a read-modify-write that
+// preserves every other field — the orchestrator's own per-phase
+// lifecycle takes over from there.
+func persistStartRow(stderr io.Writer, target startTarget, agentLogPath string, pid int) {
+	if target.isNew {
+		begin := time.Now().UTC()
+		tasklog.PersistWarn(stderr, store.Task{
+			ID:            target.taskID,
+			Status:        store.StatusPlanning,
+			Summary:       tasklog.Summary(target.body, target.source),
+			PlanBeginAt:   &begin,
+			AgentLogPath:  agentLogPath,
+			BackgroundPID: pid,
+		})
+		return
+	}
+	// Re-plan: load + mutate + put back. Best-effort; a missing
+	// row would surface as a tasklog warning on stderr but the
+	// detached child is already running, so we don't rollback.
+	s, ok := tasklog.OpenTaskLog(stderr)
+	if !ok {
+		return
+	}
+	defer func() { _ = s.Close() }()
+	row, err := s.GetTask(target.taskID)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks get %q: %v\n", target.taskID, err)
+		return
+	}
+	row.AgentLogPath = agentLogPath
+	row.BackgroundPID = pid
+	if err := s.PutTask(row); err != nil {
+		fmt.Fprintf(stderr, "warning: tasks put: %v\n", err)
+	}
 }
 
 // resolveJBinary returns the absolute path of the j binary the
@@ -173,31 +341,36 @@ func (o StartOptions) withDefaults() StartOptions {
 		o.Stderr = os.Stderr
 	}
 	if o.Selector == nil {
-		o.Selector = newHuhAgentSelector(o.Stdin, o.Stderr)
+		o.Selector = picker.New(o.Stdin, o.Stderr)
+	}
+	if o.UI == nil {
+		o.UI = picker.New(o.Stdin, o.Stderr)
 	}
 	return o
 }
 
 // newStartCmd builds the `j tasks start` cobra subcommand. The flag
-// surface is just --from-file; the orchestrator runs detached so
-// there is no terminal for additional pickers. The bucket-stored
-// `interactive` value is never consulted on this path: the
-// orchestrator forces Interactive=false internally for plan / work /
-// verify when it shells out, leaving the bucket value untouched
-// (manual `j plan|work|verify` continue to honour it).
+// surface is just --from-file; when empty, the same source picker
+// `j plan` shows is rendered against the parent's terminal before
+// the detached fork. The bucket-stored `interactive` value is never
+// consulted on this path: the orchestrator forces Interactive=false
+// internally for plan / work / verify when it shells out, leaving
+// the bucket value untouched (manual `j plan|work|verify` continue
+// to honour it).
 func newStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start a new task: drive planner → worker → verifier in the background",
 		Long: "Validates that every agent bucket (planner, worker, verifier) " +
 			"has a tool/model selection — prompting once per missing bucket — " +
-			"then forks a detached `j tasks orchestrate --id <id>` child " +
-			"that drives planner → worker → verifier end to end and exits. " +
-			"The user's markdown is staged into <cwd>/.j/tasks/<id>/requirements.md " +
-			"before the spawn; every line written by the orchestrator and the " +
+			"then forks a detached `j tasks orchestrate --id <id>` child that " +
+			"drives planner → worker → verifier end to end and exits. Pass " +
+			"--from-file/-f (or TASKS_START_FROM_FILE) to point at a markdown " +
+			"task description; when neither is set, the same source picker " +
+			"`j plan` shows is rendered (markdown | linear | re-plan an " +
+			"existing task). Every line written by the orchestrator and the " +
 			"per-phase coding-agent children appends to the same per-task " +
-			"<cwd>/.j/tasks/<id>/agent.log. Pass --from-file/-f (or " +
-			"TASKS_START_FROM_FILE) to point at the markdown task description.",
+			"<cwd>/.j/tasks/<id>/agent.log.",
 		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return RunStart(cmd.Context(), StartOptions{

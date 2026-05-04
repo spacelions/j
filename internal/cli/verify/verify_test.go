@@ -162,10 +162,23 @@ func (s *scriptedUI) AskFromFile(context.Context) (string, error) {
 	return s.fromFile, nil
 }
 
-// PickWorkDoneTask matches the unified taskpick contract:
-// (id, ok, err). Empty pickedID signals cancel (ok=false), so
-// happy-path tests must set pickedID explicitly.
-func (s *scriptedUI) PickWorkDoneTask(_ context.Context, tasks []store.Task) (string, bool, error) {
+// PickTask dispatches by title prefix so the same scripted UI can
+// answer both flows: titles that contain "resume" honour
+// resumePicked / resumeErr (the resume.go flow); other titles honour
+// pickedID / pickErr (the verify.go non-resume flow). Both branches
+// use the (id, ok, err) contract — empty id signals cancel.
+func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []store.Task) (string, bool, error) {
+	if strings.Contains(title, "resume") {
+		s.pickResumeCalls++
+		s.pickResumedTasks = tasks
+		if s.resumeErr != nil {
+			return "", false, s.resumeErr
+		}
+		if s.resumePicked == "" {
+			return "", false, nil
+		}
+		return s.resumePicked, true, nil
+	}
 	s.pickCalls++
 	s.pickedTasks = tasks
 	if s.pickErr != nil {
@@ -175,21 +188,6 @@ func (s *scriptedUI) PickWorkDoneTask(_ context.Context, tasks []store.Task) (st
 		return "", false, nil
 	}
 	return s.pickedID, true, nil
-}
-
-// PickVerifyTask matches the unified taskpick contract: see
-// PickWorkDoneTask above for the rationale on resumePicked
-// semantics.
-func (s *scriptedUI) PickVerifyTask(_ context.Context, tasks []store.Task) (string, bool, error) {
-	s.pickResumeCalls++
-	s.pickResumedTasks = tasks
-	if s.resumeErr != nil {
-		return "", false, s.resumeErr
-	}
-	if s.resumePicked == "" {
-		return "", false, nil
-	}
-	return s.resumePicked, true, nil
 }
 
 func (s *scriptedUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, status string) (bool, error) {

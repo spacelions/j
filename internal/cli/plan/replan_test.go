@@ -13,6 +13,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 
+	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 )
@@ -714,14 +715,14 @@ func TestRun_FromTask_NewResumeIDError(t *testing.T) {
 }
 
 // TestRun_SourceTask_PicksAndReplans drives the full no-flag flow:
-// SelectSource returns SourceTask, the picker returns the only
+// SelectSource returns picker.SourceTask, the picker returns the only
 // seeded id, runReplanTask completes successfully.
 func TestRun_SourceTask_PicksAndReplans(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedReplanTask(t, store.StatusPlanDone, "# req\nbody", nil)
 	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceTask, replanID: id}
+	ui := &scriptedUI{source: picker.SourceTask, replanID: id}
 	err := Run(context.Background(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -746,7 +747,7 @@ func TestRun_SourceTask_PickerError(t *testing.T) {
 	mustInit(t)
 	_ = seedReplanTask(t, store.StatusPlanDone, "# req", nil)
 	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceTask, replanErr: errors.New("pick boom")}
+	ui := &scriptedUI{source: picker.SourceTask, replanErr: errors.New("pick boom")}
 	err := Run(context.Background(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,

@@ -294,18 +294,6 @@ func TestEnsureAgentSelections_AppliesDefaults(t *testing.T) {
 	}
 }
 
-// TestNewHuhAgentSelector_NoOptions covers the empty-options branch
-// of the huh-backed adapter.
-func TestNewHuhAgentSelector_NoOptions(t *testing.T) {
-	sel := newHuhAgentSelector(strings.NewReader(""), io.Discard)
-	if _, err := sel.SelectTool(context.Background(), nil); err == nil {
-		t.Fatalf("SelectTool with no options should error")
-	}
-	if _, err := sel.SelectModel(context.Background(), nil); err == nil {
-		t.Fatalf("SelectModel with no options should error")
-	}
-}
-
 // TestEnsureAgentSelections_StoreOpenFailure simulates a corrupt
 // settings layout (a regular file at .j/settings) so store.OpenSettings
 // fails. EnsureAgentSelections treats the open failure as
