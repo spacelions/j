@@ -81,9 +81,10 @@ func TestRun_Failure(t *testing.T) {
 
 // TestSpawn_Success exercises the happy path: Spawn returns a positive
 // PID immediately, then the briefly-running child writes to the log
-// and exits. Polling the log is the only way to observe the child
-// because Spawn deliberately calls Process.Release so the parent
-// cannot Wait.
+// and exits. Polling the log is the only way for the parent to
+// observe the child — Spawn does not expose a Wait handle (a
+// background goroutine inside Spawn calls cmd.Wait so the kernel
+// reaps the child instead of leaving a zombie behind).
 func TestSpawn_Success(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "out.log")
@@ -194,9 +195,9 @@ func TestSpawn_MissingBinary(t *testing.T) {
 // TestIsAlive_LiveAndDead drives both branches with a real short-lived
 // `sleep` child started via os/exec: the helper reports true while
 // the child is asleep and false after Wait has reaped it. Going
-// through os/exec (rather than Spawn) lets the test Wait on the
-// child and avoid the zombie state that Spawn's Process.Release
-// leaves behind.
+// through os/exec (rather than Spawn) keeps the test in full control
+// of when the child is reaped, so the alive→dead transition observed
+// by IsAlive is deterministic.
 func TestIsAlive_LiveAndDead(t *testing.T) {
 	cmd := exec.Command("sleep", "5")
 	if err := cmd.Start(); err != nil {
@@ -326,9 +327,9 @@ func TestWaitForExit_AlreadyDead(t *testing.T) {
 }
 
 // TestWaitForExit_LiveExitsDuringPoll starts a real short-lived
-// child via os/exec, releases the parent's Wait state to mimic the
-// Spawn contract (no zombie), and asserts WaitForExit blocks until
-// the child exits.
+// child via os/exec, reaps it via cmd.Wait in a goroutine to match
+// the Spawn contract (no zombie), and asserts WaitForExit blocks
+// until the child exits.
 func TestWaitForExit_LiveExitsDuringPoll(t *testing.T) {
 	cmd := exec.Command("sleep", "0.3")
 	if err := cmd.Start(); err != nil {
@@ -336,9 +337,10 @@ func TestWaitForExit_LiveExitsDuringPoll(t *testing.T) {
 	}
 	pid := cmd.Process.Pid
 	// Drive the post-Start branch: child is still alive on entry,
-	// so WaitForExit must spin the ticker. We Wait in a goroutine
-	// (rather than Process.Release) so the kernel reaps the child
-	// and IsAlive flips to false deterministically.
+	// so WaitForExit must spin the ticker. Wait in a goroutine so
+	// the kernel reaps the child and IsAlive flips to false
+	// deterministically — this is the same reap pattern Spawn now
+	// applies internally.
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- cmd.Wait() }()
 	start := time.Now()
@@ -351,6 +353,40 @@ func TestWaitForExit_LiveExitsDuringPoll(t *testing.T) {
 	<-waitDone
 	if IsAlive(pid) {
 		t.Fatalf("pid %d should be dead after WaitForExit returned", pid)
+	}
+}
+
+// TestSpawn_AndWaitForExit_ReapsZombie pins the regression behind the
+// "j tasks start chains plan→work→verify but stalls at planning" bug:
+// before the fix, Spawn called Process.Release after Start, so the
+// kernel never reaped the exited child. signal(0) on a zombie returns
+// success on Linux/macOS, so IsAlive reported the dead child alive
+// and WaitForExit polled forever. The fix has Spawn reap via cmd.Wait
+// in a goroutine; this test asserts WaitForExit returns promptly
+// (well under the ctx deadline) on a real Spawned child that exits
+// quickly. Without the fix this would hang until the deadline.
+func TestSpawn_AndWaitForExit_ReapsZombie(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "out.log")
+	pid, err := Spawn(context.Background(), logPath, "sh", "-c", "sleep 0.1")
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if pid <= 0 {
+		t.Fatalf("pid = %d, want > 0", pid)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	start := time.Now()
+	if err := WaitForExit(ctx, pid); err != nil {
+		t.Fatalf("WaitForExit: %v", err)
+	}
+	elapsed := time.Since(start)
+	if elapsed > 1500*time.Millisecond {
+		t.Fatalf("WaitForExit took %v; expected to return well under the 2s deadline (zombie reap regression)", elapsed)
+	}
+	if IsAlive(pid) {
+		t.Fatalf("pid %d still reported alive after WaitForExit returned", pid)
 	}
 }
 
