@@ -17,6 +17,7 @@ import (
 
 
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
@@ -159,7 +160,6 @@ func Run(ctx context.Context, opts Options) (err error) {
 		lc = store.NewWorkTask(opts.Stderr, agent.Name(), model, res.NewTaskID, res.PlanPath, res.Requirement, res.Body, resumeID)
 	}
 
-	taskID := workTaskID(res)
 	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), store.AgentLogFileName)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
@@ -182,9 +182,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 			}
 		} else {
 			lc.RecordBackground(pid, agentLogPath)
-			fmt.Fprintf(opts.Stdout,
-				"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
-				agent.Name(), pid, taskID, store.AgentLogFileName)
+			banner.RunningInBackground(opts.Stdout, agent.Name(), pid, agentLogPath)
 			return nil
 		}
 	}
@@ -199,17 +197,6 @@ func Run(ctx context.Context, opts Options) (err error) {
 		fmt.Fprintf(opts.Stdout, "J: coding on %s\n", res.PlanPath)
 	}
 	return nil
-}
-
-// workTaskID returns the task id (existing or newly minted) that the
-// work flow is operating against. Both the bbolt-sourced reuse path
-// and the legacy file-import path map to a single per-task directory
-// keyed by id; the helper picks whichever the caller has populated.
-func workTaskID(res resolved) string {
-	if res.Existing != nil {
-		return res.Existing.ID
-	}
-	return res.NewTaskID
 }
 
 // resolvePlan implements the precedence: --from-task > --from-file (legacy
