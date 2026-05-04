@@ -154,23 +154,29 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	if err != nil {
 		return err
 	}
-
-	binary, err := resolveJBinary(opts.JBinary)
-	if err != nil {
-		return err
-	}
-	pid, err := run.SpawnIn(ctx, "", agentLogPath, binary,
+	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
 		"tasks", "orchestrate",
 		"--id", target.taskID,
 		"--plan-requires-approval", strconv.FormatBool(planRequiresApproval),
-	)
+	})
 	if err != nil {
 		return err
 	}
 	persistStartRow(opts.Stderr, target, agentLogPath, pid)
-
 	banner.RunningInBackground(opts.Stdout, fmt.Sprintf("task %s", target.taskID), pid, agentLogPath)
 	return nil
+}
+
+// spawnDetachedOrchestrator resolves the j binary, opens / re-uses
+// the per-task agent.log via run.SpawnIn, and returns the spawned
+// child's PID. Shared between `j tasks start` (planner-first spawn)
+// and `j tasks continue` (resume-after-plan-done spawn).
+func spawnDetachedOrchestrator(ctx context.Context, binaryOverride, agentLogPath string, args []string) (int, error) {
+	binary, err := resolveJBinary(binaryOverride)
+	if err != nil {
+		return 0, err
+	}
+	return run.SpawnIn(ctx, "", agentLogPath, binary, args...)
 }
 
 // resolveStartTarget decides whether RunStart spawns the orchestrator
@@ -287,30 +293,7 @@ func persistStartRow(stderr io.Writer, target startTarget, agentLogPath string, 
 		})
 		return
 	}
-	// Re-plan: load + mutate + put back. Best-effort; a missing
-	// row would surface as a tasklog warning on stderr but the
-	// detached child is already running, so we don't rollback.
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
-		return
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
-		return
-	}
-	defer func() { _ = s.Close() }()
-	row, err := s.GetTask(target.taskID)
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: tasks get %q: %v\n", target.taskID, err)
-		return
-	}
-	row.AgentLogPath = agentLogPath
-	row.BackgroundPID = pid
-	if err := s.PutTask(row); err != nil {
-		fmt.Fprintf(stderr, "warning: tasks put: %v\n", err)
-	}
+	stampSpawnOnRow(stderr, target.taskID, agentLogPath, pid)
 }
 
 // resolveJBinary returns the absolute path of the j binary the

@@ -76,19 +76,67 @@ func TestRunForTask_FailFlow(t *testing.T) {
 
 func TestTaskSubAgents_PlanApprovalGate(t *testing.T) {
 	agents := []codingagents.Agent{stubChain("scripted")}
-	gated, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, true)
+	gated, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, true, false)
 	if err != nil {
 		t.Fatalf("taskSubAgents gated: %v", err)
 	}
 	if len(gated) != 1 {
 		t.Fatalf("gated SubAgents length = %d, want 1", len(gated))
 	}
-	full, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, false)
+	full, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, false, false)
 	if err != nil {
 		t.Fatalf("taskSubAgents full: %v", err)
 	}
 	if len(full) != 3 {
 		t.Fatalf("full SubAgents length = %d, want 3", len(full))
+	}
+}
+
+// TestTaskSubAgents_SkipPlanning pins the worker→verifier shape used
+// by `j tasks continue` on a `plan-done` row.
+func TestTaskSubAgents_SkipPlanning(t *testing.T) {
+	agents := []codingagents.Agent{stubChain("scripted")}
+	subs, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, false, true)
+	if err != nil {
+		t.Fatalf("taskSubAgents skip-planning: %v", err)
+	}
+	if len(subs) != 2 {
+		t.Fatalf("skip-planning SubAgents length = %d, want 2 (worker + verifier)", len(subs))
+	}
+}
+
+// TestTaskSubAgents_ConflictingFlagsErr pins the loud rejection of
+// the impossible combination (planRequiresApproval=true,
+// skipPlanning=true).
+func TestTaskSubAgents_ConflictingFlagsErr(t *testing.T) {
+	agents := []codingagents.Agent{stubChain("scripted")}
+	_, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, true, true)
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("err = %v, want mutually-exclusive guard", err)
+	}
+}
+
+// TestRunForTaskFromWork_RunsWorkerVerifier pins that the
+// skip-planning entry point runs only worker → verifier.
+func TestRunForTaskFromWork_RunsWorkerVerifier(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := seedChainTask(t, "scripted")
+	stub := stubChain("scripted")
+	stub.verdict = "VERDICT: PASS"
+
+	if err := RunForTaskFromWork(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard); err != nil {
+		t.Fatalf("RunForTaskFromWork: %v", err)
+	}
+	if stub.planCalls.Load() != 0 {
+		t.Fatalf("plan calls = %d, want 0 (planner must not run)", stub.planCalls.Load())
+	}
+	if stub.workCalls.Load() != 1 || stub.verifyCalls.Load() != 1 {
+		t.Fatalf("call counts: work=%d verify=%d", stub.workCalls.Load(), stub.verifyCalls.Load())
+	}
+	row := readChainTaskRow(t, id)
+	if row.Status != store.StatusCompleted {
+		t.Fatalf("Status = %q, want completed", row.Status)
 	}
 }
 

@@ -7,12 +7,14 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/plan"
 	"github.com/spacelions/j/internal/cli/preflight"
@@ -50,6 +52,12 @@ type ContinueOptions struct {
 	// surface of plan/work UIs but stays minimal since the
 	// markdown / source pickers are not relevant on continue.
 	Selector AgentSelector
+
+	// JBinary is the absolute path to the j binary re-executed by
+	// the plan-done branch as `j tasks orchestrate --skip-planning ...`.
+	// Empty falls back to os.Executable. Tests inject a path-resolvable
+	// stub.
+	JBinary string
 }
 
 // RunContinue implements `j tasks continue`. The lifecycle is:
@@ -154,7 +162,7 @@ func resolveContinueTaskFromStore(ctx context.Context, s *store.Store, opts Cont
 // Status. The mapping is:
 //
 //	planning     -> plan.RunResume
-//	plan-done    -> work.Run (--from-task <id>)
+//	plan-done    -> detached `j tasks orchestrate --skip-planning ...`
 //	working      -> work.RunResume
 //	work-done    -> verify.Run (--from-task <id>)
 //	verifying    -> verify.RunResume
@@ -175,13 +183,7 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, task store.Task
 			Agents: opts.Agents,
 		})
 	case store.StatusPlanDone:
-		return work.Run(ctx, work.Options{
-			TaskID: task.ID,
-			Stdin:  opts.Stdin,
-			Stdout: opts.Stdout,
-			Stderr: opts.Stderr,
-			Agents: opts.Agents,
-		})
+		return resumeFromPlanDone(ctx, opts, task.ID)
 	case store.StatusWorking:
 		return work.RunResume(ctx, work.ResumeOptions{
 			TaskID: task.ID,
@@ -213,6 +215,60 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, task store.Task
 		return dispatchHelp(ctx, opts, task)
 	}
 	return fmt.Errorf("J: task %s has unsupported status %q", task.ID, task.Status)
+}
+
+// resumeFromPlanDone forks a detached `j tasks orchestrate
+// --skip-planning=true --plan-requires-approval=false` child for the
+// supplied taskID so the implicit-approval handoff drives worker →
+// verifier without re-running the planner. Records the spawned PID
+// + agent.log path on the row, prints the standard `J: task <id>
+// resumed; tail -f <log>` line, and returns immediately.
+func resumeFromPlanDone(ctx context.Context, opts ContinueOptions, taskID string) error {
+	taskDir, err := store.EnsureTaskDir(taskID)
+	if err != nil {
+		return fmt.Errorf("J: ensure task dir: %w", err)
+	}
+	agentLogPath := filepath.Join(taskDir, store.AgentLogFileName)
+	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
+		"tasks", "orchestrate",
+		"--id", taskID,
+		"--plan-requires-approval", "false",
+		"--skip-planning", "true",
+	})
+	if err != nil {
+		return err
+	}
+	stampSpawnOnRow(opts.Stderr, taskID, agentLogPath, pid)
+	banner.RunningInBackground(opts.Stdout, fmt.Sprintf("task %s", taskID), pid, agentLogPath)
+	return nil
+}
+
+// stampSpawnOnRow records BackgroundPID + AgentLogPath on the
+// existing task row after a detached orchestrator spawn. Best-effort
+// — any read / write error surfaces as a single warning on stderr.
+// The detached child is already running, so we never roll back.
+func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
+		return
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
+		return
+	}
+	defer func() { _ = s.Close() }()
+	row, err := s.GetTask(taskID)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks get %q: %v\n", taskID, err)
+		return
+	}
+	row.AgentLogPath = agentLogPath
+	row.BackgroundPID = pid
+	if err := s.PutTask(row); err != nil {
+		fmt.Fprintf(stderr, "warning: tasks put: %v\n", err)
+	}
 }
 
 // dispatchHelp picks a resume target for a `help` task. The latest

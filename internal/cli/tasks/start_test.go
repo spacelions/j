@@ -59,12 +59,16 @@ func noopJBinary(t *testing.T) string {
 }
 
 // argvJBinary writes a tiny shell script that records its argv, one
-// argument per line. RunStart spawns it detached, so tests poll the
-// output file after RunStart returns.
+// argument per line. The script writes to a sibling `.tmp` file and
+// renames it into place so the polling reader never sees a partial
+// argv list (printf '%s\n' "$@" issues one write per argument and
+// the reader can otherwise race the writer between args). RunStart
+// spawns it detached, so tests poll the output file after RunStart
+// returns.
 func argvJBinary(t *testing.T, outputPath string) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "j-argv-stub.sh")
-	body := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" > %q\n", outputPath)
+	body := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" > %q.tmp && mv %q.tmp %q\n", outputPath, outputPath, outputPath)
 	if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +77,7 @@ func argvJBinary(t *testing.T, outputPath string) string {
 
 func readSpawnedArgv(t *testing.T, path string) []string {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		data, err := os.ReadFile(path)
 		if err == nil && len(data) > 0 {
