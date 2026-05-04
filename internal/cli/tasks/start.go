@@ -157,7 +157,7 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
 		"tasks", "orchestrate",
 		"--id", target.taskID,
-		"--plan-requires-approval", strconv.FormatBool(planRequiresApproval),
+		"--plan-requires-approval=" + strconv.FormatBool(planRequiresApproval),
 	})
 	if err != nil {
 		return err

@@ -307,14 +307,12 @@ func TestRunStart_ForwardsResolvedPlanApproval(t *testing.T) {
 				t.Fatalf("RunStart: %v", err)
 			}
 			args := readSpawnedArgv(t, argvPath)
-			if len(args) < 6 {
+			if len(args) < 5 {
 				t.Fatalf("argv = %v, want orchestrate args plus plan approval flag", args)
 			}
-			if got := args[len(args)-2]; got != "--plan-requires-approval" {
-				t.Fatalf("approval flag arg = %q, argv=%v", got, args)
-			}
-			if got := args[len(args)-1]; got != tc.want {
-				t.Fatalf("approval flag value = %q, want %q; argv=%v", got, tc.want, args)
+			want := "--plan-requires-approval=" + tc.want
+			if got := args[len(args)-1]; got != want {
+				t.Fatalf("approval flag = %q, want %q; argv=%v", got, want, args)
 			}
 		})
 	}
@@ -877,6 +875,73 @@ func TestRunStart_ContextCancellable(t *testing.T) {
 	}
 	if !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "context canceled") {
 		t.Fatalf("err = %v, want context-cancellation propagation", err)
+	}
+}
+
+// TestRunStart_ArgvParsesThroughOrchestrateCmd is the regression
+// guard for the pflag two-token bool bug on the start spawn: the
+// argv must parse through a fresh `j tasks orchestrate` cobra
+// command with the requested plan-requires-approval bool. Catches
+// any future revert to the `"--flag", "value"` shape because pflag
+// would mark the bool flag Changed=true regardless of the next
+// token, leaving the bool at its default (true) and dropping the
+// override.
+func TestRunStart_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
+	boolPtr := func(v bool) *bool { return &v }
+	tests := []struct {
+		name     string
+		setting  string
+		override *bool
+		want     bool
+	}{
+		{name: "inherits_true_setting", setting: "true", want: true},
+		{name: "explicit_false_overrides_true", setting: "true", override: boolPtr(false), want: false},
+		{name: "explicit_true_overrides_false", setting: "false", override: boolPtr(true), want: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			mustInit(t)
+			putProjectPlanRequiresApproval(t, tc.setting)
+			for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+				seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+			}
+			target := writeStartFile(t, "# task\nbody")
+			argvPath := filepath.Join(t.TempDir(), "argv.txt")
+			if err := RunStart(context.Background(), StartOptions{
+				FromFile:             target,
+				PlanRequiresApproval: tc.override,
+				Stdin:                strings.NewReader(""),
+				Stdout:               io.Discard,
+				Stderr:               io.Discard,
+				Agents:               []codingagents.Agent{newScriptedAgent()},
+				Selector:             &testutil.SelectorFake{},
+				UI:                   &scriptedStartUI{},
+				JBinary:              argvJBinary(t, argvPath),
+			}); err != nil {
+				t.Fatalf("RunStart: %v", err)
+			}
+			args := readSpawnedArgv(t, argvPath)
+			if len(args) < 2 || args[0] != "tasks" || args[1] != "orchestrate" {
+				t.Fatalf("argv = %v, want leading `tasks orchestrate`", args)
+			}
+			viper.Reset()
+			t.Cleanup(viper.Reset)
+			cmd := newOrchestrateCmd()
+			if err := cmd.ParseFlags(args[2:]); err != nil {
+				t.Fatalf("ParseFlags(%v): %v", args[2:], err)
+			}
+			if !cmd.Flags().Changed("plan-requires-approval") {
+				t.Fatalf("plan-requires-approval not Changed; argv=%v", args)
+			}
+			got, err := cmd.Flags().GetBool("plan-requires-approval")
+			if err != nil {
+				t.Fatalf("GetBool: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("plan-requires-approval = %v, want %v; argv=%v", got, tc.want, args)
+			}
+		})
 	}
 }
 
