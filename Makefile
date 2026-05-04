@@ -65,9 +65,9 @@ coverage:
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+RemoveTaskDir[[:space:]]' \
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+touchBoltFile[[:space:]]' \
 		-e 'internal/store/task\.go:[0-9]+:[[:space:]]+PutTask[[:space:]]' \
-		-e 'internal/store/task\.go:[0-9]+:[[:space:]]+PersistWarn[[:space:]]' \
-		-e 'internal/store/task\.go:[0-9]+:[[:space:]]+BeginPlanReuse[[:space:]]' \
-		-e 'internal/store/task\.go:[0-9]+:[[:space:]]+BeginVerifyResume[[:space:]]' \
+		-e 'internal/store/persist\.go:[0-9]+:[[:space:]]+PersistWarn[[:space:]]' \
+		-e 'internal/store/lifecycle_plan\.go:[0-9]+:[[:space:]]+BeginPlanReuse[[:space:]]' \
+		-e 'internal/store/lifecycle_verify\.go:[0-9]+:[[:space:]]+BeginVerifyResume[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+openTasks[[:space:]]' \
 		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+openTasks[[:space:]]' \
 		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+openTasks[[:space:]]' \
