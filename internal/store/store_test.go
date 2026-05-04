@@ -1403,3 +1403,20 @@ func TestEnsureGitignoreEntry_NotJDirIsNoop(t *testing.T) {
 		t.Fatalf(".gitignore = %q, want untouched", got)
 	}
 }
+
+// TestProjectName covers the happy path (basename of cwd).
+func TestProjectName(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "myproj")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(sub)
+	got, err := ProjectName()
+	if err != nil {
+		t.Fatalf("ProjectName: %v", err)
+	}
+	if got != "myproj" {
+		t.Fatalf("ProjectName = %q, want %q", got, "myproj")
+	}
+}

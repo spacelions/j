@@ -22,7 +22,6 @@ import (
 
 
 	"github.com/spacelions/j/internal/cli/picker"
-	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
@@ -153,16 +152,16 @@ func Run(ctx context.Context, opts Options) (err error) {
 		return fmt.Errorf("J: unknown tool %q (recorded on task %s)", res.Task.InvokedTool, res.Task.ID)
 	}
 
-	lc := beginVerifyTask(opts, verifierAgent, model, res.Task, resumeID)
+	lc := res.Task.BeginVerify(opts.Stderr, verifierAgent.Name(), model, resumeID)
 	outcome, runErr := runVerifyLoop(ctx, opts, verifierAgent, workerAgent, model, resumeID, res)
-	lc.finishVerify(outcome, runErr)
+	lc.Finish(outcome, runErr)
 	if runErr != nil {
 		return runErr
 	}
 	switch outcome {
-	case outcomeSuccess:
+	case store.VerifyOutcomeSuccess:
 		fmt.Fprintf(opts.Stdout, "J: verified task %s\n", res.Task.ID)
-	case outcomeNoRetries:
+	case store.VerifyOutcomeNoRetries:
 		fmt.Fprintf(opts.Stdout, "J: verifier exhausted retries on task %s; status verify-done\n", res.Task.ID)
 	}
 	return nil
@@ -185,10 +184,10 @@ func Run(ctx context.Context, opts Options) (err error) {
 // can continue.
 func resolveTask(ctx context.Context, opts Options) (resolved, bool, error) {
 	if opts.TaskID != "" {
-		r, err := resolveByTaskID(opts, opts.TaskID)
+		r, err := resolveByTaskID(opts.TaskID)
 		return r, err == nil, err
 	}
-	tasks, err := listResolvableVerifyTasks(opts)
+	tasks, err := listResolvableVerifyTasks()
 	if err != nil {
 		return resolved{}, false, err
 	}
@@ -196,7 +195,7 @@ func resolveTask(ctx context.Context, opts Options) (resolved, bool, error) {
 		return resolved{}, false, errors.New("J: no tasks to verify; run `j plan` and `j work` first")
 	}
 	if id, ok := autoPickAllowed(tasks, allowedForVerify); ok {
-		r, err := resolveByTaskID(opts, id)
+		r, err := resolveByTaskID(id)
 		return r, err == nil, err
 	}
 	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to verify", tasks)
@@ -206,7 +205,7 @@ func resolveTask(ctx context.Context, opts Options) (resolved, bool, error) {
 	if !ok {
 		return resolved{}, false, nil
 	}
-	r, err := resolveByTaskID(opts, chosen)
+	r, err := resolveByTaskID(chosen)
 	return r, err == nil, err
 }
 
@@ -233,10 +232,10 @@ func autoPickAllowed(tasks []store.Task, allowed func(store.Task) bool) (string,
 // .j/tasks/<id>/{requirements,plan}.md (best-effort for
 // requirements). The id is trusted (it came from a previous
 // EnsureTaskDir call that staged the row).
-func resolveByTaskID(opts Options, id string) (resolved, error) {
-	s, ok := tasklog.OpenTaskLog(opts.Stderr)
-	if !ok {
-		return resolved{}, errors.New("verify: tasks db unavailable")
+func resolveByTaskID(id string) (resolved, error) {
+	s, err := openTasks()
+	if err != nil {
+		return resolved{}, err
 	}
 	defer func() { _ = s.Close() }()
 	task, err := s.GetTask(id)
@@ -270,10 +269,10 @@ func resolveByTaskID(opts Options, id string) (resolved, error) {
 // status; the downstream confirm prompt handles the wrong-status
 // case (per the re-verify contract). autoPickAllowed auto-picks
 // when exactly one row is in the verify allowlist.
-func listResolvableVerifyTasks(opts Options) ([]store.Task, error) {
-	s, ok := tasklog.OpenTaskLog(opts.Stderr)
-	if !ok {
-		return nil, errors.New("verify: tasks db unavailable")
+func listResolvableVerifyTasks() ([]store.Task, error) {
+	s, err := openTasks()
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = s.Close() }()
 	all, err := s.ListTasks()
@@ -282,6 +281,20 @@ func listResolvableVerifyTasks(opts Options) ([]store.Task, error) {
 	}
 	store.SortTasks(all)
 	return all, nil
+}
+
+// openTasks resolves `<cwd>/.j/tasks/list.db` and opens it. Read-path
+// failures surface as a single wrapped error per call.
+func openTasks() (*store.Store, error) {
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		return nil, fmt.Errorf("verify: tasks db: %w", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("verify: tasks db: %w", err)
+	}
+	return s, nil
 }
 
 // allowedForVerify is the natural status allowlist for `j verify`:
@@ -335,8 +348,8 @@ func confirmStatusOverride(ctx context.Context, opts Options, cmd string, t stor
 // the contract documented on agent.go without binding child
 // lifetime to ctx — see run.Spawn's commentary on why a true
 // fire-and-forget child cannot be safely killed by ctx cancellation.
-func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent codingagents.Agent, model, resumeID string, res resolved) (verifyOutcome, error) {
-	agentLogPath := filepath.Join(res.TaskDir, tasklog.AgentLogFileName)
+func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent codingagents.Agent, model, resumeID string, res resolved) (store.VerifyOutcome, error) {
+	agentLogPath := filepath.Join(res.TaskDir, store.AgentLogFileName)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
@@ -357,14 +370,14 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 		}
 		pid, err := verifierAgent.Verify(ctx, req)
 		if err != nil {
-			return outcomeNoRetries, err
+			return store.VerifyOutcomeNoRetries, err
 		}
 		if err := run.WaitForExit(ctx, pid); err != nil {
-			return outcomeNoRetries, err
+			return store.VerifyOutcomeNoRetries, err
 		}
 		verdict := ParseVerdict(res.FindingsPath)
 		if verdict == "PASS" {
-			return outcomeSuccess, nil
+			return store.VerifyOutcomeSuccess, nil
 		}
 		// On FAIL we still need to keep iterating: break out
 		// when the next loop turn would fall off the
@@ -385,13 +398,13 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 		}
 		workPID, err := workerAgent.Work(ctx, workReq)
 		if err != nil {
-			return outcomeNoRetries, err
+			return store.VerifyOutcomeNoRetries, err
 		}
 		if err := run.WaitForExit(ctx, workPID); err != nil {
-			return outcomeNoRetries, err
+			return store.VerifyOutcomeNoRetries, err
 		}
 	}
-	return outcomeNoRetries, nil
+	return store.VerifyOutcomeNoRetries, nil
 }
 
 // ReadVerdictForTask reads <cwd>/.j/tasks/<id>/verifier_findings.md

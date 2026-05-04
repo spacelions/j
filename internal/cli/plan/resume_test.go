@@ -457,7 +457,7 @@ func TestRunResume_ListUnavailable(t *testing.T) {
 		Agents: []codingagents.Agent{newScriptedAgent()},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "tasks database unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "tasks db") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -481,7 +481,7 @@ func TestRunResume_FromTaskUnavailable(t *testing.T) {
 		Agents: []codingagents.Agent{newScriptedAgent()},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "tasks database unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "tasks db") {
 		t.Fatalf("err = %v", err)
 	}
 }

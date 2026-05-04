@@ -64,9 +64,13 @@ coverage:
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+EnsureTaskDir[[:space:]]' \
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+RemoveTaskDir[[:space:]]' \
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+touchBoltFile[[:space:]]' \
-		-e 'internal/store/tasks\.go:[0-9]+:[[:space:]]+PutTask[[:space:]]' \
-		-e 'internal/cli/plan/tasklog\.go:[0-9]+:[[:space:]]+beginPlanTask[[:space:]]' \
-		-e 'internal/cli/tasklog/store\.go:[0-9]+:[[:space:]]+OpenTaskLog[[:space:]]' \
+		-e 'internal/store/task\.go:[0-9]+:[[:space:]]+PutTask[[:space:]]' \
+		-e 'internal/store/persist\.go:[0-9]+:[[:space:]]+PersistWarn[[:space:]]' \
+		-e 'internal/store/lifecycle_plan\.go:[0-9]+:[[:space:]]+BeginPlanReuse[[:space:]]' \
+		-e 'internal/store/lifecycle_verify\.go:[0-9]+:[[:space:]]+BeginVerifyResume[[:space:]]' \
+		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+openTasks[[:space:]]' \
+		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+openTasks[[:space:]]' \
+		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+openTasks[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+cursorResumeChatID[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+openSettingsStore[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+pickMarkdownTarget[[:space:]]' \
@@ -75,7 +79,6 @@ coverage:
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+PickPlanTask[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+PickFromFile[[:space:]]' \
 		-e 'internal/coding-agents/cursor/cursor\.go:[0-9]+:[[:space:]]+CreateChatID[[:space:]]' \
-		-e 'internal/cli/work/tasklog\.go:[0-9]+:[[:space:]]+beginWorkTask[[:space:]]' \
 		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+cursorResumeChatID[[:space:]]' \
 		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+openSettingsStore[[:space:]]' \
 		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+resolveByTaskID[[:space:]]' \
@@ -104,7 +107,6 @@ coverage:
 		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+pickTask[[:space:]]' \
 		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+choose[[:space:]]' \
 		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
-		-e 'internal/cli/verify/tasklog\.go:[0-9]+:[[:space:]]+beginVerifyTask[[:space:]]' \
 		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+Spawn[[:space:]]' \
 		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+SpawnIn[[:space:]]' \
 		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+IsAlive[[:space:]]' \

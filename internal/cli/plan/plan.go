@@ -17,7 +17,6 @@ import (
 
 
 	"github.com/spacelions/j/internal/cli/picker"
-	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
@@ -130,7 +129,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 	res, err := picker.PickSource(ctx, opts.UI,
 		[]picker.Source{picker.SourceMarkdown, picker.SourceLinear, picker.SourceTask},
-		func() ([]store.Task, error) { return listAllTasks(opts) },
+		listAllTasks,
 		errors.New("plan: no tasks to re-plan; run `j plan` first"))
 	if err != nil {
 		return err
@@ -157,7 +156,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 // place. The task row is mutated (status: planning → plan-done,
 // preserving original PlanBeginAt).
 func runReplanTask(ctx context.Context, opts Options, id string) error {
-	existing, err := loadTaskByID(opts, id)
+	existing, err := loadTaskByID(id)
 	if err != nil {
 		return err
 	}
@@ -186,12 +185,12 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 	if err != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
 	}
-	agentLogPath := filepath.Join(taskDir, tasklog.AgentLogFileName)
+	agentLogPath := filepath.Join(taskDir, store.AgentLogFileName)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
 	}
-	lc := beginPlanTaskReuse(opts, agent, model, existing, resumeID)
+	lc := existing.BeginPlanReuse(opts.Stderr, agent.Name(), model, resumeID)
 	pid, planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           requirementsPath,
 		Model:                  model,
@@ -206,14 +205,14 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 	if planErr == nil && pid > 0 {
 		if opts.WaitForCompletion {
 			if err := run.WaitForExit(ctx, pid); err != nil {
-				lc.finishPlan(err, "", "", requirementsPath)
+				lc.Finish(err, "", "", requirementsPath)
 				return err
 			}
 		} else {
-			lc.recordBackground(pid, agentLogPath)
+			lc.RecordBackground(pid, agentLogPath)
 			fmt.Fprintf(opts.Stdout,
 				"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
-				agent.Name(), pid, existing.ID, tasklog.AgentLogFileName)
+				agent.Name(), pid, existing.ID, store.AgentLogFileName)
 			return nil
 		}
 	}
@@ -231,7 +230,7 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 			fmt.Fprintf(opts.Stderr, "warning: read %s: %v\n", planPath, readErr)
 		}
 	}
-	lc.finishPlan(planErr, refinedReq, planMD, requirementsPath)
+	lc.Finish(planErr, refinedReq, planMD, requirementsPath)
 	if planErr != nil {
 		return planErr
 	}
@@ -244,10 +243,10 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 // handle before returning. fs.ErrNotExist is rewrapped into the
 // user-facing "task %q not found" so the caller does not need to
 // translate it.
-func loadTaskByID(opts Options, id string) (store.Task, error) {
-	s, ok := tasklog.OpenTaskLog(opts.Stderr)
-	if !ok {
-		return store.Task{}, errors.New("plan: tasks db unavailable")
+func loadTaskByID(id string) (store.Task, error) {
+	s, err := openTasks()
+	if err != nil {
+		return store.Task{}, err
 	}
 	defer func() { _ = s.Close() }()
 	task, err := s.GetTask(id)
@@ -265,10 +264,10 @@ func loadTaskByID(opts Options, id string) (store.Task, error) {
 // order users see in `j tasks`. The store is closed before the
 // slice is returned so the agent invocation downstream does not
 // contend on the bbolt file lock.
-func listAllTasks(opts Options) ([]store.Task, error) {
-	s, ok := tasklog.OpenTaskLog(opts.Stderr)
-	if !ok {
-		return nil, errors.New("plan: tasks db unavailable")
+func listAllTasks() ([]store.Task, error) {
+	s, err := openTasks()
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = s.Close() }()
 	all, err := s.ListTasks()
@@ -277,6 +276,22 @@ func listAllTasks(opts Options) ([]store.Task, error) {
 	}
 	store.SortTasks(all)
 	return all, nil
+}
+
+// openTasks resolves `<cwd>/.j/tasks/list.db` and opens it. Read-path
+// failures surface as a single wrapped error per call (vs. the legacy
+// `warning: tasks db: ...` line plus a hard error). The caller owns
+// the returned store and must Close it.
+func openTasks() (*store.Store, error) {
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		return nil, fmt.Errorf("plan: tasks db: %w", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("plan: tasks db: %w", err)
+	}
+	return s, nil
 }
 
 // allowedForReplan is the natural status allowlist for the re-plan
@@ -343,12 +358,12 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 	if err != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
 	}
-	agentLogPath := filepath.Join(taskDir, tasklog.AgentLogFileName)
+	agentLogPath := filepath.Join(taskDir, store.AgentLogFileName)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
 	}
-	lc := beginPlanTask(opts, agent, model, taskID, target, string(body), resumeID)
+	lc := store.NewPlanTask(opts.Stderr, agent.Name(), model, taskID, target, string(body), resumeID)
 	pid, planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  model,
@@ -363,14 +378,14 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 	if planErr == nil && pid > 0 {
 		if opts.WaitForCompletion {
 			if err := run.WaitForExit(ctx, pid); err != nil {
-				lc.finishPlan(err, "", "", target)
+				lc.Finish(err, "", "", target)
 				return err
 			}
 		} else {
-			lc.recordBackground(pid, agentLogPath)
+			lc.RecordBackground(pid, agentLogPath)
 			fmt.Fprintf(opts.Stdout,
 				"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
-				agent.Name(), pid, taskID, tasklog.AgentLogFileName)
+				agent.Name(), pid, taskID, store.AgentLogFileName)
 			return nil
 		}
 	}
@@ -388,7 +403,7 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 			fmt.Fprintf(opts.Stderr, "warning: read %s: %v\n", planPath, readErr)
 		}
 	}
-	lc.finishPlan(planErr, refinedReq, planMD, target)
+	lc.Finish(planErr, refinedReq, planMD, target)
 	if planErr != nil {
 		return planErr
 	}

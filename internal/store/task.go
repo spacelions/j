@@ -6,14 +6,21 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
 	bolt "go.etcd.io/bbolt"
 )
+
+// AgentLogFileName is the per-task file that captures stdout/stderr
+// of a fire-and-forget headless coding-agent child. It lives at
+// `<cwd>/.j/tasks/<id>/agent.log` and is written to each task row's
+// AgentLogPath so `j tasks` and the user can find it later. All
+// phases (plan / work / verify) share this filename so the reaper in
+// `j tasks` can surface the log regardless of which command spawned
+// the child.
+const AgentLogFileName = "agent.log"
 
 // BucketTasks is the bucket inside the per-project task log DB
 // (`<cwd>/.j/tasks`) that holds JSON-encoded Task values keyed by
@@ -31,12 +38,6 @@ const VerifierPlanFileName = "verifier_plan.md"
 // markdown stored under `<cwd>/.j/tasks/<id>/`. Its last non-empty
 // line is parsed by the orchestrator into a PASS/FAIL verdict.
 const VerifierFindingsFileName = "verifier_findings.md"
-
-// summaryMaxRunes is the upper bound applied to Task.Summary in
-// SummarizeMarkdown. Eighty runes fits a typical terminal column even
-// after the ID/status/tool/model prefix, and pinning the value keeps
-// the truncation behaviour tested in one place.
-const summaryMaxRunes = 80
 
 // TaskStatus is the typed string used in Task.Status. Only the values
 // listed below are valid; Valid() is the allowlist guard used by
@@ -250,157 +251,3 @@ func (s *Store) ListTasks() ([]Task, error) {
 	return out, nil
 }
 
-// SortTasks orders tasks the way `j tasks` displays them:
-//
-//  1. Active states (planning, working, verifying, help) come first,
-//     among themselves sorted by ID ascending. ID is time-sortable so
-//     this is effectively "earliest started first" with a stable
-//     tiebreak.
-//  2. Inactive states (planned, done, plus any future non-active
-//     status) come after, sorted by done_at descending. When done_at
-//     is missing we fall back to work_end_at, then plan_end_at, then
-//     finally to ID descending so newer-started entries float up.
-//
-// The function mutates tasks in place and returns nothing because the
-// receiver convention here matches sort.Slice's existing call sites.
-func SortTasks(tasks []Task) {
-	sort.SliceStable(tasks, func(i, j int) bool {
-		ai, aj := taskIsActive(tasks[i].Status), taskIsActive(tasks[j].Status)
-		if ai != aj {
-			return ai
-		}
-		if ai {
-			return tasks[i].ID < tasks[j].ID
-		}
-		ti, tj := taskFallbackTime(tasks[i]), taskFallbackTime(tasks[j])
-		if !ti.Equal(tj) {
-			return ti.After(tj)
-		}
-		return tasks[i].ID > tasks[j].ID
-	})
-}
-
-// taskIsActive returns true for the four "still in flight" statuses.
-// Anything else (plan-done, work-done, verify-done, completed, plus
-// any future inactive state) is treated as inactive by SortTasks.
-func taskIsActive(s TaskStatus) bool {
-	switch s {
-	case StatusPlanning, StatusWorking, StatusVerifying, StatusHelp:
-		return true
-	}
-	return false
-}
-
-// taskFallbackTime returns the timestamp SortTasks compares for
-// inactive tasks. The cascade reflects how a task's lifecycle ends:
-// completed tasks have done_at; verify-done tasks only have
-// verify_end_at; work-done tasks only have work_end_at; plan-done
-// tasks only have plan_end_at; anything older falls through to the
-// zero time so ID order takes over.
-func taskFallbackTime(t Task) time.Time {
-	switch {
-	case t.DoneAt != nil:
-		return *t.DoneAt
-	case t.VerifyEndAt != nil:
-		return *t.VerifyEndAt
-	case t.WorkEndAt != nil:
-		return *t.WorkEndAt
-	case t.PlanEndAt != nil:
-		return *t.PlanEndAt
-	}
-	return time.Time{}
-}
-
-// SummarizeMarkdown derives Task.Summary from a markdown body: the
-// first non-empty line, with leading "#" / space markers stripped and
-// the result truncated to summaryMaxRunes runes. Empty input yields
-// an empty summary so callers can decide whether to substitute a
-// placeholder.
-func SummarizeMarkdown(body string) string {
-	for _, raw := range strings.Split(body, "\n") {
-		line := strings.TrimSpace(raw)
-		if line == "" {
-			continue
-		}
-		line = strings.TrimLeft(line, "# ")
-		return truncateRunes(line, summaryMaxRunes)
-	}
-	return ""
-}
-
-// truncateRunes returns s if it is at most max runes long, otherwise
-// the first max runes. Operating on runes (not bytes) keeps multibyte
-// UTF-8 input from being cut mid-codepoint.
-func truncateRunes(s string, max int) string {
-	runes := []rune(s)
-	if len(runes) <= max {
-		return s
-	}
-	return string(runes[:max])
-}
-
-// worktreeSlugMaxRunes bounds each slug segment (project and task)
-// in WorktreeNameFor. The cap keeps the resulting worktree name
-// short enough to be a usable directory / branch component without
-// getting in the way of `git worktree list` output.
-const worktreeSlugMaxRunes = 48
-
-// WorktreeNameFor returns the deterministic, human-readable worktree
-// name for t inside project. The result is `<project-slug>-<task-slug>`,
-// where each component is slugify'd (lowercase, non-[a-z0-9] runs
-// collapsed to single dashes, edges trimmed, clipped to
-// worktreeSlugMaxRunes runes). The task slug is derived from
-// t.Summary when non-empty and falls back to the lowercased
-// t.ID (a 26-char Crockford base32 ULID) so pre-summary rows still
-// produce a valid name. An empty project slug yields just the task
-// slug so tests that run outside a recognisable project directory
-// still get a meaningful value.
-//
-// Examples:
-//
-//   - project "j", summary "Drop the legacy tasks file"
-//     -> "j-drop-the-legacy-tasks-file"
-//   - project "j", empty summary, id "01KQ..."
-//     -> "j-01kq..."
-func WorktreeNameFor(project string, t Task) string {
-	projectSlug := slugify(project, worktreeSlugMaxRunes)
-	taskSlug := slugify(t.Summary, worktreeSlugMaxRunes)
-	if taskSlug == "" {
-		// Ulid ids are always alphanumeric so slugify is effectively
-		// a lowercase here; running them through slugify anyway means
-		// an unexpected non-alphanumeric rune in t.ID still produces
-		// a clean slug rather than leaking raw punctuation.
-		taskSlug = slugify(t.ID, worktreeSlugMaxRunes)
-	}
-	if projectSlug == "" {
-		return taskSlug
-	}
-	if taskSlug == "" {
-		return projectSlug
-	}
-	return projectSlug + "-" + taskSlug
-}
-
-// slugify lowercases s, replaces every run of non-[a-z0-9] runes with
-// a single `-`, trims leading/trailing `-`, and clips the result to
-// max runes. An empty or pure-separator input yields "" so callers
-// can fall back to a secondary id.
-func slugify(s string, max int) string {
-	s = strings.ToLower(s)
-	var b strings.Builder
-	b.Grow(len(s))
-	prevDash := true
-	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-			prevDash = false
-			continue
-		}
-		if !prevDash {
-			b.WriteByte('-')
-			prevDash = true
-		}
-	}
-	out := strings.TrimRight(b.String(), "-")
-	return truncateRunes(out, max)
-}

@@ -18,7 +18,6 @@ import (
 
 
 	"github.com/spacelions/j/internal/cli/picker"
-	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
@@ -61,9 +60,9 @@ type Options struct {
 	Model string
 
 	// WaitForCompletion mirrors plan.Options.WaitForCompletion: blocks
-	// on a returned non-zero PID and runs finishWork synchronously so
-	// the orchestrator chain can advance to the verifier only after
-	// the worker exits.
+	// on a returned non-zero PID and runs the work lifecycle's Finish
+	// synchronously so the orchestrator chain can advance to the
+	// verifier only after the worker exits.
 	WaitForCompletion bool
 
 	Stdin  io.Reader
@@ -146,7 +145,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
 	}
 
-	var lc *workLifecycle
+	var lc *store.WorkLifecycle
 	if res.Existing != nil {
 		proceed, confirmErr := confirmStatusOverride(ctx, opts, "work", *res.Existing, allowedForWork)
 		if confirmErr != nil {
@@ -155,13 +154,13 @@ func Run(ctx context.Context, opts Options) (err error) {
 		if !proceed {
 			return nil
 		}
-		lc = beginWorkTaskReuse(opts, agent, model, *res.Existing, resumeID)
+		lc = res.Existing.BeginWorkReuse(opts.Stderr, agent.Name(), model, resumeID)
 	} else {
-		lc = beginWorkTaskNew(opts, agent, model, res.NewTaskID, res.PlanPath, res.Requirement, res.Body, resumeID)
+		lc = store.NewWorkTask(opts.Stderr, agent.Name(), model, res.NewTaskID, res.PlanPath, res.Requirement, res.Body, resumeID)
 	}
 
 	taskID := workTaskID(res)
-	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), tasklog.AgentLogFileName)
+	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), store.AgentLogFileName)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
@@ -171,25 +170,25 @@ func Run(ctx context.Context, opts Options) (err error) {
 		Model:        model,
 		Interactive:  opts.Interactive,
 		ResumeChatID: resumeID,
-		Worktree:     lc.task.Worktree,
+		Worktree:     lc.Task().Worktree,
 		AgentLogPath: agentLogPath,
 		MustRead:     mustReadFiles,
 	})
 	if workErr == nil && pid > 0 {
 		if opts.WaitForCompletion {
 			if err := run.WaitForExit(ctx, pid); err != nil {
-				lc.finishWork(err)
+				lc.Finish(err)
 				return err
 			}
 		} else {
-			lc.recordBackground(pid, agentLogPath)
+			lc.RecordBackground(pid, agentLogPath)
 			fmt.Fprintf(opts.Stdout,
 				"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
-				agent.Name(), pid, taskID, tasklog.AgentLogFileName)
+				agent.Name(), pid, taskID, store.AgentLogFileName)
 			return nil
 		}
 	}
-	lc.finishWork(workErr)
+	lc.Finish(workErr)
 	if workErr != nil {
 		return workErr
 	}
@@ -239,7 +238,7 @@ func resolvePlan(ctx context.Context, opts Options) (resolved, bool, error) {
 		r, err := resolveFromFile(opts, opts.FromFile)
 		return r, err == nil, err
 	}
-	tasks, err := listResolvableWorkTasks(opts)
+	tasks, err := listResolvableWorkTasks()
 	if err != nil {
 		return resolved{}, false, err
 	}
@@ -292,9 +291,9 @@ func autoPickAllowed(tasks []store.Task, allowed func(store.Task) bool) (string,
 // the row) so we derive paths via filepath.Join instead of round-
 // tripping through the path helpers and their Getwd error returns.
 func resolveByTaskID(opts Options, id string) (resolved, error) {
-	s, ok := tasklog.OpenTaskLog(opts.Stderr)
-	if !ok {
-		return resolved{}, errors.New("work: tasks db unavailable")
+	s, err := openTasks()
+	if err != nil {
+		return resolved{}, err
 	}
 	defer func() { _ = s.Close() }()
 	task, err := s.GetTask(id)
@@ -339,7 +338,7 @@ func resolveFromFile(opts Options, raw string) (resolved, error) {
 	if err != nil {
 		return resolved{}, fmt.Errorf("work: read plan: %w", err)
 	}
-	requirement := tasklog.ReadRequirementSidecar(src)
+	requirement := store.ReadRequirementSidecar(src)
 
 	id := store.NewTaskID()
 	dir, err := store.EnsureTaskDir(id)
@@ -369,10 +368,10 @@ func resolveFromFile(opts Options, raw string) (resolved, error) {
 // status; the downstream confirm prompt handles the wrong-status
 // case (per the re-plan / re-work contract). autoPickAllowed
 // auto-picks when exactly one row is in the work allowlist.
-func listResolvableWorkTasks(opts Options) ([]store.Task, error) {
-	s, ok := tasklog.OpenTaskLog(opts.Stderr)
-	if !ok {
-		return nil, errors.New("work: tasks db unavailable")
+func listResolvableWorkTasks() ([]store.Task, error) {
+	s, err := openTasks()
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = s.Close() }()
 	all, err := s.ListTasks()
@@ -381,6 +380,21 @@ func listResolvableWorkTasks(opts Options) ([]store.Task, error) {
 	}
 	store.SortTasks(all)
 	return all, nil
+}
+
+// openTasks resolves `<cwd>/.j/tasks/list.db` and opens it. Read-path
+// failures surface as a single wrapped error per call. The caller
+// owns the returned store and must Close it.
+func openTasks() (*store.Store, error) {
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		return nil, fmt.Errorf("work: tasks db: %w", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("work: tasks db: %w", err)
+	}
+	return s, nil
 }
 
 // allowedForWork is the natural status allowlist for `j work`:
