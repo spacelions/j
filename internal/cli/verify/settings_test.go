@@ -136,8 +136,8 @@ func TestRun_FromStore_NilStore_LazyOpenSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if ui.toolCalls != 0 || ui.modelCalls != 0 {
-		t.Fatalf("UI prompts should be skipped on lazy-open success: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	if ui.ToolCalls != 0 || ui.ModelCalls != 0 {
+		t.Fatalf("UI prompts should be skipped on lazy-open success: tool=%d model=%d", ui.ToolCalls, ui.ModelCalls)
 	}
 	if agent.verifiedReqs[0].Model != "gpt-5" {
 		t.Fatalf("model = %q, want gpt-5", agent.verifiedReqs[0].Model)

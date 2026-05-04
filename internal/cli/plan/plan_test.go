@@ -114,16 +114,14 @@ exit 1
 // the option slice the orchestrator offered so tests can assert the
 // scan + filter contract end-to-end.
 type scriptedUI struct {
+	testutil.SelectorFake
+
 	source             picker.Source
 	pickedMarkdownPath string
-	tool               string
-	model              string
 	pickedID           string
 	replanID           string
 	sourceErr          error
 	pickedMarkdownErr  error
-	toolErr            error
-	modelErr           error
 	pickErr            error
 	replanErr          error
 	confirm            bool
@@ -131,16 +129,9 @@ type scriptedUI struct {
 
 	sourceCalls         int
 	pickedMarkdownCalls int
-	toolCalls           int
-	modelCalls          int
 	pickCalls           int
 	replanCalls         int
 	confirmCalls        int
-
-	// toolHook, when non-nil, runs at the start of SelectTool so
-	// tests can mutate shared state (e.g. close the injected store)
-	// between Pick and the post-Pick persist step.
-	toolHook func()
 
 	pickedTasks   []store.Task
 	replanTasks   []store.Task
@@ -163,31 +154,6 @@ func (s *scriptedUI) PickMarkdownInCwd(_ context.Context) (string, error) {
 		return "", s.pickedMarkdownErr
 	}
 	return s.pickedMarkdownPath, nil
-}
-
-func (s *scriptedUI) SelectTool(_ context.Context, options []string) (string, error) {
-	s.toolCalls++
-	if s.toolHook != nil {
-		s.toolHook()
-	}
-	if s.toolErr != nil {
-		return "", s.toolErr
-	}
-	if s.tool != "" {
-		return s.tool, nil
-	}
-	return options[0], nil
-}
-
-func (s *scriptedUI) SelectModel(_ context.Context, options []string) (string, error) {
-	s.modelCalls++
-	if s.modelErr != nil {
-		return "", s.modelErr
-	}
-	if s.model != "" {
-		return s.model, nil
-	}
-	return options[0], nil
 }
 
 // PickTask dispatches by title prefix so the same scripted UI can
@@ -384,8 +350,8 @@ func TestRun_Success_WithFlag(t *testing.T) {
 	if ui.pickedMarkdownCalls != 0 {
 		t.Fatalf("PickFromFile called %d times, want 0", ui.pickedMarkdownCalls)
 	}
-	if ui.toolCalls != 1 || ui.modelCalls != 1 {
-		t.Fatalf("tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	if ui.ToolCalls != 1 || ui.ModelCalls != 1 {
+		t.Fatalf("tool=%d model=%d", ui.ToolCalls, ui.ModelCalls)
 	}
 	if agent.listed != 1 || agent.checked != 1 || agent.planned != 1 {
 		t.Fatalf("agent calls listed=%d checked=%d planned=%d", agent.listed, agent.checked, agent.planned)
@@ -755,7 +721,7 @@ func TestRun_SelectModelError(t *testing.T) {
 	mustInit(t)
 	target := writeFromFile(t, "x")
 	agent := newScriptedAgent()
-	ui := &scriptedUI{modelErr: errors.New("model boom")}
+	ui := &scriptedUI{SelectorFake: testutil.SelectorFake{ModelErr: errors.New("model boom")}}
 	err := Run(context.Background(), Options{
 		FromFile: target,
 		Stdout:   io.Discard,
@@ -810,8 +776,8 @@ func TestRun_ListModelsError_StopsBeforeUI(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if ui.modelCalls != 0 {
-		t.Fatalf("SelectModel called despite list error: %d", ui.modelCalls)
+	if ui.ModelCalls != 0 {
+		t.Fatalf("SelectModel called despite list error: %d", ui.ModelCalls)
 	}
 	if agent.checked != 0 || agent.planned != 0 {
 		t.Fatal("login/plan should not have been invoked")
@@ -857,7 +823,7 @@ func TestRun_UICancelled(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{agent},
-		UI:       &scriptedUI{toolErr: huh.ErrUserAborted},
+		UI:       &scriptedUI{SelectorFake: testutil.SelectorFake{ToolErr: huh.ErrUserAborted}},
 	})
 	if err != nil {
 		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
@@ -924,7 +890,7 @@ func TestRun_UnknownToolFromUI(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{agent},
-		UI:       &scriptedUI{tool: "codex"},
+		UI:       &scriptedUI{SelectorFake: testutil.SelectorFake{Tool: "codex"}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
 		t.Fatalf("err = %v", err)
@@ -1017,7 +983,7 @@ func TestRun_SelectionCancelled_DoesNotPersist(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{agent},
-		UI:       &scriptedUI{toolErr: huh.ErrUserAborted},
+		UI:       &scriptedUI{SelectorFake: testutil.SelectorFake{ToolErr: huh.ErrUserAborted}},
 		Store:    s,
 	})
 	if err != nil {
@@ -1042,7 +1008,7 @@ func TestRun_StoreWriteError_WarnsAndContinues(t *testing.T) {
 	target := writeFromFile(t, "body")
 	agent := newScriptedAgent()
 	var stderr bytes.Buffer
-	ui := &scriptedUI{toolHook: func() { _ = s.Close() }}
+	ui := &scriptedUI{SelectorFake: testutil.SelectorFake{ToolHook: func() { _ = s.Close() }}}
 
 	err := Run(context.Background(), Options{
 		FromFile: target,
@@ -1161,8 +1127,8 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if ui.toolCalls != 0 || ui.modelCalls != 0 {
-		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	if ui.ToolCalls != 0 || ui.ModelCalls != 0 {
+		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.ToolCalls, ui.ModelCalls)
 	}
 	if agent.lastReq.Model != "opus" {
 		t.Fatalf("model = %q, want opus", agent.lastReq.Model)

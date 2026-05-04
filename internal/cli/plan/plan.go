@@ -143,19 +143,10 @@ func Run(ctx context.Context, opts Options) (err error) {
 		return runMarkdown(ctx, opts, opts.FromFile)
 	}
 
-	listTasks := func() ([]store.Task, error) {
-		tasks, err := listAllTasks(opts)
-		if err != nil {
-			return nil, err
-		}
-		if len(tasks) == 0 {
-			return nil, errors.New("plan: no tasks to re-plan; run `j plan` first")
-		}
-		return tasks, nil
-	}
 	res, err := picker.PickSource(ctx, opts.UI,
 		[]picker.Source{picker.SourceMarkdown, picker.SourceLinear, picker.SourceTask},
-		listTasks)
+		func() ([]store.Task, error) { return listAllTasks(opts) },
+		errors.New("plan: no tasks to re-plan; run `j plan` first"))
 	if err != nil {
 		return err
 	}

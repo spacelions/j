@@ -77,17 +77,11 @@ func (p *Picker) SelectSource(ctx context.Context, allowed []Source) (Source, er
 // listTasks=nil. A nil listTasks reached on the task branch surfaces
 // a misuse error so the bug is loud.
 //
-// The cli's body reduces to:
-//
-//	res, err := picker.PickSource(ctx, ui, allowed, listTasks)
-//	if err != nil { return err }
-//	if res.Cancelled { return nil }
-//	switch res.Source {
-//	case picker.SourceMarkdown: ...
-//	case picker.SourceLinear:   ...
-//	case picker.SourceTask:     ...
-//	}
-func PickSource(ctx context.Context, ui SourceUI, allowed []Source, listTasks func() ([]store.Task, error)) (SourceResult, error) {
+// emptyTasksErr is returned when the SourceTask branch fires and
+// listTasks returns no rows. Callers supply a flow-specific message
+// (e.g. "plan: no tasks to re-plan; run `j plan` first"). Pass nil
+// to fall back to a generic "picker: no tasks available".
+func PickSource(ctx context.Context, ui SourceUI, allowed []Source, listTasks func() ([]store.Task, error), emptyTasksErr error) (SourceResult, error) {
 	src, err := ui.SelectSource(ctx, allowed)
 	if err != nil {
 		return SourceResult{}, err
@@ -110,6 +104,9 @@ func PickSource(ctx context.Context, ui SourceUI, allowed []Source, listTasks fu
 			return SourceResult{}, err
 		}
 		if len(tasks) == 0 {
+			if emptyTasksErr != nil {
+				return SourceResult{}, emptyTasksErr
+			}
 			return SourceResult{}, errors.New("picker: no tasks available")
 		}
 		id, ok, err := ui.PickTask(ctx, "Select a task to re-plan", tasks)

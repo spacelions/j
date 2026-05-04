@@ -168,19 +168,10 @@ func resolveStartTarget(ctx context.Context, opts StartOptions) (startTarget, er
 	if opts.FromFile != "" {
 		return newTargetFromMarkdown(opts.FromFile)
 	}
-	listTasks := func() ([]store.Task, error) {
-		tasks, err := listAllTasks(opts.Stderr)
-		if err != nil {
-			return nil, err
-		}
-		if len(tasks) == 0 {
-			return nil, errors.New("tasks: no tasks to re-plan; run `j tasks start --from-file <md>` first")
-		}
-		return tasks, nil
-	}
 	res, err := picker.PickSource(ctx, opts.UI,
 		[]picker.Source{picker.SourceMarkdown, picker.SourceLinear, picker.SourceTask},
-		listTasks)
+		func() ([]store.Task, error) { return listAllTasks(opts.Stderr) },
+		errors.New("tasks: no tasks to re-plan; run `j tasks start --from-file <md>` first"))
 	if err != nil {
 		return startTarget{}, err
 	}

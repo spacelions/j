@@ -19,6 +19,7 @@ import (
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // writeStartFile writes a markdown task description into the test's
@@ -151,7 +152,7 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	mustInit(t)
 	target := writeStartFile(t, "# task\nbody line")
 	stub := newScriptedAgent()
-	sel := &scriptedSelector{tool: "cursor", model: "sonnet-4"}
+	sel := &testutil.SelectorFake{Tool: "cursor", Model: "sonnet-4"}
 	binary := noopJBinary(t)
 	var stdout, stderr bytes.Buffer
 
@@ -173,8 +174,8 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	if elapsed > 2*time.Second {
 		t.Fatalf("RunStart took %v, want <2s for the detached spawn", elapsed)
 	}
-	if sel.toolCalls != 3 || sel.modelCalls != 3 {
-		t.Fatalf("selector calls = (%d, %d), want (3, 3)", sel.toolCalls, sel.modelCalls)
+	if sel.ToolCalls != 3 || sel.ModelCalls != 3 {
+		t.Fatalf("selector calls = (%d, %d), want (3, 3)", sel.ToolCalls, sel.ModelCalls)
 	}
 	if !strings.Contains(stdout.String(), "task ") || !strings.Contains(stdout.String(), "tail -f") {
 		t.Fatalf("stdout should announce the task: %q", stdout.String())
@@ -226,7 +227,7 @@ func TestRunStart_PrePopulatedSkipsPrompts(t *testing.T) {
 		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
 	}
 	target := writeStartFile(t, "# task\nbody")
-	sel := &scriptedSelector{}
+	sel := &testutil.SelectorFake{}
 	binary := noopJBinary(t)
 
 	err := RunStart(context.Background(), StartOptions{
@@ -242,8 +243,8 @@ func TestRunStart_PrePopulatedSkipsPrompts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunStart: %v", err)
 	}
-	if sel.toolCalls != 0 || sel.modelCalls != 0 {
-		t.Fatalf("selector calls = (%d, %d), want (0, 0) when buckets are populated", sel.toolCalls, sel.modelCalls)
+	if sel.ToolCalls != 0 || sel.ModelCalls != 0 {
+		t.Fatalf("selector calls = (%d, %d), want (0, 0) when buckets are populated", sel.ToolCalls, sel.ModelCalls)
 	}
 }
 
@@ -285,7 +286,7 @@ func TestRunStart_NoFromFile_PicksMarkdown(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
-		Selector: &scriptedSelector{},
+		Selector: &testutil.SelectorFake{},
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -340,7 +341,7 @@ func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
-		Selector: &scriptedSelector{},
+		Selector: &testutil.SelectorFake{},
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -389,7 +390,7 @@ func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
 		Stdout:   &stdout,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
-		Selector: &scriptedSelector{},
+		Selector: &testutil.SelectorFake{},
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -424,7 +425,7 @@ func TestRunStart_NoFromFile_NoExistingTasks(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
-		Selector: &scriptedSelector{},
+		Selector: &testutil.SelectorFake{},
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -459,7 +460,7 @@ func TestRunStart_NoFromFile_TaskPickerCancelled(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
-		Selector: &scriptedSelector{},
+		Selector: &testutil.SelectorFake{},
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -478,7 +479,7 @@ func TestRunStart_SelectorAbortIsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	target := writeStartFile(t, "# task\nbody")
-	sel := &scriptedSelector{toolErr: huh.ErrUserAborted}
+	sel := &testutil.SelectorFake{ToolErr: huh.ErrUserAborted}
 	if err := RunStart(context.Background(), StartOptions{
 		FromFile: target,
 		Stdin:    strings.NewReader(""),
@@ -511,7 +512,7 @@ func TestRunStart_ResolveSourceFails(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
-		Selector: &scriptedSelector{},
+		Selector: &testutil.SelectorFake{},
 		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
 	})
@@ -534,7 +535,7 @@ func TestRunStart_SpawnFails(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
-		Selector: &scriptedSelector{},
+		Selector: &testutil.SelectorFake{},
 		UI:       &scriptedStartUI{},
 		JBinary:  "/no/such/binary-xyzzy",
 	})
@@ -592,7 +593,7 @@ func TestRunStart_BucketInteractiveUntouched(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
-		Selector: &scriptedSelector{},
+		Selector: &testutil.SelectorFake{},
 		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
 	}); err != nil {
@@ -723,7 +724,7 @@ func TestRunStart_ContextCancellable(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{newScriptedAgent()},
-		Selector: &scriptedSelector{},
+		Selector: &testutil.SelectorFake{},
 		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
 	})

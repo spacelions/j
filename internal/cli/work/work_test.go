@@ -103,30 +103,21 @@ func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
 // scriptedUI returns predetermined answers for each prompt and tracks
 // how many times each prompt was invoked.
 type scriptedUI struct {
+	testutil.SelectorFake
+
 	fromFile     string
 	pickedID     string
 	resumePicked string
-	tool         string
-	model        string
 	askErr       error
 	pickErr      error
 	resumeErr    error
-	toolErr      error
-	modelErr     error
 	confirm      bool
 	confirmErr   error
 
 	askCalls        int
 	pickCalls       int
 	pickResumeCalls int
-	toolCalls       int
-	modelCalls      int
 	confirmCalls    int
-
-	// toolHook, when non-nil, runs at the start of SelectTool so
-	// tests can mutate shared state (e.g. close the injected store)
-	// between Pick and the post-Pick persist step.
-	toolHook func()
 
 	pickedTasks      []store.Task
 	pickResumedTasks []store.Task
@@ -180,31 +171,6 @@ func (s *scriptedUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, statu
 		return false, s.confirmErr
 	}
 	return s.confirm, nil
-}
-
-func (s *scriptedUI) SelectTool(_ context.Context, options []string) (string, error) {
-	s.toolCalls++
-	if s.toolHook != nil {
-		s.toolHook()
-	}
-	if s.toolErr != nil {
-		return "", s.toolErr
-	}
-	if s.tool != "" {
-		return s.tool, nil
-	}
-	return options[0], nil
-}
-
-func (s *scriptedUI) SelectModel(_ context.Context, options []string) (string, error) {
-	s.modelCalls++
-	if s.modelErr != nil {
-		return "", s.modelErr
-	}
-	if s.model != "" {
-		return s.model, nil
-	}
-	return options[0], nil
 }
 
 // scriptedAgent stands in for any codingagents.Agent in tests. Plan is
@@ -1047,8 +1013,8 @@ func TestRun_ListModelsError_StopsBeforeUI(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if ui.modelCalls != 0 {
-		t.Fatalf("SelectModel called despite list error: %d", ui.modelCalls)
+	if ui.ModelCalls != 0 {
+		t.Fatalf("SelectModel called despite list error: %d", ui.ModelCalls)
 	}
 	if agent.checked != 0 || agent.worked != 0 {
 		t.Fatal("login/work should not have been invoked")
@@ -1060,7 +1026,7 @@ func TestRun_SelectModelError(t *testing.T) {
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "x", "")
 	agent := newScriptedAgent()
-	ui := &scriptedUI{modelErr: errors.New("model boom")}
+	ui := &scriptedUI{SelectorFake: testutil.SelectorFake{ModelErr: errors.New("model boom")}}
 	err := Run(context.Background(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
@@ -1114,7 +1080,7 @@ func TestRun_UICancelled(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{toolErr: huh.ErrUserAborted},
+		UI:     &scriptedUI{SelectorFake: testutil.SelectorFake{ToolErr: huh.ErrUserAborted}},
 	})
 	if err != nil {
 		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
@@ -1189,7 +1155,7 @@ func TestRun_UnknownToolFromUI(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{tool: "codex"},
+		UI:     &scriptedUI{SelectorFake: testutil.SelectorFake{Tool: "codex"}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
 		t.Fatalf("err = %v", err)
@@ -1279,7 +1245,7 @@ func TestRun_SelectionCancelled_DoesNotPersist(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{toolErr: huh.ErrUserAborted},
+		UI:     &scriptedUI{SelectorFake: testutil.SelectorFake{ToolErr: huh.ErrUserAborted}},
 		Store:  s,
 	})
 	if err != nil {
@@ -1303,7 +1269,7 @@ func TestRun_StoreWriteError_WarnsAndContinues(t *testing.T) {
 	id := seedPlanDoneTask(t, "x", "body", "")
 	agent := newScriptedAgent()
 	var stderr bytes.Buffer
-	ui := &scriptedUI{toolHook: func() { _ = s.Close() }}
+	ui := &scriptedUI{SelectorFake: testutil.SelectorFake{ToolHook: func() { _ = s.Close() }}}
 
 	err := Run(context.Background(), Options{
 		TaskID: id,
@@ -1374,8 +1340,8 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if ui.toolCalls != 0 || ui.modelCalls != 0 {
-		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	if ui.ToolCalls != 0 || ui.ModelCalls != 0 {
+		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.ToolCalls, ui.ModelCalls)
 	}
 	if agent.lastReq.Model != "opus" {
 		t.Fatalf("model = %q, want opus", agent.lastReq.Model)
