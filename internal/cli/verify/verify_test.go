@@ -124,16 +124,13 @@ func readTasks(t *testing.T) []store.Task {
 type scriptedUI struct {
 	testutil.SelectorFake
 
-	fromFile     string
 	pickedID     string
 	resumePicked string
-	askErr       error
 	pickErr      error
 	resumeErr    error
 	confirm      bool
 	confirmErr   error
 
-	askCalls        int
 	pickCalls       int
 	pickResumeCalls int
 	confirmCalls    int
@@ -143,14 +140,6 @@ type scriptedUI struct {
 	confirmCmd       string
 	confirmTaskID    string
 	confirmStatus    string
-}
-
-func (s *scriptedUI) AskFromFile(context.Context) (string, error) {
-	s.askCalls++
-	if s.askErr != nil {
-		return "", s.askErr
-	}
-	return s.fromFile, nil
 }
 
 // PickTask dispatches by title prefix so the same scripted UI can
@@ -1653,7 +1642,7 @@ type liveChildAgent struct {
 	failFindings string
 }
 
-func (a *liveChildAgent) Name() string                                  { return "cursor" }
+func (a *liveChildAgent) Name() string                                 { return "cursor" }
 func (a *liveChildAgent) ListModels(context.Context) ([]string, error) { return []string{"m"}, nil }
 func (a *liveChildAgent) CheckLogin(context.Context) error             { return nil }
 func (a *liveChildAgent) NewResumeID(context.Context) (string, error)  { return "", nil }
@@ -1760,4 +1749,3 @@ func TestRunVerifyLoop_WorkerWaitCtxCancelled(t *testing.T) {
 		t.Fatalf("verify calls = %d, want 1 (worker waits should fail before turn 2)", len(verifier.verifiedReqs))
 	}
 }
-

@@ -5,17 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strconv"
 
 	"github.com/charmbracelet/huh"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/picker"
+	"github.com/spacelions/j/internal/cli/preflight"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/coding-agents/claude"
+	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
-	"github.com/spacelions/j/internal/util/mdfile"
 	"github.com/spacelions/j/internal/util/run"
 )
 
@@ -66,25 +69,39 @@ type StartOptions struct {
 	PlanRequiresApproval *bool
 }
 
-// startTarget is the resolved outcome of resolveStartTarget: which
-// task to chain against, plus any per-source side-information the
-// seed step needs.
-type startTarget struct {
-	// taskID is the task this RunStart will spawn the orchestrator
-	// against. Empty means "exit cleanly with no spawn" (linear
-	// branch or aborted picker).
-	taskID string
-	// isNew distinguishes a freshly minted task (markdown source,
-	// requirements.md needs writing, fresh row needs persisting)
-	// from an existing one (re-plan source, no file writes, just
-	// stamp PID + AgentLogPath onto the existing row).
-	isNew bool
-	// body is the markdown bytes to write to <task-dir>/requirements.md.
-	// Set only when isNew is true.
-	body string
-	// source is the absolute path of the user's markdown source. Used
-	// for summary derivation. Set only when isNew is true.
-	source string
+type startTarget = resolver.StartTarget
+
+func newStartCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "start",
+		Short: "Start a new task: drive planner, then pause for approval or continue in the background",
+		Long: "Validates that every agent bucket (planner, worker, verifier) " +
+			"has a tool/model selection, then forks a detached `j tasks orchestrate --id <id>` child. " +
+			"Pass --from-file/-f (or TASKS_START_FROM_FILE) to point at a markdown task description; " +
+			"without it, the same source picker `j plan` shows is rendered.",
+		PersistentPreRunE: preflight.PreRunE,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			approval, err := startPlanRequiresApprovalOverride(cmd)
+			if err != nil {
+				return err
+			}
+			return RunStart(cmd.Context(), StartOptions{
+				FromFile:             viper.GetString("tasks.start.from_file"),
+				PlanRequiresApproval: approval,
+				Stdin:                cmd.InOrStdin(),
+				Stdout:               cmd.OutOrStdout(),
+				Stderr:               cmd.ErrOrStderr(),
+				Agents:               []codingagents.Agent{cursor.New(), claude.New()},
+			})
+		},
+	}
+	cmd.Flags().StringP("from-file", "f", "", "Path to a markdown file describing the task")
+	cmd.Flags().Bool("plan-requires-approval", false, "Override project.plan_requires_approval for this run (use =false to skip once)")
+	_ = viper.BindPFlag("tasks.start.from_file", cmd.Flags().Lookup("from-file"))
+	_ = viper.BindEnv("tasks.start.from_file", "TASKS_START_FROM_FILE")
+	_ = viper.BindPFlag("tasks.start.plan_requires_approval", cmd.Flags().Lookup("plan-requires-approval"))
+	_ = viper.BindEnv("tasks.start.plan_requires_approval", "TASKS_START_PLAN_REQUIRES_APPROVAL")
+	return cmd
 }
 
 // RunStart implements `j tasks start`. It mints (or re-uses) a task
@@ -135,7 +152,7 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	if err != nil {
 		return err
 	}
-	if target.taskID == "" {
+	if target.TaskID == "" {
 		// Linear source or aborted picker — exit cleanly.
 		return nil
 	}
@@ -150,14 +167,14 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	}
 	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
 		"tasks", "orchestrate",
-		"--id", target.taskID,
+		"--id", target.TaskID,
 		"--plan-requires-approval=" + strconv.FormatBool(planRequiresApproval),
 	})
 	if err != nil {
 		return err
 	}
 	persistStartRow(opts.Stderr, target, agentLogPath, pid)
-	banner.RunningInBackground(opts.Stdout, fmt.Sprintf("task %s", target.taskID), pid, agentLogPath)
+	banner.RunningInBackground(opts.Stdout, fmt.Sprintf("task %s", target.TaskID), pid, agentLogPath)
 	return nil
 }
 
@@ -173,80 +190,8 @@ func spawnDetachedOrchestrator(ctx context.Context, binaryOverride, agentLogPath
 	return run.SpawnIn(ctx, "", agentLogPath, binary, args...)
 }
 
-// resolveStartTarget decides whether RunStart spawns the orchestrator
-// against a freshly minted task (markdown source) or an existing task
-// (re-plan source), or exits cleanly (linear source / aborted picker).
-//
-//   - opts.FromFile != "" → markdown shortcut (mint new task).
-//   - opts.FromFile == "" → picker.PickSource composite drives the
-//     source widget + sub-picker; the switch below dispatches on the
-//     resolved Source.
 func resolveStartTarget(ctx context.Context, opts StartOptions) (startTarget, error) {
-	if opts.FromFile != "" {
-		return newTargetFromMarkdown(opts.FromFile)
-	}
-	res, err := picker.PickSource(ctx, opts.UI,
-		[]picker.Source{picker.SourceMarkdown, picker.SourceLinear, picker.SourceTask},
-		listAllTasks,
-		errors.New("tasks: no tasks to re-plan; run `j tasks start --from-file <md>` first"))
-	if err != nil {
-		return startTarget{}, err
-	}
-	if res.Cancelled {
-		return startTarget{}, nil
-	}
-	switch res.Source {
-	case picker.SourceMarkdown:
-		return newTargetFromMarkdown(res.Markdown)
-	case picker.SourceTask:
-		return startTarget{taskID: res.TaskID, isNew: false}, nil
-	case picker.SourceLinear:
-		banner.Fprintln(opts.Stdout, "J: tasks linear source is not yet wired up; nothing to do")
-		return startTarget{}, nil
-	}
-	return startTarget{}, fmt.Errorf("tasks: unsupported source %s", res.Source)
-}
-
-// newTargetFromMarkdown reads the markdown body once and packages it
-// into a startTarget for the new-task branch. Mints the task ID here
-// so callers see a populated target on success.
-func newTargetFromMarkdown(raw string) (startTarget, error) {
-	abs, err := mdfile.Resolve(raw)
-	if err != nil {
-		return startTarget{}, err
-	}
-	body, err := os.ReadFile(abs)
-	if err != nil {
-		return startTarget{}, fmt.Errorf("J: read source: %w", err)
-	}
-	return startTarget{
-		taskID: store.NewTaskID(),
-		isNew:  true,
-		body:   string(body),
-		source: abs,
-	}, nil
-}
-
-// listAllTasks opens the per-project tasks bbolt store, reads every
-// row, sorts via store.SortTasks, and closes before returning. The
-// settings store is closed before the picker runs so the bbolt file
-// lock is not held across the long-running prompt.
-func listAllTasks() ([]store.Task, error) {
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		return nil, fmt.Errorf("tasks: tasks db: %w", err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("tasks: tasks db: %w", err)
-	}
-	defer func() { _ = s.Close() }()
-	all, err := s.ListTasks()
-	if err != nil {
-		return nil, err
-	}
-	store.SortTasks(all)
-	return all, nil
+	return resolver.ResolveStartTarget(ctx, opts.UI, opts.Stdout, opts.FromFile)
 }
 
 // prepareTaskFiles ensures the per-task directory exists and, for
@@ -256,15 +201,5 @@ func listAllTasks() ([]store.Task, error) {
 // is left untouched — the user is re-planning against the existing
 // requirements.
 func prepareTaskFiles(target startTarget) (string, error) {
-	taskDir, err := store.EnsureTaskDir(target.taskID)
-	if err != nil {
-		return "", fmt.Errorf("J: ensure task dir: %w", err)
-	}
-	if target.isNew {
-		requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
-		if err := os.WriteFile(requirementsPath, []byte(target.body), 0o644); err != nil {
-			return "", fmt.Errorf("J: stage requirements: %w", err)
-		}
-	}
-	return filepath.Join(taskDir, store.AgentLogFileName), nil
+	return resolver.PrepareStartTaskFiles(target)
 }

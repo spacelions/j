@@ -1,18 +1,19 @@
 // Package work implements the `j work` subcommand. It resolves a plan
-// to execute (by --from-task <id>, --from-file, the most recent plan-done
-// task in bbolt, or an interactive picker), prompts the user for a
-// coding agent and model, verifies that backend is signed in, and
-// hands the plan to the agent so it can edit files in place. The
-// orchestrator does not write any output file.
+// to execute (by --from-task <id>, the most recent plan-done task in
+// bbolt, or an interactive picker), prompts the user for a coding agent
+// and model, verifies that backend is signed in, and hands the plan to
+// the agent so it can edit files in place.
 package work
 
 import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
@@ -27,12 +28,8 @@ import (
 type Options struct {
 	// TaskID, when set, names an existing task whose plan.md should be
 	// executed. The task row is updated in place (plan-done -> working
-	// -> work-done|help). Beats FromFile when both are supplied.
+	// -> work-done|help).
 	TaskID string
-	// FromFile is a legacy escape hatch: the path of a plan markdown
-	// file outside .j/tasks/. The file is imported into a fresh
-	// .j/tasks/<new-id>/plan.md folder and a NEW task row is created.
-	FromFile string
 	// Yes, when true, skips the status-mismatch confirmation prompt
 	// and proceeds even when the resolved task is not in the
 	// plan-done / help allowlist. Mirrors the `--yes` / WORK_YES
@@ -79,30 +76,11 @@ type Options struct {
 	Store *store.Store
 }
 
-// resolved is the outcome of resolvePlan: it tells Run which path to
-// take for task logging and what to hand to the agent.
-type resolved struct {
-	// Existing is the bbolt task row to mutate when non-nil. When nil
-	// the run is a legacy file import and a NEW task row is created.
-	Existing *store.Task
-	// PlanPath is the absolute path of the plan markdown to execute.
-	// For Existing!=nil it is <cwd>/.j/tasks/<id>/plan.md; for legacy
-	// imports it is <cwd>/.j/tasks/<new-id>/plan.md after the import.
-	PlanPath string
-	// Body is the plan markdown contents.
-	Body string
-	// Requirement is the requirement markdown body when available
-	// (read from <cwd>/.j/tasks/<id>/requirements.md or, for legacy
-	// imports, the `<stem>.md` sidecar of FromFile).
-	Requirement string
-	// NewTaskID, set only on the legacy file-import path, is the id
-	// of the freshly created task folder.
-	NewTaskID string
-}
+type resolved = resolver.WorkPlan
 
 // Run executes `j work`. It resolves the plan source (Options.TaskID,
-// Options.FromFile, latest plan-done bbolt row, then UI picker), then
-// dispatches to the reuse or import path.
+// latest plan-done bbolt row, then UI picker), then dispatches to the
+// existing task row.
 //
 // User-abort signals from any huh prompt (Ctrl+C / Esc) propagate up
 // as huh.ErrUserAborted; the deferred guard below converts them to a
@@ -121,7 +99,10 @@ func Run(ctx context.Context, opts Options) (err error) {
 	if len(opts.Agents) == 0 {
 		return errors.New("J: no coding agents configured")
 	}
-	res, ok, err := resolvePlan(ctx, opts)
+	res, ok, err := resolver.ResolveWorkPlan(ctx, resolver.WorkPlanOptions{
+		TaskID: opts.TaskID,
+		UI:     opts.UI,
+	})
 	if err != nil {
 		return err
 	}
@@ -139,19 +120,14 @@ func Run(ctx context.Context, opts Options) (err error) {
 		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", err)
 	}
 
-	var lc *store.WorkLifecycle
-	if res.Existing != nil {
-		proceed, confirmErr := confirmStatusOverride(ctx, opts, "work", *res.Existing, allowedForWork)
-		if confirmErr != nil {
-			return confirmErr
-		}
-		if !proceed {
-			return nil
-		}
-		lc = res.Existing.BeginWorkReuse(opts.Stderr, agent.Name(), model, resumeID)
-	} else {
-		lc = store.NewWorkTask(opts.Stderr, agent.Name(), model, res.NewTaskID, res.PlanPath, res.Requirement, res.Body, resumeID)
+	proceed, confirmErr := confirmStatusOverride(ctx, opts, "work", res.Task, allowedForWork)
+	if confirmErr != nil {
+		return confirmErr
 	}
+	if !proceed {
+		return nil
+	}
+	lc := res.Task.BeginWorkReuse(opts.Stderr, agent.Name(), model, resumeID)
 
 	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), store.AgentLogFileName)
 	mustReadFiles, mustReadErr := resolver.MustRead()
@@ -184,28 +160,43 @@ func Run(ctx context.Context, opts Options) (err error) {
 		return workErr
 	}
 
-	if res.Existing != nil {
-		banner.Fprintf(opts.Stdout, "J: coding on task %s\n", res.Existing.ID)
-	} else {
-		banner.Fprintf(opts.Stdout, "J: coding on %s\n", res.PlanPath)
-	}
+	banner.Fprintf(opts.Stdout, "J: coding on task %s\n", res.Task.ID)
 	return nil
 }
 
-// resolvePlan implements the precedence: --from-task > --from-file (legacy
-// import) > pick latest plan-done auto-pick > UI picker over every task.
-// Each branch returns a fully-populated resolved or a wrapped error;
-// callers do not need to re-stat or re-read files afterwards.
-//
-// When the bbolt store contains exactly one row whose status is in
-// the natural work allowlist (plan-done / help), the no-flag path
-// auto-picks it without prompting — this preserves the
-// historic happy-path UX for the common case of a fresh `j plan`
-// followed by `j work`. Otherwise the picker shows every task and
-// the downstream confirm prompt handles the wrong-status case.
-//
-// The bool return is the "proceed" signal from the unified
-// picker contract: ok=false means the user cancelled the picker
-// (Ctrl-C / Esc) and the caller should exit cleanly without
-// invoking the agent. ok=true means the resolved struct is
-// populated and Run can continue.
+func allowedForWork(task store.Task) bool {
+	return resolver.WorkAllowed(task)
+}
+
+func confirmStatusOverride(ctx context.Context, opts Options, cmd string, task store.Task, allowed func(store.Task) bool) (bool, error) {
+	return resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, cmd, task, allowed)
+}
+
+func selectWorker(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
+	return resolver.Agent(ctx, resolver.AgentOptions{
+		Bucket:        store.BucketWorker,
+		Agents:        opts.Agents,
+		ExplicitTool:  opts.Tool,
+		ExplicitModel: opts.Model,
+		UI:            opts.UI,
+		Store:         opts.Store,
+		Stderr:        opts.Stderr,
+		Interactive:   opts.Interactive,
+	})
+}
+
+func (o Options) withDefaults() Options {
+	if o.Stdin == nil {
+		o.Stdin = os.Stdin
+	}
+	if o.Stdout == nil {
+		o.Stdout = os.Stdout
+	}
+	if o.Stderr == nil {
+		o.Stderr = os.Stderr
+	}
+	if o.UI == nil {
+		o.UI = picker.New(o.Stdin, o.Stderr)
+	}
+	return o
+}

@@ -9,8 +9,7 @@
 //     PickTask leaves; PickSource composite that drives SelectSource
 //     and dispatches to the matching sub-picker.
 //
-// Plus standalone leaves: AskFromFile (legacy free-text fallback) and
-// ConfirmStatusOverride (yes/no prompt). *Picker satisfies the
+// Plus standalone leaves: ConfirmStatusOverride (yes/no prompt). *Picker satisfies the
 // Selector and SourceUI interfaces via duck typing so cli commands'
 // narrow UI interfaces drop it in directly; tests inject scripted
 // fakes that also satisfy those interfaces.

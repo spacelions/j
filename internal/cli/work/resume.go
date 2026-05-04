@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -179,16 +178,8 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 // "task %q not found" wrapping the way callers expect; an empty
 // cursor becomes "task %q has no work session".
 func resolveResumeByID(id string) (store.Task, bool, error) {
-	s, err := openTasks()
+	task, err := resolver.TaskByID("work", id)
 	if err != nil {
-		return store.Task{}, false, err
-	}
-	defer func() { _ = s.Close() }()
-	task, err := s.GetTask(id)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return store.Task{}, false, fmt.Errorf("J: task %q not found", id)
-		}
 		return store.Task{}, false, err
 	}
 	if task.WorkResumeCursor == "" {
@@ -204,16 +195,10 @@ func resolveResumeByID(id string) (store.Task, bool, error) {
 // resume is permissive by design, so `working` / `work-done` rows
 // are also resumable.
 func listResumableTasks() ([]store.Task, error) {
-	s, err := openTasks()
+	all, err := resolver.ListAllTasks()
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = s.Close() }()
-	all, err := s.ListTasks()
-	if err != nil {
-		return nil, err
-	}
-	store.SortTasks(all)
 	out := all[:0]
 	for _, t := range all {
 		if t.WorkResumeCursor != "" {

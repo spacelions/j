@@ -177,31 +177,16 @@ func TestExecute_PlanInteractiveFlag_FromEnv(t *testing.T) {
 	}
 }
 
-func TestExecute_WorkInvalidFromFile_FromFlag(t *testing.T) {
-	resetGlobals(t)
-	mustInit(t)
-	withArgs(t, "work", "--from-file", "/this/path/does/not/exist.md")
-	assertExecuteFails(t, "J:", "stat")
-}
-
-func TestExecute_WorkInvalidFromFile_FromEnv(t *testing.T) {
-	resetGlobals(t)
-	mustInit(t)
-	t.Setenv("WORK_FROM_FILE", "/this/path/does/not/exist.md")
-	withArgs(t, "work")
-	assertExecuteFails(t, "J:", "stat")
-}
-
 // TestExecute_WorkInteractiveFlag_FromFlag confirms --interactive is
 // parsed by cobra and surfaces on the viper singleton via BindPFlag.
-// We piggy-back on the invalid-from-file failure path so the test
+// We piggy-back on the missing-task failure path so the test
 // stays hermetic (no agent invocation), and read viper after Execute
 // to observe the bound value.
 func TestExecute_WorkInteractiveFlag_FromFlag(t *testing.T) {
 	resetGlobals(t)
 	mustInit(t)
-	withArgs(t, "work", "--interactive=false", "--from-file", "/this/path/does/not/exist.md")
-	assertExecuteFails(t, "stat")
+	withArgs(t, "work", "--interactive=false", "--from-task", "missing")
+	assertExecuteFails(t, "not found")
 	if viper.GetBool("work.interactive") {
 		t.Fatalf("work.interactive should be false after --interactive=false")
 	}
@@ -211,9 +196,9 @@ func TestExecute_WorkInteractiveFlag_FromEnv(t *testing.T) {
 	resetGlobals(t)
 	mustInit(t)
 	t.Setenv("WORK_INTERACTIVE", "false")
-	t.Setenv("WORK_FROM_FILE", "/this/path/does/not/exist.md")
+	t.Setenv("WORK_FROM_TASK", "missing")
 	withArgs(t, "work")
-	assertExecuteFails(t, "stat")
+	assertExecuteFails(t, "not found")
 	if viper.GetBool("work.interactive") {
 		t.Fatalf("work.interactive should be false from WORK_INTERACTIVE=false")
 	}

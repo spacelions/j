@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestNewWorkTask_RecordsRow pins the legacy import write: a fresh
+// TestNewWorkTask_RecordsRow pins the fresh work-row write: a fresh
 // row at status=working, work fields populated, and no plan fields.
 func TestNewWorkTask_RecordsRow(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -28,7 +28,7 @@ func TestNewWorkTask_RecordsRow(t *testing.T) {
 		t.Fatalf("WorkResumeCursor = %q", got.WorkResumeCursor)
 	}
 	if got.PlanResumeCursor != "" {
-		t.Fatalf("PlanResumeCursor should stay empty for legacy import: %q", got.PlanResumeCursor)
+		t.Fatalf("PlanResumeCursor should stay empty for fresh work row: %q", got.PlanResumeCursor)
 	}
 	if got.WorkBeginAt == nil || got.WorkEndAt == nil {
 		t.Fatalf("work timestamps missing: %+v", got)

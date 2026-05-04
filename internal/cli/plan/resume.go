@@ -5,15 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 
 	"github.com/charmbracelet/huh"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/coding-agents/claude"
+	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
@@ -40,6 +43,29 @@ type ResumeOptions struct {
 
 	Agents []codingagents.Agent
 	UI     UI
+}
+
+func newResumeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "resume",
+		Short: "Resume a previously started plan session",
+		Long: "Lists tasks whose plan session is non-empty and resumes the chosen one " +
+			"using the tool/model recorded on the task row. Pass --from-task <id> " +
+			"(or PLAN_RESUME_FROM_TASK) to skip the picker.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return RunResume(cmd.Context(), ResumeOptions{
+				TaskID: viper.GetString("plan.resume.from_task"),
+				Stdin:  cmd.InOrStdin(),
+				Stdout: cmd.OutOrStdout(),
+				Stderr: cmd.ErrOrStderr(),
+				Agents: []codingagents.Agent{cursor.New(), claude.New()},
+			})
+		},
+	}
+	cmd.Flags().String("from-task", "", "Resume the named task without showing the picker")
+	_ = viper.BindPFlag("plan.resume.from_task", cmd.Flags().Lookup("from-task"))
+	_ = viper.BindEnv("plan.resume.from_task", "PLAN_RESUME_FROM_TASK")
+	return cmd
 }
 
 func (o ResumeOptions) withDefaults() ResumeOptions {
@@ -191,16 +217,8 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 // "task %q not found" wrapping the way callers expect; an empty
 // cursor becomes "task %q has no plan session".
 func resolveResumeByID(id string) (store.Task, bool, error) {
-	s, err := openTasks()
+	task, err := resolver.TaskByID("plan", id)
 	if err != nil {
-		return store.Task{}, false, err
-	}
-	defer func() { _ = s.Close() }()
-	task, err := s.GetTask(id)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return store.Task{}, false, fmt.Errorf("J: task %q not found", id)
-		}
 		return store.Task{}, false, err
 	}
 	if task.PlanResumeCursor == "" {
@@ -216,16 +234,10 @@ func resolveResumeByID(id string) (store.Task, bool, error) {
 // returned so the agent invocation downstream does not contend on
 // the file lock.
 func listResumableTasks() ([]store.Task, error) {
-	s, err := openTasks()
+	all, err := resolver.ListAllTasks()
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = s.Close() }()
-	all, err := s.ListTasks()
-	if err != nil {
-		return nil, err
-	}
-	store.SortTasks(all)
 	out := all[:0]
 	for _, t := range all {
 		if t.PlanResumeCursor != "" {

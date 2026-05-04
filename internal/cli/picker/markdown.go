@@ -2,22 +2,12 @@ package picker
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
-
-	"github.com/charmbracelet/huh"
 
 	"github.com/spacelions/j/internal/util/mdfile"
 )
-
-// ErrEmptyFromFile is returned by AskFromFile when the user submits
-// an empty / whitespace-only path. Exported as a sentinel so callers
-// can distinguish the "user cleared the input" case from genuine UI
-// failures via errors.Is.
-var ErrEmptyFromFile = errors.New("picker: no markdown provided")
 
 // PickMarkdownInCwd scans the current working directory for markdown
 // files via mdfile.ListInDir (`AGENTS.md` / `README.md` / hidden /
@@ -53,24 +43,4 @@ func (p *Picker) PickMarkdownInCwd(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("picker: unknown markdown selection %q", chosen)
 	}
 	return target, nil
-}
-
-// AskFromFile renders the legacy free-text input fallback used by
-// `j work` / `j verify` when cwd has no plan-done tasks AND no
-// `--from-file` was supplied. Empty / whitespace-only input returns
-// ErrEmptyFromFile so the caller can surface a clean "J: no markdown
-// provided" message without re-checking the value.
-func (p *Picker) AskFromFile(ctx context.Context) (string, error) {
-	var v string
-	if err := p.run(ctx, huh.NewInput().
-		Title("Plan markdown file location").
-		Placeholder("/path/to/feature.plan.md").
-		Value(&v)); err != nil {
-		return "", err
-	}
-	v = strings.TrimSpace(v)
-	if v == "" {
-		return "", ErrEmptyFromFile
-	}
-	return v, nil
 }

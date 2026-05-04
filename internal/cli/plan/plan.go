@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -96,8 +95,7 @@ type Options struct {
 
 // Run executes `j plan`. When Options.FromFile is set it goes straight
 // to the markdown source (preserving --from-file/PLAN_FROM_FILE
-// semantics). Otherwise it asks the user which source to use and
-// dispatches.
+// semantics). Otherwise it asks which source to use and dispatches.
 //
 // User-abort signals from any huh prompt (Ctrl+C / Esc) propagate up
 // as huh.ErrUserAborted; the deferred guard below converts them to a
@@ -236,63 +234,67 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 	return nil
 }
 
-// loadTaskByID opens the tasks DB, reads the row, and closes the
-// handle before returning. fs.ErrNotExist is rewrapped into the
-// user-facing "task %q not found" so the caller does not need to
-// translate it.
 func loadTaskByID(id string) (store.Task, error) {
-	s, err := openTasks()
-	if err != nil {
-		return store.Task{}, err
-	}
-	defer func() { _ = s.Close() }()
-	task, err := s.GetTask(id)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return store.Task{}, fmt.Errorf("plan: task %q not found", id)
-		}
-		return store.Task{}, err
-	}
-	return task, nil
+	return resolver.TaskByID("plan", id)
 }
 
-// listAllTasks returns every task in bbolt, sorted via
-// store.SortTasks so the picker shows the active-then-most-recent
-// order users see in `j tasks`. The store is closed before the
-// slice is returned so the agent invocation downstream does not
-// contend on the bbolt file lock.
 func listAllTasks() ([]store.Task, error) {
-	s, err := openTasks()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = s.Close() }()
-	all, err := s.ListTasks()
-	if err != nil {
-		return nil, err
-	}
-	store.SortTasks(all)
-	return all, nil
+	return resolver.ListTasks("plan")
 }
 
-// openTasks resolves `<cwd>/.j/tasks/list.db` and opens it. Read-path
-// failures surface as a single wrapped error per call (vs. the legacy
-// `warning: tasks db: ...` line plus a hard error). The caller owns
-// the returned store and must Close it.
-func openTasks() (*store.Store, error) {
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		return nil, fmt.Errorf("plan: tasks db: %w", err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("plan: tasks db: %w", err)
-	}
-	return s, nil
+func allowedForReplan(task store.Task) bool {
+	return resolver.ReplanAllowed(task)
 }
 
-// allowedForReplan is the natural status allowlist for the re-plan
-// flow: plan-done (user is iterating on the plan after a previous
-// plan run) and help (retry after a failed planning run). Tasks
-// in any other status trigger the confirm prompt unless --yes /
-// PLAN_YES skips it.
+func confirmStatusOverride(ctx context.Context, opts Options, cmd string, task store.Task, allowed func(store.Task) bool) (bool, error) {
+	return resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, cmd, task, allowed)
+}
+
+func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
+	source, err := resolver.ResolvePlanMarkdown(rawTarget)
+	if err != nil {
+		return err
+	}
+	agent, model, err := selectPlanner(ctx, opts)
+	if err != nil {
+		return err
+	}
+	return resolver.RunPlanMarkdown(ctx, resolver.PlanMarkdownOptions{
+		Source:            source,
+		Stdout:            opts.Stdout,
+		Stderr:            opts.Stderr,
+		Agent:             agent,
+		Model:             model,
+		Interactive:       opts.Interactive,
+		WaitForCompletion: opts.WaitForCompletion,
+	})
+}
+
+func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
+	return resolver.Agent(ctx, resolver.AgentOptions{
+		Bucket:        store.BucketPlanner,
+		Agents:        opts.Agents,
+		ExplicitTool:  opts.Tool,
+		ExplicitModel: opts.Model,
+		UI:            opts.UI,
+		Store:         opts.Store,
+		Stderr:        opts.Stderr,
+		Interactive:   opts.Interactive,
+	})
+}
+
+func (o Options) withDefaults() Options {
+	if o.Stdin == nil {
+		o.Stdin = os.Stdin
+	}
+	if o.Stdout == nil {
+		o.Stdout = os.Stdout
+	}
+	if o.Stderr == nil {
+		o.Stderr = os.Stderr
+	}
+	if o.UI == nil {
+		o.UI = picker.New(o.Stdin, o.Stderr)
+	}
+	return o
+}

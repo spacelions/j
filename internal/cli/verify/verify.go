@@ -13,9 +13,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
@@ -75,16 +77,7 @@ type Options struct {
 	Store *store.Store
 }
 
-// resolved is the outcome of resolveTask: the existing bbolt row
-// plus the per-task absolute paths the verifier consumes.
-type resolved struct {
-	Task             store.Task
-	TaskDir          string
-	RequirementsPath string
-	PlanPath         string
-	VerifierPlanPath string
-	FindingsPath     string
-}
+type resolved = resolver.VerifyTask
 
 // Run executes `j verify`. It resolves the task source, selects a
 // verifier tool/model, then runs the bounded fix-loop until the
@@ -155,21 +148,6 @@ func Run(ctx context.Context, opts Options) (err error) {
 	return nil
 }
 
-// resolveTask implements the precedence: --from-task > most recent
-// work-done auto-pick > UI picker over every task. Each branch
-// returns a fully-populated resolved or a wrapped error.
-//
-// When the bbolt store contains exactly one row whose status is
-// in the natural verify allowlist (work-done / verify-done / help),
-// the no-flag path auto-picks it without prompting — this preserves
-// the historic happy-path UX. Otherwise the picker shows every task
-// and the downstream confirm prompt handles the wrong-status case.
-//
-// The bool return is the "proceed" signal from the unified
-// picker contract: ok=false means the user cancelled the picker
-// (Ctrl-C / Esc) and Run should exit cleanly without invoking the
-// agent. ok=true means the resolved struct is populated and Run
-// can continue.
 // runVerifyLoop alternates verifier turns with worker-resume fix
 // turns until the verifier writes VERDICT: PASS to findingsPath or
 // MaxIterations is exhausted. Errors from either agent abort the
@@ -217,7 +195,7 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 		if err := run.WaitForExit(ctx, pid); err != nil {
 			return store.VerifyOutcomeNoRetries, err
 		}
-		verdict := ParseVerdict(res.FindingsPath)
+		verdict := resolver.ParseVerdict(res.FindingsPath)
 		if verdict == "PASS" {
 			return store.VerifyOutcomeSuccess, nil
 		}
@@ -249,8 +227,66 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 	return store.VerifyOutcomeNoRetries, nil
 }
 
-// ReadVerdictForTask reads <cwd>/.j/tasks/<id>/verifier_findings.md
-// via ParseVerdict and returns the terminal verdict ("PASS" / "FAIL").
-// Any failure (missing tasks dir, missing file, malformed line)
-// yields "FAIL" so callers treat ambiguity as a non-pass — matching
-// the same rule ParseVerdict applies internally.
+func resolveTask(ctx context.Context, opts Options) (resolved, bool, error) {
+	return resolver.ResolveVerifyTask(ctx, resolver.VerifyTaskOptions{
+		TaskID: opts.TaskID,
+		UI:     opts.UI,
+	})
+}
+
+func allowedForVerify(task store.Task) bool {
+	return resolver.VerifyAllowed(task)
+}
+
+func confirmStatusOverride(ctx context.Context, opts Options, cmd string, task store.Task, allowed func(store.Task) bool) (bool, error) {
+	return resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, cmd, task, allowed)
+}
+
+func ReadVerdictForTask(taskID string) string {
+	return resolver.ReadVerdictForTask(taskID)
+}
+
+func ParseVerdict(path string) string {
+	return resolver.ParseVerdict(path)
+}
+
+func selectVerifier(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
+	return resolver.Agent(ctx, resolver.AgentOptions{
+		Bucket:        store.BucketVerifier,
+		Agents:        opts.Agents,
+		ExplicitTool:  opts.Tool,
+		ExplicitModel: opts.Model,
+		UI:            opts.UI,
+		Store:         opts.Store,
+		Stderr:        opts.Stderr,
+		Interactive:   opts.Interactive,
+	})
+}
+
+func lookupResumeAgent(agents []codingagents.Agent, tool string) (codingagents.Agent, bool) {
+	for _, agent := range agents {
+		if agent.Name() == tool {
+			return agent, true
+		}
+	}
+	return nil, false
+}
+
+func (o Options) withDefaults() Options {
+	if o.Stdin == nil {
+		o.Stdin = os.Stdin
+	}
+	if o.Stdout == nil {
+		o.Stdout = os.Stdout
+	}
+	if o.Stderr == nil {
+		o.Stderr = os.Stderr
+	}
+	if o.UI == nil {
+		o.UI = picker.New(o.Stdin, o.Stderr)
+	}
+	if o.MaxIterations <= 0 {
+		o.MaxIterations = defaultMaxIterations
+	}
+	return o
+}

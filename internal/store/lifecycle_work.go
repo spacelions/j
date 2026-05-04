@@ -12,17 +12,16 @@ import (
 // concurrent `j tasks` from another shell is not blocked.
 //
 // Constructed with NewWorkTask, Task.BeginWorkReuse, or
-// Task.BeginWorkResume depending on whether the run is a legacy file
-// import (creates a new bbolt row), a bbolt-sourced run (mutates an
-// existing row in place), or a resume.
+// Task.BeginWorkResume depending on whether the run creates a new row,
+// reuses an existing row, or resumes a prior work session.
 type WorkLifecycle struct {
 	stderr io.Writer
 	task   Task
 	closed bool
 }
 
-// NewWorkTask records the "working" entry for a legacy `--from-file`
-// import. The caller has already minted the task id and staged the
+// NewWorkTask records the "working" entry for a newly created work row.
+// The caller has already minted the task id and staged the
 // plan markdown into <cwd>/.j/tasks/<id>/plan.md (and optionally
 // requirements.md). This helper just stamps the bbolt row.
 //

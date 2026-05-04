@@ -1,8 +1,6 @@
 package store
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -30,46 +28,6 @@ func TestSummarizeMarkdown_TruncatesRunes(t *testing.T) {
 	got := SummarizeMarkdown(wide)
 	if want := strings.Repeat("é", summaryMaxRunes); got != want {
 		t.Fatalf("len(runes) = %d, want %d", len([]rune(got)), summaryMaxRunes)
-	}
-}
-
-// TestReadRequirementSidecar_Variants exercises the happy paths plus
-// the early-return guards (empty path, empty stem).
-func TestReadRequirementSidecar_Variants(t *testing.T) {
-	dir := t.TempDir()
-	plan := filepath.Join(dir, "spec.plan.md")
-	if err := os.WriteFile(plan, []byte("plan"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := ReadRequirementSidecar(plan); got != "" {
-		t.Fatalf("missing sidecar = %q, want empty", got)
-	}
-	requirement := filepath.Join(dir, "spec.md")
-	if err := os.WriteFile(requirement, []byte("req"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := ReadRequirementSidecar(plan); got != "req" {
-		t.Fatalf("present sidecar = %q, want req", got)
-	}
-	if got := ReadRequirementSidecar(""); got != "" {
-		t.Fatalf("empty path = %q", got)
-	}
-	if got := ReadRequirementSidecar(filepath.Join(dir, ".plan.md")); got != "" {
-		t.Fatalf("empty stem = %q", got)
-	}
-}
-
-// TestReadRequirementSidecar_CandidateEqualsPlan covers the
-// "candidate == planPath" guard so a non-conventional plan name does
-// not loop reading the same file.
-func TestReadRequirementSidecar_CandidateEqualsPlan(t *testing.T) {
-	dir := t.TempDir()
-	bare := filepath.Join(dir, "spec.md")
-	if err := os.WriteFile(bare, []byte("body"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := ReadRequirementSidecar(bare); got != "" {
-		t.Fatalf("self-sidecar = %q, want empty", got)
 	}
 }
 
