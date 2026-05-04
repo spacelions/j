@@ -705,6 +705,51 @@ func TestWork_Interactive_Resume(t *testing.T) {
 	}
 }
 
+// TestWork_Interactive_Resume_WithMustRead pins AC: project must-read
+// bullets must reach the resume worker prompt (case-preserved, exactly
+// once) so a help-status row's resume turn inherits the same
+// project-wide must-read context the first run had.
+func TestWork_Interactive_Resume_WithMustRead(t *testing.T) {
+	dir := t.TempDir()
+	plan := filepath.Join(dir, "spec.plan.md")
+	if err := os.WriteFile(plan, []byte("1. step one"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls, _ := installStub(t, "", 0)
+	rid := "77777777-7777-4777-8777-777777777769"
+	_, err := New().Work(context.Background(), codingagents.WorkRequest{
+		PlanPath:     plan,
+		Model:        "sonnet",
+		Interactive:  true,
+		ResumeChatID: rid,
+		Resume:       true,
+		MustRead:     []string{"AGENTS.md", "CLAUDE.md"},
+	})
+	if err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	argv := readCalls(t, calls)
+	prompt := argv[len(argv)-1]
+	lower := strings.ToLower(prompt)
+	for _, marker := range []string{"previous", "check", "continue"} {
+		if !strings.Contains(lower, marker) {
+			t.Fatalf("resume prompt missing %q: %q", marker, prompt)
+		}
+	}
+	const header = "Before starting, read these project files for required context:"
+	if strings.Count(prompt, header) != 1 {
+		t.Fatalf("must-read header should appear exactly once: %q", prompt)
+	}
+	for _, bullet := range []string{"- AGENTS.md", "- CLAUDE.md"} {
+		if !strings.Contains(prompt, bullet) {
+			t.Fatalf("resume prompt missing must-read bullet %q: %q", bullet, prompt)
+		}
+	}
+	if strings.Contains(prompt, "- agents.md") || strings.Contains(prompt, "- claude.md") {
+		t.Fatalf("must-read block lowercased entries: %q", prompt)
+	}
+}
+
 func TestWork_Headless(t *testing.T) {
 	dir := t.TempDir()
 	plan := filepath.Join(dir, "spec.plan.md")
@@ -1008,6 +1053,50 @@ func TestVerify_Interactive_Resume(t *testing.T) {
 		if strings.Contains(prompt, banned) {
 			t.Fatalf("resume prompt should not include %q: %q", banned, prompt)
 		}
+	}
+}
+
+// TestVerify_Interactive_Resume_WithMustRead pins AC: project must-read
+// bullets must reach the resume verifier prompt (case-preserved,
+// exactly once), mirroring what BuildVerifier does on a fresh run.
+func TestVerify_Interactive_Resume_WithMustRead(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	calls, _ := installStub(t, "", 0)
+	rid := "99999999-9999-4999-8999-999999999991"
+	_, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+		RequirementsPath:           filepath.Join(dir, "requirements.md"),
+		PlanPath:                   filepath.Join(dir, "plan.md"),
+		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
+		VerifierFindingsOutputPath: filepath.Join(dir, "verifier_findings.md"),
+		Model:                      "m",
+		Interactive:                true,
+		ResumeChatID:               rid,
+		Resume:                     true,
+		MustRead:                   []string{"AGENTS.md", "CLAUDE.md"},
+	})
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	argv := readCalls(t, calls)
+	prompt := argv[len(argv)-1]
+	lower := strings.ToLower(prompt)
+	for _, marker := range []string{"previous", "check", "continue"} {
+		if !strings.Contains(lower, marker) {
+			t.Fatalf("resume prompt missing %q: %q", marker, prompt)
+		}
+	}
+	const header = "Before starting, read these project files for required context:"
+	if strings.Count(prompt, header) != 1 {
+		t.Fatalf("must-read header should appear exactly once: %q", prompt)
+	}
+	for _, bullet := range []string{"- AGENTS.md", "- CLAUDE.md"} {
+		if !strings.Contains(prompt, bullet) {
+			t.Fatalf("resume prompt missing must-read bullet %q: %q", bullet, prompt)
+		}
+	}
+	if strings.Contains(prompt, "- agents.md") || strings.Contains(prompt, "- claude.md") {
+		t.Fatalf("must-read block lowercased entries: %q", prompt)
 	}
 }
 

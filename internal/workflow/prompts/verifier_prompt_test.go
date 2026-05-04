@@ -103,7 +103,7 @@ func TestBuildVerifierResume(t *testing.T) {
 		reqPath  = "/tmp/.j/tasks/abc/requirements.md"
 		planPath = "/tmp/.j/tasks/abc/plan.md"
 	)
-	got := BuildVerifierResume(reqPath, planPath, "")
+	got := BuildVerifierResume(reqPath, planPath, "", nil)
 	if got == "" {
 		t.Fatal("BuildVerifierResume returned empty string")
 	}
@@ -139,17 +139,58 @@ func TestBuildVerifierResume(t *testing.T) {
 	if strings.Contains(strings.ToLower(got), "git worktree") {
 		t.Fatalf("empty worktree should not emit worktree line: %q", got)
 	}
+	if strings.Contains(got, "Before starting, read these project files") {
+		t.Fatalf("resume prompt should not include must-read block when nil: %q", got)
+	}
 }
 
 // TestBuildVerifierResume_WithWorktree pins the worktree-direction
 // suffix on the resume path, mirroring TestBuildVerifier_WithWorktree.
 func TestBuildVerifierResume_WithWorktree(t *testing.T) {
-	got := BuildVerifierResume("r.md", "p.md", "j-my-task")
+	got := BuildVerifierResume("r.md", "p.md", "j-my-task", nil)
 	if !strings.Contains(got, "j-my-task") {
 		t.Fatalf("resume worktree prompt missing worktree name: %q", got)
 	}
 	if !strings.Contains(got, "git worktree list") {
 		t.Fatalf("resume worktree prompt missing `git worktree list` hint: %q", got)
+	}
+}
+
+// TestBuildVerifierResume_WithMustRead mirrors
+// TestBuildVerifier_WithMustRead for the resume builder: the bulleted
+// must-read block must appear exactly once, preserve case verbatim,
+// and sit between the instructions.Verifier body and the resume
+// framing line ("You are resuming…").
+func TestBuildVerifierResume_WithMustRead(t *testing.T) {
+	got := BuildVerifierResume("r.md", "p.md", "", []string{"AGENTS.md", "CLAUDE.md"})
+
+	const header = "Before starting, read these project files for required context:"
+	if strings.Count(got, header) != 1 {
+		t.Fatalf("must-read header should appear exactly once: %q", got)
+	}
+	if !strings.Contains(got, "- AGENTS.md") || !strings.Contains(got, "- CLAUDE.md") {
+		t.Fatalf("must-read block missing entries: %q", got)
+	}
+	if strings.Contains(got, "- agents.md") || strings.Contains(got, "- claude.md") {
+		t.Fatalf("must-read block lowercased entries: %q", got)
+	}
+	const framing = "You are resuming a previous verification session."
+	if strings.Index(got, header) > strings.Index(got, framing) {
+		t.Fatalf("must-read block must precede resume framing line: %q", got)
+	}
+	if strings.Index(got, strings.TrimSpace(instructions.Verifier)) > strings.Index(got, header) {
+		t.Fatalf("must-read block must follow instructions.Verifier body: %q", got)
+	}
+}
+
+// TestBuildVerifierResume_NilMustReadByteIdentical pins AC: passing
+// nil/empty mustRead leaves the prompt byte-identical to the
+// pre-must-read output.
+func TestBuildVerifierResume_NilMustReadByteIdentical(t *testing.T) {
+	withNil := BuildVerifierResume("r.md", "p.md", "", nil)
+	withEmpty := BuildVerifierResume("r.md", "p.md", "", []string{})
+	if withNil != withEmpty {
+		t.Fatalf("nil and empty must-read slices must produce identical output: nil=%q empty=%q", withNil, withEmpty)
 	}
 }
 

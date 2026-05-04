@@ -18,6 +18,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/run"
 )
@@ -121,6 +122,10 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	findingsPath := filepath.Join(taskDir, store.VerifierFindingsFileName)
 
 	lc := beginVerifyTaskResume(Options{Stderr: opts.Stderr}, task)
+	mustReadFiles, mustReadErr := resolver.MustRead()
+	if mustReadErr != nil {
+		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
+	}
 	// Resume always runs interactive — the verifier bucket's
 	// `interactive` value is intentionally ignored on resume.
 	// PID is always 0 here (interactive backends run synchronously
@@ -135,6 +140,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		Interactive:                true,
 		ResumeChatID:               task.VerifyResumeCursor,
 		Resume:                     true,
+		MustRead:                   mustReadFiles,
 	})
 	if runErr == nil {
 		runErr = run.WaitForExit(ctx, pid)
