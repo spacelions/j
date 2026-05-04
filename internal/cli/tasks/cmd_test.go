@@ -380,21 +380,6 @@ func TestWriteTasks_FlushError(t *testing.T) {
 	}
 }
 
-// TestFormatSession pins the rendering of the indented session line:
-// empty ids become "-", non-empty ids are echoed verbatim, and the
-// label/indent are constant prefixes the tests can rely on.
-func TestFormatSession(t *testing.T) {
-	if got, want := formatSession("plan session", ""), "  plan session: -"; got != want {
-		t.Fatalf("empty: got %q, want %q", got, want)
-	}
-	if got, want := formatSession("work session", "uuid-1"), "  work session: uuid-1"; got != want {
-		t.Fatalf("uuid: got %q, want %q", got, want)
-	}
-	if got, want := formatSession("verify session", "abc"), "  verify session: abc"; got != want {
-		t.Fatalf("verify: got %q, want %q", got, want)
-	}
-}
-
 // TestWriteTasks_EmptyHeaderFlushError covers the no-tasks branch:
 // even with no rows the header is written and Flush surfaces the
 // failingWriter error.

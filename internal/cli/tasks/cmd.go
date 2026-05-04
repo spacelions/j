@@ -114,15 +114,3 @@ func writeTasks(out io.Writer, tasks []store.Task) error {
 	}
 	return tw.Flush()
 }
-
-// formatSession renders a single indented session line of the form
-// "  <label>: <id>" where id falls back to "-" when empty. The
-// helper is no longer used by `j tasks` itself but is retained as a
-// package-private utility so resume-side selectors can reuse the
-// same label shape if they need to surface session ids.
-func formatSession(label, id string) string {
-	if id == "" {
-		id = "-"
-	}
-	return fmt.Sprintf("  %s: %s", label, id)
-}

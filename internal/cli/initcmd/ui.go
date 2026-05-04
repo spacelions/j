@@ -54,9 +54,7 @@ func (u *huhUI) ConfirmReset(ctx context.Context) (bool, error) {
 }
 
 // Accept reports whether s is treated as "yes" in the init prompt:
-// empty (Enter), `y`, or `yes`, case-insensitive. The helper is kept
-// public so test fixtures and alternative UIs can normalise free-form
-// input the same way the canonical prompt does.
+// empty (Enter), `y`, or `yes`, case-insensitive.
 func Accept(s string) bool {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "", "y", "yes":
