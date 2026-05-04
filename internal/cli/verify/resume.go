@@ -14,7 +14,6 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/picker"
-	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
@@ -121,7 +120,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	verifierPlanPath := filepath.Join(taskDir, store.VerifierPlanFileName)
 	findingsPath := filepath.Join(taskDir, store.VerifierFindingsFileName)
 
-	lc := beginVerifyTaskResume(Options{Stderr: opts.Stderr}, task)
+	lc := task.BeginVerifyResume(opts.Stderr)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
@@ -145,11 +144,11 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	if runErr == nil {
 		runErr = run.WaitForExit(ctx, pid)
 	}
-	outcome := outcomeNoRetries
+	outcome := store.VerifyOutcomeNoRetries
 	if runErr == nil && ParseVerdict(findingsPath) == "PASS" {
-		outcome = outcomeSuccess
+		outcome = store.VerifyOutcomeSuccess
 	}
-	lc.finishVerify(outcome, runErr)
+	lc.Finish(outcome, runErr)
 	if runErr != nil {
 		return runErr
 	}
@@ -165,9 +164,9 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 // nil.
 func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, bool, error) {
 	if opts.TaskID != "" {
-		return resolveResumeByID(opts.Stderr, opts.TaskID)
+		return resolveResumeByID(opts.TaskID)
 	}
-	tasks, err := listResumableTasks(opts.Stderr)
+	tasks, err := listResumableTasks()
 	if err != nil {
 		return store.Task{}, false, err
 	}
@@ -196,10 +195,10 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 // non-empty VerifyResumeCursor. fs.ErrNotExist becomes the friendly
 // "task %q not found" wrapping; an empty cursor becomes
 // "task %q has no verify session".
-func resolveResumeByID(stderr io.Writer, id string) (store.Task, bool, error) {
-	s, ok := tasklog.OpenTaskLog(stderr)
-	if !ok {
-		return store.Task{}, false, errors.New("J: tasks database unavailable")
+func resolveResumeByID(id string) (store.Task, bool, error) {
+	s, err := openTasks()
+	if err != nil {
+		return store.Task{}, false, err
 	}
 	defer func() { _ = s.Close() }()
 	task, err := s.GetTask(id)
@@ -219,10 +218,10 @@ func resolveResumeByID(stderr io.Writer, id string) (store.Task, bool, error) {
 // VerifyResumeCursor regardless of status, sorted via
 // store.SortTasks. validateForVerify is intentionally NOT applied
 // here: resume is permissive by design.
-func listResumableTasks(stderr io.Writer) ([]store.Task, error) {
-	s, ok := tasklog.OpenTaskLog(stderr)
-	if !ok {
-		return nil, errors.New("J: tasks database unavailable")
+func listResumableTasks() ([]store.Task, error) {
+	s, err := openTasks()
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = s.Close() }()
 	all, err := s.ListTasks()

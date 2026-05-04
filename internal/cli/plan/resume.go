@@ -15,7 +15,6 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/picker"
-	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
@@ -117,7 +116,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	planPath := filepath.Join(taskDir, store.PlanFileName)
 
 	resumeTask := planResumeBegin(task)
-	tasklog.PersistWarn(opts.Stderr, resumeTask)
+	store.PersistWarn(opts.Stderr, resumeTask)
 
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
@@ -145,7 +144,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		refinedReq = readBestEffortWarn(opts.Stderr, requirementsPath)
 		planMD = readBestEffortWarn(opts.Stderr, planPath)
 	}
-	tasklog.PersistWarn(opts.Stderr, planResumeFinish(resumeTask, planErr, refinedReq, planMD, requirementsPath))
+	store.PersistWarn(opts.Stderr, planResumeFinish(resumeTask, planErr, refinedReq, planMD, requirementsPath))
 	if planErr != nil {
 		return planErr
 	}
@@ -164,9 +163,9 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 // (the same lock would otherwise block concurrent `j tasks` runs).
 func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, bool, error) {
 	if opts.TaskID != "" {
-		return resolveResumeByID(opts.Stderr, opts.TaskID)
+		return resolveResumeByID(opts.TaskID)
 	}
-	tasks, err := listResumableTasks(opts.Stderr)
+	tasks, err := listResumableTasks()
 	if err != nil {
 		return store.Task{}, false, err
 	}
@@ -195,10 +194,10 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 // non-empty PlanResumeCursor. fs.ErrNotExist becomes the friendly
 // "task %q not found" wrapping the way callers expect; an empty
 // cursor becomes "task %q has no plan session".
-func resolveResumeByID(stderr io.Writer, id string) (store.Task, bool, error) {
-	s, ok := tasklog.OpenTaskLog(stderr)
-	if !ok {
-		return store.Task{}, false, errors.New("J: tasks database unavailable")
+func resolveResumeByID(id string) (store.Task, bool, error) {
+	s, err := openTasks()
+	if err != nil {
+		return store.Task{}, false, err
 	}
 	defer func() { _ = s.Close() }()
 	task, err := s.GetTask(id)
@@ -220,10 +219,10 @@ func resolveResumeByID(stderr io.Writer, id string) (store.Task, bool, error) {
 // `j tasks`. The bbolt store is closed before the slice is
 // returned so the agent invocation downstream does not contend on
 // the file lock.
-func listResumableTasks(stderr io.Writer) ([]store.Task, error) {
-	s, ok := tasklog.OpenTaskLog(stderr)
-	if !ok {
-		return nil, errors.New("J: tasks database unavailable")
+func listResumableTasks() ([]store.Task, error) {
+	s, err := openTasks()
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = s.Close() }()
 	all, err := s.ListTasks()
@@ -298,7 +297,7 @@ func planResumeFinish(task store.Task, runErr error, refinedRequirements, planMa
 		return task
 	}
 	task.Status = store.StatusPlanDone
-	task.Summary = tasklog.Summary(tasklog.PickSource(refinedRequirements, planMarkdown), target)
+	task.Summary = store.Summary(store.PickSource(refinedRequirements, planMarkdown), target)
 	return task
 }
 

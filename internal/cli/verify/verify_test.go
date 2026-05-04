@@ -1470,7 +1470,7 @@ func TestRun_ByTaskID_TasksDBUnavailable(t *testing.T) {
 		Agents: []codingagents.Agent{agent},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "tasks db") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -1493,7 +1493,7 @@ func TestRun_List_DBUnavailable(t *testing.T) {
 		Agents: []codingagents.Agent{agent},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "tasks db") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -1704,7 +1704,7 @@ func resolvedForTest(taskDir string) resolved {
 // TestRunVerifyLoop_VerifierWaitCtxCancelled covers the new
 // run.WaitForExit error branch after verifierAgent.Verify: the
 // verifier returns a live PID, ctx is cancelled mid-poll, and the
-// loop must return outcomeNoRetries with ctx.Err().
+// loop must return store.VerifyOutcomeNoRetries with ctx.Err().
 func TestRunVerifyLoop_VerifierWaitCtxCancelled(t *testing.T) {
 	pid := startLongChild(t)
 	agent := &liveChildAgent{pid: pid}
@@ -1720,8 +1720,8 @@ func TestRunVerifyLoop_VerifierWaitCtxCancelled(t *testing.T) {
 		MaxIterations: 3,
 		Stderr:        io.Discard,
 	}, agent, agent, "m", "id", res)
-	if outcome != outcomeNoRetries {
-		t.Fatalf("outcome = %v, want outcomeNoRetries", outcome)
+	if outcome != store.VerifyOutcomeNoRetries {
+		t.Fatalf("outcome = %v, want VerifyOutcomeNoRetries", outcome)
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
@@ -1750,8 +1750,8 @@ func TestRunVerifyLoop_WorkerWaitCtxCancelled(t *testing.T) {
 		MaxIterations: 3,
 		Stderr:        io.Discard,
 	}, verifier, worker, "m", "id", res)
-	if outcome != outcomeNoRetries {
-		t.Fatalf("outcome = %v, want outcomeNoRetries", outcome)
+	if outcome != store.VerifyOutcomeNoRetries {
+		t.Fatalf("outcome = %v, want VerifyOutcomeNoRetries", outcome)
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)

@@ -17,7 +17,6 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/picker"
-	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/testutil"
@@ -230,7 +229,7 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	if row.Status != store.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", row.Status)
 	}
-	wantLog := filepath.Join(".j/tasks", id, tasklog.AgentLogFileName)
+	wantLog := filepath.Join(".j/tasks", id, store.AgentLogFileName)
 	if !strings.HasSuffix(row.AgentLogPath, wantLog) {
 		t.Fatalf("AgentLogPath = %q, want suffix %q", row.AgentLogPath, wantLog)
 	}

@@ -428,7 +428,7 @@ func TestRunResume_ListUnavailable(t *testing.T) {
 		Agents: []codingagents.Agent{newScriptedAgent()},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "tasks database unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "tasks db") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -451,7 +451,7 @@ func TestRunResume_FromTaskUnavailable(t *testing.T) {
 		Agents: []codingagents.Agent{newScriptedAgent()},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "tasks database unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "tasks db") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -681,8 +681,8 @@ func TestBeginVerifyTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	preBegin := existing.VerifyBeginAt
 	preCursor := existing.VerifyResumeCursor
 
-	lc := beginVerifyTaskResume(Options{Stderr: io.Discard}, existing)
-	lc.finishVerify(outcomeNoRetries, nil)
+	lc := existing.BeginVerifyResume(io.Discard)
+	lc.Finish(store.VerifyOutcomeNoRetries, nil)
 
 	tasks := readTasks(t)
 	if tasks[0].VerifyResumeCursor != preCursor {
@@ -713,8 +713,8 @@ func TestBeginVerifyTaskResume_NilBeginAtStampsFresh(t *testing.T) {
 	}
 	_ = s.Close()
 
-	lc := beginVerifyTaskResume(Options{Stderr: io.Discard}, existing)
-	lc.finishVerify(outcomeNoRetries, nil)
+	lc := existing.BeginVerifyResume(io.Discard)
+	lc.Finish(store.VerifyOutcomeNoRetries, nil)
 
 	tasks := readTasks(t)
 	if tasks[0].VerifyBeginAt == nil {

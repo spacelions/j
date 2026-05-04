@@ -16,7 +16,6 @@ import (
 
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/preflight"
-	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
@@ -185,7 +184,7 @@ func resolveStartTarget(ctx context.Context, opts StartOptions) (startTarget, er
 	}
 	res, err := picker.PickSource(ctx, opts.UI,
 		[]picker.Source{picker.SourceMarkdown, picker.SourceLinear, picker.SourceTask},
-		func() ([]store.Task, error) { return listAllTasks(opts.Stderr) },
+		listAllTasks,
 		errors.New("tasks: no tasks to re-plan; run `j tasks start --from-file <md>` first"))
 	if err != nil {
 		return startTarget{}, err
@@ -229,10 +228,14 @@ func newTargetFromMarkdown(raw string) (startTarget, error) {
 // row, sorts via store.SortTasks, and closes before returning. The
 // settings store is closed before the picker runs so the bbolt file
 // lock is not held across the long-running prompt.
-func listAllTasks(stderr io.Writer) ([]store.Task, error) {
-	s, ok := tasklog.OpenTaskLog(stderr)
-	if !ok {
-		return nil, errors.New("tasks: tasks db unavailable")
+func listAllTasks() ([]store.Task, error) {
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		return nil, fmt.Errorf("tasks: tasks db: %w", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("tasks: tasks db: %w", err)
 	}
 	defer func() { _ = s.Close() }()
 	all, err := s.ListTasks()
@@ -260,7 +263,7 @@ func prepareTaskFiles(target startTarget) (string, error) {
 			return "", fmt.Errorf("J: stage requirements: %w", err)
 		}
 	}
-	return filepath.Join(taskDir, tasklog.AgentLogFileName), nil
+	return filepath.Join(taskDir, store.AgentLogFileName), nil
 }
 
 // persistStartRow records the spawned PID + AgentLogPath onto the
@@ -271,10 +274,10 @@ func prepareTaskFiles(target startTarget) (string, error) {
 func persistStartRow(stderr io.Writer, target startTarget, agentLogPath string, pid int) {
 	if target.isNew {
 		begin := time.Now().UTC()
-		tasklog.PersistWarn(stderr, store.Task{
+		store.PersistWarn(stderr, store.Task{
 			ID:            target.taskID,
 			Status:        store.StatusPlanning,
-			Summary:       tasklog.Summary(target.body, target.source),
+			Summary:       store.Summary(target.body, target.source),
 			PlanBeginAt:   &begin,
 			AgentLogPath:  agentLogPath,
 			BackgroundPID: pid,
@@ -284,8 +287,14 @@ func persistStartRow(stderr io.Writer, target startTarget, agentLogPath string, 
 	// Re-plan: load + mutate + put back. Best-effort; a missing
 	// row would surface as a tasklog warning on stderr but the
 	// detached child is already running, so we don't rollback.
-	s, ok := tasklog.OpenTaskLog(stderr)
-	if !ok {
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
+		return
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
 		return
 	}
 	defer func() { _ = s.Close() }()

@@ -1,8 +1,10 @@
 package store
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -679,4 +681,1126 @@ func equal(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// listAllTasks opens the per-cwd tasks DB, lists every task, and
+// closes the store. Used by lifecycle tests to assert what the
+// PersistWarn-driven helpers wrote. Returns nil for "no DB yet" so
+// the negative-path tests can distinguish "file missing" from a
+// real bbolt error.
+func listAllTasks(t *testing.T) []Task {
+	t.Helper()
+	path, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatalf("DefaultTasksDBPath: %v", err)
+	}
+	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
+		return nil
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	got, err := s.ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	return got
+}
+
+// seedPlanDoneTask seeds a `plan-done` row for the work / verify
+// lifecycle tests. The id is returned so callers can look the row
+// back up. Use after t.Chdir(t.TempDir()) + EnsureProject().
+func seedPlanDoneTask(t *testing.T, summary string) string {
+	t.Helper()
+	id := NewTaskID()
+	dbPath, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatalf("DefaultTasksDBPath: %v", err)
+	}
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	begin := time.Now().UTC().Add(-time.Hour)
+	end := begin.Add(time.Minute)
+	task := Task{
+		ID:               id,
+		Status:           StatusPlanDone,
+		InvokedTool:      "cursor",
+		InvokedModel:     "sonnet-4",
+		PlanResumeCursor: "seed-plan-cursor",
+		Summary:          summary,
+		PlanBeginAt:      &begin,
+		PlanEndAt:        &end,
+	}
+	if err := s.PutTask(task); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	return id
+}
+
+// seedWorkDoneTask seeds a `work-done` row for the verify lifecycle
+// tests. Mirrors seedPlanDoneTask's shape but with the work-phase
+// timestamps and resume cursor populated.
+func seedWorkDoneTask(t *testing.T, summary string) string {
+	t.Helper()
+	id := NewTaskID()
+	dbPath, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatalf("DefaultTasksDBPath: %v", err)
+	}
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	planBegin := time.Now().UTC().Add(-2 * time.Hour)
+	planEnd := planBegin.Add(time.Minute)
+	workBegin := planEnd.Add(time.Minute)
+	workEnd := workBegin.Add(time.Minute)
+	task := Task{
+		ID:               id,
+		Status:           StatusWorkDone,
+		InvokedTool:      "cursor",
+		InvokedModel:     "sonnet-4",
+		PlanResumeCursor: "seed-plan-cursor",
+		WorkResumeCursor: "seed-work-cursor",
+		Summary:          summary,
+		PlanBeginAt:      &planBegin,
+		PlanEndAt:        &planEnd,
+		WorkBeginAt:      &workBegin,
+		WorkEndAt:        &workEnd,
+	}
+	if err := s.PutTask(task); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	return id
+}
+
+// TestReadRequirementSidecar_Variants exercises the happy paths plus
+// the early-return guards (empty path, empty stem).
+func TestReadRequirementSidecar_Variants(t *testing.T) {
+	dir := t.TempDir()
+	plan := filepath.Join(dir, "spec.plan.md")
+	if err := os.WriteFile(plan, []byte("plan"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadRequirementSidecar(plan); got != "" {
+		t.Fatalf("missing sidecar = %q, want empty", got)
+	}
+	requirement := filepath.Join(dir, "spec.md")
+	if err := os.WriteFile(requirement, []byte("req"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadRequirementSidecar(plan); got != "req" {
+		t.Fatalf("present sidecar = %q, want req", got)
+	}
+	if got := ReadRequirementSidecar(""); got != "" {
+		t.Fatalf("empty path = %q", got)
+	}
+	if got := ReadRequirementSidecar(filepath.Join(dir, ".plan.md")); got != "" {
+		t.Fatalf("empty stem = %q", got)
+	}
+}
+
+// TestReadRequirementSidecar_CandidateEqualsPlan covers the
+// "candidate == planPath" guard so a non-conventional plan name does
+// not loop reading the same file.
+func TestReadRequirementSidecar_CandidateEqualsPlan(t *testing.T) {
+	dir := t.TempDir()
+	bare := filepath.Join(dir, "spec.md")
+	if err := os.WriteFile(bare, []byte("body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadRequirementSidecar(bare); got != "" {
+		t.Fatalf("self-sidecar = %q, want empty", got)
+	}
+}
+
+// TestSummary_Fallbacks pins the Summary precedence: first non-empty
+// markdown line, then file basename, then empty string.
+func TestSummary_Fallbacks(t *testing.T) {
+	cases := []struct {
+		req, target, want string
+	}{
+		{"# heading\nbody", "/tmp/spec.md", "heading"},
+		{"", "/tmp/spec.md", "spec.md"},
+		{"", "", ""},
+	}
+	for _, c := range cases {
+		if got := Summary(c.req, c.target); got != c.want {
+			t.Fatalf("Summary(%q,%q) = %q, want %q", c.req, c.target, got, c.want)
+		}
+	}
+}
+
+// TestPickSource returns whichever of refined-requirements / plan
+// markdown yields a non-empty summary, preferring requirements.
+func TestPickSource(t *testing.T) {
+	cases := []struct {
+		req, plan, want string
+	}{
+		{"# refined", "# pa", "# refined"},
+		{"", "# pa", "# pa"},
+		{"", "", ""},
+	}
+	for _, c := range cases {
+		if got := PickSource(c.req, c.plan); got != c.want {
+			t.Fatalf("PickSource(%q,%q) = %q, want %q", c.req, c.plan, got, c.want)
+		}
+	}
+}
+
+// TestFromPlanAndRequirement_Fallbacks pins the work-phase summary
+// precedence: requirement first, plan body second, file basename
+// last, then empty string.
+func TestFromPlanAndRequirement_Fallbacks(t *testing.T) {
+	cases := []struct {
+		req, plan, planPath, want string
+	}{
+		{"# req heading\nbody", "## plan", "/tmp/x.plan.md", "req heading"},
+		{"", "## plan heading", "/tmp/x.plan.md", "plan heading"},
+		{"", "", "/tmp/x.plan.md", "x.plan.md"},
+		{"", "", "", ""},
+	}
+	for _, c := range cases {
+		if got := FromPlanAndRequirement(c.req, c.plan, c.planPath); got != c.want {
+			t.Fatalf("FromPlanAndRequirement(%q,%q,%q) = %q, want %q", c.req, c.plan, c.planPath, got, c.want)
+		}
+	}
+}
+
+// TestPersistWarn_OpenFailure forces bolt.Open to fail
+// by parking a regular file at .j/tasks; a single warning lands on
+// stderr and execution returns silently.
+func TestPersistWarn_OpenFailure(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jdir := filepath.Join(dir, ".j")
+	if err := os.MkdirAll(jdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	PersistWarn(&stderr, Task{ID: "x", Status: StatusPlanDone})
+	if !strings.Contains(stderr.String(), "warning: tasks") {
+		t.Fatalf("stderr = %q, want tasks warning", stderr.String())
+	}
+}
+
+// TestPersistWarn_PutError opens the layout but feeds PersistWarn a
+// task with an empty ID so PutTask errors. The "tasks put" warning
+// must surface on stderr.
+func TestPersistWarn_PutError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	var stderr bytes.Buffer
+	PersistWarn(&stderr, Task{Status: StatusPlanDone})
+	if !strings.Contains(stderr.String(), "warning: tasks put") {
+		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
+	}
+}
+
+// TestPersistWarn_RoundTrip pins the happy path: a well-formed task
+// is written and a subsequent ListTasks round-trips the row.
+func TestPersistWarn_RoundTrip(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := NewTaskID()
+	PersistWarn(io.Discard, Task{ID: id, Status: StatusPlanning, Summary: "hello"})
+	got := listAllTasks(t)
+	if len(got) != 1 || got[0].ID != id {
+		t.Fatalf("tasks = %+v, want one row with id %q", got, id)
+	}
+	if got[0].Summary != "hello" {
+		t.Fatalf("Summary = %q, want hello", got[0].Summary)
+	}
+}
+
+// TestNewPlanTask_RecordsAndFinish drives the planning → plan-done
+// happy path: NewPlanTask writes the row at status `planning`, then
+// Finish stamps end_at and flips the row to plan-done. The summary
+// uses the requirement body (first non-empty line) since it beats
+// the file basename.
+func TestNewPlanTask_RecordsAndFinish(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := NewTaskID()
+	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", id, "/tmp/x.md", "# heading\nbody", "plan-cursor")
+	lc.Finish(nil, "# heading\nbody", "## plan", "/tmp/x.md")
+	tasks := listAllTasks(t)
+	if len(tasks) != 1 || tasks[0].ID != id {
+		t.Fatalf("tasks = %+v", tasks)
+	}
+	got := tasks[0]
+	if got.Status != StatusPlanDone {
+		t.Fatalf("Status = %q, want plan-done", got.Status)
+	}
+	if got.InvokedTool != "cursor" || got.InvokedModel != "sonnet-4" {
+		t.Fatalf("tool/model = %q/%q", got.InvokedTool, got.InvokedModel)
+	}
+	if got.PlanResumeCursor != "plan-cursor" {
+		t.Fatalf("PlanResumeCursor = %q", got.PlanResumeCursor)
+	}
+	if got.Summary != "heading" {
+		t.Fatalf("Summary = %q, want heading", got.Summary)
+	}
+	if got.PlanBeginAt == nil || got.PlanEndAt == nil {
+		t.Fatalf("timestamps missing: %+v", got)
+	}
+	if got.PlanEndAt.Before(*got.PlanBeginAt) {
+		t.Fatalf("end %v before begin %v", got.PlanEndAt, got.PlanBeginAt)
+	}
+}
+
+// TestPlanLifecycle_Finish_ErrorPath drives the StatusHelp branch
+// when agent.Plan errored.
+func TestPlanLifecycle_Finish_ErrorPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	lc := NewPlanTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.md", "x", "")
+	lc.Finish(errors.New("boom"), "", "", "/tmp/x.md")
+	tasks := listAllTasks(t)
+	if len(tasks) != 1 || tasks[0].Status != StatusHelp {
+		t.Fatalf("tasks = %+v, want one help-status task", tasks)
+	}
+}
+
+// TestPlanLifecycle_RecordBackground_StampsPIDAndPath drives the
+// happy path of RecordBackground: the in-memory task row carries the
+// PID and log path, status stays at planning, and a stray Finish call
+// is a silent no-op thanks to the closed flag.
+func TestPlanLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "")
+	lc.RecordBackground(99887, "/tmp/agent.log")
+	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
+	got := listAllTasks(t)[0]
+	if got.Status != StatusPlanning {
+		t.Fatalf("Status = %q, want planning", got.Status)
+	}
+	if got.BackgroundPID != 99887 {
+		t.Fatalf("BackgroundPID = %d", got.BackgroundPID)
+	}
+	if got.AgentLogPath != "/tmp/agent.log" {
+		t.Fatalf("AgentLogPath = %q", got.AgentLogPath)
+	}
+}
+
+// TestPlanLifecycle_RecordBackground_ClosedShortCircuit pins the
+// second-call no-op: once a lifecycle has been finalised, a
+// subsequent RecordBackground does nothing.
+func TestPlanLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "")
+	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
+	lc.RecordBackground(11111, "/tmp/should-not-stick.log")
+	got := listAllTasks(t)[0]
+	if got.Status != StatusPlanDone {
+		t.Fatalf("Status = %q, want plan-done", got.Status)
+	}
+	if got.BackgroundPID != 0 {
+		t.Fatalf("BackgroundPID = %d, want 0 (closed branch)", got.BackgroundPID)
+	}
+	if got.AgentLogPath != "" {
+		t.Fatalf("AgentLogPath = %q, want empty", got.AgentLogPath)
+	}
+}
+
+// TestPlanLifecycle_FinishIdempotent pins the closed-flag short
+// circuit so a second Finish call is a silent no-op.
+func TestPlanLifecycle_FinishIdempotent(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "")
+	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
+	lc.Finish(errors.New("boom"), "should not", "change", "anything")
+	tasks := listAllTasks(t)
+	if len(tasks) != 1 || tasks[0].Status != StatusPlanDone {
+		t.Fatalf("second finish should be a no-op: %+v", tasks)
+	}
+}
+
+// TestPlanLifecycle_FinishPutErrorWarns drives the "tasks put"
+// warning branch by feeding a task with no ID.
+func TestPlanLifecycle_FinishPutErrorWarns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	var stderr bytes.Buffer
+	lc := &PlanLifecycle{stderr: &stderr, task: Task{Status: StatusPlanning}}
+	lc.Finish(nil, "", "", "")
+	if !strings.Contains(stderr.String(), "warning: tasks put") {
+		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
+	}
+}
+
+// TestNewPlanTask_PutErrorAtBegin pins the put-error branch *inside*
+// NewPlanTask: PutTask fails because the task has no ID, the warning
+// surfaces, and the begin call still returns a usable lifecycle.
+func TestNewPlanTask_PutErrorAtBegin(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	var stderr bytes.Buffer
+	lc := NewPlanTask(&stderr, "cursor", "m", "", "", "", "")
+	if lc == nil {
+		t.Fatal("NewPlanTask returned nil")
+	}
+	t.Cleanup(func() { lc.Finish(nil, "", "", "") })
+	if !strings.Contains(stderr.String(), "warning: tasks put") {
+		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
+	}
+}
+
+// TestNewPlanTask_OpenFails forces bolt.Open to
+// fail by replacing the post-init list.db file with a directory.
+// Both NewPlanTask and Finish emit a warning and execution continues.
+func TestNewPlanTask_OpenFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	path, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	lc := NewPlanTask(&stderr, "cursor", "m", NewTaskID(), "", "", "")
+	if lc == nil {
+		t.Fatal("NewPlanTask returned nil")
+	}
+	lc.Finish(nil, "", "", "")
+	if !strings.Contains(stderr.String(), "tasks") {
+		t.Fatalf("stderr = %q, want some tasks warning", stderr.String())
+	}
+}
+
+// TestPlanLifecycle_Task returns a value copy of the in-memory task
+// row so callers can read it without poking at the unexported field.
+func TestPlanLifecycle_Task(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := NewTaskID()
+	lc := NewPlanTask(io.Discard, "cursor", "m", id, "", "", "")
+	if got := lc.Task(); got.ID != id {
+		t.Fatalf("Task().ID = %q, want %q", got.ID, id)
+	}
+}
+
+// TestTask_BeginPlanReuse_PreservesLineage flips an existing plan-done
+// row to planning, refreshes the plan resume cursor, and preserves
+// the original PlanBeginAt while clearing PlanEndAt / DoneAt.
+func TestTask_BeginPlanReuse_PreservesLineage(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := seedPlanDoneTask(t, "seeded")
+	dbPath, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	prePlanBegin := existing.PlanBeginAt
+
+	lc := existing.BeginPlanReuse(io.Discard, "cursor", "gpt-5", "fresh-plan-cursor")
+	lc.Finish(nil, "# refined", "## plan", "/tmp/x.md")
+	got := listAllTasks(t)[0]
+	if got.Status != StatusPlanDone {
+		t.Fatalf("Status = %q", got.Status)
+	}
+	if got.PlanResumeCursor != "fresh-plan-cursor" {
+		t.Fatalf("PlanResumeCursor = %q", got.PlanResumeCursor)
+	}
+	if got.InvokedModel != "gpt-5" {
+		t.Fatalf("InvokedModel = %q", got.InvokedModel)
+	}
+	if got.PlanBeginAt == nil || !got.PlanBeginAt.Equal(*prePlanBegin) {
+		t.Fatalf("PlanBeginAt = %v, want %v", got.PlanBeginAt, prePlanBegin)
+	}
+	if got.Summary != "refined" {
+		t.Fatalf("Summary = %q", got.Summary)
+	}
+}
+
+// TestNewWorkTask_RecordsRow pins the legacy import write: a fresh
+// row at status=working, work fields populated, and no plan fields.
+func TestNewWorkTask_RecordsRow(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := NewTaskID()
+	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", id, "/tmp/spec.plan.md", "# req", "plan body", "work-cursor")
+	lc.Finish(nil)
+	got := listAllTasks(t)[0]
+	if got.ID != id || got.Status != StatusWorkDone {
+		t.Fatalf("got = %+v", got)
+	}
+	if got.WorkResumeCursor != "work-cursor" {
+		t.Fatalf("WorkResumeCursor = %q", got.WorkResumeCursor)
+	}
+	if got.PlanResumeCursor != "" {
+		t.Fatalf("PlanResumeCursor should stay empty for legacy import: %q", got.PlanResumeCursor)
+	}
+	if got.WorkBeginAt == nil || got.WorkEndAt == nil {
+		t.Fatalf("work timestamps missing: %+v", got)
+	}
+	if got.DoneAt != nil {
+		t.Fatalf("DoneAt should not be set for work-done: %v", got.DoneAt)
+	}
+}
+
+// TestTask_BeginWorkReuse_PreservesPlanPhase pins the bbolt-sourced
+// reuse path: the existing plan-phase fields stay intact.
+func TestTask_BeginWorkReuse_PreservesPlanPhase(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := seedPlanDoneTask(t, "seeded")
+	dbPath, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	prePlanBegin := existing.PlanBeginAt
+	prePlanEnd := existing.PlanEndAt
+	preCursor := existing.PlanResumeCursor
+
+	lc := existing.BeginWorkReuse(io.Discard, "cursor", "gpt-5", "fresh-work-cursor")
+	lc.Finish(nil)
+
+	got := listAllTasks(t)[0]
+	if got.Status != StatusWorkDone {
+		t.Fatalf("Status = %q", got.Status)
+	}
+	if got.PlanResumeCursor != preCursor {
+		t.Fatalf("PlanResumeCursor changed: got %q, want %q", got.PlanResumeCursor, preCursor)
+	}
+	if got.WorkResumeCursor != "fresh-work-cursor" {
+		t.Fatalf("WorkResumeCursor = %q", got.WorkResumeCursor)
+	}
+	if got.InvokedModel != "gpt-5" {
+		t.Fatalf("InvokedModel = %q", got.InvokedModel)
+	}
+	if got.PlanBeginAt == nil || !got.PlanBeginAt.Equal(*prePlanBegin) {
+		t.Fatalf("PlanBeginAt = %v", got.PlanBeginAt)
+	}
+	if got.PlanEndAt == nil || !got.PlanEndAt.Equal(*prePlanEnd) {
+		t.Fatalf("PlanEndAt = %v", got.PlanEndAt)
+	}
+}
+
+// TestWorkLifecycle_FinishErrorPath drives the StatusHelp branch.
+func TestWorkLifecycle_FinishErrorPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	lc := NewWorkTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "", "body", "")
+	lc.Finish(errors.New("boom"))
+	got := listAllTasks(t)[0]
+	if got.Status != StatusHelp {
+		t.Fatalf("Status = %q, want help", got.Status)
+	}
+	if got.DoneAt != nil {
+		t.Fatalf("DoneAt should remain nil on failure: %v", got.DoneAt)
+	}
+}
+
+// TestWorkLifecycle_RecordBackground_StampsPIDAndPath drives the
+// happy path of RecordBackground for the work flow.
+func TestWorkLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.plan.md", "", "body", "")
+	lc.RecordBackground(54321, "/tmp/agent.log")
+	lc.Finish(nil)
+	got := listAllTasks(t)[0]
+	if got.Status != StatusWorking {
+		t.Fatalf("Status = %q, want working", got.Status)
+	}
+	if got.BackgroundPID != 54321 {
+		t.Fatalf("BackgroundPID = %d", got.BackgroundPID)
+	}
+	if got.AgentLogPath != "/tmp/agent.log" {
+		t.Fatalf("AgentLogPath = %q", got.AgentLogPath)
+	}
+}
+
+// TestWorkLifecycle_RecordBackground_ClosedShortCircuit pins the
+// second-call no-op for the work flow.
+func TestWorkLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.plan.md", "", "body", "")
+	lc.Finish(nil)
+	lc.RecordBackground(99999, "/tmp/should-not-stick.log")
+	got := listAllTasks(t)[0]
+	if got.Status != StatusWorkDone {
+		t.Fatalf("Status = %q, want work-done", got.Status)
+	}
+	if got.BackgroundPID != 0 {
+		t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
+	}
+}
+
+// TestWorkLifecycle_FinishIdempotent pins the second-Finish no-op.
+func TestWorkLifecycle_FinishIdempotent(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.plan.md", "", "body", "")
+	lc.Finish(nil)
+	lc.Finish(errors.New("ignored"))
+	tasks := listAllTasks(t)
+	if len(tasks) != 1 || tasks[0].Status != StatusWorkDone {
+		t.Fatalf("second finish should be a no-op: %+v", tasks)
+	}
+}
+
+// TestNewWorkTask_OpenFails forces bolt.Open to
+// fail. NewWorkTask and Finish each emit a warning and continue.
+func TestNewWorkTask_OpenFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	path, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	lc := NewWorkTask(&stderr, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "", "body", "")
+	if lc == nil {
+		t.Fatal("NewWorkTask returned nil")
+	}
+	lc.Finish(nil)
+	if !strings.Contains(stderr.String(), "tasks") {
+		t.Fatalf("stderr = %q, want tasks warning", stderr.String())
+	}
+}
+
+// TestWorkLifecycle_FinishPutErrorWarns drives the put warning by
+// handing Finish a task with no ID.
+func TestWorkLifecycle_FinishPutErrorWarns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	var stderr bytes.Buffer
+	lc := &WorkLifecycle{stderr: &stderr, task: Task{Status: StatusWorking}}
+	lc.Finish(nil)
+	if !strings.Contains(stderr.String(), "warning: tasks put") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+// TestNewWorkTask_MintsWorktreeName pins the worktree slug derivation
+// on the legacy-import path: the cwd basename + summary slug.
+func TestNewWorkTask_MintsWorktreeName(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "myproj")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	lc := NewWorkTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "# do the thing", "body", "")
+	lc.Finish(nil)
+	got := listAllTasks(t)[0]
+	if got.Worktree != "myproj-do-the-thing" {
+		t.Fatalf("Worktree = %q", got.Worktree)
+	}
+}
+
+// TestTask_BeginWorkReuse_MintsWorktreeWhenEmpty pins the
+// reuse-mint-on-empty branch.
+func TestTask_BeginWorkReuse_MintsWorktreeWhenEmpty(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "myproj")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := seedPlanDoneTask(t, "hello world")
+	dbPath, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	if existing.Worktree != "" {
+		t.Fatalf("seed already has worktree %q", existing.Worktree)
+	}
+	lc := existing.BeginWorkReuse(io.Discard, "cursor", "m", "cursor")
+	lc.Finish(nil)
+	got := listAllTasks(t)[0]
+	if got.Worktree != "myproj-hello-world" {
+		t.Fatalf("Worktree = %q", got.Worktree)
+	}
+}
+
+// TestTask_BeginWorkReuse_PreservesPreExistingWorktree pins the
+// preserve-existing-value branch of fillWorktree.
+func TestTask_BeginWorkReuse_PreservesPreExistingWorktree(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := seedPlanDoneTask(t, "hello")
+	dbPath, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	existing.Worktree = "manual-override"
+	lc := existing.BeginWorkReuse(io.Discard, "cursor", "m", "cursor")
+	lc.Finish(nil)
+	got := listAllTasks(t)[0]
+	if got.Worktree != "manual-override" {
+		t.Fatalf("Worktree = %q", got.Worktree)
+	}
+}
+
+// TestTask_BeginWorkResume_LeavesWorktreeAlone pins that resume never
+// re-mints Worktree (a pre-R2 task stays empty so the verifier falls
+// back to the main checkout).
+func TestTask_BeginWorkResume_LeavesWorktreeAlone(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := seedPlanDoneTask(t, "hello")
+	dbPath, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	if existing.Worktree != "" {
+		t.Fatalf("seed already has worktree %q", existing.Worktree)
+	}
+	lc := existing.BeginWorkResume(io.Discard)
+	lc.Finish(nil)
+	got := listAllTasks(t)[0]
+	if got.Worktree != "" {
+		t.Fatalf("Worktree = %q, want empty", got.Worktree)
+	}
+}
+
+// TestWorkLifecycle_Task returns a value copy of the in-memory task
+// row so callers can read freshly-minted Worktree without poking at
+// the unexported field.
+func TestWorkLifecycle_Task(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "myproj")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	lc := NewWorkTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "# do the thing", "body", "")
+	if got := lc.Task(); got.Worktree != "myproj-do-the-thing" {
+		t.Fatalf("Task().Worktree = %q", got.Worktree)
+	}
+}
+
+// TestTask_BeginVerify_FlipsStatusAndStampsResume pins the begin
+// helper: status flips to verifying, the new resume cursor lands on
+// the row, work-phase fields are preserved, and stale verify-phase /
+// done-at timestamps are cleared.
+func TestTask_BeginVerify_FlipsStatusAndStampsResume(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := seedWorkDoneTask(t, "x")
+	dbPath, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	preWorkBegin := existing.WorkBeginAt
+	preWorkEnd := existing.WorkEndAt
+	preWorkCursor := existing.WorkResumeCursor
+
+	lc := existing.BeginVerify(io.Discard, "cursor", "gpt-5", "fresh-verify-cursor")
+	lc.Finish(VerifyOutcomeSuccess, nil)
+
+	got := listAllTasks(t)[0]
+	if got.Status != StatusCompleted {
+		t.Fatalf("Status = %q, want completed", got.Status)
+	}
+	if got.VerifyResumeCursor != "fresh-verify-cursor" {
+		t.Fatalf("VerifyResumeCursor = %q", got.VerifyResumeCursor)
+	}
+	if got.WorkResumeCursor != preWorkCursor {
+		t.Fatalf("WorkResumeCursor changed: %q vs %q", got.WorkResumeCursor, preWorkCursor)
+	}
+	if got.WorkBeginAt == nil || !got.WorkBeginAt.Equal(*preWorkBegin) {
+		t.Fatalf("WorkBeginAt changed: %v vs %v", got.WorkBeginAt, preWorkBegin)
+	}
+	if got.WorkEndAt == nil || !got.WorkEndAt.Equal(*preWorkEnd) {
+		t.Fatalf("WorkEndAt changed: %v vs %v", got.WorkEndAt, preWorkEnd)
+	}
+	if got.VerifyBeginAt == nil || got.VerifyEndAt == nil {
+		t.Fatalf("verify timestamps missing: %+v", got)
+	}
+	if got.DoneAt == nil {
+		t.Fatalf("DoneAt should be stamped on completed: %+v", got)
+	}
+	if got.InvokedModel != "gpt-5" {
+		t.Fatalf("InvokedModel = %q", got.InvokedModel)
+	}
+}
+
+// TestVerifyLifecycle_FinishNoRetries pins the verify-done branch.
+func TestVerifyLifecycle_FinishNoRetries(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := seedWorkDoneTask(t, "x")
+	dbPath, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor")
+	lc.Finish(VerifyOutcomeNoRetries, nil)
+	got := listAllTasks(t)[0]
+	if got.Status != StatusVerifyDone {
+		t.Fatalf("Status = %q, want verify-done", got.Status)
+	}
+	if got.DoneAt != nil {
+		t.Fatalf("DoneAt should remain nil: %v", got.DoneAt)
+	}
+}
+
+// TestVerifyLifecycle_FinishErrorPath drives the StatusHelp branch.
+func TestVerifyLifecycle_FinishErrorPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := seedWorkDoneTask(t, "x")
+	dbPath, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor")
+	lc.Finish(VerifyOutcomeNoRetries, errors.New("boom"))
+	got := listAllTasks(t)[0]
+	if got.Status != StatusHelp {
+		t.Fatalf("Status = %q, want help", got.Status)
+	}
+}
+
+// TestVerifyLifecycle_RecordBackground_StampsPIDAndPath pins the
+// happy path of RecordBackground for the verify flow.
+func TestVerifyLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := seedWorkDoneTask(t, "x")
+	dbPath, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor")
+	lc.RecordBackground(54321, "/tmp/agent.log")
+	lc.Finish(VerifyOutcomeSuccess, nil)
+	got := listAllTasks(t)[0]
+	if got.Status != StatusVerifying {
+		t.Fatalf("Status = %q, want verifying", got.Status)
+	}
+	if got.BackgroundPID != 54321 {
+		t.Fatalf("BackgroundPID = %d", got.BackgroundPID)
+	}
+	if got.AgentLogPath != "/tmp/agent.log" {
+		t.Fatalf("AgentLogPath = %q", got.AgentLogPath)
+	}
+}
+
+// TestVerifyLifecycle_RecordBackground_ClosedShortCircuit pins the
+// second-call no-op for the verify flow.
+func TestVerifyLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := seedWorkDoneTask(t, "x")
+	dbPath, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor")
+	lc.Finish(VerifyOutcomeSuccess, nil)
+	lc.RecordBackground(99999, "/tmp/should-not-stick.log")
+	got := listAllTasks(t)[0]
+	if got.Status != StatusCompleted {
+		t.Fatalf("Status = %q, want completed", got.Status)
+	}
+	if got.BackgroundPID != 0 {
+		t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
+	}
+}
+
+// TestVerifyLifecycle_FinishIdempotent pins the second-Finish no-op.
+func TestVerifyLifecycle_FinishIdempotent(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := seedWorkDoneTask(t, "x")
+	dbPath, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor")
+	lc.Finish(VerifyOutcomeSuccess, nil)
+	lc.Finish(VerifyOutcomeNoRetries, errors.New("ignored"))
+	got := listAllTasks(t)[0]
+	if got.Status != StatusCompleted {
+		t.Fatalf("second finish should be a no-op: %+v", got)
+	}
+}
+
+// TestBeginVerify_OpenFails forces bolt.Open to
+// fail. BeginVerify and Finish each emit a warning and continue.
+func TestBeginVerify_OpenFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	path, err := DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	lc := Task{ID: NewTaskID(), Status: StatusWorkDone}.BeginVerify(&stderr, "cursor", "m", "")
+	if lc == nil {
+		t.Fatal("BeginVerify returned nil")
+	}
+	lc.Finish(VerifyOutcomeSuccess, nil)
+	if !strings.Contains(stderr.String(), "tasks") {
+		t.Fatalf("stderr = %q, want tasks warning", stderr.String())
+	}
+}
+
+// TestBeginVerify_PutTaskErrorWarns drives the put-error branch by
+// handing a Task with an empty ID.
+func TestBeginVerify_PutTaskErrorWarns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	var stderr bytes.Buffer
+	lc := Task{Status: StatusWorkDone}.BeginVerify(&stderr, "cursor", "m", "")
+	if lc == nil {
+		t.Fatal("BeginVerify returned nil")
+	}
+	t.Cleanup(func() { lc.Finish(VerifyOutcomeSuccess, nil) })
+	if !strings.Contains(stderr.String(), "warning: tasks put") {
+		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
+	}
+}
+
+// TestVerifyLifecycle_FinishPutErrorWarns drives the finalize-time
+// put warning by handing Finish a task with no ID.
+func TestVerifyLifecycle_FinishPutErrorWarns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	var stderr bytes.Buffer
+	lc := &VerifyLifecycle{stderr: &stderr, task: Task{Status: StatusVerifying}}
+	lc.Finish(VerifyOutcomeSuccess, nil)
+	if !strings.Contains(stderr.String(), "warning: tasks put") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+// TestTask_BeginVerifyResume_PreservesLineage pins the resume path's
+// invariants: cursor and tool/model untouched, original VerifyBeginAt
+// preserved when present, status flipped to verifying.
+func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	begin := time.Now().UTC().Add(-time.Hour)
+	existing := Task{
+		ID:                 NewTaskID(),
+		Status:             StatusVerifyDone,
+		InvokedTool:        "cursor",
+		InvokedModel:       "sonnet-4",
+		VerifyResumeCursor: "v-cursor",
+		VerifyBeginAt:      &begin,
+	}
+	if err := EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	PersistWarn(io.Discard, existing)
+	lc := existing.BeginVerifyResume(io.Discard)
+	lc.Finish(VerifyOutcomeSuccess, nil)
+	got := listAllTasks(t)[0]
+	if got.Status != StatusCompleted {
+		t.Fatalf("Status = %q", got.Status)
+	}
+	if got.VerifyResumeCursor != "v-cursor" {
+		t.Fatalf("VerifyResumeCursor = %q", got.VerifyResumeCursor)
+	}
+	if got.InvokedModel != "sonnet-4" {
+		t.Fatalf("InvokedModel = %q", got.InvokedModel)
+	}
+	if got.VerifyBeginAt == nil || !got.VerifyBeginAt.Equal(begin) {
+		t.Fatalf("VerifyBeginAt changed: %v", got.VerifyBeginAt)
+	}
 }

@@ -51,6 +51,31 @@ func mustInit(t *testing.T) {
 	testutil.Init(t)
 }
 
+// readTasks opens the per-cwd tasks DB, lists every task, and closes
+// the store. Used by Run-level tests to assert the lifecycle wrote
+// what they expect. Returns nil for a missing DB so the negative-path
+// cases can distinguish "file missing" from a real bbolt error.
+func readTasks(t *testing.T) []store.Task {
+	t.Helper()
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatalf("DefaultTasksDBPath: %v", err)
+	}
+	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
+		return nil
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	got, err := s.ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	return got
+}
+
 func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
 	t.Helper()
 	v, ok, err := s.Get(store.BucketPlanner, key)

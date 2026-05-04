@@ -25,6 +25,29 @@ import (
 // Cursor backend.
 const testCursorChatID = "00000000-0000-4000-8000-000000000001"
 
+// readTasks lists every task in the per-cwd tasks DB. Tests call this
+// after Run to assert the lifecycle wrote what we expect.
+func readTasks(t *testing.T) []store.Task {
+	t.Helper()
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatalf("DefaultTasksDBPath: %v", err)
+	}
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	got, err := s.ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	return got
+}
+
 // TestMain chdir's the entire work-package test binary into an
 // ephemeral directory so any test that calls Run without an explicit
 // Store doesn't pollute the source tree with a `.j/settings` file
@@ -1487,7 +1510,7 @@ func TestRun_StoreLazyDefault(t *testing.T) {
 	}
 }
 
-// TestRun_ByTaskID_TasksDBUnavailable forces store.OpenTaskLog to
+// TestRun_ByTaskID_TasksDBUnavailable forces store.Open to
 // return ok=false by parking a regular file at .j/tasks (the legacy
 // schema). resolveByTaskID then must surface a clean error.
 func TestRun_ByTaskID_TasksDBUnavailable(t *testing.T) {
@@ -1508,7 +1531,7 @@ func TestRun_ByTaskID_TasksDBUnavailable(t *testing.T) {
 		Agents: []codingagents.Agent{agent},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "tasks db") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -1557,7 +1580,7 @@ func TestRun_ListPlanDoneTasks_DBUnavailable(t *testing.T) {
 		Agents: []codingagents.Agent{agent},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "tasks db") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -1627,10 +1650,10 @@ func TestRun_FromFile_EnsureTaskDirError(t *testing.T) {
 }
 
 // TestOpenLifecycle_PutTaskErrorWarns drives the put-error branch
-// inside openLifecycle by handing it a Task with an empty ID, which
-// store.PutTask rejects without ever reaching bbolt. The warning
-// surfaces on stderr and beginWorkTaskNew still returns a usable
-// lifecycle.
+// inside the work lifecycle helper by handing it a Task with an empty
+// ID, which store.PutTask rejects without ever reaching bbolt. The
+// warning surfaces on stderr and store.NewWorkTask still returns a
+// usable lifecycle.
 func TestOpenLifecycle_PutTaskErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -1638,11 +1661,11 @@ func TestOpenLifecycle_PutTaskErrorWarns(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	lc := beginWorkTaskNew(Options{Stderr: &stderr}, &scriptedAgent{name: "cursor"}, "m", "", "/tmp/x.plan.md", "", "body", "")
+	lc := store.NewWorkTask(&stderr, "cursor", "m", "", "/tmp/x.plan.md", "", "body", "")
 	if lc == nil {
-		t.Fatal("beginWorkTaskNew returned nil lifecycle")
+		t.Fatal("store.NewWorkTask returned nil lifecycle")
 	}
-	t.Cleanup(func() { lc.finishWork(nil) })
+	t.Cleanup(func() { lc.Finish(nil) })
 	if !strings.Contains(stderr.String(), "warning: tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
 	}

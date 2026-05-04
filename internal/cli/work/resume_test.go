@@ -439,7 +439,7 @@ func TestRunResume_Work_ListUnavailable(t *testing.T) {
 		Agents: []codingagents.Agent{newScriptedAgent()},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "tasks database unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "tasks db") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -463,7 +463,7 @@ func TestRunResume_Work_FromTaskUnavailable(t *testing.T) {
 		Agents: []codingagents.Agent{newScriptedAgent()},
 		UI:     &scriptedUI{},
 	})
-	if err == nil || !strings.Contains(err.Error(), "tasks database unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "tasks db") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -642,8 +642,8 @@ func TestBeginWorkTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	preBegin := existing.WorkBeginAt
 	preCursor := existing.WorkResumeCursor
 
-	lc := beginWorkTaskResume(Options{Stderr: io.Discard}, existing)
-	lc.finishWork(nil)
+	lc := existing.BeginWorkResume(io.Discard)
+	lc.Finish(nil)
 
 	tasks := readTasks(t)
 	if len(tasks) != 1 || tasks[0].ID != id {
@@ -819,8 +819,8 @@ func TestBeginWorkTaskResume_NilWorkBeginAtStampsFreshOne(t *testing.T) {
 	}
 	_ = s.Close()
 
-	lc := beginWorkTaskResume(Options{Stderr: io.Discard}, existing)
-	lc.finishWork(nil)
+	lc := existing.BeginWorkResume(io.Discard)
+	lc.Finish(nil)
 
 	tasks := readTasks(t)
 	if len(tasks) != 1 || tasks[0].WorkBeginAt == nil {

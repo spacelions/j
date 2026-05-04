@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -14,6 +17,15 @@ import (
 	"github.com/oklog/ulid/v2"
 	bolt "go.etcd.io/bbolt"
 )
+
+// AgentLogFileName is the per-task file that captures stdout/stderr
+// of a fire-and-forget headless coding-agent child. It lives at
+// `<cwd>/.j/tasks/<id>/agent.log` and is written to each task row's
+// AgentLogPath so `j tasks` and the user can find it later. All
+// phases (plan / work / verify) share this filename so the reaper in
+// `j tasks` can surface the log regardless of which command spawned
+// the child.
+const AgentLogFileName = "agent.log"
 
 // BucketTasks is the bucket inside the per-project task log DB
 // (`<cwd>/.j/tasks`) that holds JSON-encoded Task values keyed by
@@ -403,4 +415,495 @@ func slugify(s string, max int) string {
 	}
 	out := strings.TrimRight(b.String(), "-")
 	return truncateRunes(out, max)
+}
+// PersistWarn opens `<cwd>/.j/tasks/list.db`, PutTask's the row, and
+// closes the store. Path-resolve, open, and put failures each surface
+// as a single `warning: tasks ...` line on stderr and the helper
+// returns; persistence is best-effort by design so the phase
+// lifecycle keeps running even when the row cannot be written.
+// Designed to be called twice per phase run — once at begin, once at
+// finish — so the bbolt file lock is never held across the agent
+// invocation in between. Mirrors the inline open/close convention in
+// PersistAgentSelection.
+func PersistWarn(stderr io.Writer, task Task) {
+	path, err := DefaultTasksDBPath()
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks path: %v\n", err)
+		return
+	}
+	s, err := Open(path)
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: tasks db: %v\n", err)
+		return
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.PutTask(task); err != nil {
+		fmt.Fprintf(stderr, "warning: tasks put: %v\n", err)
+	}
+}
+
+// ReadRequirementSidecar derives the path to the original requirement
+// markdown from a plan path produced by `j plan`'s legacy
+// `<dir>/<stem>.plan.md` convention and returns its contents when
+// readable. When the plan path does not follow this convention, or
+// the sidecar file does not exist / cannot be read, an empty string
+// is returned so the caller falls back to the plan body for the
+// summary.
+func ReadRequirementSidecar(planPath string) string {
+	if planPath == "" {
+		return ""
+	}
+	base := filepath.Base(planPath)
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	stem = strings.TrimSuffix(stem, ".plan")
+	if stem == "" {
+		return ""
+	}
+	candidate := filepath.Join(filepath.Dir(planPath), stem+".md")
+	if candidate == planPath {
+		return ""
+	}
+	data, err := os.ReadFile(candidate)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// Summary picks a one-line summary in this order:
+//  1. first non-empty line of the requirement / plan markdown,
+//  2. the requirement file basename when the body was unreadable.
+//
+// Truncation is delegated to SummarizeMarkdown for the body path; the
+// basename path is short by construction. Shared by the plan and
+// work phases (work wraps it via FromPlanAndRequirement to add the
+// plan-body fallback).
+func Summary(requirement, target string) string {
+	if s := SummarizeMarkdown(requirement); s != "" {
+		return s
+	}
+	if target != "" {
+		return filepath.Base(target)
+	}
+	return ""
+}
+
+// PickSource returns whichever of the refined requirements or the
+// plan body has a usable first non-empty line, preferring the
+// requirements summary because that is the document the agent
+// rewrote to capture user intent. Both empty falls through to the
+// file basename in Summary.
+func PickSource(refinedRequirements, planMarkdown string) string {
+	if SummarizeMarkdown(refinedRequirements) != "" {
+		return refinedRequirements
+	}
+	return planMarkdown
+}
+
+// FromPlanAndRequirement mirrors Summary's precedence for `j work`:
+// requirement first, plan body second, file basename last. Kept
+// separate from Summary so the plan flow (which only has one body
+// candidate at begin time) does not need to pass an empty plan body
+// just to reuse the work-flow fallback chain.
+func FromPlanAndRequirement(requirement, planBody, planPath string) string {
+	if s := SummarizeMarkdown(requirement); s != "" {
+		return s
+	}
+	if s := SummarizeMarkdown(planBody); s != "" {
+		return s
+	}
+	if planPath != "" {
+		return filepath.Base(planPath)
+	}
+	return ""
+}
+
+// PlanLifecycle owns the begin/end task-log writes around a single
+// agent.Plan invocation. The struct holds no bbolt handle — every
+// task-log write goes through PersistWarn, which opens, writes, and
+// closes within the same call so the bbolt file lock is never held
+// across agent.Plan and a concurrent `j tasks` from another shell is
+// not blocked. The lifecycle is constructed with NewPlanTask /
+// Task.BeginPlanReuse and finalised with Finish; callers pair them
+// with a defer so the task is always written even when agent.Plan
+// panics.
+type PlanLifecycle struct {
+	stderr io.Writer
+	task   Task
+	closed bool
+}
+
+// NewPlanTask records the "planning" entry for a real plan run. The
+// caller passes the freshly-minted task id (so the per-task directory
+// under <cwd>/.j/tasks/ uses the same id as the bbolt row), the
+// markdown target the user is planning against (used for the basename
+// fallback when the body has no usable first line), the requirement
+// body, and the plan-phase resume token (empty for agents with no
+// notion of resume or on a NewResumeID failure already warned by the
+// caller).
+//
+// Best effort: failure to open the task log or to write the initial
+// row warns once on stderr and execution continues.
+func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement, resumeID string) *PlanLifecycle {
+	begin := time.Now().UTC()
+	task := Task{
+		ID:               taskID,
+		Status:           StatusPlanning,
+		InvokedTool:      agentName,
+		InvokedModel:     model,
+		PlanResumeCursor: resumeID,
+		Summary:          Summary(requirement, target),
+		PlanBeginAt:      &begin,
+	}
+	lc := &PlanLifecycle{stderr: stderr, task: task}
+	PersistWarn(stderr, task)
+	return lc
+}
+
+// BeginPlanReuse mutates a copy of the receiver to flip status to
+// `planning` for the re-plan flow. PlanEndAt and DoneAt are cleared
+// so the finalize step stamps fresh values; the original
+// PlanBeginAt is preserved verbatim when set so the row keeps its
+// first-run lineage. Tool/model and the plan resume cursor are
+// refreshed so the row reflects the latest re-plan invocation.
+//
+// The body / source-path are intentionally not touched: re-plan
+// reads requirements.md from the existing task directory and feeds
+// it back through agent.Plan, so the summary derivation runs again
+// in Finish.
+func (t Task) BeginPlanReuse(stderr io.Writer, agentName, model, resumeID string) *PlanLifecycle {
+	begin := time.Now().UTC()
+	task := t
+	task.Status = StatusPlanning
+	task.InvokedTool = agentName
+	task.InvokedModel = model
+	task.PlanResumeCursor = resumeID
+	task.PlanEndAt = nil
+	task.DoneAt = nil
+	if task.PlanBeginAt == nil {
+		task.PlanBeginAt = &begin
+	}
+	lc := &PlanLifecycle{stderr: stderr, task: task}
+	PersistWarn(stderr, task)
+	return lc
+}
+
+// RecordBackground stamps the spawned child's PID and the agent log
+// path on the in-memory task row and re-persists it. It is the
+// counterpart of Finish for fire-and-forget headless runs: the row
+// stays at status `planning` until the reaper in `j tasks` observes
+// the child exited and finalises it.
+//
+// RecordBackground sets the closed flag so a defensive Finish fired
+// by mistake (e.g. via a deferred guard) becomes a silent no-op and
+// does not clobber the background row with `plan-done` / `help`.
+func (lc *PlanLifecycle) RecordBackground(pid int, logPath string) {
+	if lc.closed {
+		return
+	}
+	lc.closed = true
+	lc.task.BackgroundPID = pid
+	lc.task.AgentLogPath = logPath
+	PersistWarn(lc.stderr, lc.task)
+}
+
+// Finish stamps plan_end_at, decides the terminal status from runErr,
+// and (when runErr is nil) re-derives Summary from the refined
+// requirements (then the plan body, then the file basename) because
+// the agent may have rewritten the requirements during the session.
+// The task is rewritten to the log even on errors so `help` is
+// observable from `j tasks`. The bbolt store is opened just long
+// enough to write the row and closed before this returns; calling
+// Finish twice is a silent no-op via the closed flag.
+func (lc *PlanLifecycle) Finish(runErr error, refinedRequirements, planMarkdown, target string) {
+	if lc.closed {
+		return
+	}
+	lc.closed = true
+	end := time.Now().UTC()
+	lc.task.PlanEndAt = &end
+	if runErr != nil {
+		lc.task.Status = StatusHelp
+	} else {
+		lc.task.Status = StatusPlanDone
+		lc.task.Summary = Summary(PickSource(refinedRequirements, planMarkdown), target)
+	}
+	PersistWarn(lc.stderr, lc.task)
+}
+
+// Task returns the in-memory snapshot of the task row. The plan flow
+// uses this for symmetry with WorkLifecycle.Task; the field is a
+// value copy so callers cannot mutate the lifecycle's internal state.
+func (lc *PlanLifecycle) Task() Task { return lc.task }
+
+// WorkLifecycle owns the begin/end task-log writes around a single
+// agent.Work invocation. Mirrors PlanLifecycle: the struct holds no
+// bbolt handle — every task-log write goes through PersistWarn so
+// the bbolt file lock is never held across agent.Work and a
+// concurrent `j tasks` from another shell is not blocked.
+//
+// Constructed with NewWorkTask, Task.BeginWorkReuse, or
+// Task.BeginWorkResume depending on whether the run is a legacy file
+// import (creates a new bbolt row), a bbolt-sourced run (mutates an
+// existing row in place), or a resume.
+type WorkLifecycle struct {
+	stderr io.Writer
+	task   Task
+	closed bool
+}
+
+// NewWorkTask records the "working" entry for a legacy `--from-file`
+// import. The caller has already minted the task id and staged the
+// plan markdown into <cwd>/.j/tasks/<id>/plan.md (and optionally
+// requirements.md). This helper just stamps the bbolt row.
+//
+// Worktree is minted via WorktreeNameFor so the worker and the
+// verifier share one rule; callers that pre-populate Worktree (none
+// today — `j plan` does not set it) still have their value preserved.
+func NewWorkTask(stderr io.Writer, agentName, model, taskID, planPath, requirement, planBody, resumeID string) *WorkLifecycle {
+	begin := time.Now().UTC()
+	task := Task{
+		ID:               taskID,
+		Status:           StatusWorking,
+		InvokedTool:      agentName,
+		InvokedModel:     model,
+		WorkResumeCursor: resumeID,
+		Summary:          FromPlanAndRequirement(requirement, planBody, planPath),
+		WorkBeginAt:      &begin,
+	}
+	fillWorktree(&task)
+	return openWorkLifecycle(stderr, task)
+}
+
+// BeginWorkReuse mutates a copy of the receiver to flip status to
+// `working`, stamp work_begin_at, clear stale work_end_at / done_at
+// from a previous failed run, and record the latest tool/model and
+// resume cursor for the work phase. Plan-phase fields are preserved.
+//
+// A pre-existing Worktree on the receiver is kept verbatim (so manual
+// edits persist); an empty one is populated via WorktreeNameFor so
+// rows that pre-date the field still gain a meaningful name on their
+// first bbolt-sourced `j work`.
+func (t Task) BeginWorkReuse(stderr io.Writer, agentName, model, resumeID string) *WorkLifecycle {
+	begin := time.Now().UTC()
+	task := t
+	task.Status = StatusWorking
+	task.InvokedTool = agentName
+	task.InvokedModel = model
+	task.WorkResumeCursor = resumeID
+	task.WorkBeginAt = &begin
+	task.WorkEndAt = nil
+	task.DoneAt = nil
+	fillWorktree(&task)
+	return openWorkLifecycle(stderr, task)
+}
+
+// BeginWorkResume is the resume-flow companion of BeginWorkReuse. The
+// two functions diverge in two places:
+//
+//  1. The existing WorkResumeCursor is preserved verbatim instead of
+//     being overwritten with a fresh `Agent.NewResumeID` value (the
+//     whole point of resume is reusing the cursor recorded on the
+//     task row).
+//  2. The original WorkBeginAt timestamp is preserved when set so the
+//     task row keeps its first-run lineage; only WorkEndAt / DoneAt
+//     are cleared so Finish stamps fresh values on the next finalize.
+//     Tool/model are kept verbatim because resume never re-prompts
+//     the user for them.
+func (t Task) BeginWorkResume(stderr io.Writer) *WorkLifecycle {
+	task := t
+	task.Status = StatusWorking
+	task.WorkEndAt = nil
+	task.DoneAt = nil
+	if task.WorkBeginAt == nil {
+		begin := time.Now().UTC()
+		task.WorkBeginAt = &begin
+	}
+	return openWorkLifecycle(stderr, task)
+}
+
+// openWorkLifecycle is the shared helper that best-effort writes the
+// initial row and returns a WorkLifecycle suitable for Finish.
+func openWorkLifecycle(stderr io.Writer, task Task) *WorkLifecycle {
+	lc := &WorkLifecycle{stderr: stderr, task: task}
+	PersistWarn(stderr, task)
+	return lc
+}
+
+// fillWorktree populates task.Worktree via WorktreeNameFor when it is
+// empty, leaving a pre-existing value untouched. A ProjectName lookup
+// failure (cwd removed while the process runs) is treated as "no
+// project slug" so the helper still mints a task-only slug instead
+// of bailing: `j work` has more important things to do than surface
+// a hard error for a cosmetic worktree label.
+func fillWorktree(task *Task) {
+	if task.Worktree != "" {
+		return
+	}
+	project, _ := ProjectName()
+	task.Worktree = WorktreeNameFor(project, *task)
+}
+
+// RecordBackground stamps the spawned child's PID and the agent log
+// path on the in-memory work task row and re-persists it. The row
+// stays at status `working` until the reaper in `j tasks` observes
+// the child exited and finalises it.
+//
+// RecordBackground sets the closed flag so a defensive Finish fired
+// by mistake becomes a silent no-op and does not clobber the
+// background row with `work-done` / `help`.
+func (lc *WorkLifecycle) RecordBackground(pid int, logPath string) {
+	if lc.closed {
+		return
+	}
+	lc.closed = true
+	lc.task.BackgroundPID = pid
+	lc.task.AgentLogPath = logPath
+	PersistWarn(lc.stderr, lc.task)
+}
+
+// Finish stamps work_end_at, picks the terminal status from runErr
+// (work-done on success, help on error), and rewrites the task. The
+// `completed` status (and DoneAt) is reserved for `j verify`; `j work`
+// no longer terminates the lifecycle here. Calling Finish twice is a
+// silent no-op via the closed flag.
+func (lc *WorkLifecycle) Finish(runErr error) {
+	if lc.closed {
+		return
+	}
+	lc.closed = true
+	end := time.Now().UTC()
+	lc.task.WorkEndAt = &end
+	if runErr != nil {
+		lc.task.Status = StatusHelp
+	} else {
+		lc.task.Status = StatusWorkDone
+	}
+	PersistWarn(lc.stderr, lc.task)
+}
+
+// Task returns the in-memory snapshot of the work task row. Used by
+// `j work` to read the freshly-minted Worktree value for the
+// agent.Work request without poking at the unexported struct field.
+func (lc *WorkLifecycle) Task() Task { return lc.task }
+
+// VerifyOutcome enumerates the terminal results of `j verify`'s
+// fix-loop. VerifyOutcomeSuccess means the verifier returned VERDICT:
+// PASS at some iteration; the task can be finalised as `completed`.
+// VerifyOutcomeNoRetries means the loop exhausted MaxIterations
+// without a PASS verdict; the task ends as `verify-done`. Errors are
+// surfaced separately via the runErr argument so VerifyLifecycle.Finish
+// can pick the `help` status.
+type VerifyOutcome int
+
+const (
+	// VerifyOutcomeSuccess: verifier returned PASS; finalise as
+	// `completed` with DoneAt stamped.
+	VerifyOutcomeSuccess VerifyOutcome = iota
+	// VerifyOutcomeNoRetries: loop exhausted without a PASS; finalise
+	// as `verify-done`.
+	VerifyOutcomeNoRetries
+)
+
+// VerifyLifecycle owns the begin/end task-log writes around a single
+// `j verify` invocation. Mirrors WorkLifecycle: the struct holds no
+// bbolt handle — every task-log write goes through PersistWarn so
+// the bbolt file lock is never held across agent.Verify and a
+// concurrent `j tasks` from another shell is not blocked.
+type VerifyLifecycle struct {
+	stderr io.Writer
+	task   Task
+	closed bool
+}
+
+// BeginVerify flips an existing task row to `verifying`, stamps
+// VerifyBeginAt, clears stale VerifyEndAt / DoneAt from a previous
+// failed run, and records the latest tool/model and resume cursor
+// for the verify phase. Plan-phase and work-phase fields are
+// preserved.
+func (t Task) BeginVerify(stderr io.Writer, agentName, model, resumeID string) *VerifyLifecycle {
+	begin := time.Now().UTC()
+	task := t
+	task.Status = StatusVerifying
+	task.InvokedTool = agentName
+	task.InvokedModel = model
+	task.VerifyResumeCursor = resumeID
+	task.VerifyBeginAt = &begin
+	task.VerifyEndAt = nil
+	task.DoneAt = nil
+	return openVerifyLifecycle(stderr, task)
+}
+
+// BeginVerifyResume is the resume-flow companion of BeginVerify. It
+// diverges from BeginVerify in two places:
+//
+//  1. The existing VerifyResumeCursor is preserved verbatim instead
+//     of being overwritten with a fresh `Agent.NewResumeID` value.
+//  2. The original VerifyBeginAt timestamp is preserved when set so
+//     the task row keeps its first-run lineage; only VerifyEndAt /
+//     DoneAt are cleared so Finish stamps fresh values on the next
+//     finalize. Tool/model are kept verbatim because resume never
+//     re-prompts the user for them.
+func (t Task) BeginVerifyResume(stderr io.Writer) *VerifyLifecycle {
+	task := t
+	task.Status = StatusVerifying
+	task.VerifyEndAt = nil
+	task.DoneAt = nil
+	if task.VerifyBeginAt == nil {
+		begin := time.Now().UTC()
+		task.VerifyBeginAt = &begin
+	}
+	return openVerifyLifecycle(stderr, task)
+}
+
+// openVerifyLifecycle is the shared helper that best-effort writes
+// the initial row and returns a VerifyLifecycle suitable for Finish.
+func openVerifyLifecycle(stderr io.Writer, task Task) *VerifyLifecycle {
+	lc := &VerifyLifecycle{stderr: stderr, task: task}
+	PersistWarn(stderr, task)
+	return lc
+}
+
+// RecordBackground stamps the spawned child's PID and the agent log
+// path on the in-memory verify task row and re-persists it. The row
+// stays at status `verifying` until the reaper in `j tasks` observes
+// the child exited and finalises it.
+func (lc *VerifyLifecycle) RecordBackground(pid int, logPath string) {
+	if lc.closed {
+		return
+	}
+	lc.closed = true
+	lc.task.BackgroundPID = pid
+	lc.task.AgentLogPath = logPath
+	PersistWarn(lc.stderr, lc.task)
+}
+
+// Finish stamps verify_end_at, picks the terminal status from
+// (outcome, runErr), and rewrites the task row.
+//
+//   - runErr != nil → status `help`, DoneAt unchanged.
+//   - outcome == VerifyOutcomeSuccess → status `completed`, DoneAt
+//     stamped.
+//   - outcome == VerifyOutcomeNoRetries → status `verify-done`,
+//     DoneAt unchanged.
+//
+// Calling Finish twice is a silent no-op via the closed flag.
+func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
+	if lc.closed {
+		return
+	}
+	lc.closed = true
+	end := time.Now().UTC()
+	lc.task.VerifyEndAt = &end
+	switch {
+	case runErr != nil:
+		lc.task.Status = StatusHelp
+	case outcome == VerifyOutcomeSuccess:
+		lc.task.Status = StatusCompleted
+		done := time.Now().UTC()
+		lc.task.DoneAt = &done
+	default:
+		lc.task.Status = StatusVerifyDone
+	}
+	PersistWarn(lc.stderr, lc.task)
 }

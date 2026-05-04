@@ -202,7 +202,7 @@ func TestConfirmStatusOverride_PromptError(t *testing.T) {
 func TestLoadTaskByID_NotFound(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	_, err := loadTaskByID(Options{Stderr: io.Discard}, "ghost")
+	_, err := loadTaskByID("ghost")
 	if err == nil || !strings.Contains(err.Error(), `task "ghost" not found`) {
 		t.Fatalf("err = %v", err)
 	}
@@ -213,7 +213,7 @@ func TestLoadTaskByID_Success(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedReplanTask(t, store.StatusPlanDone, "# req", nil)
-	got, err := loadTaskByID(Options{Stderr: io.Discard}, id)
+	got, err := loadTaskByID(id)
 	if err != nil {
 		t.Fatalf("loadTaskByID: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestLoadTaskByID_Success(t *testing.T) {
 	}
 }
 
-// TestLoadTaskByID_OpenFails covers the OpenTaskLog !ok branch by
+// TestLoadTaskByID_OpenFails covers the open-failure branch by
 // replacing list.db with a directory before the call.
 func TestLoadTaskByID_OpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -237,14 +237,13 @@ func TestLoadTaskByID_OpenFails(t *testing.T) {
 	if err := os.MkdirAll(dbPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	var stderr bytes.Buffer
-	_, err = loadTaskByID(Options{Stderr: &stderr}, "anything")
-	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+	_, err = loadTaskByID("anything")
+	if err == nil || !strings.Contains(err.Error(), "plan: tasks db") {
 		t.Fatalf("err = %v", err)
 	}
 }
 
-// TestListAllTasks_OpenFails covers the OpenTaskLog !ok branch.
+// TestListAllTasks_OpenFails covers the open-failure branch.
 func TestListAllTasks_OpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -258,9 +257,8 @@ func TestListAllTasks_OpenFails(t *testing.T) {
 	if err := os.MkdirAll(dbPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	var stderr bytes.Buffer
-	_, err = listAllTasks(Options{Stderr: &stderr})
-	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
+	_, err = listAllTasks()
+	if err == nil || !strings.Contains(err.Error(), "plan: tasks db") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -272,7 +270,7 @@ func TestListAllTasks_SortsAndReturns(t *testing.T) {
 	mustInit(t)
 	id1 := seedReplanTask(t, store.StatusPlanDone, "a", nil)
 	id2 := seedReplanTask(t, store.StatusPlanning, "b", nil)
-	got, err := listAllTasks(Options{Stderr: io.Discard})
+	got, err := listAllTasks()
 	if err != nil {
 		t.Fatalf("listAllTasks: %v", err)
 	}
@@ -707,21 +705,22 @@ func TestBeginPlanTaskReuse_SeedsBeginIfMissing(t *testing.T) {
 	if _, err := store.EnsureTaskDir(existing.ID); err != nil {
 		t.Fatal(err)
 	}
-	lc := beginPlanTaskReuse(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", existing, "resume-id")
+	lc := existing.BeginPlanReuse(io.Discard, "cursor", "sonnet-4", "resume-id")
 	if lc == nil {
 		t.Fatal("lifecycle = nil")
 	}
-	if lc.task.PlanBeginAt == nil {
+	got := lc.Task()
+	if got.PlanBeginAt == nil {
 		t.Fatal("PlanBeginAt should be stamped when the row had none")
 	}
-	if lc.task.InvokedTool != "cursor" || lc.task.InvokedModel != "sonnet-4" {
-		t.Fatalf("tool/model = %q/%q", lc.task.InvokedTool, lc.task.InvokedModel)
+	if got.InvokedTool != "cursor" || got.InvokedModel != "sonnet-4" {
+		t.Fatalf("tool/model = %q/%q", got.InvokedTool, got.InvokedModel)
 	}
-	if lc.task.PlanResumeCursor != "resume-id" {
-		t.Fatalf("PlanResumeCursor = %q", lc.task.PlanResumeCursor)
+	if got.PlanResumeCursor != "resume-id" {
+		t.Fatalf("PlanResumeCursor = %q", got.PlanResumeCursor)
 	}
-	if lc.task.Status != store.StatusPlanning {
-		t.Fatalf("Status = %q, want planning", lc.task.Status)
+	if got.Status != store.StatusPlanning {
+		t.Fatalf("Status = %q, want planning", got.Status)
 	}
 }
 
@@ -745,17 +744,18 @@ func TestBeginPlanTaskReuse_PreservesExistingBegin(t *testing.T) {
 	if _, err := store.EnsureTaskDir(existing.ID); err != nil {
 		t.Fatal(err)
 	}
-	lc := beginPlanTaskReuse(Options{Stderr: io.Discard}, &scriptedAgent{name: "cursor"}, "sonnet-4", existing, "resume-id")
+	lc := existing.BeginPlanReuse(io.Discard, "cursor", "sonnet-4", "resume-id")
 	if lc == nil {
 		t.Fatal("lifecycle = nil")
 	}
-	if lc.task.PlanBeginAt == nil || !lc.task.PlanBeginAt.Equal(original) {
-		t.Fatalf("PlanBeginAt = %v, want %v", lc.task.PlanBeginAt, original)
+	got := lc.Task()
+	if got.PlanBeginAt == nil || !got.PlanBeginAt.Equal(original) {
+		t.Fatalf("PlanBeginAt = %v, want %v", got.PlanBeginAt, original)
 	}
-	if lc.task.PlanEndAt != nil {
-		t.Fatalf("PlanEndAt should be cleared, got %v", lc.task.PlanEndAt)
+	if got.PlanEndAt != nil {
+		t.Fatalf("PlanEndAt should be cleared, got %v", got.PlanEndAt)
 	}
-	if lc.task.DoneAt != nil {
-		t.Fatalf("DoneAt should be cleared, got %v", lc.task.DoneAt)
+	if got.DoneAt != nil {
+		t.Fatalf("DoneAt should be cleared, got %v", got.DoneAt)
 	}
 }
