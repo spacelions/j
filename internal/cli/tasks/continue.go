@@ -238,37 +238,52 @@ func resumeFromPlanDone(ctx context.Context, opts ContinueOptions, taskID string
 	if err != nil {
 		return err
 	}
-	stampSpawnOnRow(opts.Stderr, taskID, agentLogPath, pid)
+	if stampErr := stampSpawnOnRow(opts.Stderr, taskID, agentLogPath, pid); errors.Is(stampErr, store.ErrOpenTimeout) {
+		// The detached orchestrator is already running but no row
+		// records it; suppress the banner so we do not announce a
+		// background task the user cannot reach via `j tasks`.
+		return nil
+	}
 	banner.RunningInBackground(opts.Stdout, fmt.Sprintf("task %s", taskID), pid, agentLogPath)
 	return nil
 }
 
 // stampSpawnOnRow records BackgroundPID + AgentLogPath on the
 // existing task row after a detached orchestrator spawn. Best-effort
-// — any read / write error surfaces as a single warning on stderr.
-// The detached child is already running, so we never roll back.
-func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
+// — any read / write error surfaces as a single warning on stderr
+// (or, for the bbolt open-timeout case, the refined
+// `■ J: cannot write to database` line). The detached child is
+// already running, so we never roll back; the returned error lets
+// the caller suppress the follow-up `RunningInBackground` banner
+// when the row could not be written.
+func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) error {
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		banner.DangerousFprintf(stderr, "J: warning: tasks path: %v\n", err)
-		return
+		return err
 	}
 	s, err := store.Open(path)
 	if err != nil {
+		if errors.Is(err, store.ErrOpenTimeout) {
+			banner.CannotWriteToDatabase(stderr)
+			return store.ErrOpenTimeout
+		}
 		banner.DangerousFprintf(stderr, "J: warning: tasks db: %v\n", err)
-		return
+		return err
 	}
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(taskID)
 	if err != nil {
 		banner.DangerousFprintf(stderr, "J: warning: tasks get %q: %v\n", taskID, err)
-		return
+		return err
 	}
 	row.AgentLogPath = agentLogPath
 	row.BackgroundPID = pid
 	if err := s.PutTask(row); err != nil {
 		banner.DangerousFprintf(stderr, "J: warning: tasks put: %v\n", err)
+		return err
 	}
+	return nil
 }
 
 // dispatchHelp picks a resume target for a `help` task. The latest

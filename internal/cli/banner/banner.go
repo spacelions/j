@@ -84,6 +84,18 @@ func DangerousFprintln(w io.Writer, a ...any) (int, error) {
 	return fmt.Fprint(w, DangerousText(fmt.Sprintln(a...)))
 }
 
+// CannotWriteToDatabase writes the refined "■ J: cannot write to
+// database" line in the dangerous (orange) palette. It is the
+// user-facing surface for the bbolt open-timeout case where another
+// process — typically `j tasks` — holds the file lock and the row
+// the current command meant to persist will never land. Callers
+// that paired the older `J: warning: tasks db: ...` line with a
+// follow-up banner suppress that banner so the user is not told
+// their task is "running in background" when the row is missing.
+func CannotWriteToDatabase(w io.Writer) {
+	fmt.Fprint(w, dangerStyle.Render("■ J: cannot write to database")+"\n")
+}
+
 func renderText(style lipgloss.Style, s string) string {
 	if !strings.Contains(s, "\n") {
 		return style.Render(s)

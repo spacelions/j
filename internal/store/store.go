@@ -76,6 +76,13 @@ const RequirementsFileName = "requirements.md"
 // concurrent-access bugs quickly.
 const openTimeout = 2 * time.Second
 
+// ErrOpenTimeout is the sentinel callers match with errors.Is when
+// Open fails because another process holds the bbolt file lock for
+// the full openTimeout window. Wrapping bolt.ErrTimeout in this
+// sentinel lets call sites branch on the lock-contention case
+// without importing go.etcd.io/bbolt.
+var ErrOpenTimeout = errors.New("store: open timeout")
+
 // KV is a single bucket entry, returned in sorted-by-key order from List.
 type KV struct {
 	Key   string
@@ -328,6 +335,9 @@ func Open(path string) (*Store, error) {
 	}
 	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: openTimeout})
 	if err != nil {
+		if errors.Is(err, bolt.ErrTimeout) {
+			return nil, fmt.Errorf("store: open %q: %w", path, ErrOpenTimeout)
+		}
 		return nil, fmt.Errorf("store: open %q: %w", path, err)
 	}
 	return &Store{db: db}, nil

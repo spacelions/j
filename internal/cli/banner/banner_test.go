@@ -63,6 +63,41 @@ func TestDangerousFprintAndFprintf(t *testing.T) {
 	}
 }
 
+// TestCannotWriteToDatabase pins the refined open-timeout banner:
+// the rendered output, with ANSI styling stripped, must equal the
+// literal `■ J: cannot write to database\n` so callers and tests
+// can assert on the exact wording.
+func TestCannotWriteToDatabase(t *testing.T) {
+	var buf bytes.Buffer
+	CannotWriteToDatabase(&buf)
+	if stripped := ansi.Strip(buf.String()); stripped != "■ J: cannot write to database\n" {
+		t.Fatalf("ansi.Strip(CannotWriteToDatabase output) = %q, want %q",
+			stripped, "■ J: cannot write to database\n")
+	}
+}
+
+// TestCannotWriteToDatabase_RendersDangerStyle pins the styling
+// contract: with a TrueColor profile the helper must emit ANSI
+// styling, must not render bold, and after stripping the styling
+// the message text is unchanged.
+func TestCannotWriteToDatabase_RendersDangerStyle(t *testing.T) {
+	restoreColorProfile(t)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
+	var buf bytes.Buffer
+	CannotWriteToDatabase(&buf)
+	out := buf.String()
+	if !strings.Contains(out, "\x1b[") {
+		t.Fatalf("CannotWriteToDatabase output should contain ANSI styling, got %q", out)
+	}
+	if hasBoldSGR(out) {
+		t.Fatalf("CannotWriteToDatabase output rendered bold SGR: %q", out)
+	}
+	if stripped := ansi.Strip(out); stripped != "■ J: cannot write to database\n" {
+		t.Fatalf("ansi.Strip(CannotWriteToDatabase output) = %q", stripped)
+	}
+}
+
 func TestTextWithColorDoesNotRenderBold(t *testing.T) {
 	restoreColorProfile(t)
 	lipgloss.SetColorProfile(termenv.TrueColor)

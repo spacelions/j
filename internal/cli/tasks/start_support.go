@@ -13,10 +13,15 @@ import (
 	"github.com/spacelions/j/internal/store"
 )
 
-func persistStartRow(stderr io.Writer, target startTarget, agentLogPath string, pid int) {
+// persistStartRow writes the just-spawned task row (new task) or
+// stamps PID + log path on an existing row (re-plan). Returns the
+// underlying persistence error so RunStart / RunContinue can branch
+// on store.ErrOpenTimeout and suppress the misleading
+// `RunningInBackground` banner when the row was never written.
+func persistStartRow(stderr io.Writer, target startTarget, agentLogPath string, pid int) error {
 	if target.IsNew {
 		begin := time.Now().UTC()
-		store.PersistWarn(stderr, store.Task{
+		return store.PersistWarn(stderr, store.Task{
 			ID:            target.TaskID,
 			Status:        store.StatusPlanning,
 			Summary:       store.Summary(target.Body, target.Source),
@@ -24,9 +29,8 @@ func persistStartRow(stderr io.Writer, target startTarget, agentLogPath string, 
 			AgentLogPath:  agentLogPath,
 			BackgroundPID: pid,
 		})
-		return
 	}
-	stampSpawnOnRow(stderr, target.TaskID, agentLogPath, pid)
+	return stampSpawnOnRow(stderr, target.TaskID, agentLogPath, pid)
 }
 
 func resolveJBinary(override string) (string, error) {

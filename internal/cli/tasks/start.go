@@ -173,7 +173,13 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	if err != nil {
 		return err
 	}
-	persistStartRow(opts.Stderr, target, agentLogPath, pid)
+	if persistErr := persistStartRow(opts.Stderr, target, agentLogPath, pid); errors.Is(persistErr, store.ErrOpenTimeout) {
+		// Row was never written; the orchestrator child has already
+		// been spawned but the user cannot reach it from `j tasks`.
+		// Suppress the banner to avoid telling them the task is
+		// running in the background when no row exists.
+		return nil
+	}
 	banner.RunningInBackground(opts.Stdout, fmt.Sprintf("task %s", target.TaskID), pid, agentLogPath)
 	return nil
 }

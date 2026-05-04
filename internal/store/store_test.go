@@ -120,6 +120,49 @@ func TestOpen_BoltOpenFails(t *testing.T) {
 	}
 }
 
+// TestOpen_LockedFileWrapsErrOpenTimeout pins the timeout-wrapping
+// contract: a second Open against an already-open file blocks for
+// the openTimeout window and then surfaces a wrapped ErrOpenTimeout
+// so callers can branch on errors.Is. Other open failures (e.g. the
+// "is a directory" case above) must NOT be classified as timeout.
+func TestOpen_LockedFileWrapsErrOpenTimeout(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	path, err := DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	first, err := Open(path)
+	if err != nil {
+		t.Fatalf("first Open: %v", err)
+	}
+	t.Cleanup(func() { _ = first.Close() })
+
+	_, err = Open(path)
+	if err == nil {
+		t.Fatal("second Open should fail while the first holds the lock")
+	}
+	if !errors.Is(err, ErrOpenTimeout) {
+		t.Fatalf("err = %v, want errors.Is(err, ErrOpenTimeout)", err)
+	}
+}
+
+// TestOpen_NonTimeoutFailureIsNotErrOpenTimeout pins the negative
+// branch: failures other than the bbolt lock timeout must not be
+// re-classified as ErrOpenTimeout.
+func TestOpen_NonTimeoutFailureIsNotErrOpenTimeout(t *testing.T) {
+	root := t.TempDir()
+	_, err := Open(root)
+	if err == nil {
+		t.Fatal("expected bolt open error on directory path")
+	}
+	if errors.Is(err, ErrOpenTimeout) {
+		t.Fatalf("non-timeout failure mis-classified as ErrOpenTimeout: %v", err)
+	}
+}
+
 func TestStore_CloseNil(t *testing.T) {
 	var s *Store
 	if err := s.Close(); err != nil {

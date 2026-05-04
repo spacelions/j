@@ -914,3 +914,52 @@ func TestResumeFromPlanDone_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
 		t.Fatalf("skip-planning = false, want true; argv=%v", args)
 	}
 }
+
+// TestRunContinue_BboltLockedSuppressesBanner pins the resume-after-
+// plan-done timeout-suppression contract. With another open handle
+// holding the bbolt lock, stampSpawnOnRow must emit the refined
+// `■ J: cannot write to database` line and return store.ErrOpenTimeout
+// so resumeFromPlanDone can suppress the misleading
+// RunningInBackground banner. RunContinue is then driven end to end
+// against the same lock to assert no banner reaches stdout. The
+// inner-helper assertion lets us pin both the wording and the
+// sentinel even when resolveContinueTask itself races on the lock.
+func TestRunContinue_BboltLockedSuppressesBanner(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, nil) // plan-done by default
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open(holder): %v", err)
+	}
+	t.Cleanup(func() { _ = holder.Close() })
+
+	var stderr bytes.Buffer
+	stampErr := stampSpawnOnRow(&stderr, id, filepath.Join(t.TempDir(), "agent.log"), 4242)
+	if !errors.Is(stampErr, store.ErrOpenTimeout) {
+		t.Fatalf("stampSpawnOnRow err = %v, want ErrOpenTimeout", stampErr)
+	}
+	if !strings.Contains(stderr.String(), "■ J: cannot write to database") {
+		t.Fatalf("stderr = %q, want refined timeout banner", stderr.String())
+	}
+	if strings.Contains(stderr.String(), "warning: tasks db") {
+		t.Fatalf("stderr should not contain legacy warning: %q", stderr.String())
+	}
+
+	var stdout bytes.Buffer
+	_ = RunContinue(context.Background(), ContinueOptions{
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  &stdout,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{newContinueAgent()},
+		UI:      &fakeUI{},
+		JBinary: noopJBinary(t),
+	})
+	if strings.Contains(stdout.String(), "running in background") {
+		t.Fatalf("stdout should not announce a background banner under lock contention: %q", stdout.String())
+	}
+}

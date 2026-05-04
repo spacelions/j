@@ -945,6 +945,53 @@ func TestRunStart_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
 	}
 }
 
+// TestRunStart_BboltLockedSuppressesBanner pins the new
+// timeout-suppression contract for `j tasks start`: when another
+// process (here a sibling Open) holds the tasks DB lock for longer
+// than the 2s openTimeout, RunStart must (a) emit the refined
+// `■ J: cannot write to database` line on stderr and (b) NOT print
+// the bordered `RunningInBackground` banner on stdout. The
+// orchestrator child has already been spawned, but the row was
+// never persisted so the banner would lie.
+func TestRunStart_BboltLockedSuppressesBanner(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+	}
+	dbPath, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open(holder): %v", err)
+	}
+	t.Cleanup(func() { _ = holder.Close() })
+
+	target := writeStartFile(t, "# task\nbody")
+	var stdout, stderr bytes.Buffer
+	err = RunStart(context.Background(), StartOptions{
+		FromFile: target,
+		Stdin:    strings.NewReader(""),
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Selector: &testutil.SelectorFake{},
+		UI:       &scriptedStartUI{},
+		JBinary:  noopJBinary(t),
+	})
+	if err != nil {
+		t.Fatalf("RunStart: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "■ J: cannot write to database") {
+		t.Fatalf("stderr = %q, want refined timeout banner", stderr.String())
+	}
+	if strings.Contains(stdout.String(), "running in background") {
+		t.Fatalf("stdout should suppress the RunningInBackground banner on timeout: %q", stdout.String())
+	}
+}
+
 // seedTaskRowDirect inserts a Task row via the per-project tasks
 // bbolt DB. Used by the re-plan tests to pre-seed an existing task
 // without going through any phase lifecycle.
