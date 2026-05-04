@@ -269,7 +269,7 @@ func TestRun_DefaultNonTTY_RendersBorder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	for _, glyph := range []string{"┌", "┐", "└", "┘", "│", "─"} {
+	for _, glyph := range []string{"╭", "╮", "╰", "╯", "│", "─"} {
 		if !strings.Contains(out, glyph) {
 			t.Fatalf("default output missing border glyph %q: %q", glyph, out)
 		}
