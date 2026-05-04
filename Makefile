@@ -3,7 +3,7 @@ SHELL := /bin/bash
 BIN_DIR := bin
 BIN     := $(BIN_DIR)/j
 
-.PHONY: build clean coverage test race
+.PHONY: build clean coverage test race install-hooks
 
 build:
 	@mkdir -p $(BIN_DIR)
@@ -17,6 +17,9 @@ test:
 
 race:
 	go test -race ./...
+
+install-hooks:
+	@bash scripts/install-hooks.sh
 
 coverage:
 	@set -euo pipefail; \
