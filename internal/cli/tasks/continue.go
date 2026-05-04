@@ -232,8 +232,8 @@ func resumeFromPlanDone(ctx context.Context, opts ContinueOptions, taskID string
 	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
 		"tasks", "orchestrate",
 		"--id", taskID,
-		"--plan-requires-approval", "false",
-		"--skip-planning", "true",
+		"--plan-requires-approval=false",
+		"--skip-planning=true",
 	})
 	if err != nil {
 		return err
@@ -415,4 +415,3 @@ func newContinueCmd() *cobra.Command {
 	_ = viper.BindEnv("tasks.continue.from_task", "TASKS_CONTINUE_FROM_TASK")
 	return cmd
 }
-

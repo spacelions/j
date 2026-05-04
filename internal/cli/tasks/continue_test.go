@@ -193,7 +193,7 @@ func TestRunContinue_PlanDoneSpawnsOrchestrator(t *testing.T) {
 			agent.planned, agent.worked, agent.verified)
 	}
 	args := readSpawnedArgv(t, argvPath)
-	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--plan-requires-approval", "false", "--skip-planning", "true"}
+	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--plan-requires-approval=false", "--skip-planning=true"}
 	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
 		t.Fatalf("argv = %v, want %v", args, wantArgs)
 	}
@@ -860,4 +860,57 @@ func (a *errPlanContinueAgent) Plan(_ context.Context, req codingagents.PlanRequ
 	a.continueAgent.planned++
 	a.continueAgent.planReq = req
 	return 0, a.planErr
+}
+
+// TestResumeFromPlanDone_ArgvParsesThroughOrchestrateCmd is the
+// regression guard for the pflag two-token bool bug: even if the
+// argv-shape assertion above is reverted, the spawned argv must
+// still parse through a real `j tasks orchestrate` cobra command
+// with plan-requires-approval=false and skip-planning=true. Catches
+// any future revert to the `"--flag", "value"` shape because pflag
+// would mark the bool flag Changed=true (no `=` consumes the next
+// token as a positional, leaving the bool at its default true) and
+// fail the assertion below.
+func TestResumeFromPlanDone_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, nil)
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	if err := RunContinue(context.Background(), ContinueOptions{
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{newContinueAgent()},
+		UI:      &fakeUI{},
+		JBinary: argvJBinary(t, argvPath),
+	}); err != nil {
+		t.Fatalf("RunContinue: %v", err)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	if len(args) < 2 || args[0] != "tasks" || args[1] != "orchestrate" {
+		t.Fatalf("argv = %v, want leading `tasks orchestrate`", args)
+	}
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	cmd := newOrchestrateCmd()
+	if err := cmd.ParseFlags(args[2:]); err != nil {
+		t.Fatalf("ParseFlags(%v): %v", args[2:], err)
+	}
+	if !cmd.Flags().Changed("plan-requires-approval") {
+		t.Fatalf("plan-requires-approval not Changed; argv=%v", args)
+	}
+	approval, err := cmd.Flags().GetBool("plan-requires-approval")
+	if err != nil {
+		t.Fatalf("GetBool plan-requires-approval: %v", err)
+	}
+	if approval {
+		t.Fatalf("plan-requires-approval = true, want false; argv=%v", args)
+	}
+	skip, err := cmd.Flags().GetBool("skip-planning")
+	if err != nil {
+		t.Fatalf("GetBool skip-planning: %v", err)
+	}
+	if !skip {
+		t.Fatalf("skip-planning = false, want true; argv=%v", args)
+	}
 }
