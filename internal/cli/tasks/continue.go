@@ -124,6 +124,10 @@ func resolveContinueTask(ctx context.Context, opts ContinueOptions) (store.Task,
 	}
 	s, err := store.Open(path)
 	if err != nil {
+		if errors.Is(err, store.ErrOpenTimeout) {
+			banner.CannotWriteToDatabase(opts.Stderr)
+			return store.Task{}, false, nil
+		}
 		return store.Task{}, false, err
 	}
 	task, ok, err := resolveContinueTaskFromStore(ctx, s, opts)

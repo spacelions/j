@@ -921,9 +921,11 @@ func TestResumeFromPlanDone_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
 // `■ J: cannot write to database` line and return store.ErrOpenTimeout
 // so resumeFromPlanDone can suppress the misleading
 // RunningInBackground banner. RunContinue is then driven end to end
-// against the same lock to assert no banner reaches stdout. The
-// inner-helper assertion lets us pin both the wording and the
-// sentinel even when resolveContinueTask itself races on the lock.
+// against the same lock to assert (a) the refined banner reaches
+// stderr from resolveContinueTask itself (which races on the lock
+// before stampSpawnOnRow is ever reached), (b) RunContinue exits
+// cleanly without leaking the legacy `store: open … timeout` wording,
+// and (c) no `RunningInBackground` banner reaches stdout.
 func TestRunContinue_BboltLockedSuppressesBanner(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, nil) // plan-done by default
@@ -937,28 +939,36 @@ func TestRunContinue_BboltLockedSuppressesBanner(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = holder.Close() })
 
-	var stderr bytes.Buffer
-	stampErr := stampSpawnOnRow(&stderr, id, filepath.Join(t.TempDir(), "agent.log"), 4242)
+	var stampStderr bytes.Buffer
+	stampErr := stampSpawnOnRow(&stampStderr, id, filepath.Join(t.TempDir(), "agent.log"), 4242)
 	if !errors.Is(stampErr, store.ErrOpenTimeout) {
 		t.Fatalf("stampSpawnOnRow err = %v, want ErrOpenTimeout", stampErr)
 	}
-	if !strings.Contains(stderr.String(), "■ J: cannot write to database") {
-		t.Fatalf("stderr = %q, want refined timeout banner", stderr.String())
+	if !strings.Contains(stampStderr.String(), "■ J: cannot write to database") {
+		t.Fatalf("stampSpawnOnRow stderr = %q, want refined timeout banner", stampStderr.String())
 	}
-	if strings.Contains(stderr.String(), "warning: tasks db") {
-		t.Fatalf("stderr should not contain legacy warning: %q", stderr.String())
+	if strings.Contains(stampStderr.String(), "warning: tasks db") {
+		t.Fatalf("stampSpawnOnRow stderr should not contain legacy warning: %q", stampStderr.String())
 	}
 
-	var stdout bytes.Buffer
-	_ = RunContinue(context.Background(), ContinueOptions{
+	var stdout, stderr bytes.Buffer
+	if err := RunContinue(context.Background(), ContinueOptions{
 		TaskID:  id,
 		Stdin:   strings.NewReader(""),
 		Stdout:  &stdout,
-		Stderr:  io.Discard,
+		Stderr:  &stderr,
 		Agents:  []codingagents.Agent{newContinueAgent()},
 		UI:      &fakeUI{},
 		JBinary: noopJBinary(t),
-	})
+	}); err != nil {
+		t.Fatalf("RunContinue under lock should return nil after refined banner; got %v", err)
+	}
+	if !strings.Contains(stderr.String(), "■ J: cannot write to database") {
+		t.Fatalf("RunContinue stderr = %q, want refined timeout banner", stderr.String())
+	}
+	if strings.Contains(stderr.String(), "store: open") {
+		t.Fatalf("RunContinue stderr should not leak legacy `store: open` wording: %q", stderr.String())
+	}
 	if strings.Contains(stdout.String(), "running in background") {
 		t.Fatalf("stdout should not announce a background banner under lock contention: %q", stdout.String())
 	}
