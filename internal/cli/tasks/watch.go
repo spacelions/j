@@ -41,10 +41,12 @@ var (
 // seams: the production caller uses defaultTick + a closure over the
 // store, and tests inject deterministic fakes through the same
 // fields. now is bumped by tickMsg so the renderer reflects the
-// current second on every paint.
+// current second on every paint. width is bumped by tea.WindowSizeMsg
+// so the table redraws to fit the user's terminal on resize.
 type model struct {
 	tasks  []store.Task
 	now    time.Time
+	width  int
 	err    error
 	reload func() ([]store.Task, error)
 	tick   func() tea.Cmd
@@ -86,6 +88,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		m.err = v
 		return m, nil
+	case tea.WindowSizeMsg:
+		m.width = v.Width
+		return m, nil
 	case tea.KeyMsg:
 		switch v.String() {
 		case "q", "Q", "ctrl+c", "esc":
@@ -99,7 +104,7 @@ func (m model) View() string {
 	var b strings.Builder
 	// strings.Builder.Write never errors so renderTable cannot fail
 	// against it.
-	_ = renderTable(&b, m.tasks, m.now)
+	_ = renderTable(&b, m.tasks, m.now, m.width)
 	if m.err != nil {
 		b.WriteString(errLineStyle.Render(fmt.Sprintf("error: %v", m.err)))
 		b.WriteByte('\n')

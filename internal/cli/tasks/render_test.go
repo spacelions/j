@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -15,11 +18,11 @@ func TestFormatDuration(t *testing.T) {
 		in   time.Duration
 		want string
 	}{
-		{"zero", 0, "0m 0s"},
-		{"sub-minute", 59 * time.Second, "0m 59s"},
-		{"exact-minute", time.Minute, "1m 0s"},
-		{"hours-roll-into-minutes", 90*time.Minute + 5*time.Second, "90m 5s"},
-		{"negative-clamps-to-zero", -42 * time.Second, "0m 0s"},
+		{"zero", 0, "0m:0s"},
+		{"sub-minute", 59 * time.Second, "0m:59s"},
+		{"exact-minute", time.Minute, "1m:0s"},
+		{"hours-roll-into-minutes", 90*time.Minute + 5*time.Second, "90m:5s"},
+		{"negative-clamps-to-zero", -42 * time.Second, "0m:0s"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -49,7 +52,7 @@ func TestFormatStatus(t *testing.T) {
 			task := store.Task{Status: tc.status}
 			tc.setter(&task, begin)
 			got := formatStatus(task, now)
-			want := string(tc.status) + " 1m 20s"
+			want := string(tc.status) + "(1m:20s)"
 			if got != want {
 				t.Fatalf("formatStatus = %q, want %q", got, want)
 			}
@@ -81,7 +84,7 @@ func TestFormatStatus(t *testing.T) {
 
 func TestRenderTable_EmptyHeaderOnly(t *testing.T) {
 	var buf bytes.Buffer
-	if err := renderTable(&buf, nil, time.Now()); err != nil {
+	if err := renderTable(&buf, nil, time.Now(), 0); err != nil {
 		t.Fatalf("renderTable: %v", err)
 	}
 	out := buf.String()
@@ -93,6 +96,28 @@ func TestRenderTable_EmptyHeaderOnly(t *testing.T) {
 	for _, header := range []string{"ID", "STATUS", "TOOL", "MODEL", "SUMMARY"} {
 		if !strings.Contains(out, header) {
 			t.Fatalf("missing header column %q: %q", header, out)
+		}
+	}
+}
+
+// TestRenderTable_GlyphTopology pins the gridline shape: corners,
+// inter-row separators with `┼` intersections, and column-tee glyphs
+// must all surface so a future regression can't silently flatten the
+// table back to header-only ruling.
+func TestRenderTable_GlyphTopology(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 5, 0, 0, time.UTC)
+	tasks := []store.Task{
+		{ID: "a", Status: store.StatusPlanDone, Summary: "first"},
+		{ID: "b", Status: store.StatusWorkDone, Summary: "second"},
+	}
+	var buf bytes.Buffer
+	if err := renderTable(&buf, tasks, now, 0); err != nil {
+		t.Fatalf("renderTable: %v", err)
+	}
+	out := ansi.Strip(buf.String())
+	for _, glyph := range []string{"┌", "┐", "└", "┘", "├", "┤", "┬", "┴", "┼", "│", "─"} {
+		if !strings.Contains(out, glyph) {
+			t.Fatalf("missing border glyph %q in stripped output: %q", glyph, out)
 		}
 	}
 }
@@ -120,17 +145,17 @@ func TestRenderTable_MixedActiveAndInactive(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	if err := renderTable(&buf, tasks, now); err != nil {
+	if err := renderTable(&buf, tasks, now, 0); err != nil {
 		t.Fatalf("renderTable: %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "planning 1m 20s") {
+	if !strings.Contains(out, "planning(1m:20s)") {
 		t.Fatalf("expected ticking active status: %q", out)
 	}
 	if !strings.Contains(out, "plan-done") {
 		t.Fatalf("expected raw inactive status: %q", out)
 	}
-	if strings.Contains(out, "plan-done 0m") {
+	if strings.Contains(out, "plan-done(") {
 		t.Fatalf("inactive row should not be decorated: %q", out)
 	}
 	if !strings.Contains(out, "draft idea") || !strings.Contains(out, "old one") {
@@ -138,13 +163,113 @@ func TestRenderTable_MixedActiveAndInactive(t *testing.T) {
 	}
 }
 
+// TestRenderTable_RowColors checks that consecutive data rows emit
+// distinct ANSI foreground escapes — i.e. the colour rotation actually
+// applies. We use lipgloss to render the same palette colours
+// independently and assert each escape appears in the output.
+func TestRenderTable_RowColors(t *testing.T) {
+	tasks := []store.Task{
+		{ID: "row-1", Status: store.StatusPlanDone, Summary: "first"},
+		{ID: "row-2", Status: store.StatusWorkDone, Summary: "second"},
+	}
+	var buf bytes.Buffer
+	if err := renderTable(&buf, tasks, time.Now(), 0); err != nil {
+		t.Fatalf("renderTable: %v", err)
+	}
+	raw := buf.String()
+	if ansi.Strip(raw) == raw {
+		t.Skip("renderer stripped ANSI (no colour profile in test env); rotation cannot be observed")
+	}
+	greySample := lipgloss.NewStyle().Foreground(greyColor).Render("first")
+	greenSample := lipgloss.NewStyle().Foreground(greenColor).Render("second")
+	if !strings.Contains(raw, greySample) {
+		t.Fatalf("first row should render in grey palette colour; got %q", raw)
+	}
+	if !strings.Contains(raw, greenSample) {
+		t.Fatalf("second row should render in green palette colour; got %q", raw)
+	}
+}
+
+// TestRenderTable_FitsToWidth verifies the trailing SUMMARY column
+// truncates with `…` and every output line stays within the requested
+// terminal width.
+func TestRenderTable_FitsToWidth(t *testing.T) {
+	tasks := []store.Task{
+		{
+			ID:           "row-1",
+			Status:       store.StatusPlanDone,
+			InvokedTool:  "cursor",
+			InvokedModel: "sonnet-4",
+			Summary:      "this is a very long summary that absolutely should not fit",
+		},
+	}
+	const width = 50
+	var buf bytes.Buffer
+	if err := renderTable(&buf, tasks, time.Now(), width); err != nil {
+		t.Fatalf("renderTable: %v", err)
+	}
+	stripped := ansi.Strip(buf.String())
+	for _, line := range strings.Split(strings.TrimRight(stripped, "\n"), "\n") {
+		if lipgloss.Width(line) > width {
+			t.Fatalf("line %q exceeds width %d (got %d)", line, width, lipgloss.Width(line))
+		}
+	}
+	if !strings.Contains(stripped, "…") {
+		t.Fatalf("expected SUMMARY truncation indicator `…` in narrow render: %q", stripped)
+	}
+}
+
 func TestRenderTable_WriterError(t *testing.T) {
 	if err := renderTable(failingWriter{}, []store.Task{
 		{ID: "x", Status: store.StatusPlanDone},
-	}, time.Now()); err == nil {
+	}, time.Now(), 0); err == nil {
 		t.Fatal("expected writer error from failingWriter")
 	}
-	if err := renderTable(failingWriter{}, nil, time.Now()); err == nil {
+	if err := renderTable(failingWriter{}, nil, time.Now(), 0); err == nil {
 		t.Fatal("expected writer error on empty table too")
+	}
+}
+
+func TestTruncateCell(t *testing.T) {
+	cases := []struct {
+		in   string
+		max  int
+		want string
+	}{
+		{"", 0, ""},
+		{"hello", -1, ""},
+		{"hello", 1, "…"},
+		{"hello", 5, "hello"},
+		{"helloworld", 6, "hello…"},
+	}
+	for _, tc := range cases {
+		got := truncateCell(tc.in, tc.max)
+		if got != tc.want {
+			t.Fatalf("truncateCell(%q, %d) = %q, want %q", tc.in, tc.max, got, tc.want)
+		}
+	}
+	// Wide East-Asian runes report width 2; the trim loop must drop
+	// extra runes until the result + ellipsis fits, even when the
+	// naive `runes[:max-1]` overshoots.
+	if got := truncateCell("中文测试", 4); lipgloss.Width(got) > 4 {
+		t.Fatalf("wide-rune truncate overshot width 4: %q (width %d)", got, lipgloss.Width(got))
+	}
+}
+
+func TestFitToWidth_NoChangeWhenAvailableUnknownOrAmple(t *testing.T) {
+	cols := []int{10, 10, 10}
+	if got := fitToWidth(cols, 0); &got[0] != &cols[0] {
+		t.Fatal("zero/negative available should return the same slice unchanged")
+	}
+	if got := fitToWidth(cols, 1000); &got[0] != &cols[0] {
+		t.Fatal("ample width should return the same slice unchanged")
+	}
+}
+
+func TestFitToWidth_ShrinksLastColumnToOne(t *testing.T) {
+	cols := []int{20, 20, 20}
+	got := fitToWidth(cols, 10) // far smaller than total
+	if got[len(got)-1] != 1 {
+		t.Fatalf("trailing column should clamp to 1 when available is tiny, got %v", got)
 	}
 }

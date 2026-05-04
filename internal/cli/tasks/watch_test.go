@@ -111,6 +111,21 @@ func TestModel_OtherKeyIgnored(t *testing.T) {
 	}
 }
 
+// TestModel_WindowSizeMsgUpdatesWidth pins the resize behaviour: the
+// model captures the new terminal width so the next View call passes
+// it into renderTable and the table redraws to fit.
+func TestModel_WindowSizeMsgUpdatesWidth(t *testing.T) {
+	m := newTestModel(nil, time.Now())
+	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
+	mm := updated.(model)
+	if mm.width != 60 {
+		t.Fatalf("width = %d, want 60", mm.width)
+	}
+	if cmd != nil {
+		t.Fatalf("WindowSizeMsg should not schedule a follow-up cmd, got %T", cmd)
+	}
+}
+
 func TestModel_View_WithTasksAndQuitHint(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 5, 0, 0, time.UTC)
 	begin := now.Add(-80 * time.Second)
@@ -124,7 +139,7 @@ func TestModel_View_WithTasksAndQuitHint(t *testing.T) {
 	}}
 	m := newTestModel(tasks, now)
 	out := m.View()
-	if !strings.Contains(out, "planning 1m 20s") {
+	if !strings.Contains(out, "planning(1m:20s)") {
 		t.Fatalf("expected ticking status row: %q", out)
 	}
 	if !strings.Contains(out, "press q to quit") {
