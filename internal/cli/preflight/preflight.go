@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
-	"github.com/spacelions/j/internal/mustread"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -155,7 +155,7 @@ func ensureMustRead(ctx context.Context, ui UI) error {
 		return err
 	}
 	defer s.Close()
-	_, set, err := mustread.Load(s)
+	_, set, err := s.Get(store.BucketProject, resolver.KeyMustRead)
 	if err != nil {
 		return fmt.Errorf("preflight: load mustRead: %w", err)
 	}
@@ -166,7 +166,7 @@ func ensureMustRead(ctx context.Context, ui UI) error {
 	if err != nil {
 		return err
 	}
-	if err := s.Put(store.BucketProject, mustread.Key, value); err != nil {
+	if err := s.Put(store.BucketProject, resolver.KeyMustRead, value); err != nil {
 		return fmt.Errorf("preflight: persist mustRead: %w", err)
 	}
 	return nil

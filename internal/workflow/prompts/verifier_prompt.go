@@ -4,8 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/spacelions/j/internal/workflow/agents/verifier"
-	"github.com/spacelions/j/internal/workflow/agents/worker"
+	"github.com/spacelions/j/internal/workflow/instructions"
 )
 
 // BuildVerifier composes the verifier's shared instruction with
@@ -15,10 +14,10 @@ import (
 // itself so the prompt stays small and there is no risk of drift
 // between the rendered prompt and the on-disk markdown.
 //
-// Reusing verifier.Instruction keeps the review rules in a single
+// Reusing instructions.Verifier keeps the review rules in a single
 // source of truth across every backend, mirroring how BuildPlanner
 // reuses planner.Instruction and BuildWorker reuses
-// worker.Instruction.
+// instructions.Worker.
 //
 // verifierPlanPath stays in the signature even though the body does
 // not reference it: the value is the agent's draft plan output path
@@ -34,7 +33,7 @@ func BuildVerifier(reqPath, planPath, verifierPlanPath, findingsPath, worktree s
 				"Save your final findings (with the terminal `VERDICT: PASS` or "+
 				"`VERDICT: FAIL` line) to %q (overwrite if it exists). "+
 				"Then exit.",
-			strings.TrimSpace(verifier.Instruction),
+			strings.TrimSpace(instructions.Verifier),
 			mustReadSuffix(mustRead),
 			reqPath, planPath,
 			findingsPath,
@@ -50,7 +49,7 @@ func BuildVerifier(reqPath, planPath, verifierPlanPath, findingsPath, worktree s
 // requirement / plan paths are referenced for context only — there
 // is no instruction to re-verify from scratch.
 //
-// The full verifier.Instruction body is embedded so the resumed
+// The full instructions.Verifier body is embedded so the resumed
 // session has the same review rules available as the first-run
 // BuildVerifier did. The instruction text itself opens with
 // "You are the verifier in a planner / worker / verifier workflow.",
@@ -67,7 +66,7 @@ func BuildVerifierResume(reqPath, planPath, worktree string) string {
 				"Do not re-verify from scratch and do not overwrite the saved "+
 				"verifier_findings.md unless new information forces a change.\n\n"+
 				"Read the requirements at %q for context, and read the plan at %q for context.",
-			strings.TrimSpace(verifier.Instruction),
+			strings.TrimSpace(instructions.Verifier),
 			reqPath, planPath,
 		),
 		worktree,
@@ -82,7 +81,7 @@ func BuildVerifierResume(reqPath, planPath, worktree string) string {
 // from disk by the agent rather than being inlined into the prompt.
 //
 // A fix loop runs the worker (not the verifier), so the full
-// worker.Instruction body is embedded. The instruction text itself
+// instructions.Worker body is embedded. The instruction text itself
 // opens with "You are the worker in a planner/worker/verifier
 // workflow.", so this builder relies on that opening as the role
 // preamble rather than emitting a duplicate sentence.
@@ -98,7 +97,7 @@ func BuildVerifierFix(planPath, findingsPath, worktree string) string {
 				"set focused on the reported issues.\n\n"+
 				"The plan lives at %q (read for context only). "+
 				"Address every item in the verifier findings at %q.",
-			strings.TrimSpace(worker.Instruction),
+			strings.TrimSpace(instructions.Worker),
 			planPath, findingsPath,
 		),
 		worktree,

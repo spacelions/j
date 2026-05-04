@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/viper"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/mustread"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -336,7 +336,7 @@ func TestRunResume_PickerError(t *testing.T) {
 }
 
 // TestRunResume_PickerCancelled covers the cancel signal from
-// the unified taskpick contract: a user-abort (or empty
+// the unified picker contract: a user-abort (or empty
 // pickedID) surfaced from PickPlanTask returns ok=false and
 // RunResume must exit cleanly with nil. The agent must never be
 // invoked.
@@ -743,7 +743,7 @@ func TestRunResume_ForwardsMustRead(t *testing.T) {
 }
 
 // TestRunResume_MustReadUnsetYieldsNil covers the no-bucket-entry
-// branch of mustread.LoadFromDefault: when the project has no
+// branch of resolver.MustRead: when the project has no
 // mustRead setting, the resume call must still proceed and pass a
 // nil/empty slice (mirroring what the first-run plan flow does).
 func TestRunResume_MustReadUnsetYieldsNil(t *testing.T) {
@@ -788,7 +788,7 @@ func seedPlannerInteractive(t *testing.T, value string) {
 }
 
 // seedProjectMustRead writes a `;`-separated must-read list under the
-// project bucket so resume's mustread.LoadFromDefault returns the
+// project bucket so resume's resolver.MustRead returns the
 // parsed slice. Mirrors preflight's putMustRead helper without
 // depending on it across packages.
 func seedProjectMustRead(t *testing.T, value string) {
@@ -805,7 +805,7 @@ func seedProjectMustRead(t *testing.T, value string) {
 	if err := s.EnsureBucket(store.BucketProject); err != nil {
 		t.Fatalf("EnsureBucket: %v", err)
 	}
-	if err := s.Put(store.BucketProject, mustread.Key, value); err != nil {
+	if err := s.Put(store.BucketProject, resolver.KeyMustRead, value); err != nil {
 		t.Fatalf("Put mustRead: %v", err)
 	}
 }

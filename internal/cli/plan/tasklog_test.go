@@ -45,7 +45,7 @@ func TestRun_Markdown_LogsPlanDoneTask(t *testing.T) {
 	agent := newScriptedAgent()
 	err := Run(context.Background(), Options{
 		FromFile:    target,
-		Interactive: boolPtr(true),
+		Interactive: true,
 		Stdin:       strings.NewReader(""),
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,

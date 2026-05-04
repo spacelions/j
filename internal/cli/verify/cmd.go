@@ -10,6 +10,8 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/resolver"
+	"github.com/spacelions/j/internal/store"
 )
 
 // defaultMaxIterations bounds the verifier / worker fix loop. Three
@@ -42,15 +44,15 @@ func New() *cobra.Command {
 			"be re-prompted on the next run.",
 		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var interactive *bool
+			var explicit *bool
 			if cmd.Flags().Changed("interactive") || os.Getenv("VERIFY_INTERACTIVE") != "" {
 				v := viper.GetBool("verify.interactive")
-				interactive = &v
+				explicit = &v
 			}
 			return Run(cmd.Context(), Options{
 				TaskID:        viper.GetString("verify.from_task"),
 				Yes:           viper.GetBool("verify.yes"),
-				Interactive:   interactive,
+				Interactive:   resolver.Interactive(nil, cmd.ErrOrStderr(), store.BucketVerifier, explicit),
 				Tool:          viper.GetString("verify.tool"),
 				Model:         viper.GetString("verify.model"),
 				MaxIterations: viper.GetInt("verify.max_iterations"),

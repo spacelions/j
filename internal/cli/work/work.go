@@ -15,14 +15,15 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/charmbracelet/huh"
 
-	"github.com/spacelions/j/internal/cli/agentpick"
+
+	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/mustread"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/mdfile"
+	"github.com/spacelions/j/internal/util/run"
 )
 
 // Options configures Run. Stdin/Stdout/Stderr default to the process
@@ -45,22 +46,25 @@ type Options struct {
 	// flag wiring on the cobra command.
 	Yes bool
 
-	// Interactive is a tri-state: a non-nil value is the explicit
-	// user choice (cobra `--interactive` flag or WORK_INTERACTIVE
-	// env var), and nil means "not set, fall back to the stored
-	// `interactive` value or the cobra default true". Stored wins
-	// when Interactive is nil and the bucket has a parseable value;
-	// explicit always wins.
-	Interactive *bool
+	// Interactive is the resolved interactive flag. cobra cmd.go
+	// computes it via resolver.Interactive (explicit > stored > true)
+	// before constructing Options.
+	Interactive bool
 
 	// Tool and Model are one-off overrides for the worker bucket's
 	// recorded tool/model. When either is set, Run resolves the
-	// worker via agentpick.Resolve (filling the missing half from
+	// worker via resolver.Agent (filling the missing half from
 	// the bucket if needed) and skips persistence: the bucket is
 	// left untouched. When both are empty, Run falls back to the
 	// existing read-then-prompt-then-persist precedence.
 	Tool  string
 	Model string
+
+	// WaitForCompletion mirrors plan.Options.WaitForCompletion: blocks
+	// on a returned non-zero PID and runs finishWork synchronously so
+	// the orchestrator chain can advance to the verifier only after
+	// the worker exits.
+	WaitForCompletion bool
 
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -119,22 +123,11 @@ type resolved struct {
 // concurrent `j settings` / `j tasks` invocations are not blocked on
 // the OS file lock.
 func Run(ctx context.Context, opts Options) (err error) {
-	defer func() {
-		if errors.Is(err, huh.ErrUserAborted) {
-			err = nil
-		}
-	}()
+	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
 		return errors.New("J: no coding agents configured")
 	}
-	// Resolve the effective interactive flag once so the same
-	// value flows into both the agent request and the work-done
-	// row (and into persistWorkerSelection on the prompted path).
-	// Precedence: explicit (opts.Interactive != nil) > stored
-	// (bucket has parseable value) > cobra default true.
-	opts.Interactive = boolPtr(resolveInteractive(opts))
-
 	res, ok, err := resolvePlan(ctx, opts)
 	if err != nil {
 		return err
@@ -169,25 +162,32 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 	taskID := workTaskID(res)
 	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), tasklog.AgentLogFileName)
-	mustReadFiles, mustReadErr := mustread.LoadFromDefault()
+	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
 	}
 	pid, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:     res.PlanPath,
 		Model:        model,
-		Interactive:  *opts.Interactive,
+		Interactive:  opts.Interactive,
 		ResumeChatID: resumeID,
 		Worktree:     lc.task.Worktree,
 		AgentLogPath: agentLogPath,
 		MustRead:     mustReadFiles,
 	})
 	if workErr == nil && pid > 0 {
-		lc.recordBackground(pid, agentLogPath)
-		fmt.Fprintf(opts.Stdout,
-			"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
-			agent.Name(), pid, taskID, tasklog.AgentLogFileName)
-		return nil
+		if opts.WaitForCompletion {
+			if err := run.WaitForExit(ctx, pid); err != nil {
+				lc.finishWork(err)
+				return err
+			}
+		} else {
+			lc.recordBackground(pid, agentLogPath)
+			fmt.Fprintf(opts.Stdout,
+				"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
+				agent.Name(), pid, taskID, tasklog.AgentLogFileName)
+			return nil
+		}
 	}
 	lc.finishWork(workErr)
 	if workErr != nil {
@@ -226,7 +226,7 @@ func workTaskID(res resolved) string {
 // the downstream confirm prompt handles the wrong-status case.
 //
 // The bool return is the "proceed" signal from the unified
-// taskpick contract: ok=false means the user cancelled the picker
+// picker contract: ok=false means the user cancelled the picker
 // (Ctrl-C / Esc) and the caller should exit cleanly without
 // invoking the agent. ok=true means the resolved struct is
 // populated and Run can continue.
@@ -255,7 +255,7 @@ func resolvePlan(ctx context.Context, opts Options) (resolved, bool, error) {
 		r, err := resolveByTaskID(opts, id)
 		return r, err == nil, err
 	}
-	chosen, ok, err := opts.UI.PickPlanTask(ctx, tasks)
+	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to work", tasks)
 	if err != nil {
 		return resolved{}, false, err
 	}
@@ -365,11 +365,10 @@ func resolveFromFile(opts Options, raw string) (resolved, error) {
 }
 
 // listResolvableWorkTasks returns every task in bbolt sorted via
-// store.SortTasks. The picker now surfaces every row regardless of
+// store.SortTasks. The picker surfaces every row regardless of
 // status; the downstream confirm prompt handles the wrong-status
-// case (per the re-plan / re-work contract). The happy-path
-// auto-pick still kicks in via autoPickAllowed when exactly one of
-// the rows is in the work allowlist.
+// case (per the re-plan / re-work contract). autoPickAllowed
+// auto-picks when exactly one row is in the work allowlist.
 func listResolvableWorkTasks(opts Options) ([]store.Task, error) {
 	s, ok := tasklog.OpenTaskLog(opts.Stderr)
 	if !ok {
@@ -414,148 +413,19 @@ func confirmStatusOverride(ctx context.Context, opts Options, cmd string, t stor
 	return opts.UI.ConfirmStatusOverride(ctx, cmd, t.ID, string(t.Status))
 }
 
-// selectWorker is the single chokepoint for choosing the worker
-// tool/model. Precedence:
-//  1. explicit --tool / --model (opts.Tool or opts.Model set) →
-//     agentpick.Resolve fills the missing half from the worker
-//     bucket and runs CheckLogin. The bucket is NOT written.
-//  2. populated worker bucket → agentpick.FromStore reuses it.
-//  3. otherwise → agentpick.Pick prompts the user and the result is
-//     persisted to the worker bucket.
-//
-// Settings DB access is short-lived: the bucket is read inside
-// workerFromStore and the handle is released before this returns so
-// the agent.Work call downstream never contends on the bbolt file
-// lock.
+// selectWorker delegates to resolver.Agent with the worker bucket.
 func selectWorker(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
-	if opts.Tool != "" || opts.Model != "" {
-		agent, model, err := workerResolveExplicit(ctx, opts)
-		if err == nil {
-			return agent, model, nil
-		}
-		if !errors.Is(err, agentpick.ErrNoStoredSelection) {
-			return nil, "", err
-		}
-	}
-	agent, model, err := workerFromStore(ctx, opts)
-	if err == nil {
-		return agent, model, nil
-	}
-	if !errors.Is(err, agentpick.ErrNoStoredSelection) {
-		return nil, "", err
-	}
-	fmt.Fprintln(opts.Stderr, "Choose your favourite:")
-	agent, model, err = agentpick.Pick(ctx, opts.UI, opts.Agents)
-	if err != nil {
-		return nil, "", err
-	}
-	persistWorkerSelection(opts, agent.Name(), model)
-	return agent, model, nil
+	return resolver.Agent(ctx, resolver.AgentOptions{
+		Bucket:        store.BucketWorker,
+		Agents:        opts.Agents,
+		ExplicitTool:  opts.Tool,
+		ExplicitModel: opts.Model,
+		UI:            opts.UI,
+		Store:         opts.Store,
+		Stderr:        opts.Stderr,
+		Interactive:   opts.Interactive,
+	})
 }
-
-// workerResolveExplicit reads the worker bucket only to fill the
-// missing half of the user-supplied --tool / --model pair. When
-// opts.Store is non-nil it is reused; otherwise this opens
-// `<cwd>/.j/settings` for the duration of the read and releases it
-// before returning so the file lock is not held across agent.Work.
-func workerResolveExplicit(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
-	if opts.Store != nil {
-		return agentpick.Resolve(ctx, opts.Store, store.BucketWorker, opts.Agents, opts.Tool, opts.Model)
-	}
-	s, ok := openSettingsStore(opts.Stderr)
-	if !ok {
-		return agentpick.Resolve(ctx, nil, store.BucketWorker, opts.Agents, opts.Tool, opts.Model)
-	}
-	defer func() { _ = s.Close() }()
-	return agentpick.Resolve(ctx, s, store.BucketWorker, opts.Agents, opts.Tool, opts.Model)
-}
-
-// workerFromStore reads the worker bucket and returns the chosen
-// tool/model. When opts.Store is non-nil (test injection) it is reused
-// without any open/close cycle. Otherwise this opens
-// `<cwd>/.j/settings` only for the duration of agentpick.FromStore and
-// releases it before returning. A failure to open the settings DB
-// surfaces as ErrNoStoredSelection so the caller falls back to the
-// prompt path the same way an empty bucket would.
-func workerFromStore(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
-	if opts.Store != nil {
-		return agentpick.FromStore(ctx, opts.Store, store.BucketWorker, opts.Agents)
-	}
-	s, ok := openSettingsStore(opts.Stderr)
-	if !ok {
-		return nil, "", agentpick.ErrNoStoredSelection
-	}
-	defer func() { _ = s.Close() }()
-	return agentpick.FromStore(ctx, s, store.BucketWorker, opts.Agents)
-}
-
-// persistWorkerSelection writes the just-confirmed tool/model and the
-// interactive flag to the worker bucket. The plan path (the work
-// "source") is intentionally NOT persisted so the user picks one per
-// run. Persistence is best-effort: errors warn on opts.Stderr and
-// don't abort the run. When opts.Store is non-nil it is used directly
-// (test injection); otherwise this opens `<cwd>/.j/settings` for the
-// duration of the write and closes it immediately so the file lock
-// is not held across the agent invocation.
-func persistWorkerSelection(opts Options, tool, model string) {
-	// opts.Interactive is normally non-nil here: Run resolves it
-	// via resolveInteractive before any selection branch fires.
-	// The nil-guard below keeps the helper callable from tests
-	// that construct a bare Options{} for the nil-store smoke
-	// path; resolveInteractive's default of true is reproduced
-	// verbatim.
-	interactive := true
-	if opts.Interactive != nil {
-		interactive = *opts.Interactive
-	}
-	if opts.Store != nil {
-		store.PersistAgentSelection(opts.Store, opts.Stderr, store.BucketWorker, tool, model, interactive)
-		return
-	}
-	s, ok := openSettingsStore(opts.Stderr)
-	if !ok {
-		return
-	}
-	defer func() { _ = s.Close() }()
-	store.PersistAgentSelection(s, opts.Stderr, store.BucketWorker, tool, model, interactive)
-}
-
-// resolveInteractive applies the documented precedence (explicit >
-// stored > cobra default true) and returns a concrete bool. Pulled
-// out of Run to keep the early-setup block readable and testable in
-// isolation.
-func resolveInteractive(opts Options) bool {
-	if opts.Interactive != nil {
-		return *opts.Interactive
-	}
-	if v, ok := storedWorkerInteractive(opts); ok {
-		return v
-	}
-	return true
-}
-
-// storedWorkerInteractive looks up the worker bucket's `interactive`
-// entry. When opts.Store is non-nil it is reused; otherwise the
-// settings DB is opened and closed solely for this read so the lock
-// is not held across the agent call. A failed open or a missing /
-// unparseable value yields (_, false) so callers fall back to the
-// cobra default.
-func storedWorkerInteractive(opts Options) (bool, bool) {
-	if opts.Store != nil {
-		return agentpick.StoredInteractive(opts.Store, store.BucketWorker)
-	}
-	s, ok := openSettingsStore(opts.Stderr)
-	if !ok {
-		return false, false
-	}
-	defer func() { _ = s.Close() }()
-	return agentpick.StoredInteractive(s, store.BucketWorker)
-}
-
-// boolPtr is the package-private companion that lets Run / tests
-// build a non-nil *bool from a literal without spelling out a temp
-// variable at every call site.
-func boolPtr(b bool) *bool { return &b }
 
 func (o Options) withDefaults() Options {
 	if o.Stdin == nil {
@@ -568,26 +438,8 @@ func (o Options) withDefaults() Options {
 		o.Stderr = os.Stderr
 	}
 	if o.UI == nil {
-		o.UI = newHuhUI(o.Stdin, o.Stderr)
+		o.UI = picker.New(o.Stdin, o.Stderr)
 	}
 	return o
 }
 
-// openSettingsStore opens `<cwd>/.j/settings` for the worker. It is
-// the post-init replacement for store.OpenDefault: pre-flight has
-// already created the layout, so failures here are real (e.g.
-// concurrent locks) and surface as a single "warning: ..." line on
-// stderr.
-func openSettingsStore(stderr io.Writer) (*store.Store, bool) {
-	path, err := store.DefaultPath()
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: settings path: %v\n", err)
-		return nil, false
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: settings db: %v\n", err)
-		return nil, false
-	}
-	return s, true
-}

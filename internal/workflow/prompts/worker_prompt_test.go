@@ -4,14 +4,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spacelions/j/internal/workflow/agents/worker"
+	"github.com/spacelions/j/internal/workflow/instructions"
 )
 
 func TestBuildWorker(t *testing.T) {
 	got := BuildWorker("/tmp/feature.plan.md", "", nil)
 
-	if !strings.Contains(got, strings.TrimSpace(worker.Instruction)) {
-		t.Fatalf("prompt missing worker.Instruction: %q", got)
+	if !strings.Contains(got, strings.TrimSpace(instructions.Worker)) {
+		t.Fatalf("prompt missing instructions.Worker: %q", got)
 	}
 	if !strings.Contains(got, "/tmp/feature.plan.md") {
 		t.Fatalf("prompt missing plan path: %q", got)
@@ -52,7 +52,7 @@ func TestBuildWorker_WithMustRead(t *testing.T) {
 
 // TestBuildWorker_TrimsLeadingTrailingWhitespace confirms that excess
 // whitespace at the start of the embedded instruction does not bleed
-// into the rendered prompt — the worker.Instruction value is trimmed
+// into the rendered prompt — the instructions.Worker value is trimmed
 // before composition.
 func TestBuildWorker_TrimsLeadingTrailingWhitespace(t *testing.T) {
 	got := BuildWorker("p.md", "", nil)
@@ -75,7 +75,7 @@ func TestBuildWorker_WithWorktree(t *testing.T) {
 }
 
 // TestBuildWorkerResume pins the resume-only worker prompt: the
-// rendered text must be non-empty, embed the worker.Instruction
+// rendered text must be non-empty, embed the instructions.Worker
 // body (whose opening line "You are the worker …" doubles as the
 // role preamble — so no duplicate sentence), mention the
 // "previous / check / continue" semantics, cite the plan path
@@ -86,8 +86,8 @@ func TestBuildWorkerResume(t *testing.T) {
 	if got == "" {
 		t.Fatal("BuildWorkerResume returned empty string")
 	}
-	if !strings.Contains(got, strings.TrimSpace(worker.Instruction)) {
-		t.Fatalf("resume prompt missing worker.Instruction: %q", got)
+	if !strings.Contains(got, strings.TrimSpace(instructions.Worker)) {
+		t.Fatalf("resume prompt missing instructions.Worker: %q", got)
 	}
 	const preamble = "You are the worker in a planner/worker/verifier workflow."
 	if strings.Count(got, preamble) != 1 {

@@ -1,0 +1,86 @@
+package testutil
+
+import (
+	"os"
+	"testing"
+
+	"github.com/spacelions/j/internal/store"
+)
+
+// SeedAgentBucket pre-populates a bbolt bucket with tool / model /
+// interactive=false so plan / work / verify treat the bucket as
+// already-configured and stay on the headless code path. interactive
+// is pinned to "false" because every consumer of this helper drives
+// the shell-out (`j tasks orchestrate`) flow which forces interactive
+// off internally — pinning it here keeps the seed legible.
+func SeedAgentBucket(t *testing.T, bucket, tool, model string) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("testutil: DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("testutil: Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.EnsureBucket(bucket); err != nil {
+		t.Fatalf("testutil: EnsureBucket: %v", err)
+	}
+	for _, kv := range [][2]string{
+		{"tool", tool},
+		{"model", model},
+		{"interactive", "false"},
+	} {
+		if err := s.Put(bucket, kv[0], kv[1]); err != nil {
+			t.Fatalf("testutil: Put %s: %v", kv[0], err)
+		}
+	}
+}
+
+// SeedTaskRow writes the supplied task into the per-project tasks
+// bbolt store so plan / work / verify shell-out branches see the
+// row they expect when invoked with TaskID set.
+func SeedTaskRow(t *testing.T, row store.Task) {
+	t.Helper()
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatalf("testutil: DefaultTasksDBPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("testutil: Open tasks: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.PutTask(row); err != nil {
+		t.Fatalf("testutil: PutTask: %v", err)
+	}
+}
+
+// ReadTaskRow loads a task by id, failing the test when the row is
+// missing or unreadable.
+func ReadTaskRow(t *testing.T, id string) store.Task {
+	t.Helper()
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatalf("testutil: DefaultTasksDBPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("testutil: Open tasks: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	got, err := s.GetTask(id)
+	if err != nil {
+		t.Fatalf("testutil: GetTask: %v", err)
+	}
+	return got
+}
+
+// WriteFile is a tiny convenience wrapper around os.WriteFile with
+// the 0o644 mode shared by every per-task artifact (requirements.md,
+// plan.md, verifier_findings.md). It exists so the per-package
+// agent_test.go files don't each spell out the mode.
+func WriteFile(path, body string) error {
+	return os.WriteFile(path, []byte(body), 0o644)
+}

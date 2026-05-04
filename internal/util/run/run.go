@@ -73,10 +73,16 @@ func RunIn(ctx context.Context, dir, name string, args ...string) error {
 
 // Spawn launches name with args as a detached background process and
 // returns the spawned child's PID. The child's stdout and stderr are
-// redirected to logPath (created or truncated, mode 0o644) and stdin
+// redirected to logPath (created or appended, mode 0o644) and stdin
 // is wired to /dev/null so the child cannot block on tty input. On
 // POSIX the child is given a fresh session via setsid (see
 // run_posix.go) so it survives SIGHUP / terminal close like nohup.
+//
+// Append (rather than truncate) is the documented contract: a single
+// per-task `agent.log` is shared by every phase (planner, worker,
+// verifier — and every retry iteration of the worker→verifier loop)
+// and across the orchestrator that drives them, so earlier bytes
+// must survive later spawns.
 //
 // The returned PID is the OS process id at Start time. Spawn calls
 // cmd.Process.Release so the parent does not retain a Wait state and
@@ -102,7 +108,7 @@ func SpawnIn(ctx context.Context, dir, logPath, name string, args ...string) (in
 	if logPath == "" {
 		return 0, errors.New("run: empty log path")
 	}
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return 0, fmt.Errorf("run: open log %q: %w", logPath, err)
 	}

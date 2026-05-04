@@ -13,47 +13,8 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/testutil"
 )
-
-// scriptedSelector is an in-package fake that satisfies AgentSelector
-// (and, since the surface is identical, agentpick.Selector). The zero
-// value picks the first option for both prompts so most tests need
-// only set the fields they assert on.
-type scriptedSelector struct {
-	tool     string
-	model    string
-	toolErr  error
-	modelErr error
-
-	toolCalls  int
-	modelCalls int
-	lastTools  []string
-	lastModels []string
-}
-
-func (s *scriptedSelector) SelectTool(_ context.Context, options []string) (string, error) {
-	s.toolCalls++
-	s.lastTools = append([]string(nil), options...)
-	if s.toolErr != nil {
-		return "", s.toolErr
-	}
-	if s.tool != "" {
-		return s.tool, nil
-	}
-	return options[0], nil
-}
-
-func (s *scriptedSelector) SelectModel(_ context.Context, options []string) (string, error) {
-	s.modelCalls++
-	s.lastModels = append([]string(nil), options...)
-	if s.modelErr != nil {
-		return "", s.modelErr
-	}
-	if s.model != "" {
-		return s.model, nil
-	}
-	return options[0], nil
-}
 
 // scriptedAgent stands in for a real codingagents.Agent in tests. Plan
 // and Work / Verify are unused by the agentcheck tests so they return
@@ -135,7 +96,7 @@ func TestEnsureAgentSelections_AllBucketsPopulated(t *testing.T) {
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
 	}
-	sel := &scriptedSelector{}
+	sel := &testutil.SelectorFake{}
 	err := EnsureAgentSelections(context.Background(), AgentCheckOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -146,8 +107,8 @@ func TestEnsureAgentSelections_AllBucketsPopulated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureAgentSelections: %v", err)
 	}
-	if sel.toolCalls != 0 || sel.modelCalls != 0 {
-		t.Fatalf("selector called: tools=%d models=%d, want 0/0", sel.toolCalls, sel.modelCalls)
+	if sel.ToolCalls != 0 || sel.ModelCalls != 0 {
+		t.Fatalf("selector called: tools=%d models=%d, want 0/0", sel.ToolCalls, sel.ModelCalls)
 	}
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		tool, model, interactive := readAgentBucket(t, bucket)
@@ -167,7 +128,7 @@ func TestEnsureAgentSelections_AllBucketsPopulated(t *testing.T) {
 func TestEnsureAgentSelections_AllBucketsEmpty(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	sel := &scriptedSelector{tool: "cursor", model: "sonnet-4"}
+	sel := &testutil.SelectorFake{Tool: "cursor", Model: "sonnet-4"}
 	err := EnsureAgentSelections(context.Background(), AgentCheckOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -178,8 +139,8 @@ func TestEnsureAgentSelections_AllBucketsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureAgentSelections: %v", err)
 	}
-	if sel.toolCalls != 3 || sel.modelCalls != 3 {
-		t.Fatalf("selector calls: tools=%d models=%d, want 3/3", sel.toolCalls, sel.modelCalls)
+	if sel.ToolCalls != 3 || sel.ModelCalls != 3 {
+		t.Fatalf("selector calls: tools=%d models=%d, want 3/3", sel.ToolCalls, sel.ModelCalls)
 	}
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		tool, model, interactive := readAgentBucket(t, bucket)
@@ -199,7 +160,7 @@ func TestEnsureAgentSelections_PartialBuckets(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	seedAgentBucket(t, store.BucketPlanner, "cursor", "gpt-5")
-	sel := &scriptedSelector{tool: "cursor", model: "sonnet-4"}
+	sel := &testutil.SelectorFake{Tool: "cursor", Model: "sonnet-4"}
 	err := EnsureAgentSelections(context.Background(), AgentCheckOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -210,8 +171,8 @@ func TestEnsureAgentSelections_PartialBuckets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureAgentSelections: %v", err)
 	}
-	if sel.toolCalls != 2 {
-		t.Fatalf("toolCalls = %d, want 2", sel.toolCalls)
+	if sel.ToolCalls != 2 {
+		t.Fatalf("toolCalls = %d, want 2", sel.ToolCalls)
 	}
 	tool, model, _ := readAgentBucket(t, store.BucketPlanner)
 	if tool != "cursor" || model != "gpt-5" {
@@ -243,7 +204,7 @@ func TestEnsureAgentSelections_NoAgents(t *testing.T) {
 func TestEnsureAgentSelections_SelectorAborts(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	sel := &scriptedSelector{toolErr: huh.ErrUserAborted}
+	sel := &testutil.SelectorFake{ToolErr: huh.ErrUserAborted}
 	err := EnsureAgentSelections(context.Background(), AgentCheckOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -270,7 +231,7 @@ func TestEnsureAgentSelections_FromStoreUnknownTool(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{newScriptedAgent()},
-		UI:     &scriptedSelector{},
+		UI:     &testutil.SelectorFake{},
 	})
 	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
 		t.Fatalf("err = %v", err)
@@ -294,20 +255,8 @@ func TestEnsureAgentSelections_AppliesDefaults(t *testing.T) {
 	}
 }
 
-// TestNewHuhAgentSelector_NoOptions covers the empty-options branch
-// of the huh-backed adapter.
-func TestNewHuhAgentSelector_NoOptions(t *testing.T) {
-	sel := newHuhAgentSelector(strings.NewReader(""), io.Discard)
-	if _, err := sel.SelectTool(context.Background(), nil); err == nil {
-		t.Fatalf("SelectTool with no options should error")
-	}
-	if _, err := sel.SelectModel(context.Background(), nil); err == nil {
-		t.Fatalf("SelectModel with no options should error")
-	}
-}
-
 // TestEnsureAgentSelections_StoreOpenFailure simulates a corrupt
-// settings layout (a regular file at .j/settings) so openSettingsStore
+// settings layout (a regular file at .j/settings) so store.OpenSettings
 // fails. EnsureAgentSelections treats the open failure as
 // ErrNoStoredSelection (so the flow falls into Pick) and the persist
 // step also short-circuits silently — net effect: every bucket prompts,
@@ -324,7 +273,7 @@ func TestEnsureAgentSelections_StoreOpenFailure(t *testing.T) {
 	if err := removeAndMkdir(path); err != nil {
 		t.Fatalf("replace settings with dir: %v", err)
 	}
-	sel := &scriptedSelector{tool: "cursor", model: "sonnet-4"}
+	sel := &testutil.SelectorFake{Tool: "cursor", Model: "sonnet-4"}
 	var stderr bytes.Buffer
 	err = EnsureAgentSelections(context.Background(), AgentCheckOptions{
 		Stdin:  strings.NewReader(""),
@@ -336,8 +285,8 @@ func TestEnsureAgentSelections_StoreOpenFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureAgentSelections: %v", err)
 	}
-	if sel.toolCalls != 3 {
-		t.Fatalf("toolCalls = %d, want 3 (every bucket should prompt when settings is unreadable)", sel.toolCalls)
+	if sel.ToolCalls != 3 {
+		t.Fatalf("toolCalls = %d, want 3 (every bucket should prompt when settings is unreadable)", sel.ToolCalls)
 	}
 	if !strings.Contains(stderr.String(), "warning: settings db") {
 		t.Fatalf("stderr should warn about settings db: %q", stderr.String())
@@ -346,7 +295,7 @@ func TestEnsureAgentSelections_StoreOpenFailure(t *testing.T) {
 
 // removeAndMkdir is a tiny helper that swaps a regular file for an
 // empty directory at path, used by TestEnsureAgentSelections_StoreOpenFailure
-// to break openSettingsStore.
+// to break store.OpenSettings.
 func removeAndMkdir(path string) error {
 	if err := os.RemoveAll(path); err != nil {
 		return err

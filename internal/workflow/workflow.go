@@ -22,6 +22,7 @@ import (
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/genai"
 
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/workflow/agents/planner"
 	"github.com/spacelions/j/internal/workflow/agents/verifier"
 	"github.com/spacelions/j/internal/workflow/agents/worker"
@@ -31,23 +32,23 @@ import (
 // universal launcher. The cfg carries the runtime knobs (API key, model,
 // iterations); launcherArgs are passed straight to the launcher parser
 // (nil/empty for console, or "web" "api" "webui" for the local web stack).
-func Run(ctx context.Context, cfg Config, launcherArgs []string) error {
+func Run(ctx context.Context, cfg store.ProjectConfig, launcherArgs []string) error {
 	m, err := gemini.NewModel(ctx, cfg.Model, &genai.ClientConfig{APIKey: cfg.APIKey})
 	if err != nil {
 		return fmt.Errorf("workflow: model: %w", err)
 	}
 
-	p, err := planner.New(m)
+	p, err := planner.New(planner.Config{LLM: m})
 	if err != nil {
 		return fmt.Errorf("workflow: planner: %w", err)
 	}
 
-	w, err := worker.New(m)
+	w, err := worker.New(worker.Config{LLM: m})
 	if err != nil {
 		return fmt.Errorf("workflow: worker: %w", err)
 	}
 
-	vfr, err := verifier.New(m)
+	vfr, err := verifier.New(verifier.Config{LLM: m})
 	if err != nil {
 		return fmt.Errorf("workflow: verifier: %w", err)
 	}

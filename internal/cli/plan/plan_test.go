@@ -8,13 +8,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/charmbracelet/huh"
 
+	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/testutil"
@@ -106,114 +105,84 @@ exit 1
 
 // scriptedUI returns predetermined answers for each prompt and tracks how
 // many times each prompt was invoked. The zero value picks the markdown
-// source (SourceMarkdown == 0) so existing tests that exercise the
+// source (picker.SourceMarkdown == 0) so existing tests that exercise the
 // markdown flow keep working without explicit setup.
 //
 // pickedFile is the basename returned from PickFromFile. When empty the
 // fake selects options[0] so single-entry pickers "just work" in tests
-// that only care about the rest of the flow. pickFileOptions captures
+// that only care about the rest of the flow. _ captures
 // the option slice the orchestrator offered so tests can assert the
 // scan + filter contract end-to-end.
 type scriptedUI struct {
-	source       PlanSource
-	pickedFile   string
-	tool         string
-	model        string
-	pickedID     string
-	replanID     string
-	sourceErr    error
-	pickFileErr  error
-	toolErr      error
-	modelErr     error
-	pickErr      error
-	replanErr    error
-	confirm      bool
-	confirmErr   error
+	testutil.SelectorFake
 
-	sourceCalls   int
-	pickFileCalls int
-	toolCalls     int
-	modelCalls    int
-	pickCalls     int
-	replanCalls   int
-	confirmCalls  int
+	source             picker.Source
+	pickedMarkdownPath string
+	pickedID           string
+	replanID           string
+	sourceErr          error
+	pickedMarkdownErr  error
+	pickErr            error
+	replanErr          error
+	confirm            bool
+	confirmErr         error
 
-	// toolHook, when non-nil, runs at the start of SelectTool so
-	// tests can mutate shared state (e.g. close the injected store)
-	// between Pick and the post-Pick persist step.
-	toolHook func()
+	sourceCalls         int
+	pickedMarkdownCalls int
+	pickCalls           int
+	replanCalls         int
+	confirmCalls        int
 
-	pickFileOptions []string
-	pickedTasks     []store.Task
-	replanTasks     []store.Task
-	confirmCmd      string
-	confirmTaskID   string
-	confirmStatus   string
+	pickedTasks   []store.Task
+	replanTasks   []store.Task
+	confirmCmd    string
+	confirmTaskID string
+	confirmStatus string
 }
 
-func (s *scriptedUI) SelectSource(context.Context) (PlanSource, error) {
+func (s *scriptedUI) SelectSource(_ context.Context, _ []picker.Source) (picker.Source, error) {
 	s.sourceCalls++
 	if s.sourceErr != nil {
-		return 0, s.sourceErr
+		return "", s.sourceErr
 	}
 	return s.source, nil
 }
 
-func (s *scriptedUI) PickFromFile(_ context.Context, options []string) (string, error) {
-	s.pickFileCalls++
-	s.pickFileOptions = append([]string(nil), options...)
-	if s.pickFileErr != nil {
-		return "", s.pickFileErr
+func (s *scriptedUI) PickMarkdownInCwd(_ context.Context) (string, error) {
+	s.pickedMarkdownCalls++
+	if s.pickedMarkdownErr != nil {
+		return "", s.pickedMarkdownErr
 	}
-	if s.pickedFile != "" {
-		return s.pickedFile, nil
-	}
-	if len(options) == 0 {
-		return "", errors.New("scriptedUI: no markdown options")
-	}
-	return options[0], nil
+	return s.pickedMarkdownPath, nil
 }
 
-func (s *scriptedUI) SelectTool(_ context.Context, options []string) (string, error) {
-	s.toolCalls++
-	if s.toolHook != nil {
-		s.toolHook()
+// PickTask dispatches by title prefix so the same scripted UI can
+// answer both flows: titles that contain "re-plan" honour replanID /
+// replanErr; titles that contain "resume" honour pickedID / pickErr.
+// Both branches use the (id, ok, err) contract: ok=false collapses
+// the user-abort path and the "no selection programmed" case so
+// leaving the matching id field empty signals cancel.
+func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []store.Task) (string, bool, error) {
+	if strings.Contains(title, "re-plan") {
+		s.replanCalls++
+		s.replanTasks = tasks
+		if s.replanErr != nil {
+			return "", false, s.replanErr
+		}
+		if s.replanID == "" {
+			return "", false, nil
+		}
+		return s.replanID, true, nil
 	}
-	if s.toolErr != nil {
-		return "", s.toolErr
+	s.pickCalls++
+	s.pickedTasks = tasks
+	if s.pickErr != nil {
+		return "", false, s.pickErr
 	}
-	if s.tool != "" {
-		return s.tool, nil
-	}
-	return options[0], nil
-}
-
-func (s *scriptedUI) SelectModel(_ context.Context, options []string) (string, error) {
-	s.modelCalls++
-	if s.modelErr != nil {
-		return "", s.modelErr
-	}
-	if s.model != "" {
-		return s.model, nil
-	}
-	return options[0], nil
-}
-
-// PickReplanTask matches the unified taskpick contract:
-// (id, ok, err). ok=false collapses both the user-abort path
-// and the "no selection programmed" case so leaving replanID
-// empty signals cancel, matching the production huhUI behaviour.
-// Tests that want a happy-path pick must set replanID explicitly.
-func (s *scriptedUI) PickReplanTask(_ context.Context, tasks []store.Task) (string, bool, error) {
-	s.replanCalls++
-	s.replanTasks = tasks
-	if s.replanErr != nil {
-		return "", false, s.replanErr
-	}
-	if s.replanID == "" {
+	if s.pickedID == "" {
 		return "", false, nil
 	}
-	return s.replanID, true, nil
+	return s.pickedID, true, nil
 }
 
 func (s *scriptedUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, status string) (bool, error) {
@@ -227,21 +196,6 @@ func (s *scriptedUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, statu
 	return s.confirm, nil
 }
 
-// PickPlanTask matches the unified taskpick contract:
-// (id, ok, err). See PickReplanTask above for the rationale —
-// empty pickedID means cancel; tests that exercise the
-// happy-path pick must set pickedID explicitly.
-func (s *scriptedUI) PickPlanTask(_ context.Context, tasks []store.Task) (string, bool, error) {
-	s.pickCalls++
-	s.pickedTasks = tasks
-	if s.pickErr != nil {
-		return "", false, s.pickErr
-	}
-	if s.pickedID == "" {
-		return "", false, nil
-	}
-	return s.pickedID, true, nil
-}
 
 // scriptedAgent stands in for any codingagents.Agent in tests.
 type scriptedAgent struct {
@@ -382,7 +336,7 @@ func TestRun_Success_WithFlag(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		FromFile:    target,
-		Interactive: boolPtr(true),
+		Interactive: true,
 		Stdin:       strings.NewReader(""),
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
@@ -393,11 +347,11 @@ func TestRun_Success_WithFlag(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if ui.pickFileCalls != 0 {
-		t.Fatalf("PickFromFile called %d times, want 0", ui.pickFileCalls)
+	if ui.pickedMarkdownCalls != 0 {
+		t.Fatalf("PickFromFile called %d times, want 0", ui.pickedMarkdownCalls)
 	}
-	if ui.toolCalls != 1 || ui.modelCalls != 1 {
-		t.Fatalf("tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	if ui.ToolCalls != 1 || ui.ModelCalls != 1 {
+		t.Fatalf("tool=%d model=%d", ui.ToolCalls, ui.ModelCalls)
 	}
 	if agent.listed != 1 || agent.checked != 1 || agent.planned != 1 {
 		t.Fatalf("agent calls listed=%d checked=%d planned=%d", agent.listed, agent.checked, agent.planned)
@@ -449,7 +403,7 @@ func TestRun_Headless_PropagatesFlag(t *testing.T) {
 	agent := newScriptedAgent()
 	err := Run(context.Background(), Options{
 		FromFile:    target,
-		Interactive: boolPtr(false),
+		Interactive: false,
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -507,7 +461,7 @@ func TestRun_PromptsForTarget_WhenFlagMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceMarkdown}
+	ui := &scriptedUI{source: picker.SourceMarkdown, pickedMarkdownPath: target}
 
 	err := Run(context.Background(), Options{
 		Stdin:  strings.NewReader(""),
@@ -522,12 +476,8 @@ func TestRun_PromptsForTarget_WhenFlagMissing(t *testing.T) {
 	if ui.sourceCalls != 1 {
 		t.Fatalf("SelectSource called %d times, want 1", ui.sourceCalls)
 	}
-	if ui.pickFileCalls != 1 {
-		t.Fatalf("PickFromFile called %d times, want 1", ui.pickFileCalls)
-	}
-	want := []string{"spec.md"}
-	if !reflect.DeepEqual(ui.pickFileOptions, want) {
-		t.Fatalf("PickFromFile options = %v, want %v", ui.pickFileOptions, want)
+	if ui.pickedMarkdownCalls != 1 {
+		t.Fatalf("PickMarkdownInCwd called %d times, want 1", ui.pickedMarkdownCalls)
 	}
 	if agent.lastReq.FromFilePath != target {
 		t.Fatalf("FromFilePath = %q, want %q", agent.lastReq.FromFilePath, target)
@@ -562,7 +512,7 @@ func TestRun_Linear_NoOp(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceLinear}
+	ui := &scriptedUI{source: picker.SourceLinear}
 	var stdout bytes.Buffer
 	err := Run(context.Background(), Options{
 		Stdout: &stdout,
@@ -595,18 +545,18 @@ func TestRun_SelectSourceError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "source boom") {
 		t.Fatalf("err = %v", err)
 	}
-	if ui.pickFileCalls != 0 || agent.listed != 0 {
+	if ui.pickedMarkdownCalls != 0 || agent.listed != 0 {
 		t.Fatal("nothing past SelectSource should have been touched")
 	}
 }
 
 // TestRun_UnsupportedSource pins the default branch in Run so adding a
-// new PlanSource constant without a switch arm fails loudly in tests.
+// new picker.Source constant without a switch arm fails loudly in tests.
 func TestRun_UnsupportedSource(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	agent := newScriptedAgent()
-	ui := &scriptedUI{source: PlanSource(99)}
+	ui := &scriptedUI{source: picker.Source("garbage")}
 	err := Run(context.Background(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -685,7 +635,7 @@ func TestRun_PickFromFileError(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent := newScriptedAgent()
-	ui := &scriptedUI{pickFileErr: errors.New("pick boom")}
+	ui := &scriptedUI{source: picker.SourceMarkdown, pickedMarkdownErr: errors.New("pick boom")}
 	err := Run(context.Background(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -730,7 +680,8 @@ func TestRun_MarkdownPicker_FiltersAndExcludes(t *testing.T) {
 	}
 
 	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceMarkdown, pickedFile: "spec.md"}
+	wantTarget := filepath.Join(dir, "spec.md")
+	ui := &scriptedUI{source: picker.SourceMarkdown, pickedMarkdownPath: wantTarget}
 
 	err := Run(context.Background(), Options{
 		Stdin:  strings.NewReader(""),
@@ -743,11 +694,10 @@ func TestRun_MarkdownPicker_FiltersAndExcludes(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	wantOptions := []string{"notes.markdown", "spec.md"}
-	if !reflect.DeepEqual(ui.pickFileOptions, wantOptions) {
-		t.Fatalf("PickFromFile options = %v, want %v", ui.pickFileOptions, wantOptions)
-	}
-	wantTarget := filepath.Join(dir, "spec.md")
+	// Picker owns the filtering of cwd's markdown files (mdfile.ListInDir
+	// behaviour is exercised in mdfile_test.go). The cli-level
+	// invariant we pin here is that the picker's chosen path flows
+	// through to agent.Plan as the absolute FromFilePath.
 	if agent.lastReq.FromFilePath != wantTarget {
 		t.Fatalf("FromFilePath = %q, want %q", agent.lastReq.FromFilePath, wantTarget)
 	}
@@ -756,117 +706,22 @@ func TestRun_MarkdownPicker_FiltersAndExcludes(t *testing.T) {
 	}
 }
 
-// TestRun_MarkdownPicker_UnknownSelection covers the defensive
-// byBase miss in pickMarkdownTarget: a UI that returns a basename
-// the orchestrator never offered surfaces a clean error and the
-// agent stays untouched. Triggered via the scriptedUI returning an
-// out-of-band basename; in production the huh selector cannot
-// emit a value outside the supplied options.
-func TestRun_MarkdownPicker_UnknownSelection(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	mustInit(t)
-	if err := os.WriteFile(filepath.Join(dir, "spec.md"), []byte("body"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceMarkdown, pickedFile: "ghost.md"}
-
-	err := Run(context.Background(), Options{
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     ui,
-	})
-	if err == nil || !strings.Contains(err.Error(), "unknown markdown selection") {
-		t.Fatalf("err = %v, want 'unknown markdown selection' error", err)
-	}
-	if agent.planned != 0 {
-		t.Fatalf("agent.planned = %d, want 0", agent.planned)
-	}
-}
-
-// TestRun_MarkdownPicker_ScanError pins the wrap-the-os.ReadDir
-// branch in pickMarkdownTarget. We can't ergonomically hand the
-// orchestrator a missing cwd via t.Chdir (Go re-resolves it), so
-// we point ListInDir at a removed directory by replacing the cwd
-// after mustInit and before Run. The orchestrator must surface a
-// `plan: scan ...` wrap and skip the agent.
-func TestRun_MarkdownPicker_ScanError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("relies on POSIX semantics for a removed cwd")
-	}
-	dir := t.TempDir()
-	t.Chdir(dir)
-	mustInit(t)
-	// Removing the cwd directory makes os.ReadDir (and therefore
-	// ListInDir) fail with ENOENT while os.Getwd still succeeds
-	// from the kernel's per-process record on POSIX.
-	if err := os.RemoveAll(dir); err != nil {
-		t.Fatalf("RemoveAll: %v", err)
-	}
-	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceMarkdown}
-	err := Run(context.Background(), Options{
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     ui,
-	})
-	if err == nil {
-		t.Fatal("expected scan error")
-	}
-	if !strings.Contains(err.Error(), "plan: scan") && !strings.Contains(err.Error(), "plan: getwd") {
-		t.Fatalf("err = %v, want scan/getwd wrap", err)
-	}
-	if agent.planned != 0 {
-		t.Fatalf("agent.planned = %d, want 0", agent.planned)
-	}
-}
-
-// TestRun_MarkdownPicker_EmptyDirectory pins the empty-scan branch:
-// a cwd with only an AGENTS.md (which is excluded) must produce a
-// single user-facing error mentioning the cwd, the picker is never
-// invoked, and the agent stays untouched.
-func TestRun_MarkdownPicker_EmptyDirectory(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	mustInit(t)
-	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceMarkdown}
-
-	err := Run(context.Background(), Options{
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     ui,
-	})
-	if err == nil || !strings.Contains(err.Error(), "no markdown files") {
-		t.Fatalf("err = %v, want 'no markdown files' error", err)
-	}
-	if !strings.Contains(err.Error(), dir) {
-		t.Fatalf("err = %v, want it to mention cwd %q", err, dir)
-	}
-	if ui.pickFileCalls != 0 {
-		t.Fatalf("PickFromFile called %d times, want 0", ui.pickFileCalls)
-	}
-	if agent.planned != 0 {
-		t.Fatalf("agent.planned = %d, want 0", agent.planned)
-	}
-}
+// Markdown-picker error / scan / empty-dir / unknown-selection tests
+// moved to internal/cli/picker (see picker_test.go::
+// TestPickMarkdownInCwd_NoFiles and friends): those branches now
+// live inside picker.PickMarkdownInCwd, exercised through the picker
+// package's own unit tests rather than from the cli boundary.
+// The cli-level invariants — that a picker error short-circuits Run
+// without invoking the agent, and that the picker's chosen path
+// flows into agent.Plan as FromFilePath — are pinned by
+// TestRun_PickFromFileError + TestRun_MarkdownPicker_FiltersAndExcludes.
 
 func TestRun_SelectModelError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	target := writeFromFile(t, "x")
 	agent := newScriptedAgent()
-	ui := &scriptedUI{modelErr: errors.New("model boom")}
+	ui := &scriptedUI{SelectorFake: testutil.SelectorFake{ModelErr: errors.New("model boom")}}
 	err := Run(context.Background(), Options{
 		FromFile: target,
 		Stdout:   io.Discard,
@@ -921,8 +776,8 @@ func TestRun_ListModelsError_StopsBeforeUI(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if ui.modelCalls != 0 {
-		t.Fatalf("SelectModel called despite list error: %d", ui.modelCalls)
+	if ui.ModelCalls != 0 {
+		t.Fatalf("SelectModel called despite list error: %d", ui.ModelCalls)
 	}
 	if agent.checked != 0 || agent.planned != 0 {
 		t.Fatal("login/plan should not have been invoked")
@@ -968,7 +823,7 @@ func TestRun_UICancelled(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{agent},
-		UI:       &scriptedUI{toolErr: huh.ErrUserAborted},
+		UI:       &scriptedUI{SelectorFake: testutil.SelectorFake{ToolErr: huh.ErrUserAborted}},
 	})
 	if err != nil {
 		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
@@ -1035,7 +890,7 @@ func TestRun_UnknownToolFromUI(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{agent},
-		UI:       &scriptedUI{tool: "codex"},
+		UI:       &scriptedUI{SelectorFake: testutil.SelectorFake{Tool: "codex"}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
 		t.Fatalf("err = %v", err)
@@ -1053,7 +908,7 @@ func TestRun_Markdown_PersistsPlannerSelection(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		FromFile:    target,
-		Interactive: boolPtr(true),
+		Interactive: true,
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -1114,7 +969,7 @@ func TestRun_LoginFailure_DoesNotPersist(t *testing.T) {
 }
 
 // TestRun_SelectionCancelled_DoesNotPersist mirrors the login-failure
-// case for the user-cancel path through agentpick.Pick. With the
+// case for the user-cancel path through picker.PickAgent. With the
 // abort-to-nil contract, Run returns no error on cancel; the
 // invariant the test guards is that nothing was persisted to the
 // planner bucket because Pick was never confirmed.
@@ -1128,7 +983,7 @@ func TestRun_SelectionCancelled_DoesNotPersist(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{agent},
-		UI:       &scriptedUI{toolErr: huh.ErrUserAborted},
+		UI:       &scriptedUI{SelectorFake: testutil.SelectorFake{ToolErr: huh.ErrUserAborted}},
 		Store:    s,
 	})
 	if err != nil {
@@ -1153,7 +1008,7 @@ func TestRun_StoreWriteError_WarnsAndContinues(t *testing.T) {
 	target := writeFromFile(t, "body")
 	agent := newScriptedAgent()
 	var stderr bytes.Buffer
-	ui := &scriptedUI{toolHook: func() { _ = s.Close() }}
+	ui := &scriptedUI{SelectorFake: testutil.SelectorFake{ToolHook: func() { _ = s.Close() }}}
 
 	err := Run(context.Background(), Options{
 		FromFile: target,
@@ -1195,7 +1050,7 @@ func TestRun_StoreReadError_Surfaces(t *testing.T) {
 		UI:       &scriptedUI{},
 		Store:    s,
 	})
-	if err == nil || !strings.Contains(err.Error(), "agentpick: read planner") {
+	if err == nil || !strings.Contains(err.Error(), "resolver: read planner") {
 		t.Fatalf("err = %v, want wrapped read error", err)
 	}
 	if agent.planned != 0 {
@@ -1203,55 +1058,9 @@ func TestRun_StoreReadError_Surfaces(t *testing.T) {
 	}
 }
 
-// TestPersistPlannerSelection_NilStore_LazyOpenSucceeds exercises the
-// nil-Store branch when openSettingsStore can lay hands on a real
-// `<cwd>/.j/settings`: the helper opens, persists, and closes
-// silently and the values land on disk.
-func TestPersistPlannerSelection_NilStore_LazyOpenSucceeds(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	var stderr bytes.Buffer
-	persistPlannerSelection(Options{
-		Stderr:      &stderr,
-		Interactive: boolPtr(true),
-	}, "cursor", "sonnet-4")
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr should stay empty on success, got %q", stderr.String())
-	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	v, ok, err := s.Get(store.BucketPlanner, "tool")
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if !ok || v != "cursor" {
-		t.Fatalf("planner.tool = %q (ok=%v), want cursor", v, ok)
-	}
-}
-
-// TestPersistPlannerSelection_NilStore_LazyOpenFails covers the
-// early-return branch when openSettingsStore can't open the DB
-// (no .j layout on disk): the helper warns once and returns
-// without panicking.
-func TestPersistPlannerSelection_NilStore_LazyOpenFails(t *testing.T) {
-	t.Chdir(t.TempDir())
-	var stderr bytes.Buffer
-	persistPlannerSelection(Options{Stderr: &stderr}, "cursor", "sonnet-4")
-	if !strings.Contains(stderr.String(), "warning: settings") {
-		t.Fatalf("stderr = %q, want settings warning", stderr.String())
-	}
-}
-
 // TestRun_ExplicitTool_SkipsPersistence asserts the new --tool /
 // --model contract: when both flags are supplied, Run resolves via
-// agentpick.Resolve, runs the chosen agent, and leaves the planner
+// resolver.Agent, runs the chosen agent, and leaves the planner
 // bucket untouched (no UI prompt and no store write).
 func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	s := openTestStore(t)
@@ -1272,8 +1081,8 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if ui.toolCalls != 0 || ui.modelCalls != 0 {
-		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	if ui.ToolCalls != 0 || ui.ModelCalls != 0 {
+		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.ToolCalls, ui.ModelCalls)
 	}
 	if agent.lastReq.Model != "opus" {
 		t.Fatalf("model = %q, want opus", agent.lastReq.Model)
@@ -1288,7 +1097,7 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 }
 
 // TestRun_ExplicitTool_NilStore_LazyOpenSucceeds drives the
-// nil-Store branch of plannerResolveExplicit. The lazy open finds
+// nil-Store branch of resolver.Agent (explicit branch). The lazy open finds
 // the seeded planner.model so --tool=cursor resolves cleanly.
 func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -1327,7 +1136,7 @@ func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 }
 
 // TestRun_ExplicitTool_NilStore_LazyOpenFails covers the
-// settings-DB-broken branch of plannerResolveExplicit: with no
+// settings-DB-broken branch of resolver.Agent (explicit branch): with no
 // stored half available, Resolve surfaces the missing-half error
 // before invoking the agent.
 func TestRun_ExplicitTool_NilStore_LazyOpenFails(t *testing.T) {
@@ -1472,7 +1281,7 @@ func TestRun_BackgroundSpawn_RecordsPID(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		FromFile:    target,
-		Interactive: boolPtr(false),
+		Interactive: false,
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -1557,7 +1366,7 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentPlan(t *testing.T) {
 
 	err = Run(context.Background(), Options{
 		FromFile:    target,
-		Interactive: boolPtr(true),
+		Interactive: true,
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},

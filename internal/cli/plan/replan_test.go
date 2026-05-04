@@ -13,6 +13,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 
+	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 )
@@ -285,78 +286,6 @@ func TestListAllTasks_SortsAndReturns(t *testing.T) {
 	}
 }
 
-// TestPickReplanTarget_EmptyList surfaces the "no tasks to re-plan"
-// error when bbolt is empty.
-func TestPickReplanTarget_EmptyList(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	_, err := pickReplanTarget(context.Background(), Options{Stderr: io.Discard, UI: &scriptedUI{}})
-	if err == nil || !strings.Contains(err.Error(), "no tasks to re-plan") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-// TestPickReplanTarget_DelegatesToUI feeds the UI a sorted task list
-// and asserts the chosen id flows back.
-func TestPickReplanTarget_DelegatesToUI(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	id := seedReplanTask(t, store.StatusPlanDone, "a", nil)
-	ui := &scriptedUI{replanID: id}
-	got, err := pickReplanTarget(context.Background(), Options{Stderr: io.Discard, UI: ui})
-	if err != nil {
-		t.Fatalf("pickReplanTarget: %v", err)
-	}
-	if got != id {
-		t.Fatalf("id = %q, want %q", got, id)
-	}
-	if ui.replanCalls != 1 {
-		t.Fatalf("PickReplanTask calls = %d, want 1", ui.replanCalls)
-	}
-	if len(ui.replanTasks) != 1 || ui.replanTasks[0].ID != id {
-		t.Fatalf("UI received %+v", ui.replanTasks)
-	}
-}
-
-// TestPickReplanTarget_UIError propagates the picker error verbatim.
-func TestPickReplanTarget_UIError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	_ = seedReplanTask(t, store.StatusPlanDone, "a", nil)
-	ui := &scriptedUI{replanErr: errors.New("pick boom")}
-	_, err := pickReplanTarget(context.Background(), Options{Stderr: io.Discard, UI: ui})
-	if err == nil || !strings.Contains(err.Error(), "pick boom") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-// TestPickReplanTarget_ListError covers the listAllTasks-error
-// path through pickReplanTarget: replacing list.db with a
-// directory makes OpenTaskLog fail and the error propagates
-// without invoking the UI picker.
-func TestPickReplanTarget_ListError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	dbPath, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(dbPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(dbPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	ui := &scriptedUI{}
-	_, err = pickReplanTarget(context.Background(), Options{Stderr: io.Discard, UI: ui})
-	if err == nil || !strings.Contains(err.Error(), "tasks db unavailable") {
-		t.Fatalf("err = %v", err)
-	}
-	if ui.replanCalls != 0 {
-		t.Fatalf("PickReplanTask calls = %d, want 0", ui.replanCalls)
-	}
-}
-
 // TestRun_FromTask_BypassesSourceSelector pins the rule that
 // --from-task takes the re-plan path without prompting for a source.
 func TestRun_FromTask_BypassesSourceSelector(t *testing.T) {
@@ -625,7 +554,7 @@ func TestRun_FromTask_BackgroundSpawn_RecordsPID(t *testing.T) {
 	var stdout bytes.Buffer
 	err := Run(context.Background(), Options{
 		TaskID:      id,
-		Interactive: boolPtr(false),
+		Interactive: false,
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -714,14 +643,14 @@ func TestRun_FromTask_NewResumeIDError(t *testing.T) {
 }
 
 // TestRun_SourceTask_PicksAndReplans drives the full no-flag flow:
-// SelectSource returns SourceTask, the picker returns the only
+// SelectSource returns picker.SourceTask, the picker returns the only
 // seeded id, runReplanTask completes successfully.
 func TestRun_SourceTask_PicksAndReplans(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedReplanTask(t, store.StatusPlanDone, "# req\nbody", nil)
 	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceTask, replanID: id}
+	ui := &scriptedUI{source: picker.SourceTask, replanID: id}
 	err := Run(context.Background(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -746,7 +675,7 @@ func TestRun_SourceTask_PickerError(t *testing.T) {
 	mustInit(t)
 	_ = seedReplanTask(t, store.StatusPlanDone, "# req", nil)
 	agent := newScriptedAgent()
-	ui := &scriptedUI{source: SourceTask, replanErr: errors.New("pick boom")}
+	ui := &scriptedUI{source: picker.SourceTask, replanErr: errors.New("pick boom")}
 	err := Run(context.Background(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,

@@ -383,7 +383,7 @@ func TestRunResume_Work_PickerError(t *testing.T) {
 }
 
 // TestRunResume_Work_PickerCancelled covers the cancel signal
-// from the unified taskpick contract: a user-abort (or empty
+// from the unified picker contract: a user-abort (or empty
 // resumePicked) surfaced from PickWorkTask returns ok=false and
 // RunResume must exit cleanly with nil. The agent must never be
 // invoked.

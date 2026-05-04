@@ -1,5 +1,5 @@
 // Package plan implements the `j plan` subcommand. It collects a planning
-// source (markdown today, linear later), asks for a model and a coding
+// source (markdown or linear), asks for a model and a coding
 // agent backend, verifies that backend is signed in, and runs it to
 // produce a refined requirements summary and a plan stored under
 // <cwd>/.j/tasks/<id>/. No file is written to the workspace; `j tasks`
@@ -15,15 +15,26 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/charmbracelet/huh"
 
-	"github.com/spacelions/j/internal/cli/agentpick"
+	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/mustread"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/mdfile"
+	"github.com/spacelions/j/internal/util/run"
 )
+
+// UI is the slice of picker methods `j plan` calls. *picker.Picker
+// satisfies it via duck typing; tests inject scripted fakes.
+type UI interface {
+	SelectSource(ctx context.Context, allowed []picker.Source) (picker.Source, error)
+	PickMarkdownInCwd(ctx context.Context) (string, error)
+	PickTask(ctx context.Context, title string, tasks []store.Task) (string, bool, error)
+	SelectTool(ctx context.Context, options []string) (string, error)
+	SelectModel(ctx context.Context, options []string) (string, error)
+	ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error)
+}
 
 // Options configures Run. Stdin/Stdout/Stderr default to the process
 // streams. UI defaults to the huh implementation. Agents must be
@@ -46,22 +57,25 @@ type Options struct {
 	// the plan-done / help allowlist. Mirrors the `--yes` /
 	// PLAN_YES flag wiring on the cobra command.
 	Yes bool
-	// Interactive is a tri-state: a non-nil value is the explicit
-	// user choice (cobra `--interactive` flag or PLAN_INTERACTIVE
-	// env var), and nil means "not set, fall back to the stored
-	// `interactive` value or the cobra default true". Stored wins
-	// when Interactive is nil and the bucket has a parseable value;
-	// explicit always wins.
-	Interactive *bool
+	// Interactive is the resolved interactive flag. cobra cmd.go
+	// computes it via resolver.Interactive (explicit > stored > true)
+	// before constructing Options.
+	Interactive bool
 
 	// Tool and Model are one-off overrides for the planner bucket's
 	// recorded tool/model. When either is set, Run resolves the
-	// planner via agentpick.Resolve (filling the missing half from
+	// planner via resolver.Agent (filling the missing half from
 	// the bucket if needed) and skips persistence: the bucket is
 	// left untouched. When both are empty, Run falls back to the
 	// existing read-then-prompt-then-persist precedence.
 	Tool  string
 	Model string
+
+	// WaitForCompletion blocks on a returned non-zero PID and runs
+	// finishPlan synchronously, instead of leaving the row at
+	// `planning` for the `j tasks` reaper. Used by the orchestrator
+	// chain so the next phase only fires after the planner exits.
+	WaitForCompletion bool
 
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -99,22 +113,11 @@ type Options struct {
 // concurrent `j settings` / `j tasks` invocations are not blocked on
 // the OS file lock.
 func Run(ctx context.Context, opts Options) (err error) {
-	defer func() {
-		if errors.Is(err, huh.ErrUserAborted) {
-			err = nil
-		}
-	}()
+	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
 		return errors.New("plan: no coding agents configured")
 	}
-	// Resolve the effective interactive flag once so the same
-	// value flows into both the agent request and the plan-done
-	// row (and into persistPlannerSelection on the prompted path).
-	// Precedence: explicit (opts.Interactive != nil) > stored
-	// (bucket has parseable value) > cobra default true.
-	opts.Interactive = boolPtr(resolveInteractive(opts))
-
 	// --from-task short-circuits the source picker; the explicit
 	// flag is unambiguous so we head straight to the re-plan
 	// flow without prompting for a source.
@@ -125,59 +128,26 @@ func Run(ctx context.Context, opts Options) (err error) {
 		return runMarkdown(ctx, opts, opts.FromFile)
 	}
 
-	src, err := opts.UI.SelectSource(ctx)
+	res, err := picker.PickSource(ctx, opts.UI,
+		[]picker.Source{picker.SourceMarkdown, picker.SourceLinear, picker.SourceTask},
+		func() ([]store.Task, error) { return listAllTasks(opts) },
+		errors.New("plan: no tasks to re-plan; run `j plan` first"))
 	if err != nil {
 		return err
 	}
-	switch src {
-	case SourceMarkdown:
-		target, err := pickMarkdownTarget(ctx, opts)
-		if err != nil {
-			return err
-		}
-		return runMarkdown(ctx, opts, target)
-	case SourceLinear:
+	if res.Cancelled {
+		return nil
+	}
+	switch res.Source {
+	case picker.SourceMarkdown:
+		return runMarkdown(ctx, opts, res.Markdown)
+	case picker.SourceLinear:
 		fmt.Fprintln(opts.Stdout, "plan: linear source is not yet wired up; nothing to do")
 		return nil
-	case SourceTask:
-		id, err := pickReplanTarget(ctx, opts)
-		if err != nil {
-			return err
-		}
-		if id == "" {
-			return nil
-		}
-		return runReplanTask(ctx, opts, id)
+	case picker.SourceTask:
+		return runReplanTask(ctx, opts, res.TaskID)
 	}
-	return fmt.Errorf("plan: unsupported source %s", src)
-}
-
-// pickReplanTarget lists every task in bbolt (sorted via
-// store.SortTasks) and asks the user to pick one for the re-plan
-// flow. An empty list surfaces a clean error mentioning the cwd
-// so users see why nothing is available; otherwise the chosen id
-// is returned for runReplanTask. The picker now uses the unified
-// (id, ok, err) contract from internal/cli/taskpick: ok=false
-// (user aborted Ctrl-C / Esc) collapses to ("", nil) so Run can
-// short-circuit cleanly without relying on the deferred
-// huh.ErrUserAborted guard for this hop. Genuine UI errors
-// propagate verbatim.
-func pickReplanTarget(ctx context.Context, opts Options) (string, error) {
-	tasks, err := listAllTasks(opts)
-	if err != nil {
-		return "", err
-	}
-	if len(tasks) == 0 {
-		return "", errors.New("plan: no tasks to re-plan; run `j plan` first")
-	}
-	id, ok, err := opts.UI.PickReplanTask(ctx, tasks)
-	if err != nil {
-		return "", err
-	}
-	if !ok {
-		return "", nil
-	}
-	return id, nil
+	return fmt.Errorf("plan: unsupported source %s", res.Source)
 }
 
 // runReplanTask is the re-plan flow: load the existing task row,
@@ -217,7 +187,7 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
 	}
 	agentLogPath := filepath.Join(taskDir, tasklog.AgentLogFileName)
-	mustReadFiles, mustReadErr := mustread.LoadFromDefault()
+	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
 	}
@@ -227,18 +197,25 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 		Model:                  model,
 		RequirementsOutputPath: requirementsPath,
 		PlanOutputPath:         planPath,
-		Interactive:            *opts.Interactive,
+		Interactive:            opts.Interactive,
 		ResumeChatID:           resumeID,
 		AgentLogPath:           agentLogPath,
 		MustRead:               mustReadFiles,
 	})
 
 	if planErr == nil && pid > 0 {
-		lc.recordBackground(pid, agentLogPath)
-		fmt.Fprintf(opts.Stdout,
-			"J: cursor-agent running in background (PID=%d); see .j/tasks/%s/%s\n",
-			pid, existing.ID, tasklog.AgentLogFileName)
-		return nil
+		if opts.WaitForCompletion {
+			if err := run.WaitForExit(ctx, pid); err != nil {
+				lc.finishPlan(err, "", "", requirementsPath)
+				return err
+			}
+		} else {
+			lc.recordBackground(pid, agentLogPath)
+			fmt.Fprintf(opts.Stdout,
+				"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
+				agent.Name(), pid, existing.ID, tasklog.AgentLogFileName)
+			return nil
+		}
 	}
 
 	var refinedReq, planMD string
@@ -331,45 +308,6 @@ func confirmStatusOverride(ctx context.Context, opts Options, cmd string, t stor
 	return opts.UI.ConfirmStatusOverride(ctx, cmd, t.ID, string(t.Status))
 }
 
-// pickMarkdownTarget scans the current working directory for markdown
-// files and asks the UI to choose one. Replaces the legacy free-text
-// prompt: the user can no longer mistype a path, and AGENTS.md /
-// README.md / hidden files / non-`.md` files never appear. An empty
-// scan surfaces a clean error mentioning the cwd so the agent is
-// never invoked. The chosen basename is mapped back to the matching
-// absolute path before being handed to runMarkdown so downstream
-// behaviour (mdfile.Resolve, agent.Plan) is identical to the old
-// typed-input flow.
-func pickMarkdownTarget(ctx context.Context, opts Options) (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("plan: getwd: %w", err)
-	}
-	abs, err := mdfile.ListInDir(cwd)
-	if err != nil {
-		return "", fmt.Errorf("plan: scan %s: %w", cwd, err)
-	}
-	if len(abs) == 0 {
-		return "", fmt.Errorf("plan: no markdown files in %s (excluding AGENTS.md/README.md)", cwd)
-	}
-	basenames := make([]string, len(abs))
-	byBase := make(map[string]string, len(abs))
-	for i, p := range abs {
-		base := filepath.Base(p)
-		basenames[i] = base
-		byBase[base] = p
-	}
-	chosen, err := opts.UI.PickFromFile(ctx, basenames)
-	if err != nil {
-		return "", err
-	}
-	target, ok := byBase[chosen]
-	if !ok {
-		return "", fmt.Errorf("plan: unknown markdown selection %q", chosen)
-	}
-	return target, nil
-}
-
 // runMarkdown is the markdown-file flow: resolve and read the source,
 // pick a tool/model, mint a task ID, ensure `<cwd>/.j/tasks/<id>/`
 // exists, and ask the agent to save both the (possibly refined)
@@ -406,7 +344,7 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
 	}
 	agentLogPath := filepath.Join(taskDir, tasklog.AgentLogFileName)
-	mustReadFiles, mustReadErr := mustread.LoadFromDefault()
+	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
 	}
@@ -416,18 +354,25 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 		Model:                  model,
 		RequirementsOutputPath: requirementsPath,
 		PlanOutputPath:         planPath,
-		Interactive:            *opts.Interactive,
+		Interactive:            opts.Interactive,
 		ResumeChatID:           resumeID,
 		AgentLogPath:           agentLogPath,
 		MustRead:               mustReadFiles,
 	})
 
 	if planErr == nil && pid > 0 {
-		lc.recordBackground(pid, agentLogPath)
-		fmt.Fprintf(opts.Stdout,
-			"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
-			agent.Name(), pid, taskID, tasklog.AgentLogFileName)
-		return nil
+		if opts.WaitForCompletion {
+			if err := run.WaitForExit(ctx, pid); err != nil {
+				lc.finishPlan(err, "", "", target)
+				return err
+			}
+		} else {
+			lc.recordBackground(pid, agentLogPath)
+			fmt.Fprintf(opts.Stdout,
+				"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
+				agent.Name(), pid, taskID, tasklog.AgentLogFileName)
+			return nil
+		}
 	}
 
 	var refinedReq, planMD string
@@ -452,151 +397,21 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 	return nil
 }
 
-// selectPlanner is the single chokepoint for choosing the planner
-// tool/model. Precedence:
-//  1. explicit --tool / --model (opts.Tool or opts.Model set) →
-//     agentpick.Resolve fills the missing half from the planner
-//     bucket and runs CheckLogin. The bucket is NOT written.
-//  2. populated planner bucket → agentpick.FromStore reuses it.
-//  3. otherwise → agentpick.Pick prompts the user and the result is
-//     persisted to the planner bucket.
-//
-// Settings DB access is short-lived: the bucket is read inside
-// plannerFromStore and the handle is released before this returns
-// so the agent.Plan call downstream never contends on the bbolt file
-// lock.
+// selectPlanner delegates to resolver.Agent with the planner bucket.
+// Resolver owns the precedence chain (explicit → stored → prompt) and
+// the persist step; the cli only forwards inputs.
 func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
-	if opts.Tool != "" || opts.Model != "" {
-		agent, model, err := plannerResolveExplicit(ctx, opts)
-		if err == nil {
-			return agent, model, nil
-		}
-		if !errors.Is(err, agentpick.ErrNoStoredSelection) {
-			return nil, "", err
-		}
-	}
-	agent, model, err := plannerFromStore(ctx, opts)
-	if err == nil {
-		return agent, model, nil
-	}
-	if !errors.Is(err, agentpick.ErrNoStoredSelection) {
-		return nil, "", err
-	}
-	fmt.Fprintln(opts.Stderr, "Choose your favourite:")
-	agent, model, err = agentpick.Pick(ctx, opts.UI, opts.Agents)
-	if err != nil {
-		return nil, "", err
-	}
-	persistPlannerSelection(opts, agent.Name(), model)
-	return agent, model, nil
+	return resolver.Agent(ctx, resolver.AgentOptions{
+		Bucket:        store.BucketPlanner,
+		Agents:        opts.Agents,
+		ExplicitTool:  opts.Tool,
+		ExplicitModel: opts.Model,
+		UI:            opts.UI,
+		Store:         opts.Store,
+		Stderr:        opts.Stderr,
+		Interactive:   opts.Interactive,
+	})
 }
-
-// plannerResolveExplicit reads the planner bucket only to fill the
-// missing half of the user-supplied --tool / --model pair. When
-// opts.Store is non-nil it is reused; otherwise this opens
-// `<cwd>/.j/settings` for the duration of the read and releases it
-// before returning so the file lock is not held across agent.Plan.
-func plannerResolveExplicit(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
-	if opts.Store != nil {
-		return agentpick.Resolve(ctx, opts.Store, store.BucketPlanner, opts.Agents, opts.Tool, opts.Model)
-	}
-	s, ok := openSettingsStore(opts.Stderr)
-	if !ok {
-		return agentpick.Resolve(ctx, nil, store.BucketPlanner, opts.Agents, opts.Tool, opts.Model)
-	}
-	defer func() { _ = s.Close() }()
-	return agentpick.Resolve(ctx, s, store.BucketPlanner, opts.Agents, opts.Tool, opts.Model)
-}
-
-// plannerFromStore reads the planner bucket and returns the chosen
-// tool/model. When opts.Store is non-nil (test injection) it is reused
-// without any open/close cycle. Otherwise this opens
-// `<cwd>/.j/settings` only for the duration of agentpick.FromStore and
-// releases it before returning. A failure to open the settings DB
-// surfaces as ErrNoStoredSelection so the caller falls back to the
-// prompt path the same way an empty bucket would.
-func plannerFromStore(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
-	if opts.Store != nil {
-		return agentpick.FromStore(ctx, opts.Store, store.BucketPlanner, opts.Agents)
-	}
-	s, ok := openSettingsStore(opts.Stderr)
-	if !ok {
-		return nil, "", agentpick.ErrNoStoredSelection
-	}
-	defer func() { _ = s.Close() }()
-	return agentpick.FromStore(ctx, s, store.BucketPlanner, opts.Agents)
-}
-
-// persistPlannerSelection writes the just-confirmed tool/model and
-// the interactive flag to the planner bucket. The plan source and the
-// markdown source path are intentionally NOT persisted: the user must
-// pick those manually each run.
-//
-// Persistence is best-effort: any error is reported to opts.Stderr
-// and otherwise swallowed so plan can keep running. When opts.Store
-// is non-nil it is used directly (test injection); otherwise this
-// opens `<cwd>/.j/settings` for the duration of the write and
-// closes it immediately so the file lock is not held across the
-// agent invocation.
-func persistPlannerSelection(opts Options, tool, model string) {
-	// opts.Interactive is normally non-nil here: Run resolves it
-	// via resolveInteractive before any selection branch fires.
-	// The nil-guard below keeps the helper callable from tests
-	// that construct a bare Options{} for the nil-store smoke
-	// path; resolveInteractive's default of true is reproduced
-	// verbatim.
-	interactive := true
-	if opts.Interactive != nil {
-		interactive = *opts.Interactive
-	}
-	if opts.Store != nil {
-		store.PersistAgentSelection(opts.Store, opts.Stderr, store.BucketPlanner, tool, model, interactive)
-		return
-	}
-	s, ok := openSettingsStore(opts.Stderr)
-	if !ok {
-		return
-	}
-	defer func() { _ = s.Close() }()
-	store.PersistAgentSelection(s, opts.Stderr, store.BucketPlanner, tool, model, interactive)
-}
-
-// resolveInteractive applies the documented precedence (explicit >
-// stored > cobra default true) and returns a concrete bool. Pulled
-// out of Run to keep the early-setup block readable and testable in
-// isolation.
-func resolveInteractive(opts Options) bool {
-	if opts.Interactive != nil {
-		return *opts.Interactive
-	}
-	if v, ok := storedPlannerInteractive(opts); ok {
-		return v
-	}
-	return true
-}
-
-// storedPlannerInteractive looks up the planner bucket's `interactive`
-// entry. When opts.Store is non-nil it is reused; otherwise the
-// settings DB is opened and closed solely for this read so the lock
-// is not held across the agent call. A failed open or a missing /
-// unparseable value yields (_, false) so callers fall back to the
-// cobra default.
-func storedPlannerInteractive(opts Options) (bool, bool) {
-	if opts.Store != nil {
-		return agentpick.StoredInteractive(opts.Store, store.BucketPlanner)
-	}
-	s, ok := openSettingsStore(opts.Stderr)
-	if !ok {
-		return false, false
-	}
-	defer func() { _ = s.Close() }()
-	return agentpick.StoredInteractive(s, store.BucketPlanner)
-}
-
-// boolPtr is the package-private companion that lets Run / tests
-// build a non-nil *bool from a literal without spelling out a temp
-// variable at every call site.
-func boolPtr(b bool) *bool { return &b }
 
 func (o Options) withDefaults() Options {
 	if o.Stdin == nil {
@@ -609,27 +424,8 @@ func (o Options) withDefaults() Options {
 		o.Stderr = os.Stderr
 	}
 	if o.UI == nil {
-		o.UI = newHuhUI(o.Stdin, o.Stderr)
+		o.UI = picker.New(o.Stdin, o.Stderr)
 	}
 	return o
 }
 
-// openSettingsStore opens `<cwd>/.j/settings` for the planner. It is
-// the post-init replacement for store.OpenDefault: pre-flight has
-// already created the layout, so failures here are real (e.g.
-// concurrent locks) and surface as a single "warning: ..." line on
-// stderr. Best-effort by design; nil store callers (no recorded
-// selection) are tolerated downstream.
-func openSettingsStore(stderr io.Writer) (*store.Store, bool) {
-	path, err := store.DefaultPath()
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: settings path: %v\n", err)
-		return nil, false
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: settings db: %v\n", err)
-		return nil, false
-	}
-	return s, true
-}

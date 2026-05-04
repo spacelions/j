@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/spacelions/j/internal/mustread"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -59,7 +59,7 @@ func putMustRead(t *testing.T, value string) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if err := s.Put(store.BucketProject, mustread.Key, value); err != nil {
+	if err := s.Put(store.BucketProject, resolver.KeyMustRead, value); err != nil {
 		_ = s.Close()
 		t.Fatalf("Put: %v", err)
 	}
@@ -81,7 +81,7 @@ func readMustRead(t *testing.T) (string, bool) {
 		t.Fatalf("Open: %v", err)
 	}
 	defer s.Close()
-	v, set, err := mustread.Load(s)
+	v, set, err := s.Get(store.BucketProject, resolver.KeyMustRead)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

@@ -122,30 +122,21 @@ func readTasks(t *testing.T) []store.Task {
 // tracks how many times each prompt was invoked. Mirrors
 // work.scriptedUI's shape.
 type scriptedUI struct {
+	testutil.SelectorFake
+
 	fromFile     string
 	pickedID     string
 	resumePicked string
-	tool         string
-	model        string
 	askErr       error
 	pickErr      error
 	resumeErr    error
-	toolErr      error
-	modelErr     error
 	confirm      bool
 	confirmErr   error
 
 	askCalls        int
 	pickCalls       int
 	pickResumeCalls int
-	toolCalls       int
-	modelCalls      int
 	confirmCalls    int
-
-	// toolHook, when non-nil, runs at the start of SelectTool so
-	// tests can mutate shared state (e.g. close the injected store)
-	// between Pick and the post-Pick persist step.
-	toolHook func()
 
 	pickedTasks      []store.Task
 	pickResumedTasks []store.Task
@@ -162,10 +153,23 @@ func (s *scriptedUI) AskFromFile(context.Context) (string, error) {
 	return s.fromFile, nil
 }
 
-// PickWorkDoneTask matches the unified taskpick contract:
-// (id, ok, err). Empty pickedID signals cancel (ok=false), so
-// happy-path tests must set pickedID explicitly.
-func (s *scriptedUI) PickWorkDoneTask(_ context.Context, tasks []store.Task) (string, bool, error) {
+// PickTask dispatches by title prefix so the same scripted UI can
+// answer both flows: titles that contain "resume" honour
+// resumePicked / resumeErr (the resume.go flow); other titles honour
+// pickedID / pickErr (the verify.go non-resume flow). Both branches
+// use the (id, ok, err) contract — empty id signals cancel.
+func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []store.Task) (string, bool, error) {
+	if strings.Contains(title, "resume") {
+		s.pickResumeCalls++
+		s.pickResumedTasks = tasks
+		if s.resumeErr != nil {
+			return "", false, s.resumeErr
+		}
+		if s.resumePicked == "" {
+			return "", false, nil
+		}
+		return s.resumePicked, true, nil
+	}
 	s.pickCalls++
 	s.pickedTasks = tasks
 	if s.pickErr != nil {
@@ -177,21 +181,6 @@ func (s *scriptedUI) PickWorkDoneTask(_ context.Context, tasks []store.Task) (st
 	return s.pickedID, true, nil
 }
 
-// PickVerifyTask matches the unified taskpick contract: see
-// PickWorkDoneTask above for the rationale on resumePicked
-// semantics.
-func (s *scriptedUI) PickVerifyTask(_ context.Context, tasks []store.Task) (string, bool, error) {
-	s.pickResumeCalls++
-	s.pickResumedTasks = tasks
-	if s.resumeErr != nil {
-		return "", false, s.resumeErr
-	}
-	if s.resumePicked == "" {
-		return "", false, nil
-	}
-	return s.resumePicked, true, nil
-}
-
 func (s *scriptedUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, status string) (bool, error) {
 	s.confirmCalls++
 	s.confirmCmd = cmd
@@ -201,31 +190,6 @@ func (s *scriptedUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, statu
 		return false, s.confirmErr
 	}
 	return s.confirm, nil
-}
-
-func (s *scriptedUI) SelectTool(_ context.Context, options []string) (string, error) {
-	s.toolCalls++
-	if s.toolHook != nil {
-		s.toolHook()
-	}
-	if s.toolErr != nil {
-		return "", s.toolErr
-	}
-	if s.tool != "" {
-		return s.tool, nil
-	}
-	return options[0], nil
-}
-
-func (s *scriptedUI) SelectModel(_ context.Context, options []string) (string, error) {
-	s.modelCalls++
-	if s.modelErr != nil {
-		return "", s.modelErr
-	}
-	if s.model != "" {
-		return s.model, nil
-	}
-	return options[0], nil
 }
 
 // scriptedAgent stands in for any codingagents.Agent. Plan/Verify/
@@ -397,7 +361,7 @@ func TestRun_PassOnFirstIteration(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 3,
 		Stdout:        &stdout,
 		Stderr:        io.Discard,
@@ -451,7 +415,7 @@ func TestRun_FailThenPass(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 3,
 		Stdout:        io.Discard,
 		Stderr:        io.Discard,
@@ -520,7 +484,7 @@ func TestRun_ThreadsWorktreeIntoRequests(t *testing.T) {
 
 	err = Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 3,
 		Stdout:        io.Discard,
 		Stderr:        io.Discard,
@@ -556,7 +520,7 @@ func TestRun_LoopExhausted(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 2,
 		Stdout:        &stdout,
 		Stderr:        io.Discard,
@@ -596,7 +560,7 @@ func TestRun_MaxIterations1(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 1,
 		Stdout:        io.Discard,
 		Stderr:        io.Discard,
@@ -629,7 +593,7 @@ func TestRun_VerifierError(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 3,
 		Stdout:        io.Discard,
 		Stderr:        io.Discard,
@@ -658,7 +622,7 @@ func TestRun_WorkerFixError(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 3,
 		Stdout:        io.Discard,
 		Stderr:        io.Discard,
@@ -687,7 +651,7 @@ func TestRun_MalformedVerdictTreatedAsFail(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 1,
 		Stdout:        io.Discard,
 		Stderr:        io.Discard,
@@ -703,7 +667,7 @@ func TestRun_MalformedVerdictTreatedAsFail(t *testing.T) {
 	}
 }
 
-// TestParseVerdict_EdgeCases pins every parseVerdict branch on a
+// TestParseVerdict_EdgeCases pins every ParseVerdict branch on a
 // table.
 func TestParseVerdict_EdgeCases(t *testing.T) {
 	dir := t.TempDir()
@@ -729,16 +693,16 @@ func TestParseVerdict_EdgeCases(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			path := filepath.Join(dir, c.name+".md")
 			if c.name == "missing-file" {
-				if got := parseVerdict(path); got != c.want {
-					t.Fatalf("parseVerdict(missing) = %q, want %q", got, c.want)
+				if got := ParseVerdict(path); got != c.want {
+					t.Fatalf("ParseVerdict(missing) = %q, want %q", got, c.want)
 				}
 				return
 			}
 			if err := os.WriteFile(path, []byte(c.body), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if got := parseVerdict(path); got != c.want {
-				t.Fatalf("parseVerdict(%s) = %q, want %q (body=%q)", c.name, got, c.want, c.body)
+			if got := ParseVerdict(path); got != c.want {
+				t.Fatalf("ParseVerdict(%s) = %q, want %q (body=%q)", c.name, got, c.want, c.body)
 			}
 		})
 	}
@@ -1150,7 +1114,7 @@ func TestRun_UICancelled(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{toolErr: huh.ErrUserAborted},
+		UI:     &scriptedUI{SelectorFake: testutil.SelectorFake{ToolErr: huh.ErrUserAborted}},
 	})
 	if err != nil {
 		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
@@ -1202,7 +1166,7 @@ func TestRun_UnknownToolFromUI(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{tool: "codex"},
+		UI:     &scriptedUI{SelectorFake: testutil.SelectorFake{Tool: "codex"}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
 		t.Fatalf("err = %v", err)
@@ -1258,7 +1222,7 @@ func TestRun_PersistsVerifierSelection(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:      id,
-		Interactive: boolPtr(true),
+		Interactive: true,
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -1283,7 +1247,7 @@ func TestRun_PersistsVerifierSelection(t *testing.T) {
 
 // TestRun_ExplicitTool_SkipsPersistence asserts the new --tool /
 // --model contract: when both flags are supplied, Run resolves via
-// agentpick.Resolve, runs the verifier, and leaves the verifier
+// resolver.Agent, runs the verifier, and leaves the verifier
 // bucket untouched.
 func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	s := openTestStore(t)
@@ -1305,8 +1269,8 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if ui.toolCalls != 0 || ui.modelCalls != 0 {
-		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	if ui.ToolCalls != 0 || ui.ModelCalls != 0 {
+		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.ToolCalls, ui.ModelCalls)
 	}
 	if agent.verifiedReqs[0].Model != "opus" {
 		t.Fatalf("model = %q, want opus", agent.verifiedReqs[0].Model)
@@ -1321,7 +1285,7 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 }
 
 // TestRun_ExplicitTool_NilStore_LazyOpenSucceeds drives the
-// nil-Store branch of verifierResolveExplicit. The lazy open finds
+// nil-Store branch of resolver.Agent (explicit branch). The lazy open finds
 // the seeded verifier.model so --tool=cursor resolves cleanly.
 func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -1361,7 +1325,7 @@ func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 }
 
 // TestRun_ExplicitTool_NilStore_LazyOpenFails covers the
-// settings-DB-broken branch of verifierResolveExplicit.
+// settings-DB-broken branch of resolver.Agent (explicit branch).
 func TestRun_ExplicitTool_NilStore_LazyOpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -1460,8 +1424,8 @@ func TestRun_ListModelsError_StopsBeforeUI(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if ui.modelCalls != 0 {
-		t.Fatalf("SelectModel called despite list error: %d", ui.modelCalls)
+	if ui.ModelCalls != 0 {
+		t.Fatalf("SelectModel called despite list error: %d", ui.ModelCalls)
 	}
 }
 
@@ -1567,59 +1531,8 @@ func TestRun_List_DecodeError(t *testing.T) {
 }
 
 // TestPersistVerifierSelection_NilStore_LazyOpenSucceeds exercises
-// the nil-Store branch when openSettingsStore can lay hands on a
+// the nil-Store branch when store.OpenSettings can lay hands on a
 // real `<cwd>/.j/settings`.
-func TestPersistVerifierSelection_NilStore_LazyOpenSucceeds(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	var stderr bytes.Buffer
-	persistVerifierSelection(Options{
-		Stderr:      &stderr,
-		Interactive: boolPtr(true),
-	}, "cursor", "sonnet-4")
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr should stay empty on success, got %q", stderr.String())
-	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	v, ok, err := s.Get(store.BucketVerifier, "tool")
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if !ok || v != "cursor" {
-		t.Fatalf("verifier.tool = %q (ok=%v), want cursor", v, ok)
-	}
-}
-
-// TestPersistVerifierSelection_NilStore_LazyOpenFails covers the
-// early-return branch when openSettingsStore can't open the DB.
-func TestPersistVerifierSelection_NilStore_LazyOpenFails(t *testing.T) {
-	t.Chdir(t.TempDir())
-	var stderr bytes.Buffer
-	persistVerifierSelection(Options{Stderr: &stderr}, "cursor", "sonnet-4")
-	if !strings.Contains(stderr.String(), "warning: settings") {
-		t.Fatalf("stderr = %q, want settings warning", stderr.String())
-	}
-}
-
-// TestStoredVerifierInteractive_NilStore_LazyOpenFails covers
-// the nil-Store + open-fails branch.
-func TestStoredVerifierInteractive_NilStore_LazyOpenFails(t *testing.T) {
-	t.Chdir(t.TempDir())
-	var stderr bytes.Buffer
-	v, ok := storedVerifierInteractive(Options{Stderr: &stderr})
-	if ok || v {
-		t.Fatalf("storedVerifierInteractive = (%v, %v), want (false, false)", v, ok)
-	}
-}
-
 // spawnVerifyAgent is the integration-test fixture that pins the
 // "orchestrator must wait for the spawned child" contract. Verify
 // launches a real `sh` child whose script sleeps, writes the
@@ -1694,7 +1607,7 @@ func TestRunVerifyLoop_WaitsForSpawnedChild(t *testing.T) {
 	start := time.Now()
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(false),
+		Interactive:   false,
 		MaxIterations: 3,
 		Stdout:        &stdout,
 		Stderr:        io.Discard,
@@ -1803,7 +1716,7 @@ func TestRunVerifyLoop_VerifierWaitCtxCancelled(t *testing.T) {
 		cancel()
 	}()
 	outcome, err := runVerifyLoop(ctx, Options{
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 3,
 		Stderr:        io.Discard,
 	}, agent, agent, "m", "id", res)
@@ -1833,7 +1746,7 @@ func TestRunVerifyLoop_WorkerWaitCtxCancelled(t *testing.T) {
 		cancel()
 	}()
 	outcome, err := runVerifyLoop(ctx, Options{
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 3,
 		Stderr:        io.Discard,
 	}, verifier, worker, "m", "id", res)
@@ -1848,28 +1761,3 @@ func TestRunVerifyLoop_WorkerWaitCtxCancelled(t *testing.T) {
 	}
 }
 
-// TestStoredVerifierInteractive_NilStore_LazyOpenSucceeds covers
-// the success branch where openSettingsStore lays hands on a real
-// `<cwd>/.j/settings` and returns the recorded interactive flag.
-func TestStoredVerifierInteractive_NilStore_LazyOpenSucceeds(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	seed, err := store.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := seed.Put(store.BucketVerifier, "interactive", "false"); err != nil {
-		t.Fatal(err)
-	}
-	if err := seed.Close(); err != nil {
-		t.Fatal(err)
-	}
-	v, ok := storedVerifierInteractive(Options{Stderr: io.Discard})
-	if !ok || v {
-		t.Fatalf("storedVerifierInteractive = (%v, %v), want (false, true)", v, ok)
-	}
-}

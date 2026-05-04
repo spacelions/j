@@ -14,11 +14,12 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
-	"github.com/spacelions/j/internal/mustread"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -57,7 +58,7 @@ func (o ResumeOptions) withDefaults() ResumeOptions {
 		o.Stderr = os.Stderr
 	}
 	if o.UI == nil {
-		o.UI = newHuhUI(o.Stdin, o.Stderr)
+		o.UI = picker.New(o.Stdin, o.Stderr)
 	}
 	return o
 }
@@ -118,7 +119,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	resumeTask := planResumeBegin(task)
 	tasklog.PersistWarn(opts.Stderr, resumeTask)
 
-	mustReadFiles, mustReadErr := mustread.LoadFromDefault()
+	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
 	}
@@ -175,7 +176,7 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, boo
 	case 1:
 		return tasks[0], true, nil
 	}
-	chosen, ok, err := opts.UI.PickPlanTask(ctx, tasks)
+	chosen, ok, err := opts.UI.PickTask(ctx, "Select a plan session to resume", tasks)
 	if err != nil {
 		return store.Task{}, false, err
 	}

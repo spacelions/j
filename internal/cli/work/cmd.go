@@ -10,6 +10,8 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/resolver"
+	"github.com/spacelions/j/internal/store"
 )
 
 // New returns the `j work` cobra subcommand. It owns its own flag and
@@ -37,20 +39,18 @@ func New() *cobra.Command {
 			"to be re-prompted on the next run.",
 		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// Only forward Interactive when the user was explicit
-			// (cobra flag or env var). When unset we leave it nil
-			// so Run can fall back to the stored value or the
-			// cobra default true.
-			var interactive *bool
+			// resolver.Interactive applies the precedence (explicit
+			// flag or env var > stored bucket > cobra default true).
+			var explicit *bool
 			if cmd.Flags().Changed("interactive") || os.Getenv("WORK_INTERACTIVE") != "" {
 				v := viper.GetBool("work.interactive")
-				interactive = &v
+				explicit = &v
 			}
 			return Run(cmd.Context(), Options{
 				TaskID:      viper.GetString("work.from_task"),
 				FromFile:    viper.GetString("work.from_file"),
 				Yes:         viper.GetBool("work.yes"),
-				Interactive: interactive,
+				Interactive: resolver.Interactive(nil, cmd.ErrOrStderr(), store.BucketWorker, explicit),
 				Tool:        viper.GetString("work.tool"),
 				Model:       viper.GetString("work.model"),
 				Stdin:       cmd.InOrStdin(),

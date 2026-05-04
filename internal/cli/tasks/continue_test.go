@@ -17,6 +17,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // continueAgent is the dispatch fake used by RunContinue tests. It
@@ -579,7 +580,7 @@ func TestRunContinue_AgentSelectorAborts(t *testing.T) {
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{agent},
 		UI:       &fakeUI{},
-		Selector: &scriptedSelector{toolErr: huh.ErrUserAborted},
+		Selector: &testutil.SelectorFake{ToolErr: huh.ErrUserAborted},
 	}); err != nil {
 		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
 	}

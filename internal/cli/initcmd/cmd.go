@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/mustread"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -158,7 +158,7 @@ func seedDefaults(mustRead *string) error {
 		return fmt.Errorf("init: persist max_iterations: %w", err)
 	}
 	if mustRead != nil {
-		if err := s.Put(store.BucketProject, mustread.Key, *mustRead); err != nil {
+		if err := s.Put(store.BucketProject, resolver.KeyMustRead, *mustRead); err != nil {
 			_ = s.Close()
 			return fmt.Errorf("init: persist mustRead: %w", err)
 		}

@@ -103,30 +103,21 @@ func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
 // scriptedUI returns predetermined answers for each prompt and tracks
 // how many times each prompt was invoked.
 type scriptedUI struct {
+	testutil.SelectorFake
+
 	fromFile     string
 	pickedID     string
 	resumePicked string
-	tool         string
-	model        string
 	askErr       error
 	pickErr      error
 	resumeErr    error
-	toolErr      error
-	modelErr     error
 	confirm      bool
 	confirmErr   error
 
 	askCalls        int
 	pickCalls       int
 	pickResumeCalls int
-	toolCalls       int
-	modelCalls      int
 	confirmCalls    int
-
-	// toolHook, when non-nil, runs at the start of SelectTool so
-	// tests can mutate shared state (e.g. close the injected store)
-	// between Pick and the post-Pick persist step.
-	toolHook func()
 
 	pickedTasks      []store.Task
 	pickResumedTasks []store.Task
@@ -143,10 +134,23 @@ func (s *scriptedUI) AskFromFile(context.Context) (string, error) {
 	return s.fromFile, nil
 }
 
-// PickPlanTask matches the unified taskpick contract:
-// (id, ok, err). Empty pickedID signals cancel (ok=false), so
-// happy-path tests must set pickedID explicitly.
-func (s *scriptedUI) PickPlanTask(_ context.Context, tasks []store.Task) (string, bool, error) {
+// PickTask dispatches by title prefix so the same scripted UI can
+// answer both flows: titles that contain "resume" honour resumePicked
+// / resumeErr (the resume.go flow); other titles honour pickedID /
+// pickErr (the work.go non-resume flow). Both branches use the
+// (id, ok, err) contract — empty id signals cancel.
+func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []store.Task) (string, bool, error) {
+	if strings.Contains(title, "resume") {
+		s.pickResumeCalls++
+		s.pickResumedTasks = tasks
+		if s.resumeErr != nil {
+			return "", false, s.resumeErr
+		}
+		if s.resumePicked == "" {
+			return "", false, nil
+		}
+		return s.resumePicked, true, nil
+	}
 	s.pickCalls++
 	s.pickedTasks = tasks
 	if s.pickErr != nil {
@@ -158,20 +162,6 @@ func (s *scriptedUI) PickPlanTask(_ context.Context, tasks []store.Task) (string
 	return s.pickedID, true, nil
 }
 
-// PickWorkTask matches the unified taskpick contract: see
-// PickPlanTask above for the rationale on pickedID semantics.
-func (s *scriptedUI) PickWorkTask(_ context.Context, tasks []store.Task) (string, bool, error) {
-	s.pickResumeCalls++
-	s.pickResumedTasks = tasks
-	if s.resumeErr != nil {
-		return "", false, s.resumeErr
-	}
-	if s.resumePicked == "" {
-		return "", false, nil
-	}
-	return s.resumePicked, true, nil
-}
-
 func (s *scriptedUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, status string) (bool, error) {
 	s.confirmCalls++
 	s.confirmCmd = cmd
@@ -181,31 +171,6 @@ func (s *scriptedUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, statu
 		return false, s.confirmErr
 	}
 	return s.confirm, nil
-}
-
-func (s *scriptedUI) SelectTool(_ context.Context, options []string) (string, error) {
-	s.toolCalls++
-	if s.toolHook != nil {
-		s.toolHook()
-	}
-	if s.toolErr != nil {
-		return "", s.toolErr
-	}
-	if s.tool != "" {
-		return s.tool, nil
-	}
-	return options[0], nil
-}
-
-func (s *scriptedUI) SelectModel(_ context.Context, options []string) (string, error) {
-	s.modelCalls++
-	if s.modelErr != nil {
-		return "", s.modelErr
-	}
-	if s.model != "" {
-		return s.model, nil
-	}
-	return options[0], nil
 }
 
 // scriptedAgent stands in for any codingagents.Agent in tests. Plan is
@@ -374,7 +339,7 @@ func TestRun_ByTaskID_Success(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:      id,
-		Interactive: boolPtr(true),
+		Interactive: true,
 		Stdin:       strings.NewReader(""),
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
@@ -895,7 +860,7 @@ func TestRun_Headless_PropagatesFlag(t *testing.T) {
 	agent := newScriptedAgent()
 	err := Run(context.Background(), Options{
 		TaskID:      id,
-		Interactive: boolPtr(false),
+		Interactive: false,
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -924,7 +889,7 @@ func TestRun_ThreadsWorktreeIntoWorkRequest(t *testing.T) {
 	agent := newScriptedAgent()
 	err := Run(context.Background(), Options{
 		TaskID:      id,
-		Interactive: boolPtr(true),
+		Interactive: true,
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -1048,8 +1013,8 @@ func TestRun_ListModelsError_StopsBeforeUI(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if ui.modelCalls != 0 {
-		t.Fatalf("SelectModel called despite list error: %d", ui.modelCalls)
+	if ui.ModelCalls != 0 {
+		t.Fatalf("SelectModel called despite list error: %d", ui.ModelCalls)
 	}
 	if agent.checked != 0 || agent.worked != 0 {
 		t.Fatal("login/work should not have been invoked")
@@ -1061,7 +1026,7 @@ func TestRun_SelectModelError(t *testing.T) {
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "x", "")
 	agent := newScriptedAgent()
-	ui := &scriptedUI{modelErr: errors.New("model boom")}
+	ui := &scriptedUI{SelectorFake: testutil.SelectorFake{ModelErr: errors.New("model boom")}}
 	err := Run(context.Background(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
@@ -1115,7 +1080,7 @@ func TestRun_UICancelled(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{toolErr: huh.ErrUserAborted},
+		UI:     &scriptedUI{SelectorFake: testutil.SelectorFake{ToolErr: huh.ErrUserAborted}},
 	})
 	if err != nil {
 		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
@@ -1190,7 +1155,7 @@ func TestRun_UnknownToolFromUI(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{tool: "codex"},
+		UI:     &scriptedUI{SelectorFake: testutil.SelectorFake{Tool: "codex"}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
 		t.Fatalf("err = %v", err)
@@ -1208,7 +1173,7 @@ func TestRun_PersistsWorkerSelection(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:      id,
-		Interactive: boolPtr(true),
+		Interactive: true,
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -1237,7 +1202,7 @@ func TestRun_PersistsWorkerSelection(t *testing.T) {
 }
 
 // TestRun_LoginFailure_DoesNotPersist confirms the worker bucket is
-// untouched when login fails (we only persist after agentpick.Pick
+// untouched when login fails (we only persist after picker.PickAgent
 // returns successfully).
 func TestRun_LoginFailure_DoesNotPersist(t *testing.T) {
 	s := openTestStore(t)
@@ -1266,7 +1231,7 @@ func TestRun_LoginFailure_DoesNotPersist(t *testing.T) {
 }
 
 // TestRun_SelectionCancelled_DoesNotPersist mirrors the login-failure
-// case for the user-cancel path through agentpick.Pick. With the
+// case for the user-cancel path through picker.PickAgent. With the
 // abort-to-nil contract, Run returns no error on cancel; the
 // invariant the test guards is that nothing was persisted to the
 // worker bucket because Pick was never confirmed.
@@ -1280,7 +1245,7 @@ func TestRun_SelectionCancelled_DoesNotPersist(t *testing.T) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{toolErr: huh.ErrUserAborted},
+		UI:     &scriptedUI{SelectorFake: testutil.SelectorFake{ToolErr: huh.ErrUserAborted}},
 		Store:  s,
 	})
 	if err != nil {
@@ -1304,7 +1269,7 @@ func TestRun_StoreWriteError_WarnsAndContinues(t *testing.T) {
 	id := seedPlanDoneTask(t, "x", "body", "")
 	agent := newScriptedAgent()
 	var stderr bytes.Buffer
-	ui := &scriptedUI{toolHook: func() { _ = s.Close() }}
+	ui := &scriptedUI{SelectorFake: testutil.SelectorFake{ToolHook: func() { _ = s.Close() }}}
 
 	err := Run(context.Background(), Options{
 		TaskID: id,
@@ -1344,7 +1309,7 @@ func TestRun_StoreReadError_Surfaces(t *testing.T) {
 		UI:     &scriptedUI{},
 		Store:  s,
 	})
-	if err == nil || !strings.Contains(err.Error(), "agentpick: read worker") {
+	if err == nil || !strings.Contains(err.Error(), "resolver: read worker") {
 		t.Fatalf("err = %v, want wrapped read error", err)
 	}
 	if agent.worked != 0 {
@@ -1354,7 +1319,7 @@ func TestRun_StoreReadError_Surfaces(t *testing.T) {
 
 // TestRun_ExplicitTool_SkipsPersistence asserts the new --tool /
 // --model contract: when both flags are supplied, Run resolves via
-// agentpick.Resolve, runs the chosen agent, and leaves the worker
+// resolver.Agent, runs the chosen agent, and leaves the worker
 // bucket untouched.
 func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	s := openTestStore(t)
@@ -1375,8 +1340,8 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if ui.toolCalls != 0 || ui.modelCalls != 0 {
-		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.toolCalls, ui.modelCalls)
+	if ui.ToolCalls != 0 || ui.ModelCalls != 0 {
+		t.Fatalf("UI prompts should be skipped: tool=%d model=%d", ui.ToolCalls, ui.ModelCalls)
 	}
 	if agent.lastReq.Model != "opus" {
 		t.Fatalf("model = %q, want opus", agent.lastReq.Model)
@@ -1391,7 +1356,7 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 }
 
 // TestRun_ExplicitTool_NilStore_LazyOpenSucceeds drives the
-// nil-Store branch of workerResolveExplicit. The lazy open finds
+// nil-Store branch of resolver.Agent (explicit branch). The lazy open finds
 // the seeded worker.model so --tool=cursor resolves cleanly.
 func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -1430,7 +1395,7 @@ func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 }
 
 // TestRun_ExplicitTool_NilStore_LazyOpenFails covers the
-// settings-DB-broken branch of workerResolveExplicit.
+// settings-DB-broken branch of resolver.Agent (explicit branch).
 func TestRun_ExplicitTool_NilStore_LazyOpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -1519,52 +1484,6 @@ func TestRun_StoreLazyDefault(t *testing.T) {
 	}
 	if !ok || got != "cursor" {
 		t.Fatalf("worker.tool = %q (ok=%v)", got, ok)
-	}
-}
-
-// TestPersistWorkerSelection_NilStore_LazyOpenSucceeds exercises the
-// nil-Store branch when openSettingsStore can lay hands on a real
-// `<cwd>/.j/settings`: the helper opens, persists, and closes
-// silently and the values land on disk.
-func TestPersistWorkerSelection_NilStore_LazyOpenSucceeds(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	var stderr bytes.Buffer
-	persistWorkerSelection(Options{
-		Stderr:      &stderr,
-		Interactive: boolPtr(true),
-	}, "cursor", "sonnet-4")
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr should stay empty on success, got %q", stderr.String())
-	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	v, ok, err := s.Get(store.BucketWorker, "tool")
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if !ok || v != "cursor" {
-		t.Fatalf("worker.tool = %q (ok=%v), want cursor", v, ok)
-	}
-}
-
-// TestPersistWorkerSelection_NilStore_LazyOpenFails covers the
-// early-return branch when openSettingsStore can't open the DB
-// (no .j layout on disk): the helper warns once and returns
-// without panicking.
-func TestPersistWorkerSelection_NilStore_LazyOpenFails(t *testing.T) {
-	t.Chdir(t.TempDir())
-	var stderr bytes.Buffer
-	persistWorkerSelection(Options{Stderr: &stderr}, "cursor", "sonnet-4")
-	if !strings.Contains(stderr.String(), "warning: settings") {
-		t.Fatalf("stderr = %q, want settings warning", stderr.String())
 	}
 }
 
@@ -1772,7 +1691,7 @@ func TestRun_BackgroundSpawn_RecordsPID(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:      id,
-		Interactive: boolPtr(false),
+		Interactive: false,
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -1827,7 +1746,7 @@ func TestRun_BackgroundSpawn_NewTask_RecordsPID(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		FromFile:    plan,
-		Interactive: boolPtr(false),
+		Interactive: false,
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -1899,7 +1818,7 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentWork(t *testing.T) {
 			}
 
 			opts := tc.opts(t)
-			opts.Interactive = boolPtr(true)
+			opts.Interactive = true
 			opts.Stdout = io.Discard
 			opts.Stderr = io.Discard
 			opts.UI = &scriptedUI{}

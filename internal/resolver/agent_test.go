@@ -1,11 +1,12 @@
-package agentpick
+package resolver
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -100,124 +101,24 @@ func (s *stubAgent) CheckLogin(context.Context) error {
 }
 
 func (s *stubAgent) NewResumeID(context.Context) (string, error) {
-	return "", errors.New("agentpick: NewResumeID should not be called")
+	return "", errors.New("resolver: NewResumeID should not be called")
 }
 
 func (s *stubAgent) Plan(context.Context, codingagents.PlanRequest) (int, error) {
-	return 0, errors.New("agentpick: Plan should not be called")
+	return 0, errors.New("resolver: Plan should not be called")
 }
 
 func (s *stubAgent) Work(context.Context, codingagents.WorkRequest) (int, error) {
-	return 0, errors.New("agentpick: Work should not be called")
+	return 0, errors.New("resolver: Work should not be called")
 }
 
 func (s *stubAgent) Verify(context.Context, codingagents.VerifyRequest) (int, error) {
-	return 0, errors.New("agentpick: Verify should not be called")
-}
-
-func TestPick_Success(t *testing.T) {
-	cursor := newStubAgent("cursor", "sonnet-4", "gpt-5")
-	codex := newStubAgent("codex", "o4")
-	ui := &scriptedUI{tool: "cursor", model: "gpt-5"}
-
-	agent, model, err := Pick(context.Background(), ui, []codingagents.Agent{cursor, codex})
-	if err != nil {
-		t.Fatalf("Pick: %v", err)
-	}
-	if agent != cursor {
-		t.Fatalf("agent = %v, want cursor", agent.Name())
-	}
-	if model != "gpt-5" {
-		t.Fatalf("model = %q, want gpt-5", model)
-	}
-
-	if !reflect.DeepEqual(ui.lastTools, []string{"cursor", "codex"}) {
-		t.Fatalf("SelectTool got options %v", ui.lastTools)
-	}
-	if !reflect.DeepEqual(ui.lastModels, []string{"sonnet-4", "gpt-5"}) {
-		t.Fatalf("SelectModel got options %v", ui.lastModels)
-	}
-	if cursor.listed != 1 || cursor.checked != 1 {
-		t.Fatalf("cursor calls: listed=%d checked=%d", cursor.listed, cursor.checked)
-	}
-	if codex.listed != 0 || codex.checked != 0 {
-		t.Fatalf("codex should be untouched: listed=%d checked=%d", codex.listed, codex.checked)
-	}
-}
-
-func TestPick_SelectToolError(t *testing.T) {
-	cursor := newStubAgent("cursor", "sonnet-4")
-	ui := &scriptedUI{toolErr: errors.New("tool boom")}
-
-	_, _, err := Pick(context.Background(), ui, []codingagents.Agent{cursor})
-	if err == nil || !strings.Contains(err.Error(), "tool boom") {
-		t.Fatalf("err = %v", err)
-	}
-	if cursor.listed != 0 || cursor.checked != 0 {
-		t.Fatalf("agent should be untouched: listed=%d checked=%d", cursor.listed, cursor.checked)
-	}
-}
-
-func TestPick_UnknownTool(t *testing.T) {
-	cursor := newStubAgent("cursor", "sonnet-4")
-	ui := &scriptedUI{tool: "ghost"}
-
-	_, _, err := Pick(context.Background(), ui, []codingagents.Agent{cursor})
-	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
-		t.Fatalf("err = %v", err)
-	}
-	if cursor.listed != 0 {
-		t.Fatal("ListModels should not be called when lookup fails")
-	}
-}
-
-func TestPick_ListModelsError(t *testing.T) {
-	cursor := newStubAgent("cursor")
-	cursor.modelsErr = errors.New("list boom")
-	ui := &scriptedUI{}
-
-	_, _, err := Pick(context.Background(), ui, []codingagents.Agent{cursor})
-	if err == nil || !strings.Contains(err.Error(), "list boom") {
-		t.Fatalf("err = %v", err)
-	}
-	if ui.modelCalls != 0 {
-		t.Fatal("SelectModel should not be called when ListModels fails")
-	}
-	if cursor.checked != 0 {
-		t.Fatal("CheckLogin should not be called when ListModels fails")
-	}
-}
-
-func TestPick_SelectModelError(t *testing.T) {
-	cursor := newStubAgent("cursor", "sonnet-4")
-	ui := &scriptedUI{modelErr: errors.New("model boom")}
-
-	_, _, err := Pick(context.Background(), ui, []codingagents.Agent{cursor})
-	if err == nil || !strings.Contains(err.Error(), "model boom") {
-		t.Fatalf("err = %v", err)
-	}
-	if cursor.checked != 0 {
-		t.Fatal("CheckLogin should not be called when SelectModel fails")
-	}
-}
-
-func TestPick_CheckLoginError(t *testing.T) {
-	cursor := newStubAgent("cursor", "sonnet-4")
-	cursor.loginErr = errors.New("not logged in")
-	ui := &scriptedUI{}
-
-	_, _, err := Pick(context.Background(), ui, []codingagents.Agent{cursor})
-	if err == nil || !strings.Contains(err.Error(), "not logged in") {
-		t.Fatalf("err = %v", err)
-	}
-	if cursor.checked != 1 {
-		t.Fatalf("CheckLogin called %d times, want 1", cursor.checked)
-	}
+	return 0, errors.New("resolver: Verify should not be called")
 }
 
 func TestFromStore_NilStore(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
-	_, _, err := FromStore(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor})
 	if !errors.Is(err, ErrNoStoredSelection) {
 		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
 	}
@@ -233,7 +134,7 @@ func TestFromStore_MissingTool(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
 	if !errors.Is(err, ErrNoStoredSelection) {
 		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
 	}
@@ -246,7 +147,7 @@ func TestFromStore_MissingModel(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
 	if !errors.Is(err, ErrNoStoredSelection) {
 		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
 	}
@@ -265,7 +166,7 @@ func TestFromStore_EmptyToolValue(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
 	if !errors.Is(err, ErrNoStoredSelection) {
 		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
 	}
@@ -281,7 +182,7 @@ func TestFromStore_EmptyModelValue(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
 	if !errors.Is(err, ErrNoStoredSelection) {
 		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
 	}
@@ -297,7 +198,7 @@ func TestFromStore_UnknownTool(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
 	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
 		t.Fatalf("err = %v", err)
 	}
@@ -320,7 +221,7 @@ func TestFromStore_CheckLoginError(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
 	cursor.loginErr = errors.New("not logged in")
 
-	_, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
 	if err == nil || !strings.Contains(err.Error(), "not logged in") {
 		t.Fatalf("err = %v", err)
 	}
@@ -339,8 +240,8 @@ func TestFromStore_StoreReadError(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
-	if err == nil || !strings.Contains(err.Error(), "agentpick: read planner") {
+	_, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	if err == nil || !strings.Contains(err.Error(), "resolver: read planner") {
 		t.Fatalf("err = %v, want wrapped read error", err)
 	}
 	if errors.Is(err, ErrNoStoredSelection) {
@@ -359,7 +260,7 @@ func TestFromStore_HappyPath(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4", "gpt-5")
 	codex := newStubAgent("codex", "o4")
 
-	agent, model, err := FromStore(context.Background(), s, store.BucketWorker, []codingagents.Agent{codex, cursor})
+	agent, model, err := AgentFromStore(context.Background(), s, store.BucketWorker, []codingagents.Agent{codex, cursor})
 	if err != nil {
 		t.Fatalf("FromStore: %v", err)
 	}
@@ -391,7 +292,7 @@ func TestFromStore_DoesNotPersist(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	if _, _, err := FromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}); err != nil {
+	if _, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}); err != nil {
 		t.Fatalf("FromStore: %v", err)
 	}
 	entries, err := s.List(store.BucketPlanner)
@@ -411,95 +312,25 @@ func TestFromStore_DoesNotPersist(t *testing.T) {
 // TestStoredInteractive_NilStore documents that the read-only helper
 // returns (false, false) when no store is configured, so callers
 // can pipe Options.Store straight in without a nil check.
-func TestStoredInteractive_NilStore(t *testing.T) {
-	v, ok := StoredInteractive(nil, store.BucketWorker)
-	if v || ok {
-		t.Fatalf("StoredInteractive(nil) = (%v, %v), want (false, false)", v, ok)
-	}
-}
-
 // TestStoredInteractive_Missing covers the bucket-exists-but-no-key
 // branch: ok must be false and v must be the zero value.
-func TestStoredInteractive_Missing(t *testing.T) {
-	s := openTestStore(t, store.BucketWorker)
-	v, ok := StoredInteractive(s, store.BucketWorker)
-	if v || ok {
-		t.Fatalf("StoredInteractive(missing) = (%v, %v), want (false, false)", v, ok)
-	}
-}
-
 // TestStoredInteractive_Empty asserts that an empty stored value is
 // treated as "not set" so callers fall back to the cobra default.
-func TestStoredInteractive_Empty(t *testing.T) {
-	s := openTestStore(t, store.BucketWorker)
-	if err := s.Put(store.BucketWorker, "interactive", ""); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	v, ok := StoredInteractive(s, store.BucketWorker)
-	if v || ok {
-		t.Fatalf("StoredInteractive(empty) = (%v, %v), want (false, false)", v, ok)
-	}
-}
-
 // TestStoredInteractive_Unparseable asserts that a non-bool string
 // (e.g. corruption) collapses to the not-set sentinel so we never
 // surface a parse error to the caller.
-func TestStoredInteractive_Unparseable(t *testing.T) {
-	s := openTestStore(t, store.BucketWorker)
-	if err := s.Put(store.BucketWorker, "interactive", "garbage"); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	v, ok := StoredInteractive(s, store.BucketWorker)
-	if v || ok {
-		t.Fatalf("StoredInteractive(garbage) = (%v, %v), want (false, false)", v, ok)
-	}
-}
-
 // TestStoredInteractive_True round-trips strconv.FormatBool(true).
-func TestStoredInteractive_True(t *testing.T) {
-	s := openTestStore(t, store.BucketPlanner)
-	if err := s.Put(store.BucketPlanner, "interactive", strconv.FormatBool(true)); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	v, ok := StoredInteractive(s, store.BucketPlanner)
-	if !ok || !v {
-		t.Fatalf("StoredInteractive(true) = (%v, %v), want (true, true)", v, ok)
-	}
-}
-
 // TestStoredInteractive_False round-trips strconv.FormatBool(false).
-func TestStoredInteractive_False(t *testing.T) {
-	s := openTestStore(t, store.BucketPlanner)
-	if err := s.Put(store.BucketPlanner, "interactive", strconv.FormatBool(false)); err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	v, ok := StoredInteractive(s, store.BucketPlanner)
-	if !ok || v {
-		t.Fatalf("StoredInteractive(false) = (%v, %v), want (false, true)", v, ok)
-	}
-}
-
 // TestStoredInteractive_GetError covers the `err != nil` branch in
 // the helper: a closed bbolt DB rejects every View call so Get
 // surfaces the failure and StoredInteractive returns the
 // not-set sentinel rather than propagating the error.
-func TestStoredInteractive_GetError(t *testing.T) {
-	s := openTestStore(t, store.BucketWorker)
-	if err := s.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-	v, ok := StoredInteractive(s, store.BucketWorker)
-	if v || ok {
-		t.Fatalf("StoredInteractive(closed) = (%v, %v), want (false, false)", v, ok)
-	}
-}
-
 // TestResolve_BothExplicit short-circuits the store entirely:
 // neither key is read, the agent runs CheckLogin, and the bucket is
 // not consulted. A nil store is fine.
 func TestResolve_BothExplicit(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
-	agent, model, err := Resolve(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "opus")
+	agent, model, err := ResolveAgent(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "opus")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -527,7 +358,7 @@ func TestResolve_ToolOnly_FillsModelFromStore(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	agent, model, err := Resolve(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
+	agent, model, err := ResolveAgent(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -547,7 +378,7 @@ func TestResolve_ModelOnly_FillsToolFromStore(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	agent, model, err := Resolve(context.Background(), s, store.BucketWorker, []codingagents.Agent{cursor}, "", "opus")
+	agent, model, err := ResolveAgent(context.Background(), s, store.BucketWorker, []codingagents.Agent{cursor}, "", "opus")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -566,7 +397,7 @@ func TestResolve_ToolOnly_EmptyBucket(t *testing.T) {
 	s := openTestStore(t, store.BucketPlanner)
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := Resolve(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
+	_, _, err := ResolveAgent(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
 	if err == nil || !strings.Contains(err.Error(), "given without stored model in planner") {
 		t.Fatalf("err = %v, want missing-model error", err)
 	}
@@ -580,7 +411,7 @@ func TestResolve_ModelOnly_EmptyBucket(t *testing.T) {
 	s := openTestStore(t, store.BucketVerifier)
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := Resolve(context.Background(), s, store.BucketVerifier, []codingagents.Agent{cursor}, "", "opus")
+	_, _, err := ResolveAgent(context.Background(), s, store.BucketVerifier, []codingagents.Agent{cursor}, "", "opus")
 	if err == nil || !strings.Contains(err.Error(), "given without stored tool in verifier") {
 		t.Fatalf("err = %v, want missing-tool error", err)
 	}
@@ -594,7 +425,7 @@ func TestResolve_ModelOnly_EmptyBucket(t *testing.T) {
 // can fall through to FromStore / Pick.
 func TestResolve_BothEmpty(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
-	_, _, err := Resolve(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "", "")
+	_, _, err := ResolveAgent(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "", "")
 	if !errors.Is(err, ErrNoStoredSelection) {
 		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
 	}
@@ -604,7 +435,7 @@ func TestResolve_BothEmpty(t *testing.T) {
 // before CheckLogin runs.
 func TestResolve_UnknownTool(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
-	_, _, err := Resolve(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "ghost", "opus")
+	_, _, err := ResolveAgent(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "ghost", "opus")
 	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
 		t.Fatalf("err = %v, want unknown-tool error", err)
 	}
@@ -618,7 +449,7 @@ func TestResolve_CheckLoginError(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
 	cursor.loginErr = errors.New("not logged in")
 
-	_, _, err := Resolve(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "opus")
+	_, _, err := ResolveAgent(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "opus")
 	if err == nil || !strings.Contains(err.Error(), "not logged in") {
 		t.Fatalf("err = %v, want login error", err)
 	}
@@ -636,8 +467,8 @@ func TestResolve_StoreReadError(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := Resolve(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
-	if err == nil || !strings.Contains(err.Error(), "agentpick: read planner") {
+	_, _, err := ResolveAgent(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
+	if err == nil || !strings.Contains(err.Error(), "resolver: read planner") {
 		t.Fatalf("err = %v, want wrapped read error", err)
 	}
 }
@@ -652,7 +483,7 @@ func TestResolve_DoesNotPersist(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	if _, _, err := Resolve(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "", "opus"); err != nil {
+	if _, _, err := ResolveAgent(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "", "opus"); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 	entries, err := s.List(store.BucketPlanner)
@@ -664,21 +495,139 @@ func TestResolve_DoesNotPersist(t *testing.T) {
 	}
 }
 
-// TestPick_NoAgents pins the empty-slice behavior: Pick still calls
-// SelectTool with a zero-length list and the UI is responsible for
-// surfacing "no options". Callers (plan.Run, work.Run) guard against
-// an empty Agents slice before invoking Pick, so this is a defensive
-// contract for code that bypasses the guard.
-func TestPick_NoAgents(t *testing.T) {
-	ui := &scriptedUI{toolErr: errors.New("no options")}
-	_, _, err := Pick(context.Background(), ui, nil)
-	if err == nil || !strings.Contains(err.Error(), "no options") {
-		t.Fatalf("err = %v", err)
+// TestAgent_ExplicitHits pins the explicit-flag fast path: both flags
+// set → ResolveAgent runs, no store read, no prompt.
+func TestAgent_ExplicitHits(t *testing.T) {
+	cursor := newStubAgent("cursor", "sonnet-4")
+	ui := &scriptedUI{}
+	agent, model, err := Agent(context.Background(), AgentOptions{
+		Bucket:        store.BucketPlanner,
+		Agents:        []codingagents.Agent{cursor},
+		ExplicitTool:  "cursor",
+		ExplicitModel: "sonnet-4",
+		UI:            ui,
+		Stderr:        io.Discard,
+	})
+	if err != nil {
+		t.Fatalf("Agent: %v", err)
 	}
-	if ui.toolCalls != 1 {
-		t.Fatalf("SelectTool called %d times, want 1", ui.toolCalls)
+	if agent != cursor || model != "sonnet-4" {
+		t.Fatalf("agent=%v model=%q", agent.Name(), model)
 	}
-	if len(ui.lastTools) != 0 {
-		t.Fatalf("lastTools = %v, want empty", ui.lastTools)
+	if ui.toolCalls != 0 || ui.modelCalls != 0 {
+		t.Fatalf("UI prompts should not fire on explicit path")
+	}
+}
+
+// TestAgent_StoredHits pins the stored-fast-path: bucket has tool +
+// model, no explicit flags → AgentFromStore returns, no prompt.
+func TestAgent_StoredHits(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatal(err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+	ui := &scriptedUI{}
+	agent, model, err := Agent(context.Background(), AgentOptions{
+		Bucket: store.BucketPlanner,
+		Agents: []codingagents.Agent{cursor},
+		UI:     ui,
+		Store:  s,
+	})
+	if err != nil {
+		t.Fatalf("Agent: %v", err)
+	}
+	if agent != cursor || model != "sonnet-4" {
+		t.Fatalf("agent=%v model=%q", agent.Name(), model)
+	}
+	if ui.toolCalls != 0 {
+		t.Fatalf("SelectTool should not fire when stored")
+	}
+}
+
+// TestAgent_PromptsAndPersists pins the empty-bucket cold path: PickAgent
+// fires + persistAgent writes tool/model/interactive.
+func TestAgent_PromptsAndPersists(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	cursor := newStubAgent("cursor", "sonnet-4")
+	ui := &scriptedUI{tool: "cursor", model: "sonnet-4"}
+	var stderr bytes.Buffer
+	agent, model, err := Agent(context.Background(), AgentOptions{
+		Bucket:      store.BucketPlanner,
+		Agents:      []codingagents.Agent{cursor},
+		UI:          ui,
+		Store:       s,
+		Stderr:      &stderr,
+		Interactive: false,
+	})
+	if err != nil {
+		t.Fatalf("Agent: %v", err)
+	}
+	if agent != cursor || model != "sonnet-4" {
+		t.Fatalf("agent=%v model=%q", agent.Name(), model)
+	}
+	if ui.toolCalls != 1 || ui.modelCalls != 1 {
+		t.Fatalf("prompts: tool=%d model=%d, want 1/1", ui.toolCalls, ui.modelCalls)
+	}
+	if !strings.Contains(stderr.String(), "Choose your favourite") {
+		t.Fatalf("stderr = %q, want prompt label", stderr.String())
+	}
+	for _, want := range []struct{ k, v string }{{"tool", "cursor"}, {"model", "sonnet-4"}, {"interactive", "false"}} {
+		v, ok, err := s.Get(store.BucketPlanner, want.k)
+		if err != nil {
+			t.Fatalf("Get %s: %v", want.k, err)
+		}
+		if !ok || v != want.v {
+			t.Fatalf("planner.%s = %q (ok=%v), want %q", want.k, v, ok, want.v)
+		}
+	}
+}
+
+// TestAgent_PromptError surfaces a UI error from PickAgent without
+// persisting.
+func TestAgent_PromptError(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	cursor := newStubAgent("cursor", "sonnet-4")
+	ui := &scriptedUI{toolErr: errors.New("ui boom")}
+	_, _, err := Agent(context.Background(), AgentOptions{
+		Bucket: store.BucketPlanner,
+		Agents: []codingagents.Agent{cursor},
+		UI:     ui,
+		Store:  s,
+	})
+	if err == nil || !strings.Contains(err.Error(), "ui boom") {
+		t.Fatalf("err = %v, want 'ui boom'", err)
+	}
+	entries, err := s.List(store.BucketPlanner)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("planner bucket should stay empty on prompt error, got %v", entries)
+	}
+}
+
+// TestAgent_ExplicitMissingHalfPropagates pins that resolveExplicit's
+// "given without stored" error reaches the caller verbatim and does
+// NOT fall through to AgentFromStore.
+func TestAgent_ExplicitMissingHalfPropagates(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	cursor := newStubAgent("cursor", "sonnet-4")
+	ui := &scriptedUI{}
+	_, _, err := Agent(context.Background(), AgentOptions{
+		Bucket:       store.BucketPlanner,
+		Agents:       []codingagents.Agent{cursor},
+		ExplicitTool: "cursor",
+		UI:           ui,
+		Store:        s,
+	})
+	if err == nil || !strings.Contains(err.Error(), "given without stored model") {
+		t.Fatalf("err = %v, want 'given without stored model'", err)
+	}
+	if ui.toolCalls != 0 {
+		t.Fatalf("UI must not fire on explicit-missing-half error")
 	}
 }
