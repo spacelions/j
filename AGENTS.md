@@ -1,10 +1,11 @@
 - Always plan before writing code
 - Test coverage: line coverage and branch coverage should be >95%.
 - Do not introduce seams, use allowlist instead
-- Defensive coding: Don't add error handling, fallbacks, or validation **for scenarios that can't happen**. Trust internal code and framework guarantees. **Only validate at system boundaries** (user input, external APIs).
+- MUST not introduce a package only for testing, use testutil instead.
 - Command line tools
   - use `fd` to replace `find`
   - use `z` to replace `cd`, 
   - use `eza` to replace `ls`
   - use `rg` to replace `grep`
   - use `bat` to replace `cat`
+  - use `sd` to replace `sed`
