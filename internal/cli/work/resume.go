@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
@@ -95,7 +96,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return err
 	}
 	if !ok {
-		fmt.Fprintln(opts.Stdout, "J: there are no resumable sessions")
+		banner.Fprintln(opts.Stdout, "J: there are no resumable sessions")
 		return nil
 	}
 
@@ -114,7 +115,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	lc := task.BeginWorkResume(opts.Stderr)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
+		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", mustReadErr)
 	}
 	// Resume always runs interactive — clarification / iteration
 	// answers need a TUI, and the worker bucket's `interactive`
@@ -133,7 +134,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return workErr
 	}
 
-	fmt.Fprintf(opts.Stdout, "J: work resume on task %s\n", task.ID)
+	banner.Fprintf(opts.Stdout, "J: work resume on task %s\n", task.ID)
 	return nil
 }
 

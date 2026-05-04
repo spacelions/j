@@ -4,11 +4,11 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/initcmd"
 	"github.com/spacelions/j/internal/cli/plan"
 	"github.com/spacelions/j/internal/cli/run"
@@ -42,7 +42,7 @@ func Execute() int {
 	)
 	root.SetArgs(os.Args[1:])
 	if err := root.Execute(); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "j: %v\n", err)
+		_, _ = banner.DangerousFprintf(os.Stderr, "J: %v\n", err)
 		return 1
 	}
 	return 0

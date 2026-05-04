@@ -6,7 +6,77 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
+
+func TestText(t *testing.T) {
+	input := "J: no tasks\nJ: work resume on task abc\n"
+	got := Text(input)
+	if stripped := ansi.Strip(got); stripped != input {
+		t.Fatalf("ansi.Strip(Text(%q)) = %q, want %q", input, stripped, input)
+	}
+}
+
+func TestDangerousText(t *testing.T) {
+	input := "J: warning: tasks put: nope\nJ: reset aborted\n"
+	got := DangerousText(input)
+	if stripped := ansi.Strip(got); stripped != input {
+		t.Fatalf("ansi.Strip(DangerousText(%q)) = %q, want %q", input, stripped, input)
+	}
+}
+
+func TestFprintln(t *testing.T) {
+	var buf bytes.Buffer
+	Fprintln(&buf, "J: no tasks")
+	if stripped := ansi.Strip(buf.String()); stripped != "J: no tasks\n" {
+		t.Fatalf("ansi.Strip(Fprintln output) = %q, want %q", stripped, "J: no tasks\n")
+	}
+}
+
+func TestDangerousFprintln(t *testing.T) {
+	var buf bytes.Buffer
+	DangerousFprintln(&buf, "J: warning: tasks put: nope")
+	if stripped := ansi.Strip(buf.String()); stripped != "J: warning: tasks put: nope\n" {
+		t.Fatalf("ansi.Strip(DangerousFprintln output) = %q, want %q",
+			stripped, "J: warning: tasks put: nope\n")
+	}
+}
+
+func TestTextWithColorDoesNotRenderBold(t *testing.T) {
+	restoreColorProfile(t)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
+	got := Text("J: no tasks\n")
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("Text output should contain ANSI styling when color is enabled, got %q", got)
+	}
+	if hasBoldSGR(got) {
+		t.Fatalf("Text output rendered bold SGR: %q", got)
+	}
+	if stripped := ansi.Strip(got); stripped != "J: no tasks\n" {
+		t.Fatalf("ansi.Strip(Text output) = %q, want %q", stripped, "J: no tasks\n")
+	}
+}
+
+func TestDangerousTextWithColorDoesNotRenderBold(t *testing.T) {
+	restoreColorProfile(t)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
+	got := DangerousText("J: warning: tasks put: nope\n")
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("DangerousText output should contain ANSI styling when color is enabled, got %q", got)
+	}
+	if hasBoldSGR(got) {
+		t.Fatalf("DangerousText output rendered bold SGR: %q", got)
+	}
+	if stripped := ansi.Strip(got); stripped != "J: warning: tasks put: nope\n" {
+		t.Fatalf("ansi.Strip(DangerousText output) = %q, want %q",
+			stripped, "J: warning: tasks put: nope\n")
+	}
+}
 
 func TestDisplayLogPath(t *testing.T) {
 	cwd := t.TempDir()
@@ -151,4 +221,56 @@ func TestRunningInBackground(t *testing.T) {
 	if stripped != "" {
 		t.Fatalf("middle row should be blank between borders, got %q", blank)
 	}
+}
+
+func TestRunningInBackgroundDoesNotRenderBold(t *testing.T) {
+	restoreColorProfile(t)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
+	cwd := t.TempDir()
+	resolvedCwd, err := filepath.EvalSymlinks(cwd)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	t.Chdir(resolvedCwd)
+	abs := filepath.Join(resolvedCwd, ".j", "tasks", "abc", "agent.log")
+
+	var buf bytes.Buffer
+	RunningInBackground(&buf, "task abc", 12345, abs)
+	out := buf.String()
+	if hasBoldSGR(out) {
+		t.Fatalf("RunningInBackground output rendered bold SGR: %q", out)
+	}
+	if stripped := ansi.Strip(out); !strings.Contains(stripped, "J: task abc running in background (PID=12345)") {
+		t.Fatalf("stripped output missing subject row: %q", stripped)
+	}
+}
+
+func restoreColorProfile(t *testing.T) {
+	t.Helper()
+	profile := lipgloss.ColorProfile()
+	t.Cleanup(func() {
+		lipgloss.SetColorProfile(profile)
+	})
+}
+
+func hasBoldSGR(s string) bool {
+	for len(s) > 0 {
+		idx := strings.Index(s, "\x1b[")
+		if idx < 0 {
+			return false
+		}
+		s = s[idx+2:]
+		end := strings.IndexByte(s, 'm')
+		if end < 0 {
+			return false
+		}
+		for _, param := range strings.Split(s[:end], ";") {
+			if param == "1" {
+				return true
+			}
+		}
+		s = s[end+1:]
+	}
+	return false
 }

@@ -121,12 +121,11 @@ func TestSettingsCommand_Children(t *testing.T) {
 	}
 }
 
-
 func TestExecute_RunMissingSettings(t *testing.T) {
 	resetGlobals(t)
 	t.Chdir(t.TempDir())
 	withArgs(t, "run")
-	assertExecuteFails(t, "j:", "j init")
+	assertExecuteFails(t, "J:", "j init")
 }
 
 func TestExecute_WebMissingSettings(t *testing.T) {
@@ -140,7 +139,7 @@ func TestExecute_PlanInvalidFromFile_FromFlag(t *testing.T) {
 	resetGlobals(t)
 	mustInit(t)
 	withArgs(t, "plan", "--from-file", "/this/path/does/not/exist.md")
-	assertExecuteFails(t, "j:", "stat")
+	assertExecuteFails(t, "J:", "stat")
 }
 
 func TestExecute_PlanInvalidFromFile_FromEnv(t *testing.T) {
@@ -148,7 +147,7 @@ func TestExecute_PlanInvalidFromFile_FromEnv(t *testing.T) {
 	mustInit(t)
 	t.Setenv("PLAN_FROM_FILE", "/this/path/does/not/exist.md")
 	withArgs(t, "plan")
-	assertExecuteFails(t, "j:", "stat")
+	assertExecuteFails(t, "J:", "stat")
 }
 
 // TestExecute_PlanInteractiveFlag_FromFlag confirms --interactive is
@@ -182,7 +181,7 @@ func TestExecute_WorkInvalidFromFile_FromFlag(t *testing.T) {
 	resetGlobals(t)
 	mustInit(t)
 	withArgs(t, "work", "--from-file", "/this/path/does/not/exist.md")
-	assertExecuteFails(t, "j:", "stat")
+	assertExecuteFails(t, "J:", "stat")
 }
 
 func TestExecute_WorkInvalidFromFile_FromEnv(t *testing.T) {
@@ -190,7 +189,7 @@ func TestExecute_WorkInvalidFromFile_FromEnv(t *testing.T) {
 	mustInit(t)
 	t.Setenv("WORK_FROM_FILE", "/this/path/does/not/exist.md")
 	withArgs(t, "work")
-	assertExecuteFails(t, "j:", "stat")
+	assertExecuteFails(t, "J:", "stat")
 }
 
 // TestExecute_WorkInteractiveFlag_FromFlag confirms --interactive is

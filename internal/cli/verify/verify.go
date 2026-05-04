@@ -13,15 +13,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
 	"path/filepath"
 
-	"regexp"
-	"strings"
-
-
-	"github.com/spacelions/j/internal/cli/picker"
+	"github.com/spacelions/j/internal/cli/banner"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
@@ -92,12 +86,6 @@ type resolved struct {
 	FindingsPath     string
 }
 
-// verdictRegexp matches the literal terminal `VERDICT: PASS|FAIL`
-// line case-insensitively on PASS / FAIL, tolerating surrounding
-// whitespace. It is anchored so a stray `VERDICT: maybe` does not
-// silently coerce to PASS.
-var verdictRegexp = regexp.MustCompile(`(?i)^\s*VERDICT:\s*(PASS|FAIL)\s*$`)
-
 // Run executes `j verify`. It resolves the task source, selects a
 // verifier tool/model, then runs the bounded fix-loop until the
 // verifier returns VERDICT: PASS or the loop is exhausted.
@@ -140,7 +128,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 	resumeID, err := verifierAgent.NewResumeID(ctx)
 	if err != nil {
-		fmt.Fprintf(opts.Stderr, "warning: %v\n", err)
+		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", err)
 	}
 
 	// The worker agent for the fix loop must match the tool the
@@ -160,9 +148,9 @@ func Run(ctx context.Context, opts Options) (err error) {
 	}
 	switch outcome {
 	case store.VerifyOutcomeSuccess:
-		fmt.Fprintf(opts.Stdout, "J: verified task %s\n", res.Task.ID)
+		banner.Fprintf(opts.Stdout, "J: verified task %s\n", res.Task.ID)
 	case store.VerifyOutcomeNoRetries:
-		fmt.Fprintf(opts.Stdout, "J: verifier exhausted retries on task %s; status verify-done\n", res.Task.ID)
+		banner.DangerousFprintf(opts.Stdout, "J: verifier exhausted retries on task %s; status verify-done\n", res.Task.ID)
 	}
 	return nil
 }
@@ -182,152 +170,6 @@ func Run(ctx context.Context, opts Options) (err error) {
 // (Ctrl-C / Esc) and Run should exit cleanly without invoking the
 // agent. ok=true means the resolved struct is populated and Run
 // can continue.
-func resolveTask(ctx context.Context, opts Options) (resolved, bool, error) {
-	if opts.TaskID != "" {
-		r, err := resolveByTaskID(opts.TaskID)
-		return r, err == nil, err
-	}
-	tasks, err := listResolvableVerifyTasks()
-	if err != nil {
-		return resolved{}, false, err
-	}
-	if len(tasks) == 0 {
-		return resolved{}, false, errors.New("J: no tasks to verify; run `j plan` and `j work` first")
-	}
-	if id, ok := autoPickAllowed(tasks, allowedForVerify); ok {
-		r, err := resolveByTaskID(id)
-		return r, err == nil, err
-	}
-	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to verify", tasks)
-	if err != nil {
-		return resolved{}, false, err
-	}
-	if !ok {
-		return resolved{}, false, nil
-	}
-	r, err := resolveByTaskID(chosen)
-	return r, err == nil, err
-}
-
-// autoPickAllowed returns the single task id and ok=true when
-// exactly one of the supplied tasks is in the allowlist (i.e. the
-// happy-path auto-pick). Any other count surfaces ok=false so the
-// caller renders the picker over the full slice.
-func autoPickAllowed(tasks []store.Task, allowed func(store.Task) bool) (string, bool) {
-	var picked string
-	count := 0
-	for _, t := range tasks {
-		if allowed(t) {
-			picked = t.ID
-			count++
-		}
-	}
-	if count == 1 {
-		return picked, true
-	}
-	return "", false
-}
-
-// resolveByTaskID loads an existing task row, then reads
-// .j/tasks/<id>/{requirements,plan}.md (best-effort for
-// requirements). The id is trusted (it came from a previous
-// EnsureTaskDir call that staged the row).
-func resolveByTaskID(id string) (resolved, error) {
-	s, err := openTasks()
-	if err != nil {
-		return resolved{}, err
-	}
-	defer func() { _ = s.Close() }()
-	task, err := s.GetTask(id)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return resolved{}, fmt.Errorf("verify: task %q not found", id)
-		}
-		return resolved{}, err
-	}
-	tasksDir, err := store.DefaultTasksDir()
-	if err != nil {
-		return resolved{}, err
-	}
-	taskDir := filepath.Join(tasksDir, id)
-	planPath := filepath.Join(taskDir, store.PlanFileName)
-	if _, err := os.Stat(planPath); err != nil {
-		return resolved{}, fmt.Errorf("verify: read plan: %w", err)
-	}
-	return resolved{
-		Task:             task,
-		TaskDir:          taskDir,
-		RequirementsPath: filepath.Join(taskDir, store.RequirementsFileName),
-		PlanPath:         planPath,
-		VerifierPlanPath: filepath.Join(taskDir, store.VerifierPlanFileName),
-		FindingsPath:     filepath.Join(taskDir, store.VerifierFindingsFileName),
-	}, nil
-}
-
-// listResolvableVerifyTasks returns every task in bbolt sorted via
-// store.SortTasks. The picker surfaces every row regardless of
-// status; the downstream confirm prompt handles the wrong-status
-// case (per the re-verify contract). autoPickAllowed auto-picks
-// when exactly one row is in the verify allowlist.
-func listResolvableVerifyTasks() ([]store.Task, error) {
-	s, err := openTasks()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = s.Close() }()
-	all, err := s.ListTasks()
-	if err != nil {
-		return nil, err
-	}
-	store.SortTasks(all)
-	return all, nil
-}
-
-// openTasks resolves `<cwd>/.j/tasks/list.db` and opens it. Read-path
-// failures surface as a single wrapped error per call.
-func openTasks() (*store.Store, error) {
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		return nil, fmt.Errorf("verify: tasks db: %w", err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("verify: tasks db: %w", err)
-	}
-	return s, nil
-}
-
-// allowedForVerify is the natural status allowlist for `j verify`:
-// work-done (the happy path after `j work`), verify-done (re-verify
-// after an exhausted loop), and help (retry after a failed run).
-// Anything else is allowed by `j verify` only after the user
-// confirms the prompt (or via --yes / VERIFY_YES); this preserves
-// the prior UX for the common case while letting users re-run
-// verify against in-flight or post-verify tasks.
-func allowedForVerify(t store.Task) bool {
-	switch t.Status {
-	case store.StatusWorkDone, store.StatusVerifyDone, store.StatusHelp:
-		return true
-	}
-	return false
-}
-
-// confirmStatusOverride decides whether to run agent.Verify against
-// a task whose status falls outside the allowlist. Allowlist match
-// → proceed silently. Otherwise --yes / VERIFY_YES → proceed
-// silently; else delegate to the UI confirm prompt and return its
-// bool. A user decline (false from the prompt) returns
-// proceed=false with err=nil so the caller can exit cleanly.
-func confirmStatusOverride(ctx context.Context, opts Options, cmd string, t store.Task, allowed func(store.Task) bool) (bool, error) {
-	if allowed(t) {
-		return true, nil
-	}
-	if opts.Yes {
-		return true, nil
-	}
-	return opts.UI.ConfirmStatusOverride(ctx, cmd, t.ID, string(t.Status))
-}
-
 // runVerifyLoop alternates verifier turns with worker-resume fix
 // turns until the verifier writes VERDICT: PASS to findingsPath or
 // MaxIterations is exhausted. Errors from either agent abort the
@@ -352,7 +194,7 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 	agentLogPath := filepath.Join(res.TaskDir, store.AgentLogFileName)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
+		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", mustReadErr)
 	}
 	for i := 0; i < opts.MaxIterations; i++ {
 		req := codingagents.VerifyRequest{
@@ -412,82 +254,3 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 // Any failure (missing tasks dir, missing file, malformed line)
 // yields "FAIL" so callers treat ambiguity as a non-pass — matching
 // the same rule ParseVerdict applies internally.
-func ReadVerdictForTask(taskID string) string {
-	tasksDir, err := store.DefaultTasksDir()
-	if err != nil {
-		return "FAIL"
-	}
-	return ParseVerdict(filepath.Join(tasksDir, taskID, store.VerifierFindingsFileName))
-}
-
-// ParseVerdict reads path and inspects its last non-empty line for
-// the literal `VERDICT: PASS` / `VERDICT: FAIL` marker. Any other
-// shape (missing file, empty file, malformed line, trailing prose)
-// yields "FAIL" so the orchestrator treats ambiguity as a failure.
-// The match is case-insensitive on PASS / FAIL and tolerates
-// surrounding whitespace.
-func ParseVerdict(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "FAIL"
-	}
-	lines := strings.Split(string(data), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimRight(lines[i], "\r")
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		m := verdictRegexp.FindStringSubmatch(line)
-		if m == nil {
-			return "FAIL"
-		}
-		return strings.ToUpper(m[1])
-	}
-	return "FAIL"
-}
-
-// selectVerifier delegates to resolver.Agent with the verifier bucket.
-func selectVerifier(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
-	return resolver.Agent(ctx, resolver.AgentOptions{
-		Bucket:        store.BucketVerifier,
-		Agents:        opts.Agents,
-		ExplicitTool:  opts.Tool,
-		ExplicitModel: opts.Model,
-		UI:            opts.UI,
-		Store:         opts.Store,
-		Stderr:        opts.Stderr,
-		Interactive:   opts.Interactive,
-	})
-}
-
-// lookupResumeAgent returns the first agent in agents whose Name
-// matches tool. The miss path becomes the user-facing
-// "unknown tool %q" error in Run / RunResume.
-func lookupResumeAgent(agents []codingagents.Agent, tool string) (codingagents.Agent, bool) {
-	for _, a := range agents {
-		if a.Name() == tool {
-			return a, true
-		}
-	}
-	return nil, false
-}
-
-func (o Options) withDefaults() Options {
-	if o.Stdin == nil {
-		o.Stdin = os.Stdin
-	}
-	if o.Stdout == nil {
-		o.Stdout = os.Stdout
-	}
-	if o.Stderr == nil {
-		o.Stderr = os.Stderr
-	}
-	if o.UI == nil {
-		o.UI = picker.New(o.Stdin, o.Stderr)
-	}
-	if o.MaxIterations <= 0 {
-		o.MaxIterations = defaultMaxIterations
-	}
-	return o
-}
-

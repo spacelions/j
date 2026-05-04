@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -28,7 +29,7 @@ func runList(cmd *cobra.Command) error {
 	}
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			fmt.Fprintln(cmd.OutOrStdout(), "no settings stored")
+			banner.Fprintln(cmd.OutOrStdout(), "J: no settings stored")
 			return nil
 		}
 		return err

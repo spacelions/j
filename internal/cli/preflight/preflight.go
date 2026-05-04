@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
@@ -136,7 +137,7 @@ func Ensure(ctx context.Context, ui UI, stderr io.Writer) error {
 	if err := store.EnsureProject(); err != nil {
 		return err
 	}
-	fmt.Fprintln(stderr, "initialized; please re-run your command")
+	banner.Fprintln(stderr, "J: initialized; please re-run your command")
 	return ErrNeedsRetry
 }
 

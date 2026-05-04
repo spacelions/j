@@ -1,12 +1,12 @@
 package tasks
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/run"
 )
@@ -69,7 +69,7 @@ func maybeReap(s *store.Store, stderr io.Writer, tasksDir string, t store.Task) 
 		return t
 	}
 	if err := s.PutTask(t); err != nil {
-		fmt.Fprintf(stderr, "warning: tasks put: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: tasks put: %v\n", err)
 	}
 	return t
 }
