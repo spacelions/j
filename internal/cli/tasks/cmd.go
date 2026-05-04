@@ -12,8 +12,10 @@ import (
 	"io/fs"
 	"os"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/preflight"
@@ -25,6 +27,11 @@ import (
 // in a constant keeps the test assertion and the command output in
 // lockstep.
 const emptyMessage = "J: no tasks"
+
+// simpleFlag is the long name of the bool that opts out of the
+// bordered (and ticking, when on a TTY) renderer in favour of the
+// plain tabwriter output preserved for pipes and scripts.
+const simpleFlag = "simple"
 
 // New returns the `j tasks` cobra command.
 func New() *cobra.Command {
@@ -42,9 +49,12 @@ func New() *cobra.Command {
 			"files in <cwd>/.j/tasks/<id>/ (requirements.md, plan.md).",
 		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return listTasks(cmd.OutOrStdout())
+			simple, _ := cmd.Flags().GetBool(simpleFlag)
+			return listTasks(cmd.OutOrStdout(), simple)
 		},
 	}
+	cmd.Flags().BoolP(simpleFlag, "s", false,
+		"Print plain tabwriter output (no border, no ticking). Use for pipes and scripts.")
 	cmd.AddCommand(newDiscardCmd())
 	cmd.AddCommand(newEnterCmd())
 	cmd.AddCommand(newStartCmd())
@@ -54,10 +64,12 @@ func New() *cobra.Command {
 }
 
 // listTasks resolves the default tasks DB path, opens it, decodes
-// every Task, sorts them via store.SortTasks, and writes the multi-
-// line per-task block. Pre-flight guarantees the file exists before
-// listTasks runs, but the missing-DB short-circuit is kept for
-// defense in depth (e.g. a unit test that drives the function
+// every Task, sorts them via store.SortTasks, and dispatches to one
+// of three renderers: the plain tabwriter output (--simple), the
+// bubbletea TUI (default on a TTY), or a single bordered one-shot
+// render (default off a TTY). Pre-flight guarantees the file exists
+// before listTasks runs, but the missing-DB short-circuit is kept
+// for defense in depth (e.g. a unit test that drives the function
 // without going through the cobra wiring).
 //
 // Between ListTasks and SortTasks the helper reaps any background
@@ -65,7 +77,7 @@ func New() *cobra.Command {
 // rows reflect fresh state. Reaping mutates the bbolt store
 // (best-effort: PutTask errors are warned on stderr) and is opt-in
 // per row: only entries with a non-zero BackgroundPID are touched.
-func listTasks(stdout io.Writer) error {
+func listTasks(stdout io.Writer, simple bool) error {
 	path, err := store.DefaultTasksDBPath()
 	if err != nil {
 		return err
@@ -94,7 +106,41 @@ func listTasks(stdout io.Writer) error {
 	}
 	tasks = reapBackgroundTasks(s, os.Stderr, tasksDir, tasks)
 	store.SortTasks(tasks)
-	return writeTasks(stdout, tasks)
+	if simple {
+		return writeTasks(stdout, tasks)
+	}
+	if isTerminal(stdout) {
+		return runWatch(os.Stdin, stdout, storeReloader(s, tasksDir))
+	}
+	return renderTable(stdout, tasks, time.Now())
+}
+
+// storeReloader returns a closure the bubbletea model uses to refresh
+// its task slice on every tick. It re-runs ListTasks, reaps any
+// background children that have since exited, and sorts the result so
+// the rendered table reflects the latest state of the bbolt store.
+func storeReloader(s *store.Store, tasksDir string) func() ([]store.Task, error) {
+	return func() ([]store.Task, error) {
+		t, err := s.ListTasks()
+		if err != nil {
+			return nil, err
+		}
+		t = reapBackgroundTasks(s, os.Stderr, tasksDir, t)
+		store.SortTasks(t)
+		return t, nil
+	}
+}
+
+// isTerminal reports whether w is an *os.File pointing at an
+// interactive terminal. cobra wires the command's stdout to *os.File
+// in the production path; tests pass *bytes.Buffer or io.Discard so
+// they reliably take the non-TTY path.
+func isTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	return term.IsTerminal(int(f.Fd()))
 }
 
 // writeTasks emits one summary line per task (tab-aligned via

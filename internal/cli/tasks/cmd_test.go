@@ -105,11 +105,29 @@ func TestNew_HasDiscardSubcommand(t *testing.T) {
 func TestRun_NoTasksFile_PrintsEmptyMessage(t *testing.T) {
 	t.Chdir(t.TempDir())
 	var out bytes.Buffer
-	if err := listTasks(&out); err != nil {
+	if err := listTasks(&out, false); err != nil {
 		t.Fatalf("listTasks: %v", err)
 	}
 	if !strings.Contains(out.String(), emptyMessage) {
 		t.Fatalf("stdout = %q, want %q", out.String(), emptyMessage)
+	}
+}
+
+// TestRun_EmptyDB_Simple confirms the empty-DB short-circuit fires
+// for the --simple path too: dispatch happens after the empty check,
+// so all three renderers see the same emptyMessage line.
+func TestRun_EmptyDB_Simple(t *testing.T) {
+	s := openTasksDB(t)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _, err := runCommand(t, "--simple")
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, emptyMessage) {
+		t.Fatalf("stdout = %q, want %q", out, emptyMessage)
 	}
 }
 
@@ -128,12 +146,14 @@ func TestRun_EmptyDB_PrintsEmptyMessage(t *testing.T) {
 	}
 }
 
-// TestRun_PrintsHeaderAndSortedTasks pins the table layout: header
-// first, summary rows in active-then-by-phase-end order. The three
-// per-phase session lines that earlier versions emitted are gone, so
-// the output is exactly header + 1 line per task. Active tasks should
-// sort before inactive ones; among inactive tasks the most recent
-// phase-end wins.
+// TestRun_PrintsHeaderAndSortedTasks pins the --simple table layout:
+// header first, summary rows in active-then-by-phase-end order. The
+// three per-phase session lines that earlier versions emitted are
+// gone, so the output is exactly header + 1 line per task. Active
+// tasks should sort before inactive ones; among inactive tasks the
+// most recent phase-end wins. The default (bordered) renderer adds
+// frame lines, so this assertion lives behind --simple where the
+// tabwriter output is preserved verbatim.
 func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 	s := openTasksDB(t)
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -177,7 +197,7 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	out, _, err := runCommand(t)
+	out, _, err := runCommand(t, "--simple")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -218,6 +238,47 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 	}
 	if !strings.Contains(out, "planning") || !strings.Contains(out, "plan-done") || !strings.Contains(out, "work-done") {
 		t.Fatalf("status column missing: %q", out)
+	}
+}
+
+// TestRun_DefaultNonTTY_RendersBorder drives the default (no
+// --simple) renderer when stdout is a *bytes.Buffer. isTerminal
+// rejects anything that isn't an *os.File so the dispatch falls
+// through to renderTable rather than the bubbletea TUI; the
+// resulting output should carry the lipgloss border glyphs and
+// decorate the active row's status with elapsed time.
+func TestRun_DefaultNonTTY_RendersBorder(t *testing.T) {
+	s := openTasksDB(t)
+	begin := time.Now().UTC().Add(-90 * time.Second)
+	task := store.Task{
+		ID:           "active-default",
+		Status:       store.StatusPlanning,
+		InvokedTool:  "cursor",
+		InvokedModel: "sonnet-4",
+		Summary:      "draft idea",
+		PlanBeginAt:  &begin,
+	}
+	if err := s.PutTask(task); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	out, _, err := runCommand(t)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	for _, glyph := range []string{"┌", "┐", "└", "┘", "│", "─"} {
+		if !strings.Contains(out, glyph) {
+			t.Fatalf("default output missing border glyph %q: %q", glyph, out)
+		}
+	}
+	if !strings.Contains(out, "STATUS") {
+		t.Fatalf("default output missing header: %q", out)
+	}
+	if !strings.Contains(out, "planning 1m") {
+		t.Fatalf("default output should decorate active row with elapsed minutes: %q", out)
 	}
 }
 
@@ -279,7 +340,7 @@ func TestRun_StatNonENOENTPropagates(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tasksPath, "blocker"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := listTasks(io.Discard); err == nil {
+	if err := listTasks(io.Discard, false); err == nil {
 		t.Fatal("expected open to fail when path is a non-empty directory")
 	}
 }
@@ -305,7 +366,7 @@ func TestRun_DefaultTasksPathError(t *testing.T) {
 	if _, err := os.Getwd(); err == nil {
 		t.Skip("os.Getwd unexpectedly succeeded; cannot exercise failure path")
 	}
-	if err := listTasks(io.Discard); err == nil {
+	if err := listTasks(io.Discard, false); err == nil {
 		t.Fatal("expected DefaultTasksDBPath to surface getwd error")
 	}
 }
@@ -322,7 +383,7 @@ func TestRun_OpenError(t *testing.T) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := listTasks(io.Discard); err == nil {
+	if err := listTasks(io.Discard, false); err == nil {
 		t.Fatal("expected open error when tasks path is a directory")
 	}
 }
@@ -367,6 +428,93 @@ func writeRawTaskBytes(t *testing.T, key string, value []byte) error {
 		}
 		return b.Put([]byte(key), value)
 	})
+}
+
+// TestStoreReloader_SortsAndReaps drives the closure handed to the
+// bubbletea model. It seeds two rows in non-sorted order and confirms
+// the reloader returns them active-first / inactive-by-end-time so
+// each tick re-renders an up-to-date table.
+func TestStoreReloader_SortsAndReaps(t *testing.T) {
+	s := openTasksDB(t)
+	t.Cleanup(func() { _ = s.Close() })
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := s.PutTask(store.Task{
+		ID: "z-old", Status: store.StatusPlanDone, PlanEndAt: &t1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutTask(store.Task{
+		ID: "a-active", Status: store.StatusPlanning,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tasksDir, err := store.DefaultTasksDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := storeReloader(s, tasksDir)()
+	if err != nil {
+		t.Fatalf("reloader: %v", err)
+	}
+	if len(got) != 2 || got[0].ID != "a-active" || got[1].ID != "z-old" {
+		t.Fatalf("reloader returned unsorted slice: %#v", got)
+	}
+}
+
+// TestStoreReloader_PropagatesListErr seeds a non-JSON value in the
+// tasks bucket so ListTasks returns a decode error; the reloader must
+// surface it without swallowing.
+func TestStoreReloader_PropagatesListErr(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	if err := writeRawTaskBytes(t, "bad", []byte("not-json")); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	path, err := store.DefaultTasksDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	tasksDir, err := store.DefaultTasksDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storeReloader(s, tasksDir)(); err == nil {
+		t.Fatal("expected decode error to propagate from reloader")
+	}
+}
+
+// TestIsTerminal_NonFileWriter pins the writer-type guard: anything
+// that isn't an *os.File is treated as a non-TTY so tests reliably
+// take the one-shot bordered path.
+func TestIsTerminal_NonFileWriter(t *testing.T) {
+	if isTerminal(io.Discard) {
+		t.Fatal("io.Discard must not be classified as a TTY")
+	}
+	if isTerminal(&bytes.Buffer{}) {
+		t.Fatal("*bytes.Buffer must not be classified as a TTY")
+	}
+}
+
+// TestIsTerminal_PipeFile checks the *os.File branch: an os.Pipe
+// reader/writer is a real *os.File but not an interactive TTY, so
+// term.IsTerminal returns false.
+func TestIsTerminal_PipeFile(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = r.Close()
+		_ = w.Close()
+	})
+	if isTerminal(w) {
+		t.Fatal("os.Pipe writer must not be classified as a TTY")
+	}
 }
 
 // TestWriteTasks_FlushError exercises the tabwriter flush error path
