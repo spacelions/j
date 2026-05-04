@@ -16,8 +16,8 @@ import (
 // tests: lazy-open of `.j/settings`, the resolveInteractive
 // precedence (explicit > stored > cobra default), and the
 // fallback-to-prompt path when the settings DB is missing or
-// corrupt. The pure agentpick.FromStore semantics live in
-// internal/cli/agentpick/agentpick_test.go and are intentionally
+// corrupt. The pure picker.AgentFromStore semantics live in
+// internal/cli/picker/agent_test.go and are intentionally
 // not re-asserted here.
 
 // TestRun_FromStore_InteractivePrecedence collapses the four

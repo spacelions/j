@@ -1,17 +1,19 @@
-// Package picker holds the leaf huh-backed prompt widgets that every
-// j subcommand composes. The package never owns flow control: cli
-// command bodies still drive their own switch / case logic after a
-// leaf returns. Examples:
+// Package picker holds the huh-backed prompts every j subcommand
+// composes. Two top-level surfaces:
 //
-//   - `j plan` and `j tasks start` call SelectSource (markdown |
-//     linear | task) and dispatch to PickMarkdownInCwd / PickTask
-//     themselves.
-//   - `j work` and `j verify` skip SelectSource entirely and call
-//     PickTask directly with their own title.
+//   - agent picker: SelectTool + SelectModel leaves; PickAgent
+//     composite that walks tool → list models → model → CheckLogin;
+//     ResolveAgent / AgentFromStore / StoredInteractive non-UI
+//     helpers for the explicit-flag and stored-selection paths.
+//   - source picker: Source enum + SelectSource leaf; PickMarkdownInCwd,
+//     PickTask leaves; PickSource composite that drives SelectSource
+//     and dispatches to the matching sub-picker.
 //
-// Picker satisfies internal/cli/agentpick.Selector via SelectTool /
-// SelectModel, so cobra wirings can drop it into any caller that
-// expected the existing interface.
+// Plus standalone leaves: AskFromFile (legacy free-text fallback) and
+// ConfirmStatusOverride (yes/no prompt). *Picker satisfies the
+// Selector and SourceUI interfaces via duck typing so cli commands'
+// narrow UI interfaces drop it in directly; tests inject scripted
+// fakes that also satisfy those interfaces.
 package picker
 
 import (

@@ -6,16 +6,15 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/spacelions/j/internal/cli/agentpick"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 )
 
 // AgentCheckOptions configures EnsureAgentSelections. Stdin/Stdout/Stderr
-// default to the process streams; UI defaults to a huh-backed selector
-// that satisfies agentpick.Selector. Agents must be supplied so the
-// helper can validate the chosen tool exists in the wired set.
+// default to the process streams; UI defaults to picker.New. Agents
+// must be supplied so the helper can validate the chosen tool exists
+// in the wired set.
 type AgentCheckOptions struct {
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -25,26 +24,20 @@ type AgentCheckOptions struct {
 	UI     AgentSelector
 }
 
-// AgentSelector is the slice of UI surface EnsureAgentSelections needs.
-// It mirrors agentpick.Selector verbatim so any implementation usable by
-// `j plan` / `j work` / `j verify` can be reused here without an extra
-// adapter; the dedicated alias keeps the type direction CLI -> agentpick
-// (not the reverse) the same way agentpick.Selector itself is defined
-// locally to that package.
-type AgentSelector interface {
-	SelectTool(ctx context.Context, options []string) (string, error)
-	SelectModel(ctx context.Context, options []string) (string, error)
-}
+// AgentSelector aliases picker.Selector so existing callers
+// (start.go's StartOptions, continue.go) keep their tasks-package type
+// reference without the extra hop through picker.
+type AgentSelector = picker.Selector
 
 // EnsureAgentSelections walks the planner / worker / verifier buckets
 // in order. For each bucket it:
 //
 //  1. Opens `<cwd>/.j/settings`.
-//  2. Calls agentpick.FromStore. If the bucket already carries a
+//  2. Calls picker.AgentFromStore. If the bucket already carries a
 //     valid tool/model pair the helper closes the store and moves to
 //     the next bucket without prompting.
-//  3. On agentpick.ErrNoStoredSelection it closes the store, runs
-//     agentpick.Pick against opts.UI, and re-opens the store to
+//  3. On picker.ErrNoStoredSelection it closes the store, runs
+//     picker.PickAgent against opts.UI, and re-opens the store to
 //     persist the selection via store.PersistAgentSelection. The
 //     persisted `interactive` flag defaults to true (resume reads
 //     this on every run; the explicit user choice flows through
@@ -82,28 +75,28 @@ func ensureBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket s
 		_ = model
 		return nil
 	}
-	if !errors.Is(err, agentpick.ErrNoStoredSelection) {
-		return fmt.Errorf("tasks: read %s: %w", bucket, err)
+	if !errors.Is(err, picker.ErrNoStoredSelection) {
+		return err
 	}
 	fmt.Fprintf(opts.Stderr, "Choose your favourite for %s:\n", bucket)
-	pickedAgent, pickedModel, err := agentpick.Pick(ctx, opts.UI, opts.Agents)
+	pickedAgent, pickedModel, err := picker.PickAgent(ctx, opts.UI, opts.Agents)
 	if err != nil {
 		return err
 	}
 	return persistBucketSelection(opts, bucket, pickedAgent.Name(), pickedModel)
 }
 
-// readBucketSelection opens settings, runs agentpick.FromStore, and
+// readBucketSelection opens settings, runs picker.AgentFromStore, and
 // closes settings before returning. A failure to open the settings DB
 // surfaces as ErrNoStoredSelection so the caller falls back to the
 // prompt path the same way an empty bucket would.
 func readBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket string) (codingagents.Agent, string, error) {
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
-		return nil, "", agentpick.ErrNoStoredSelection
+		return nil, "", picker.ErrNoStoredSelection
 	}
 	defer func() { _ = s.Close() }()
-	return agentpick.FromStore(ctx, s, bucket, opts.Agents)
+	return picker.AgentFromStore(ctx, s, bucket, opts.Agents)
 }
 
 // persistBucketSelection re-opens settings only for the duration of the

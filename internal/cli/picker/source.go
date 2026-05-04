@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/spacelions/j/internal/store"
 )
 
 // Source is the planning input the user picks at the start of a
 // new-or-resume flow. Values double as user-facing labels so the
 // SelectSource picker and the cli's switch/case use one string
 // constant. Each cli decides which subset to surface by passing
-// `allowed` to SelectSource.
+// `allowed` to SelectSource / PickSource.
 type Source string
 
 const (
@@ -18,6 +20,30 @@ const (
 	SourceLinear   Source = "linear"
 	SourceTask     Source = "re-plan an existing task"
 )
+
+// SourceResult bundles the typed outcome of PickSource: which source
+// the user chose plus its resolved value (markdown abs path or task
+// id). Linear sources surface as Source=SourceLinear with both
+// Markdown and TaskID empty so the cli can print its own "not yet
+// wired up" message in one switch arm. Cancelled is true when the
+// user aborted at a sub-picker (Ctrl-C / Esc); the Source field still
+// reflects which sub-picker fired.
+type SourceResult struct {
+	Source    Source
+	Markdown  string
+	TaskID    string
+	Cancelled bool
+}
+
+// SourceUI is the slice of UI behaviour PickSource needs. *Picker
+// satisfies it; cli commands' narrow UI interfaces (plan.UI,
+// tasks.StartUI) include the same three methods so their scripted
+// fakes satisfy it too.
+type SourceUI interface {
+	SelectSource(ctx context.Context, allowed []Source) (Source, error)
+	PickMarkdownInCwd(ctx context.Context) (string, error)
+	PickTask(ctx context.Context, title string, tasks []store.Task) (string, bool, error)
+}
 
 // SelectSource renders the top-level source widget over the supplied
 // allowed list. A returned Source is guaranteed to be one of `allowed`;
@@ -42,4 +68,58 @@ func (p *Picker) SelectSource(ctx context.Context, allowed []Source) (Source, er
 		return "", fmt.Errorf("picker: unknown source %q", chosen)
 	}
 	return got, nil
+}
+
+// PickSource drives the full source-picker chain in one call: prompt
+// for which source, then dispatch into the matching sub-picker.
+// listTasks is invoked only on the SourceTask branch; cli's that
+// don't allow SourceTask omit it from `allowed` and may pass
+// listTasks=nil. A nil listTasks reached on the task branch surfaces
+// a misuse error so the bug is loud.
+//
+// The cli's body reduces to:
+//
+//	res, err := picker.PickSource(ctx, ui, allowed, listTasks)
+//	if err != nil { return err }
+//	if res.Cancelled { return nil }
+//	switch res.Source {
+//	case picker.SourceMarkdown: ...
+//	case picker.SourceLinear:   ...
+//	case picker.SourceTask:     ...
+//	}
+func PickSource(ctx context.Context, ui SourceUI, allowed []Source, listTasks func() ([]store.Task, error)) (SourceResult, error) {
+	src, err := ui.SelectSource(ctx, allowed)
+	if err != nil {
+		return SourceResult{}, err
+	}
+	switch src {
+	case SourceMarkdown:
+		path, err := ui.PickMarkdownInCwd(ctx)
+		if err != nil {
+			return SourceResult{}, err
+		}
+		return SourceResult{Source: src, Markdown: path}, nil
+	case SourceLinear:
+		return SourceResult{Source: src}, nil
+	case SourceTask:
+		if listTasks == nil {
+			return SourceResult{}, errors.New("picker: SourceTask requires a listTasks callback")
+		}
+		tasks, err := listTasks()
+		if err != nil {
+			return SourceResult{}, err
+		}
+		if len(tasks) == 0 {
+			return SourceResult{}, errors.New("picker: no tasks available")
+		}
+		id, ok, err := ui.PickTask(ctx, "Select a task to re-plan", tasks)
+		if err != nil {
+			return SourceResult{}, err
+		}
+		if !ok {
+			return SourceResult{Source: src, Cancelled: true}, nil
+		}
+		return SourceResult{Source: src, TaskID: id}, nil
+	}
+	return SourceResult{}, fmt.Errorf("picker: unsupported source %s", src)
 }

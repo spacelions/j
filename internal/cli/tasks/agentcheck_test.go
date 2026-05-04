@@ -16,7 +16,7 @@ import (
 )
 
 // scriptedSelector is an in-package fake that satisfies AgentSelector
-// (and, since the surface is identical, agentpick.Selector). The zero
+// (and, since the surface is identical, picker.Selector). The zero
 // value picks the first option for both prompts so most tests need
 // only set the fields they assert on.
 type scriptedSelector struct {

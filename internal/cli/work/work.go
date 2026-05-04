@@ -17,7 +17,6 @@ import (
 
 	"github.com/charmbracelet/huh"
 
-	"github.com/spacelions/j/internal/cli/agentpick"
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
@@ -57,7 +56,7 @@ type Options struct {
 
 	// Tool and Model are one-off overrides for the worker bucket's
 	// recorded tool/model. When either is set, Run resolves the
-	// worker via agentpick.Resolve (filling the missing half from
+	// worker via picker.ResolveAgent (filling the missing half from
 	// the bucket if needed) and skips persistence: the bucket is
 	// left untouched. When both are empty, Run falls back to the
 	// existing read-then-prompt-then-persist precedence.
@@ -431,10 +430,10 @@ func confirmStatusOverride(ctx context.Context, opts Options, cmd string, t stor
 // selectWorker is the single chokepoint for choosing the worker
 // tool/model. Precedence:
 //  1. explicit --tool / --model (opts.Tool or opts.Model set) →
-//     agentpick.Resolve fills the missing half from the worker
+//     picker.ResolveAgent fills the missing half from the worker
 //     bucket and runs CheckLogin. The bucket is NOT written.
-//  2. populated worker bucket → agentpick.FromStore reuses it.
-//  3. otherwise → agentpick.Pick prompts the user and the result is
+//  2. populated worker bucket → picker.AgentFromStore reuses it.
+//  3. otherwise → picker.PickAgent prompts the user and the result is
 //     persisted to the worker bucket.
 //
 // Settings DB access is short-lived: the bucket is read inside
@@ -447,7 +446,7 @@ func selectWorker(ctx context.Context, opts Options) (codingagents.Agent, string
 		if err == nil {
 			return agent, model, nil
 		}
-		if !errors.Is(err, agentpick.ErrNoStoredSelection) {
+		if !errors.Is(err, picker.ErrNoStoredSelection) {
 			return nil, "", err
 		}
 	}
@@ -455,11 +454,11 @@ func selectWorker(ctx context.Context, opts Options) (codingagents.Agent, string
 	if err == nil {
 		return agent, model, nil
 	}
-	if !errors.Is(err, agentpick.ErrNoStoredSelection) {
+	if !errors.Is(err, picker.ErrNoStoredSelection) {
 		return nil, "", err
 	}
 	fmt.Fprintln(opts.Stderr, "Choose your favourite:")
-	agent, model, err = agentpick.Pick(ctx, opts.UI, opts.Agents)
+	agent, model, err = picker.PickAgent(ctx, opts.UI, opts.Agents)
 	if err != nil {
 		return nil, "", err
 	}
@@ -474,33 +473,33 @@ func selectWorker(ctx context.Context, opts Options) (codingagents.Agent, string
 // before returning so the file lock is not held across agent.Work.
 func workerResolveExplicit(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
 	if opts.Store != nil {
-		return agentpick.Resolve(ctx, opts.Store, store.BucketWorker, opts.Agents, opts.Tool, opts.Model)
+		return picker.ResolveAgent(ctx, opts.Store, store.BucketWorker, opts.Agents, opts.Tool, opts.Model)
 	}
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
-		return agentpick.Resolve(ctx, nil, store.BucketWorker, opts.Agents, opts.Tool, opts.Model)
+		return picker.ResolveAgent(ctx, nil, store.BucketWorker, opts.Agents, opts.Tool, opts.Model)
 	}
 	defer func() { _ = s.Close() }()
-	return agentpick.Resolve(ctx, s, store.BucketWorker, opts.Agents, opts.Tool, opts.Model)
+	return picker.ResolveAgent(ctx, s, store.BucketWorker, opts.Agents, opts.Tool, opts.Model)
 }
 
 // workerFromStore reads the worker bucket and returns the chosen
 // tool/model. When opts.Store is non-nil (test injection) it is reused
 // without any open/close cycle. Otherwise this opens
-// `<cwd>/.j/settings` only for the duration of agentpick.FromStore and
+// `<cwd>/.j/settings` only for the duration of picker.AgentFromStore and
 // releases it before returning. A failure to open the settings DB
 // surfaces as ErrNoStoredSelection so the caller falls back to the
 // prompt path the same way an empty bucket would.
 func workerFromStore(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
 	if opts.Store != nil {
-		return agentpick.FromStore(ctx, opts.Store, store.BucketWorker, opts.Agents)
+		return picker.AgentFromStore(ctx, opts.Store, store.BucketWorker, opts.Agents)
 	}
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
-		return nil, "", agentpick.ErrNoStoredSelection
+		return nil, "", picker.ErrNoStoredSelection
 	}
 	defer func() { _ = s.Close() }()
-	return agentpick.FromStore(ctx, s, store.BucketWorker, opts.Agents)
+	return picker.AgentFromStore(ctx, s, store.BucketWorker, opts.Agents)
 }
 
 // persistWorkerSelection writes the tool/model and interactive flag
@@ -556,14 +555,14 @@ func resolveInteractive(opts Options) bool {
 // cobra default.
 func storedWorkerInteractive(opts Options) (bool, bool) {
 	if opts.Store != nil {
-		return agentpick.StoredInteractive(opts.Store, store.BucketWorker)
+		return picker.StoredInteractive(opts.Store, store.BucketWorker)
 	}
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
 		return false, false
 	}
 	defer func() { _ = s.Close() }()
-	return agentpick.StoredInteractive(s, store.BucketWorker)
+	return picker.StoredInteractive(s, store.BucketWorker)
 }
 
 // boolPtr is the package-private companion that lets Run / tests

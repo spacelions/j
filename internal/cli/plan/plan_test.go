@@ -1003,7 +1003,7 @@ func TestRun_LoginFailure_DoesNotPersist(t *testing.T) {
 }
 
 // TestRun_SelectionCancelled_DoesNotPersist mirrors the login-failure
-// case for the user-cancel path through agentpick.Pick. With the
+// case for the user-cancel path through picker.PickAgent. With the
 // abort-to-nil contract, Run returns no error on cancel; the
 // invariant the test guards is that nothing was persisted to the
 // planner bucket because Pick was never confirmed.
@@ -1084,7 +1084,7 @@ func TestRun_StoreReadError_Surfaces(t *testing.T) {
 		UI:       &scriptedUI{},
 		Store:    s,
 	})
-	if err == nil || !strings.Contains(err.Error(), "agentpick: read planner") {
+	if err == nil || !strings.Contains(err.Error(), "picker: read planner") {
 		t.Fatalf("err = %v, want wrapped read error", err)
 	}
 	if agent.planned != 0 {
@@ -1140,7 +1140,7 @@ func TestPersistPlannerSelection_NilStore_LazyOpenFails(t *testing.T) {
 
 // TestRun_ExplicitTool_SkipsPersistence asserts the new --tool /
 // --model contract: when both flags are supplied, Run resolves via
-// agentpick.Resolve, runs the chosen agent, and leaves the planner
+// picker.ResolveAgent, runs the chosen agent, and leaves the planner
 // bucket untouched (no UI prompt and no store write).
 func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	s := openTestStore(t)

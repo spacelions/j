@@ -1281,7 +1281,7 @@ func TestRun_PersistsVerifierSelection(t *testing.T) {
 
 // TestRun_ExplicitTool_SkipsPersistence asserts the new --tool /
 // --model contract: when both flags are supplied, Run resolves via
-// agentpick.Resolve, runs the verifier, and leaves the verifier
+// picker.ResolveAgent, runs the verifier, and leaves the verifier
 // bucket untouched.
 func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	s := openTestStore(t)

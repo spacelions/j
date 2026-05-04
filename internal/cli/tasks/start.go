@@ -161,38 +161,42 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 // (re-plan source), or exits cleanly (linear source / aborted picker).
 //
 //   - opts.FromFile != "" → markdown shortcut (mint new task).
-//   - opts.FromFile == "" → opts.UI.SelectSource:
-//   - SourceMarkdown → pickMarkdownTarget → mint new task.
-//   - SourceTask    → pickReplanTarget   → existing task.
-//   - SourceLinear  → print, return ("", false, …).
+//   - opts.FromFile == "" → picker.PickSource composite drives the
+//     source widget + sub-picker; the switch below dispatches on the
+//     resolved Source.
 func resolveStartTarget(ctx context.Context, opts StartOptions) (startTarget, error) {
 	if opts.FromFile != "" {
 		return newTargetFromMarkdown(opts.FromFile)
 	}
-	src, err := opts.UI.SelectSource(ctx, []picker.Source{
-		picker.SourceMarkdown, picker.SourceLinear, picker.SourceTask,
-	})
+	listTasks := func() ([]store.Task, error) {
+		tasks, err := listAllTasks(opts.Stderr)
+		if err != nil {
+			return nil, err
+		}
+		if len(tasks) == 0 {
+			return nil, errors.New("tasks: no tasks to re-plan; run `j tasks start --from-file <md>` first")
+		}
+		return tasks, nil
+	}
+	res, err := picker.PickSource(ctx, opts.UI,
+		[]picker.Source{picker.SourceMarkdown, picker.SourceLinear, picker.SourceTask},
+		listTasks)
 	if err != nil {
 		return startTarget{}, err
 	}
-	switch src {
+	if res.Cancelled {
+		return startTarget{}, nil
+	}
+	switch res.Source {
 	case picker.SourceMarkdown:
-		path, err := opts.UI.PickMarkdownInCwd(ctx)
-		if err != nil {
-			return startTarget{}, err
-		}
-		return newTargetFromMarkdown(path)
+		return newTargetFromMarkdown(res.Markdown)
 	case picker.SourceTask:
-		id, err := pickReplanTarget(ctx, opts)
-		if err != nil {
-			return startTarget{}, err
-		}
-		return startTarget{taskID: id, isNew: false}, nil
+		return startTarget{taskID: res.TaskID, isNew: false}, nil
 	case picker.SourceLinear:
 		fmt.Fprintln(opts.Stdout, "tasks: linear source is not yet wired up; nothing to do")
 		return startTarget{}, nil
 	}
-	return startTarget{}, fmt.Errorf("tasks: unsupported source %s", src)
+	return startTarget{}, fmt.Errorf("tasks: unsupported source %s", res.Source)
 }
 
 // newTargetFromMarkdown reads the markdown body once and packages it
@@ -215,28 +219,6 @@ func newTargetFromMarkdown(raw string) (startTarget, error) {
 	}, nil
 }
 
-
-// pickReplanTarget lists every existing task and asks the user to
-// pick one for the re-plan flow. Empty list surfaces a clean error
-// mentioning the cwd. Returned id "" with err nil means the user
-// aborted the picker.
-func pickReplanTarget(ctx context.Context, opts StartOptions) (string, error) {
-	tasks, err := listAllTasks(opts.Stderr)
-	if err != nil {
-		return "", err
-	}
-	if len(tasks) == 0 {
-		return "", errors.New("tasks: no tasks to re-plan; run `j tasks start --from-file <md>` first")
-	}
-	id, ok, err := opts.UI.PickTask(ctx, "Select a task to re-plan", tasks)
-	if err != nil {
-		return "", err
-	}
-	if !ok {
-		return "", nil
-	}
-	return id, nil
-}
 
 // listAllTasks opens the per-project tasks bbolt store, reads every
 // row, sorts via store.SortTasks, and closes before returning. The

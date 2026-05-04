@@ -1236,7 +1236,7 @@ func TestRun_PersistsWorkerSelection(t *testing.T) {
 }
 
 // TestRun_LoginFailure_DoesNotPersist confirms the worker bucket is
-// untouched when login fails (we only persist after agentpick.Pick
+// untouched when login fails (we only persist after picker.PickAgent
 // returns successfully).
 func TestRun_LoginFailure_DoesNotPersist(t *testing.T) {
 	s := openTestStore(t)
@@ -1265,7 +1265,7 @@ func TestRun_LoginFailure_DoesNotPersist(t *testing.T) {
 }
 
 // TestRun_SelectionCancelled_DoesNotPersist mirrors the login-failure
-// case for the user-cancel path through agentpick.Pick. With the
+// case for the user-cancel path through picker.PickAgent. With the
 // abort-to-nil contract, Run returns no error on cancel; the
 // invariant the test guards is that nothing was persisted to the
 // worker bucket because Pick was never confirmed.
@@ -1343,7 +1343,7 @@ func TestRun_StoreReadError_Surfaces(t *testing.T) {
 		UI:     &scriptedUI{},
 		Store:  s,
 	})
-	if err == nil || !strings.Contains(err.Error(), "agentpick: read worker") {
+	if err == nil || !strings.Contains(err.Error(), "picker: read worker") {
 		t.Fatalf("err = %v, want wrapped read error", err)
 	}
 	if agent.worked != 0 {
@@ -1353,7 +1353,7 @@ func TestRun_StoreReadError_Surfaces(t *testing.T) {
 
 // TestRun_ExplicitTool_SkipsPersistence asserts the new --tool /
 // --model contract: when both flags are supplied, Run resolves via
-// agentpick.Resolve, runs the chosen agent, and leaves the worker
+// picker.ResolveAgent, runs the chosen agent, and leaves the worker
 // bucket untouched.
 func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	s := openTestStore(t)

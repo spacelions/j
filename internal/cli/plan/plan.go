@@ -1,5 +1,5 @@
 // Package plan implements the `j plan` subcommand. It collects a planning
-// source (markdown today, linear later), asks for a model and a coding
+// source (markdown or linear), asks for a model and a coding
 // agent backend, verifies that backend is signed in, and runs it to
 // produce a refined requirements summary and a plan stored under
 // <cwd>/.j/tasks/<id>/. No file is written to the workspace; `j tasks`
@@ -17,7 +17,6 @@ import (
 
 	"github.com/charmbracelet/huh"
 
-	"github.com/spacelions/j/internal/cli/agentpick"
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
@@ -69,7 +68,7 @@ type Options struct {
 
 	// Tool and Model are one-off overrides for the planner bucket's
 	// recorded tool/model. When either is set, Run resolves the
-	// planner via agentpick.Resolve (filling the missing half from
+	// planner via picker.ResolveAgent (filling the missing half from
 	// the bucket if needed) and skips persistence: the bucket is
 	// left untouched. When both are empty, Run falls back to the
 	// existing read-then-prompt-then-persist precedence.
@@ -144,56 +143,35 @@ func Run(ctx context.Context, opts Options) (err error) {
 		return runMarkdown(ctx, opts, opts.FromFile)
 	}
 
-	src, err := opts.UI.SelectSource(ctx, []picker.Source{
-		picker.SourceMarkdown, picker.SourceLinear, picker.SourceTask,
-	})
+	listTasks := func() ([]store.Task, error) {
+		tasks, err := listAllTasks(opts)
+		if err != nil {
+			return nil, err
+		}
+		if len(tasks) == 0 {
+			return nil, errors.New("plan: no tasks to re-plan; run `j plan` first")
+		}
+		return tasks, nil
+	}
+	res, err := picker.PickSource(ctx, opts.UI,
+		[]picker.Source{picker.SourceMarkdown, picker.SourceLinear, picker.SourceTask},
+		listTasks)
 	if err != nil {
 		return err
 	}
-	switch src {
+	if res.Cancelled {
+		return nil
+	}
+	switch res.Source {
 	case picker.SourceMarkdown:
-		target, err := opts.UI.PickMarkdownInCwd(ctx)
-		if err != nil {
-			return err
-		}
-		return runMarkdown(ctx, opts, target)
+		return runMarkdown(ctx, opts, res.Markdown)
 	case picker.SourceLinear:
 		fmt.Fprintln(opts.Stdout, "plan: linear source is not yet wired up; nothing to do")
 		return nil
 	case picker.SourceTask:
-		id, err := pickReplanTarget(ctx, opts)
-		if err != nil {
-			return err
-		}
-		if id == "" {
-			return nil
-		}
-		return runReplanTask(ctx, opts, id)
+		return runReplanTask(ctx, opts, res.TaskID)
 	}
-	return fmt.Errorf("plan: unsupported source %s", src)
-}
-
-// pickReplanTarget lists every task in bbolt (sorted via
-// store.SortTasks) and asks the user to pick one for the re-plan
-// flow. An empty list surfaces a clean error mentioning the cwd.
-// ok=false from PickTask (user aborted Ctrl-C / Esc) collapses to
-// ("", nil) so Run can short-circuit cleanly.
-func pickReplanTarget(ctx context.Context, opts Options) (string, error) {
-	tasks, err := listAllTasks(opts)
-	if err != nil {
-		return "", err
-	}
-	if len(tasks) == 0 {
-		return "", errors.New("plan: no tasks to re-plan; run `j plan` first")
-	}
-	id, ok, err := opts.UI.PickTask(ctx, "Select a task to re-plan", tasks)
-	if err != nil {
-		return "", err
-	}
-	if !ok {
-		return "", nil
-	}
-	return id, nil
+	return fmt.Errorf("plan: unsupported source %s", res.Source)
 }
 
 // runReplanTask is the re-plan flow: load the existing task row,
@@ -446,10 +424,10 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 // selectPlanner is the single chokepoint for choosing the planner
 // tool/model. Precedence:
 //  1. explicit --tool / --model (opts.Tool or opts.Model set) →
-//     agentpick.Resolve fills the missing half from the planner
+//     picker.ResolveAgent fills the missing half from the planner
 //     bucket and runs CheckLogin. The bucket is NOT written.
-//  2. populated planner bucket → agentpick.FromStore reuses it.
-//  3. otherwise → agentpick.Pick prompts the user and the result is
+//  2. populated planner bucket → picker.AgentFromStore reuses it.
+//  3. otherwise → picker.PickAgent prompts the user and the result is
 //     persisted to the planner bucket.
 //
 // Settings DB access is short-lived: the bucket is read inside
@@ -462,7 +440,7 @@ func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, strin
 		if err == nil {
 			return agent, model, nil
 		}
-		if !errors.Is(err, agentpick.ErrNoStoredSelection) {
+		if !errors.Is(err, picker.ErrNoStoredSelection) {
 			return nil, "", err
 		}
 	}
@@ -470,11 +448,11 @@ func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, strin
 	if err == nil {
 		return agent, model, nil
 	}
-	if !errors.Is(err, agentpick.ErrNoStoredSelection) {
+	if !errors.Is(err, picker.ErrNoStoredSelection) {
 		return nil, "", err
 	}
 	fmt.Fprintln(opts.Stderr, "Choose your favourite:")
-	agent, model, err = agentpick.Pick(ctx, opts.UI, opts.Agents)
+	agent, model, err = picker.PickAgent(ctx, opts.UI, opts.Agents)
 	if err != nil {
 		return nil, "", err
 	}
@@ -489,33 +467,33 @@ func selectPlanner(ctx context.Context, opts Options) (codingagents.Agent, strin
 // before returning so the file lock is not held across agent.Plan.
 func plannerResolveExplicit(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
 	if opts.Store != nil {
-		return agentpick.Resolve(ctx, opts.Store, store.BucketPlanner, opts.Agents, opts.Tool, opts.Model)
+		return picker.ResolveAgent(ctx, opts.Store, store.BucketPlanner, opts.Agents, opts.Tool, opts.Model)
 	}
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
-		return agentpick.Resolve(ctx, nil, store.BucketPlanner, opts.Agents, opts.Tool, opts.Model)
+		return picker.ResolveAgent(ctx, nil, store.BucketPlanner, opts.Agents, opts.Tool, opts.Model)
 	}
 	defer func() { _ = s.Close() }()
-	return agentpick.Resolve(ctx, s, store.BucketPlanner, opts.Agents, opts.Tool, opts.Model)
+	return picker.ResolveAgent(ctx, s, store.BucketPlanner, opts.Agents, opts.Tool, opts.Model)
 }
 
 // plannerFromStore reads the planner bucket and returns the chosen
 // tool/model. When opts.Store is non-nil (test injection) it is reused
 // without any open/close cycle. Otherwise this opens
-// `<cwd>/.j/settings` only for the duration of agentpick.FromStore and
+// `<cwd>/.j/settings` only for the duration of picker.AgentFromStore and
 // releases it before returning. A failure to open the settings DB
 // surfaces as ErrNoStoredSelection so the caller falls back to the
 // prompt path the same way an empty bucket would.
 func plannerFromStore(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
 	if opts.Store != nil {
-		return agentpick.FromStore(ctx, opts.Store, store.BucketPlanner, opts.Agents)
+		return picker.AgentFromStore(ctx, opts.Store, store.BucketPlanner, opts.Agents)
 	}
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
-		return nil, "", agentpick.ErrNoStoredSelection
+		return nil, "", picker.ErrNoStoredSelection
 	}
 	defer func() { _ = s.Close() }()
-	return agentpick.FromStore(ctx, s, store.BucketPlanner, opts.Agents)
+	return picker.AgentFromStore(ctx, s, store.BucketPlanner, opts.Agents)
 }
 
 // persistPlannerSelection writes the tool/model and interactive flag
@@ -574,14 +552,14 @@ func resolveInteractive(opts Options) bool {
 // cobra default.
 func storedPlannerInteractive(opts Options) (bool, bool) {
 	if opts.Store != nil {
-		return agentpick.StoredInteractive(opts.Store, store.BucketPlanner)
+		return picker.StoredInteractive(opts.Store, store.BucketPlanner)
 	}
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
 		return false, false
 	}
 	defer func() { _ = s.Close() }()
-	return agentpick.StoredInteractive(s, store.BucketPlanner)
+	return picker.StoredInteractive(s, store.BucketPlanner)
 }
 
 // boolPtr is the package-private companion that lets Run / tests
