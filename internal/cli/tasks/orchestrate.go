@@ -30,6 +30,12 @@ type OrchestrateOptions struct {
 	// inherit project.plan_requires_approval.
 	PlanRequiresApproval *bool
 
+	// SkipPlanning, when true, runs only worker → verifier on a
+	// task already past the planner. Set by `j tasks continue` when
+	// it picks up a `plan-done` row. Mutually exclusive with
+	// PlanRequiresApproval=true.
+	SkipPlanning bool
+
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
@@ -45,11 +51,12 @@ type OrchestrateOptions struct {
 // plus `project.plan_requires_approval` — `project.api_key` /
 // `project.model` are NOT required on this path because the shell-out
 // branch never instantiates a Gemini model), then drives planner only
-// or planner → worker → verifier via
-// workflow.RunForTask. The agent.log redirection is the parent's
-// concern: `j tasks start` opens the per-task log with O_APPEND and
-// passes its fd as our stdout/stderr, so any line the chain writes
-// (including warnings from this function) lands chronologically.
+// or planner → worker → verifier (or worker → verifier when
+// SkipPlanning is set) via the matching workflow.RunForTask* entry
+// point. The agent.log redirection is the parent's concern: the
+// caller opens the per-task log with O_APPEND and passes its fd as
+// our stdout/stderr, so any line the chain writes (including warnings
+// from this function) lands chronologically.
 func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 	opts = opts.withDefaults()
 	if opts.TaskID == "" {
@@ -65,6 +72,12 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 	planRequiresApproval, err := resolvePlanRequiresApproval(opts.PlanRequiresApproval)
 	if err != nil {
 		return err
+	}
+	if opts.SkipPlanning {
+		if planRequiresApproval {
+			return errors.New("tasks: --skip-planning is incompatible with --plan-requires-approval=true")
+		}
+		return workflow.RunForTaskFromWork(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
 	}
 	return workflow.RunForTaskWithGate(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, planRequiresApproval)
 }
@@ -107,6 +120,7 @@ func newOrchestrateCmd() *cobra.Command {
 			return RunOrchestrate(cmd.Context(), OrchestrateOptions{
 				TaskID:               viper.GetString("tasks.orchestrate.id"),
 				PlanRequiresApproval: approval,
+				SkipPlanning:         viper.GetBool("tasks.orchestrate.skip_planning"),
 				Stdin:                cmd.InOrStdin(),
 				Stdout:               cmd.OutOrStdout(),
 				Stderr:               cmd.ErrOrStderr(),
@@ -116,10 +130,13 @@ func newOrchestrateCmd() *cobra.Command {
 	}
 	cmd.Flags().String("id", "", "Task id whose planner→worker→verifier chain to drive")
 	cmd.Flags().Bool("plan-requires-approval", false, "Resolved project.plan_requires_approval value")
+	cmd.Flags().Bool("skip-planning", false, "Run only worker → verifier on a task already past the planner")
 	_ = viper.BindPFlag("tasks.orchestrate.id", cmd.Flags().Lookup("id"))
 	_ = viper.BindEnv("tasks.orchestrate.id", "TASKS_ORCHESTRATE_ID")
 	_ = viper.BindPFlag("tasks.orchestrate.plan_requires_approval", cmd.Flags().Lookup("plan-requires-approval"))
 	_ = viper.BindEnv("tasks.orchestrate.plan_requires_approval", "TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL")
+	_ = viper.BindPFlag("tasks.orchestrate.skip_planning", cmd.Flags().Lookup("skip-planning"))
+	_ = viper.BindEnv("tasks.orchestrate.skip_planning", "TASKS_ORCHESTRATE_SKIP_PLANNING")
 	return cmd
 }
 

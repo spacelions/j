@@ -164,27 +164,74 @@ func TestRunContinue_PlanningDispatchesToPlanResume(t *testing.T) {
 	}
 }
 
-// TestRunContinue_PlanDoneDispatchesToWork pins plan-done -> work.Run.
-func TestRunContinue_PlanDoneDispatchesToWork(t *testing.T) {
+// TestRunContinue_PlanDoneSpawnsOrchestrator pins plan-done ->
+// detached `j tasks orchestrate --skip-planning=true
+// --plan-requires-approval=false`. The stub J binary records its
+// argv so we can assert the spawn arguments; PID + AgentLogPath are
+// stamped on the row.
+func TestRunContinue_PlanDoneSpawnsOrchestrator(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, nil) // default is plan-done
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	binary := argvJBinary(t, argvPath)
 	agent := newContinueAgent()
+	var stdout bytes.Buffer
 	err := RunContinue(context.Background(), ContinueOptions{
-		TaskID: id,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &fakeUI{},
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  &stdout,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      &fakeUI{},
+		JBinary: binary,
 	})
 	if err != nil {
 		t.Fatalf("RunContinue: %v", err)
 	}
-	if agent.worked != 1 {
-		t.Fatalf("worked = %d, want 1", agent.worked)
+	if agent.planned+agent.worked+agent.verified != 0 {
+		t.Fatalf("no in-process agent call should fire (spawned child runs the chain): planned=%d worked=%d verified=%d",
+			agent.planned, agent.worked, agent.verified)
 	}
-	if agent.planned != 0 || agent.verified != 0 {
-		t.Fatalf("dispatched to wrong phase: planned=%d verified=%d", agent.planned, agent.verified)
+	args := readSpawnedArgv(t, argvPath)
+	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--plan-requires-approval", "false", "--skip-planning", "true"}
+	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
+		t.Fatalf("argv = %v, want %v", args, wantArgs)
+	}
+	row := readTaskFromBolt(t, id)
+	if row.BackgroundPID == 0 {
+		t.Fatalf("BackgroundPID = 0; want non-zero detached child PID")
+	}
+	wantLog := filepath.Join(".j/tasks", id, store.AgentLogFileName)
+	if !strings.HasSuffix(row.AgentLogPath, wantLog) {
+		t.Fatalf("AgentLogPath = %q, want suffix %q", row.AgentLogPath, wantLog)
+	}
+	if !strings.Contains(stdout.String(), "task "+id+" running in background") || !strings.Contains(stdout.String(), "tail -f") {
+		t.Fatalf("stdout = %q, want background-fork announcement", stdout.String())
+	}
+}
+
+// TestRunContinue_PlanDoneSpawnFails pins SpawnIn-error propagation:
+// pointing JBinary at a missing path surfaces the spawn error
+// verbatim with no row mutation.
+func TestRunContinue_PlanDoneSpawnFails(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, nil)
+	agent := newContinueAgent()
+	err := RunContinue(context.Background(), ContinueOptions{
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      &fakeUI{},
+		JBinary: "/no/such/binary-xyzzy",
+	})
+	if err == nil {
+		t.Fatal("expected spawn failure")
+	}
+	row := readTaskFromBolt(t, id)
+	if row.BackgroundPID != 0 {
+		t.Fatalf("BackgroundPID = %d, want 0 (no row mutation on spawn failure)", row.BackgroundPID)
 	}
 }
 
@@ -509,26 +556,31 @@ func TestRunContinue_PickerCancel(t *testing.T) {
 }
 
 // TestRunContinue_PickerHappy pins the no-flag picker path: the user
-// selects one row and dispatch fires for it.
+// selects one row and dispatch fires for it. plan-done routes to a
+// detached spawn, so we point JBinary at a stub and assert the spawn
+// fired (no in-process agent call expected).
 func TestRunContinue_PickerHappy(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil) // plan-done -> work.Run
+	id := seedTaskFull(t, nil) // plan-done -> detached spawn
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
 	ui := &fakeUI{pickReturn: id}
 	if err := RunContinue(context.Background(), ContinueOptions{
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     ui,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      ui,
+		JBinary: argvJBinary(t, argvPath),
 	}); err != nil {
 		t.Fatalf("RunContinue: %v", err)
 	}
 	if ui.pickCalls != 1 {
 		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
 	}
-	if agent.worked != 1 {
-		t.Fatalf("worked = %d, want 1", agent.worked)
+	args := readSpawnedArgv(t, argvPath)
+	if len(args) == 0 || args[0] != "tasks" {
+		t.Fatalf("argv = %v, want spawned `tasks orchestrate ...`", args)
 	}
 }
 

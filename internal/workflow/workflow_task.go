@@ -32,7 +32,7 @@ const (
 // RunForTask drives the planner → worker → verifier flow for an
 // already-seeded task end to end.
 func RunForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr, false)
+	return runForTask(ctx, cfg, taskID, agents, stderr, false, false)
 }
 
 // RunForTaskWithGate drives an already-seeded task, stopping after the
@@ -40,7 +40,15 @@ func RunForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents
 // row at plan-done so `j tasks continue --from-task <id>` can pick up
 // the existing dispatch path.
 func RunForTaskWithGate(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval bool) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr, planRequiresApproval)
+	return runForTask(ctx, cfg, taskID, agents, stderr, planRequiresApproval, false)
+}
+
+// RunForTaskFromWork drives an already-seeded task that is past the
+// planner, running only worker → verifier. Used by `j tasks continue`
+// on a `plan-done` row so the implicit-approval handoff resumes the
+// chain without re-running the planner.
+func RunForTaskFromWork(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer) error {
+	return runForTask(ctx, cfg, taskID, agents, stderr, false, true)
 }
 
 // runForTask builds a top-level SequentialAgent over shell-out custom
@@ -68,7 +76,7 @@ func RunForTaskWithGate(ctx context.Context, cfg store.TaskConfig, taskID string
 // MaxIterations defaults are owned by callers: production callers
 // fetch a sane default via store.LoadTaskConfig; tests that pass a
 // zero-value Config flow through verifier.New's own fallback.
-func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval bool) error {
+func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval, skipPlanning bool) error {
 	if taskID == "" {
 		return errors.New("workflow: task id required")
 	}
@@ -79,7 +87,7 @@ func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents
 		stderr = io.Discard
 	}
 
-	subAgents, err := taskSubAgents(cfg, taskID, agents, stderr, planRequiresApproval)
+	subAgents, err := taskSubAgents(cfg, taskID, agents, stderr, planRequiresApproval, skipPlanning)
 	if err != nil {
 		return err
 	}
@@ -102,7 +110,17 @@ func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents
 	return nil
 }
 
-func taskSubAgents(cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval bool) ([]agent.Agent, error) {
+func taskSubAgents(cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval, skipPlanning bool) ([]agent.Agent, error) {
+	if planRequiresApproval && skipPlanning {
+		return nil, errors.New("workflow: planRequiresApproval and skipPlanning are mutually exclusive")
+	}
+	if skipPlanning {
+		workerAgent, verifierAgent, err := newWorkVerify(cfg, taskID, agents, stderr)
+		if err != nil {
+			return nil, err
+		}
+		return []agent.Agent{workerAgent, verifierAgent}, nil
+	}
 	plannerAgent, err := planner.New(planner.Config{
 		TaskID: taskID,
 		Agents: agents,
@@ -114,13 +132,21 @@ func taskSubAgents(cfg store.TaskConfig, taskID string, agents []codingagents.Ag
 	if planRequiresApproval {
 		return []agent.Agent{plannerAgent}, nil
 	}
+	workerAgent, verifierAgent, err := newWorkVerify(cfg, taskID, agents, stderr)
+	if err != nil {
+		return nil, err
+	}
+	return []agent.Agent{plannerAgent, workerAgent, verifierAgent}, nil
+}
+
+func newWorkVerify(cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer) (agent.Agent, agent.Agent, error) {
 	workerAgent, err := worker.New(worker.Config{
 		TaskID: taskID,
 		Agents: agents,
 		Stderr: stderr,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("workflow: worker: %w", err)
+		return nil, nil, fmt.Errorf("workflow: worker: %w", err)
 	}
 	verifierAgent, err := verifier.New(verifier.Config{
 		TaskID:        taskID,
@@ -129,9 +155,9 @@ func taskSubAgents(cfg store.TaskConfig, taskID string, agents []codingagents.Ag
 		MaxIterations: cfg.MaxIterations,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("workflow: verifier: %w", err)
+		return nil, nil, fmt.Errorf("workflow: verifier: %w", err)
 	}
-	return []agent.Agent{plannerAgent, workerAgent, verifierAgent}, nil
+	return workerAgent, verifierAgent, nil
 }
 
 // driveSequential constructs the smallest viable runner.New session
