@@ -1,0 +1,23 @@
+# Lefthook config. Install once per clone with `make install-hooks`
+# (which runs `go tool lefthook install` and wires the git hooks).
+#
+# pre-commit runs:
+#   1. line-cap: fails if any staged non-test file exceeds 300 lines.
+#   2. tests:    runs `make test`.
+
+pre-commit:
+  piped: true
+  commands:
+    line-cap:
+      priority: 1
+      run: .hooks/check-line-cap.sh {staged_files}
+      exclude:
+        - "*_test.go"
+        - "vendor/**"
+        - "bin/**"
+        - "testcases/**"
+        - ".j/**"
+        - "go.sum"
+    tests:
+      priority: 2
+      run: make test

@@ -19,7 +19,7 @@ race:
 	go test -race ./...
 
 install-hooks:
-	@bash scripts/install-hooks.sh
+	@go tool lefthook install --reset-hooks-path
 
 coverage:
 	@set -euo pipefail; \
