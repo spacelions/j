@@ -12,18 +12,19 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
-	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
-	"github.com/spacelions/j/internal/util/run"
 )
 
 // Options configures Run. Stdin/Stdout/Stderr default to the process
+// streams. UI defaults to the huh implementation. Agents must be
+// supplied by the caller (the CLI wires the Cursor agent; tests inject
+// scripted ones). Interactive selects the agent's TUI when true and the
+// headless capture path when false. Stdin/Stdout/Stderr default to the process
 // streams. UI defaults to the huh implementation. Agents must be
 // supplied by the caller (the CLI wires the Cursor agent; tests inject
 // scripted ones). Interactive selects the agent's TUI when true and the
@@ -33,6 +34,12 @@ type Options struct {
 	// or PLAN_FROM_FILE). When empty the orchestrator prompts via the
 	// UI.
 	FromFile string
+	// FromLinear is a Linear issue identifier (from --from-linear or
+	// PLAN_FROM_LINEAR). When set, Run loads the stored API key,
+	// fetches the issue, and feeds the markdown body into the
+	// existing plan path. Beats FromFile if both are set; loses to
+	// TaskID.
+	FromLinear string
 	// TaskID, when set, names an existing task whose
 	// `<cwd>/.j/tasks/<id>/requirements.md` should be re-planned
 	// in place. The task row is updated in place (status →
@@ -110,6 +117,9 @@ func Run(ctx context.Context, opts Options) (err error) {
 	if opts.TaskID != "" {
 		return runReplanTask(ctx, opts, opts.TaskID)
 	}
+	if opts.FromLinear != "" {
+		return runLinear(ctx, opts, opts.FromLinear)
+	}
 	if opts.FromFile != "" {
 		return runMarkdown(ctx, opts, opts.FromFile)
 	}
@@ -128,100 +138,19 @@ func Run(ctx context.Context, opts Options) (err error) {
 	case picker.SourceMarkdown:
 		return runMarkdown(ctx, opts, res.Markdown)
 	case picker.SourceLinear:
-		uitheme.NormalFprintln(opts.Stdout, "J: plan linear source is not yet wired up; nothing to do")
-		return nil
+		return runLinear(ctx, opts, res.LinearIdentifier)
 	case picker.SourceTask:
 		return runReplanTask(ctx, opts, res.TaskID)
 	}
 	return fmt.Errorf("J: unsupported source %s", res.Source)
 }
 
-// runReplanTask is the re-plan flow: load the existing task row,
-// confirm status if necessary, read the existing requirements.md,
-// pick a tool/model, and re-run agent.Plan against the same task
-// directory so requirements.md and plan.md are refreshed in
-// place. The task row is mutated (status: planning → plan-done,
-// preserving original PlanBeginAt).
-func runReplanTask(ctx context.Context, opts Options, id string) error {
-	existing, err := resolver.TaskByID(id)
-	if err != nil {
-		return err
-	}
-	proceed, err := resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, "re-plan", existing, resolver.ReplanAllowed)
-	if err != nil {
-		return err
-	}
-	if !proceed {
-		return nil
-	}
+func loadTaskByID(id string) (tasks.Task, error) {
+	return resolver.TaskByID(id)
+}
 
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		return err
-	}
-	taskDir := filepath.Join(tasksDir, existing.ID)
-	requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
-	planPath := filepath.Join(taskDir, tasks.PlanFileName)
-
-	agent, model, err := selectPlanner(ctx, opts)
-	if err != nil {
-		return err
-	}
-
-	resumeID, err := agent.NewResumeID(ctx)
-	if err != nil {
-		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
-	}
-	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
-	mustReadFiles, mustReadErr := resolver.MustRead()
-	if mustReadErr != nil {
-		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
-	}
-	lc := existing.BeginPlanReuse(opts.Stderr, agent.Name(), model, resumeID, agentLogPath)
-	pid, planErr := agent.Plan(ctx, codingagents.PlanRequest{
-		FromFilePath:           requirementsPath,
-		Model:                  model,
-		RequirementsOutputPath: requirementsPath,
-		PlanOutputPath:         planPath,
-		Interactive:            opts.Interactive,
-		ResumeChatID:           resumeID,
-		AgentLogPath:           agentLogPath,
-		MustRead:               mustReadFiles,
-	})
-
-	if planErr == nil && pid > 0 {
-		if opts.WaitForCompletion {
-			if err := run.WaitForExit(ctx, pid); err != nil {
-				lc.Finish(err, "", "", requirementsPath)
-				return err
-			}
-		} else {
-			lc.RecordBackground(pid, agentLogPath)
-			uitheme.NormalForkDialog(opts.Stdout, agent.Name(), pid, agentLogPath)
-			return nil
-		}
-	}
-
-	var refinedReq, planMD string
-	if planErr == nil {
-		if data, readErr := os.ReadFile(requirementsPath); readErr == nil {
-			refinedReq = string(data)
-		} else {
-			uitheme.DangerousDialogBox(opts.Stderr, "J: read %s: %v", requirementsPath, readErr)
-		}
-		if data, readErr := os.ReadFile(planPath); readErr == nil {
-			planMD = string(data)
-		} else {
-			uitheme.DangerousDialogBox(opts.Stderr, "J: read %s: %v", planPath, readErr)
-		}
-	}
-	lc.Finish(planErr, refinedReq, planMD, requirementsPath)
-	if planErr != nil {
-		return planErr
-	}
-
-	uitheme.NormalFprintf(opts.Stdout, "J: re-planned task %s\n", existing.ID)
-	return nil
+func listAllTasks() ([]tasks.Task, error) {
+	return resolver.ListAllTasks()
 }
 
 func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {

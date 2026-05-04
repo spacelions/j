@@ -226,6 +226,45 @@ func TestList_MasksAPIKey(t *testing.T) {
 	}
 }
 
+// TestList_MasksLinearAPIKey pins the secret-redaction behaviour
+// for the linear bucket: api_key renders as `****` while
+// linear.project renders verbatim.
+func TestList_MasksLinearAPIKey(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketLinear, store.KeyLinearAPIKey, "lin_api_secret"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketLinear, store.KeyLinearProject, "project-id"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _, err := runSettingsArgs(t)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "api_key = ****") {
+		t.Fatalf("stdout = %q, want masked api_key line", out)
+	}
+	if strings.Contains(out, "lin_api_secret") {
+		t.Fatalf("stdout = %q, must not echo linear api key", out)
+	}
+	if !strings.Contains(out, "project = project-id") {
+		t.Fatalf("stdout = %q, want linear.project rendered verbatim", out)
+	}
+}
+
 // TestList_OnlyEmptyBuckets verifies the unknown-empty-bucket skip:
 // a DB whose only bucket is empty and unknown renders just the four
 // known section headers, with no entries and no [ghost] section.

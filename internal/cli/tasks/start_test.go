@@ -18,6 +18,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
@@ -163,6 +164,21 @@ type scriptedStartUI struct {
 	pickedTaskOK       bool
 	taskErr            error
 	taskCalls          int
+
+	linearAPIKey       string
+	linearAPIKeyOK     bool
+	linearAPIKeyErr    error
+	linearAPIKeyURL    string
+	linearAPIKeyCalls  int
+	linearProject      linear.Project
+	linearProjectOK    bool
+	linearProjectErr   error
+	linearProjectCalls int
+	linearProjectsSeen []linear.Project
+	linearIdentifier   string
+	linearIDOK         bool
+	linearIDErr        error
+	linearIDCalls      int
 }
 
 func (u *scriptedStartUI) SelectSource(_ context.Context, _ []picker.Source) (picker.Source, error) {
@@ -184,6 +200,32 @@ func (u *scriptedStartUI) PickTask(_ context.Context, _ string, _ []tasks.Task) 
 		return "", false, u.taskErr
 	}
 	return u.pickedTaskID, u.pickedTaskOK, nil
+}
+
+func (u *scriptedStartUI) PromptLinearAPIKey(_ context.Context, openURL string) (string, bool, error) {
+	u.linearAPIKeyCalls++
+	u.linearAPIKeyURL = openURL
+	if u.linearAPIKeyErr != nil {
+		return "", false, u.linearAPIKeyErr
+	}
+	return u.linearAPIKey, u.linearAPIKeyOK, nil
+}
+
+func (u *scriptedStartUI) PickLinearProject(_ context.Context, projects []linear.Project) (linear.Project, bool, error) {
+	u.linearProjectCalls++
+	u.linearProjectsSeen = append([]linear.Project(nil), projects...)
+	if u.linearProjectErr != nil {
+		return linear.Project{}, false, u.linearProjectErr
+	}
+	return u.linearProject, u.linearProjectOK, nil
+}
+
+func (u *scriptedStartUI) PromptLinearIdentifier(_ context.Context) (string, bool, error) {
+	u.linearIDCalls++
+	if u.linearIDErr != nil {
+		return "", false, u.linearIDErr
+	}
+	return u.linearIdentifier, u.linearIDOK, nil
 }
 
 // TestRunStart_HappyPath_FromFile pins the --from-file shortcut.
@@ -466,21 +508,41 @@ func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 	}
 }
 
-// TestRunStart_NoFromFile_PicksLinear pins the linear no-op branch:
-// SelectSource returns SourceLinear; RunStart prints a message and
-// returns nil with no spawn fired and no row created.
+// TestRunStart_NoFromFile_PicksLinear drives the source picker into
+// the Linear branch with a stubbed GraphQL endpoint and a pre-saved
+// API key + project (so the link prompt does not fire). The picker
+// supplies the identifier; RunStart fetches the issue, stages
+// requirements.md from the markdown body, spawns the orchestrator,
+// and seeds a single task row.
 func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
-	ui := &scriptedStartUI{source: picker.SourceLinear}
-	var stdout bytes.Buffer
+	if err := linear.SaveAPIKey("lin_api_test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveProject("p"); err != nil {
+		t.Fatal(err)
+	}
+	srv := testutil.NewLinearStubServer(testutil.LinearStubResponses{
+		Issue: &testutil.LinearIssueStub{Identifier: "ENG-7", Title: "picker", Description: "body", URL: "https://linear.app/eng/issue/ENG-7"},
+	})
+	t.Cleanup(srv.Close)
+	prev := linear.TestEndpoint
+	linear.TestEndpoint = srv.URL
+	t.Cleanup(func() { linear.TestEndpoint = prev })
+
+	ui := &scriptedStartUI{
+		source:           picker.SourceLinear,
+		linearIdentifier: "ENG-7",
+		linearIDOK:       true,
+	}
 
 	err := RunStart(context.Background(), StartOptions{
 		Stdin:    strings.NewReader(""),
-		Stdout:   &stdout,
+		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 		Selector: &testutil.SelectorFake{},
@@ -490,11 +552,105 @@ func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunStart: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "linear source is not yet wired up") {
-		t.Fatalf("stdout = %q, want unwired-source message", stdout.String())
+	id := firstSeededTaskID(t)
+	row := readTaskFromBolt(t, id)
+	if row.Status != tasks.StatusPlanning {
+		t.Fatalf("Status = %q, want planning", row.Status)
+	}
+	if row.BackgroundPID == 0 {
+		t.Fatalf("BackgroundPID = 0; want non-zero")
+	}
+	tasksDir, err := tasks.DefaultDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(tasksDir, id, tasks.RequirementsFileName))
+	if err != nil {
+		t.Fatalf("read requirements.md: %v", err)
+	}
+	if !strings.HasPrefix(string(body), "# picker") {
+		t.Fatalf("requirements.md should start with the issue title; got %q", body)
+	}
+	if !strings.Contains(string(body), "Linear: https://linear.app/eng/issue/ENG-7") {
+		t.Fatalf("requirements.md should carry the Linear URL footer; got %q", body)
+	}
+}
+
+// TestRunStart_FromLinearFlag pins --from-linear: with linear.api_key
+// stored, the flag bypasses the source picker, fetches the issue,
+// and seeds a task whose requirements.md carries the rendered body.
+func TestRunStart_FromLinearFlag(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
+	}
+	if err := linear.SaveAPIKey("lin_api_test"); err != nil {
+		t.Fatal(err)
+	}
+	srv := testutil.NewLinearStubServer(testutil.LinearStubResponses{
+		Issue: &testutil.LinearIssueStub{Identifier: "ENG-2", Title: "flag", URL: "https://linear.app/eng/issue/ENG-2"},
+	})
+	t.Cleanup(srv.Close)
+	prev := linear.TestEndpoint
+	linear.TestEndpoint = srv.URL
+	t.Cleanup(func() { linear.TestEndpoint = prev })
+
+	ui := &scriptedStartUI{}
+	err := RunStart(context.Background(), StartOptions{
+		FromLinear: "ENG-2",
+		Stdin:      strings.NewReader(""),
+		Stdout:     io.Discard,
+		Stderr:     io.Discard,
+		Agents:     []codingagents.Agent{testutil.NewScriptedAgent()},
+		Selector:   &testutil.SelectorFake{},
+		UI:         ui,
+		JBinary:    noopJBinary(t),
+	})
+	if err != nil {
+		t.Fatalf("RunStart: %v", err)
+	}
+	if ui.sourceCalls != 0 {
+		t.Fatalf("--from-linear should bypass the source picker: sourceCalls=%d", ui.sourceCalls)
+	}
+	id := firstSeededTaskID(t)
+	tasksDir, err := tasks.DefaultDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(tasksDir, id, tasks.RequirementsFileName))
+	if err != nil {
+		t.Fatalf("read requirements.md: %v", err)
+	}
+	if !strings.HasPrefix(string(body), "# flag") {
+		t.Fatalf("requirements.md should start with the issue title; got %q", body)
+	}
+}
+
+// TestRunStart_FromLinearFlag_MissingKey pins the explicit error
+// when --from-linear is supplied but no API key is stored: no task
+// is created.
+func TestRunStart_FromLinearFlag_MissingKey(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
+	}
+	err := RunStart(context.Background(), StartOptions{
+		FromLinear: "ENG-2",
+		Stdin:      strings.NewReader(""),
+		Stdout:     io.Discard,
+		Stderr:     io.Discard,
+		Agents:     []codingagents.Agent{testutil.NewScriptedAgent()},
+		Selector:   &testutil.SelectorFake{},
+		UI:         &scriptedStartUI{},
+		JBinary:    noopJBinary(t),
+	})
+	if err == nil || !errors.Is(err, linear.ErrNoAPIKey) {
+		t.Fatalf("err = %v, want linear.ErrNoAPIKey", err)
 	}
 	if rows := allTaskRows(t); len(rows) != 0 {
-		t.Fatalf("ListTasks = %d, want 0 (linear branch must not create a row)", len(rows))
+		t.Fatalf("ListTasks = %d, want 0", len(rows))
 	}
 }
 
@@ -710,7 +866,7 @@ func TestNewStartCmd_FlagDefaults(t *testing.T) {
 	}
 	var names []string
 	cmd.Flags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
-	want := []string{"from-file", "plan-requires-approval"}
+	want := []string{"from-file", "from-linear", "plan-requires-approval"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("flags = %v, want %v", names, want)
 	}

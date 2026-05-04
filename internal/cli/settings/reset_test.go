@@ -431,6 +431,41 @@ func TestReset_MultiArg_MissingDB(t *testing.T) {
 // TestParseResetTargets_EmptyArg pins the empty-arg parse error.
 // Cobra collapses adjacent whitespace so this branch only fires
 // when callers (e.g. tests) drive runResetTargets directly.
+// TestReset_Linear_APIKey pins that `j settings reset linear.api_key`
+// removes the camelCase storage key (the user-typed snake form
+// round-trips through storageKey).
+func TestReset_Linear_APIKey(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketLinear, store.KeyLinearAPIKey, "lin_api_secret"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runResetArgs(t, nil, "reset", "linear.api_key"); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	s, err = store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if _, ok, err := s.Get(store.BucketLinear, store.KeyLinearAPIKey); err != nil {
+		t.Fatalf("Get: %v", err)
+	} else if ok {
+		t.Fatal("linear.apiKey was not removed by reset linear.api_key")
+	}
+}
+
 func TestParseResetTargets_EmptyArg(t *testing.T) {
 	if _, err := parseResetTargets([]string{""}); err == nil {
 		t.Fatal("expected error for empty target")

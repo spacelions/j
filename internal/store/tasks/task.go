@@ -93,6 +93,14 @@ type Task struct {
 	// run; the reaper does not clear it after the row is finalised so
 	// the trailing log remains discoverable.
 	AgentLogPath string `json:"agent_log_path,omitempty"`
+
+	// LinearIssue is the upstream `<TEAM>-<NUM>` identifier when the
+	// task was created from a Linear issue (via `j plan --from-linear`,
+	// `j tasks start --from-linear`, or the source picker's Linear
+	// branch). Empty for markdown / re-plan sources. The value is
+	// preserved across re-plans so `j tasks` can keep surfacing the
+	// original Linear link.
+	LinearIssue string `json:"linear_issue,omitempty"`
 }
 
 // taskWire is the on-disk projection of Task for TOML serialisation.
@@ -123,6 +131,7 @@ type taskWire struct {
 	DoneAt             time.Time  `toml:"done_at"`
 	BackgroundPID      int        `toml:"background_pid"`
 	AgentLogPath       string     `toml:"agent_log_path"`
+	LinearIssue        string     `toml:"linear_issue"`
 }
 
 // derefTime returns *p, or the zero time when p is nil.
@@ -160,6 +169,7 @@ func taskToWire(t Task) taskWire {
 		DoneAt:             derefTime(t.DoneAt),
 		BackgroundPID:      t.BackgroundPID,
 		AgentLogPath:       t.AgentLogPath,
+		LinearIssue:        t.LinearIssue,
 	}
 }
 
@@ -180,6 +190,7 @@ func wireToTask(w taskWire) Task {
 		DoneAt:             optTimePtr(w.DoneAt),
 		BackgroundPID:      w.BackgroundPID,
 		AgentLogPath:       w.AgentLogPath,
+		LinearIssue:        w.LinearIssue,
 	}
 }
 
