@@ -3,30 +3,12 @@ package picker
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/store"
 )
-
-// openTestStore returns a fresh *store.Store with the named bucket
-// pre-created, rooted at t.TempDir() so tests don't share state.
-func openTestStore(t *testing.T, bucket string) *store.Store {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "settings")
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	if err := s.EnsureBucket(bucket); err != nil {
-		t.Fatalf("EnsureBucket: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	return s
-}
 
 // scriptedUI is the in-package fake for Selector. Every field is
 // optional; the zero value picks the first option for both prompts.
