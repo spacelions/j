@@ -85,8 +85,8 @@ func TestPickSource_Task_HappyPath(t *testing.T) {
 	if res.Source != SourceTask || res.TaskID != "01ABC" || res.Cancelled {
 		t.Fatalf("res = %+v", res)
 	}
-	if !strings.Contains(ui.taskTitle, "re-plan") {
-		t.Fatalf("taskTitle = %q, want to mention re-plan", ui.taskTitle)
+	if !strings.Contains(ui.taskTitle, "existing task") {
+		t.Fatalf("taskTitle = %q, want to mention existing task", ui.taskTitle)
 	}
 }
 
