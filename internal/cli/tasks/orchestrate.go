@@ -13,6 +13,7 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/util/agentlog"
 	"github.com/spacelions/j/internal/workflow"
 )
 
@@ -73,6 +74,7 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 	if err != nil {
 		return err
 	}
+	emitSessionStart(opts.Stderr, opts.TaskID, opts.SkipPlanning)
 	if opts.SkipPlanning {
 		if planRequiresApproval {
 			return errors.New("tasks: --skip-planning is incompatible with --plan-requires-approval=true")
@@ -80,6 +82,24 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 		return workflow.RunForTaskFromWork(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
 	}
 	return workflow.RunForTaskWithGate(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, planRequiresApproval)
+}
+
+// emitSessionStart writes one `session_start` marker into the agent
+// log at the very top of orchestrate so a tailer can pin the task id,
+// orchestrator pid, working directory, and skip-planning flag without
+// reading bbolt. Field collection is deliberately cheap — os.Hostname
+// and os.Getwd never block — and write errors are swallowed because
+// markers are observability signal, not load-bearing data.
+func emitSessionStart(w io.Writer, taskID string, skipPlanning bool) {
+	hostname, _ := os.Hostname()
+	cwd, _ := os.Getwd()
+	_ = agentlog.Emit(w, "session_start", map[string]any{
+		"task":             taskID,
+		"orchestrator_pid": os.Getpid(),
+		"hostname":         hostname,
+		"cwd":              cwd,
+		"skip_planning":    skipPlanning,
+	})
 }
 
 func (o OrchestrateOptions) withDefaults() OrchestrateOptions {
