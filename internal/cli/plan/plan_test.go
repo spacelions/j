@@ -1317,14 +1317,17 @@ func TestRun_BackgroundSpawn_RecordsPID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "running in background") {
-		t.Fatalf("stdout = %q, want background message", stdout.String())
-	}
-	if !strings.Contains(stdout.String(), "PID=42424") {
-		t.Fatalf("stdout = %q, want PID=42424", stdout.String())
+	if !strings.Contains(stdout.String(), "running in background (PID=42424)") {
+		t.Fatalf("stdout = %q, want background message with PID", stdout.String())
 	}
 	if !strings.Contains(stdout.String(), "J: "+agent.Name()+" running in background") {
 		t.Fatalf("stdout = %q, want agent name %q", stdout.String(), agent.Name())
+	}
+	if !strings.Contains(stdout.String(), "tail -f .j/tasks/") || !strings.Contains(stdout.String(), "/agent.log") {
+		t.Fatalf("stdout = %q, want banner second row to invite `tail -f .j/tasks/<id>/agent.log`", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "┌") || !strings.Contains(stdout.String(), "└") {
+		t.Fatalf("stdout = %q, want bordered box (┌ / └)", stdout.String())
 	}
 	tasks := readTasks(t)
 	if len(tasks) != 1 {

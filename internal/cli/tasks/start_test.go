@@ -220,8 +220,14 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	if sel.ToolCalls != 3 || sel.ModelCalls != 3 {
 		t.Fatalf("selector calls = (%d, %d), want (3, 3)", sel.ToolCalls, sel.ModelCalls)
 	}
-	if !strings.Contains(stdout.String(), "task ") || !strings.Contains(stdout.String(), "tail -f") {
-		t.Fatalf("stdout should announce the task: %q", stdout.String())
+	if !strings.Contains(stdout.String(), "running in background (PID=") {
+		t.Fatalf("stdout should announce the task PID: %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "tail -f .j/tasks/") || !strings.Contains(stdout.String(), "/agent.log") {
+		t.Fatalf("stdout should print `tail -f .j/tasks/<id>/agent.log`: %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "┌") || !strings.Contains(stdout.String(), "└") {
+		t.Fatalf("stdout should be wrapped in a normal-border box (┌/└): %q", stdout.String())
 	}
 
 	id := firstSeededTaskID(t)

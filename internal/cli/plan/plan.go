@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
@@ -210,9 +211,7 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 			}
 		} else {
 			lc.RecordBackground(pid, agentLogPath)
-			fmt.Fprintf(opts.Stdout,
-				"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
-				agent.Name(), pid, existing.ID, store.AgentLogFileName)
+			banner.RunningInBackground(opts.Stdout, agent.Name(), pid, agentLogPath)
 			return nil
 		}
 	}
@@ -383,9 +382,7 @@ func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {
 			}
 		} else {
 			lc.RecordBackground(pid, agentLogPath)
-			fmt.Fprintf(opts.Stdout,
-				"J: %s running in background (PID=%d); see .j/tasks/%s/%s\n",
-				agent.Name(), pid, taskID, store.AgentLogFileName)
+			banner.RunningInBackground(opts.Stdout, agent.Name(), pid, agentLogPath)
 			return nil
 		}
 	}

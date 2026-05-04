@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/preflight"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
@@ -113,7 +114,9 @@ type startTarget struct {
 //     For re-plans: load the existing row.
 //  5. Spawn the detached orchestrator. Record BackgroundPID +
 //     AgentLogPath on the row.
-//  6. Print "task <id> started; tail -f <agent.log>" and return.
+//  6. Print the bordered two-line background-fork banner (subject
+//     + PID on row one, `tail -f <agent.log>` on row three) via
+//     banner.RunningInBackground and return.
 func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	defer func() {
 		if errors.Is(err, huh.ErrUserAborted) {
@@ -166,7 +169,7 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	}
 	persistStartRow(opts.Stderr, target, agentLogPath, pid)
 
-	fmt.Fprintf(opts.Stdout, "J: task %s started; tail -f %s\n", target.taskID, agentLogPath)
+	banner.RunningInBackground(opts.Stdout, fmt.Sprintf("task %s", target.taskID), pid, agentLogPath)
 	return nil
 }
 
@@ -373,9 +376,11 @@ func newStartCmd() *cobra.Command {
 			"--from-file/-f (or TASKS_START_FROM_FILE) to point at a markdown " +
 			"task description; when neither is set, the same source picker " +
 			"`j plan` shows is rendered (markdown | linear | existing " +
-			"task). Every line written by the orchestrator and the " +
-			"per-phase coding-agent children appends to the same per-task " +
-			"<cwd>/.j/tasks/<id>/agent.log.",
+			"task). After the spawn, a bordered two-line banner is " +
+			"printed (subject + PID on row one, `tail -f <agent.log>` on row " +
+			"three) so the user can follow along. Every line written by the " +
+			"orchestrator and the per-phase coding-agent children appends to " +
+			"the same per-task <cwd>/.j/tasks/<id>/agent.log.",
 		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			approval, err := startPlanRequiresApprovalOverride(cmd)
