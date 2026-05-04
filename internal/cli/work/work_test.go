@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -1496,7 +1497,7 @@ func TestAllowedForWork(t *testing.T) {
 		{store.TaskStatus("nonsense"), false},
 	}
 	for _, c := range cases {
-		got := allowedForWork(store.Task{ID: "x", Status: c.status})
+		got := resolver.ReplanAllowed(store.Task{ID: "x", Status: c.status})
 		if got != c.want {
 			t.Errorf("allowedForWork(%q) = %v, want %v", c.status, got, c.want)
 		}

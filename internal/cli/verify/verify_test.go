@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/huh"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -682,7 +683,7 @@ func TestParseVerdict_EdgeCases(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			path := filepath.Join(dir, c.name+".md")
 			if c.name == "missing-file" {
-				if got := ParseVerdict(path); got != c.want {
+				if got := resolver.ParseVerdict(path); got != c.want {
 					t.Fatalf("ParseVerdict(missing) = %q, want %q", got, c.want)
 				}
 				return
@@ -690,7 +691,7 @@ func TestParseVerdict_EdgeCases(t *testing.T) {
 			if err := os.WriteFile(path, []byte(c.body), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if got := ParseVerdict(path); got != c.want {
+			if got := resolver.ParseVerdict(path); got != c.want {
 				t.Fatalf("ParseVerdict(%s) = %q, want %q (body=%q)", c.name, got, c.want, c.body)
 			}
 		})
@@ -718,7 +719,7 @@ func TestAllowedForVerify(t *testing.T) {
 		{store.TaskStatus("nonsense"), false},
 	}
 	for _, c := range cases {
-		got := allowedForVerify(store.Task{ID: "x", Status: c.status})
+		got := resolver.VerifyAllowed(store.Task{ID: "x", Status: c.status})
 		if got != c.want {
 			t.Errorf("allowedForVerify(%q) = %v, want %v", c.status, got, c.want)
 		}

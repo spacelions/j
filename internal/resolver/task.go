@@ -30,10 +30,6 @@ func ReplanAllowed(task store.Task) bool {
 	return false
 }
 
-func WorkAllowed(task store.Task) bool {
-	return ReplanAllowed(task)
-}
-
 func VerifyAllowed(task store.Task) bool {
 	switch task.Status {
 	case store.StatusWorkDone, store.StatusVerifyDone, store.StatusHelp:
@@ -71,7 +67,7 @@ func ResolveWorkPlan(ctx context.Context, opts WorkPlanOptions) (WorkPlan, bool,
 	if len(tasks) == 0 {
 		return WorkPlan{}, false, errors.New("J: no tasks to work; run `j plan` first")
 	}
-	if id, ok := autoPickAllowed(tasks, WorkAllowed); ok {
+	if id, ok := autoPickAllowed(tasks, ReplanAllowed); ok {
 		r, err := resolveWorkByTaskID(id)
 		return r, err == nil, err
 	}

@@ -82,3 +82,27 @@ func TestInteractive_NilStoreExplicitWins(t *testing.T) {
 		t.Fatalf("Interactive = %v, want false (explicit)", got)
 	}
 }
+
+func TestInteractive_NilStoreOpensDefault(t *testing.T) {
+	setupResolverProject(t)
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureBucket(store.BucketPlanner); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketPlanner, "interactive", "false"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := Interactive(nil, io.Discard, store.BucketPlanner, nil); got {
+		t.Fatal("Interactive = true, want stored false")
+	}
+}

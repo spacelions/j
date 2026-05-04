@@ -22,6 +22,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/verify"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/workflow/instructions"
 )
@@ -92,7 +93,7 @@ func New(cfg Config) (agent.Agent, error) {
 					yield(nil, fmt.Errorf("%s: %w", Name, err))
 					return
 				}
-				verdict := verify.ReadVerdictForTask(taskID)
+				verdict := resolver.ReadVerdictForTask(taskID)
 				ev := session.NewEvent(ctx.InvocationID())
 				ev.Author = Name
 				ev.LLMResponse = model.LLMResponse{

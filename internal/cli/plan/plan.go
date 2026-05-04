@@ -157,7 +157,7 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 	if err != nil {
 		return err
 	}
-	proceed, err := confirmStatusOverride(ctx, opts, "re-plan", existing, allowedForReplan)
+	proceed, err := resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, "re-plan", existing, resolver.ReplanAllowed)
 	if err != nil {
 		return err
 	}
@@ -240,14 +240,6 @@ func loadTaskByID(id string) (store.Task, error) {
 
 func listAllTasks() ([]store.Task, error) {
 	return resolver.ListTasks("plan")
-}
-
-func allowedForReplan(task store.Task) bool {
-	return resolver.ReplanAllowed(task)
-}
-
-func confirmStatusOverride(ctx context.Context, opts Options, cmd string, task store.Task, allowed func(store.Task) bool) (bool, error) {
-	return resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, cmd, task, allowed)
 }
 
 func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {

@@ -36,12 +36,30 @@ func TestFprintln(t *testing.T) {
 	}
 }
 
+func TestFprintAndFprintf(t *testing.T) {
+	var buf bytes.Buffer
+	Fprint(&buf, "J: ", "hello")
+	Fprintf(&buf, " %s", "world")
+	if stripped := ansi.Strip(buf.String()); stripped != "J: hello world" {
+		t.Fatalf("ansi.Strip(output) = %q", stripped)
+	}
+}
+
 func TestDangerousFprintln(t *testing.T) {
 	var buf bytes.Buffer
 	DangerousFprintln(&buf, "J: warning: tasks put: nope")
 	if stripped := ansi.Strip(buf.String()); stripped != "J: warning: tasks put: nope\n" {
 		t.Fatalf("ansi.Strip(DangerousFprintln output) = %q, want %q",
 			stripped, "J: warning: tasks put: nope\n")
+	}
+}
+
+func TestDangerousFprintAndFprintf(t *testing.T) {
+	var buf bytes.Buffer
+	DangerousFprint(&buf, "J: ", "warning")
+	DangerousFprintf(&buf, ": %s", "boom")
+	if stripped := ansi.Strip(buf.String()); stripped != "J: warning: boom" {
+		t.Fatalf("ansi.Strip(output) = %q", stripped)
 	}
 }
 

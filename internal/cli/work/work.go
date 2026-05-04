@@ -120,7 +120,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", err)
 	}
 
-	proceed, confirmErr := confirmStatusOverride(ctx, opts, "work", res.Task, allowedForWork)
+	proceed, confirmErr := resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, "work", res.Task, resolver.ReplanAllowed)
 	if confirmErr != nil {
 		return confirmErr
 	}
@@ -162,14 +162,6 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 	banner.Fprintf(opts.Stdout, "J: coding on task %s\n", res.Task.ID)
 	return nil
-}
-
-func allowedForWork(task store.Task) bool {
-	return resolver.WorkAllowed(task)
-}
-
-func confirmStatusOverride(ctx context.Context, opts Options, cmd string, task store.Task, allowed func(store.Task) bool) (bool, error) {
-	return resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, cmd, task, allowed)
 }
 
 func selectWorker(ctx context.Context, opts Options) (codingagents.Agent, string, error) {

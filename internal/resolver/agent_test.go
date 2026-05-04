@@ -631,3 +631,78 @@ func TestAgent_ExplicitMissingHalfPropagates(t *testing.T) {
 		t.Fatalf("UI must not fire on explicit-missing-half error")
 	}
 }
+
+func TestAgent_LazyStorePaths(t *testing.T) {
+	setupResolverProject(t)
+	cursor := newStubAgent("cursor", "sonnet-4")
+
+	agent, model, err := Agent(context.Background(), AgentOptions{
+		Bucket:        store.BucketPlanner,
+		Agents:        []codingagents.Agent{cursor},
+		ExplicitTool:  "cursor",
+		ExplicitModel: "sonnet-4",
+		Stderr:        io.Discard,
+	})
+	if err != nil || agent != cursor || model != "sonnet-4" {
+		t.Fatalf("explicit lazy = %v %q %v", agent, model, err)
+	}
+
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureBucket(store.BucketPlanner); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketPlanner, "tool", "cursor"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	agent, model, err = Agent(context.Background(), AgentOptions{
+		Bucket: store.BucketPlanner,
+		Agents: []codingagents.Agent{cursor},
+		Stderr: io.Discard,
+	})
+	if err != nil || agent != cursor || model != "sonnet-4" {
+		t.Fatalf("stored lazy = %v %q %v", agent, model, err)
+	}
+}
+
+func TestAgent_LazyPromptPersists(t *testing.T) {
+	setupResolverProject(t)
+	cursor := newStubAgent("cursor", "sonnet-4")
+	ui := &scriptedUI{tool: "cursor", model: "sonnet-4"}
+	agent, model, err := Agent(context.Background(), AgentOptions{
+		Bucket:      store.BucketPlanner,
+		Agents:      []codingagents.Agent{cursor},
+		UI:          ui,
+		Stderr:      io.Discard,
+		Interactive: true,
+	})
+	if err != nil || agent != cursor || model != "sonnet-4" {
+		t.Fatalf("prompt lazy = %v %q %v", agent, model, err)
+	}
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	got, ok, err := s.Get(store.BucketPlanner, "interactive")
+	if err != nil || !ok || got != "true" {
+		t.Fatalf("interactive = %q %v %v", got, ok, err)
+	}
+}

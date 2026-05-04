@@ -106,7 +106,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 	if !ok {
 		return nil
 	}
-	proceed, err := confirmStatusOverride(ctx, opts, "verify", res.Task, allowedForVerify)
+	proceed, err := resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, "verify", res.Task, resolver.VerifyAllowed)
 	if err != nil {
 		return err
 	}
@@ -232,22 +232,6 @@ func resolveTask(ctx context.Context, opts Options) (resolved, bool, error) {
 		TaskID: opts.TaskID,
 		UI:     opts.UI,
 	})
-}
-
-func allowedForVerify(task store.Task) bool {
-	return resolver.VerifyAllowed(task)
-}
-
-func confirmStatusOverride(ctx context.Context, opts Options, cmd string, task store.Task, allowed func(store.Task) bool) (bool, error) {
-	return resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, cmd, task, allowed)
-}
-
-func ReadVerdictForTask(taskID string) string {
-	return resolver.ReadVerdictForTask(taskID)
-}
-
-func ParseVerdict(path string) string {
-	return resolver.ParseVerdict(path)
 }
 
 func selectVerifier(ctx context.Context, opts Options) (codingagents.Agent, string, error) {

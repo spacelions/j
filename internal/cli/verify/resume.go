@@ -145,7 +145,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		runErr = run.WaitForExit(ctx, pid)
 	}
 	outcome := store.VerifyOutcomeNoRetries
-	if runErr == nil && ParseVerdict(findingsPath) == "PASS" {
+	if runErr == nil && resolver.ParseVerdict(findingsPath) == "PASS" {
 		outcome = store.VerifyOutcomeSuccess
 	}
 	lc.Finish(outcome, runErr)

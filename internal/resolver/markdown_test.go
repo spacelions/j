@@ -1,0 +1,181 @@
+package resolver
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/store"
+)
+
+type planAgent struct {
+	resumeID string
+	pid      int
+	planErr  error
+	reqBody  string
+	planBody string
+	lastReq  codingagents.PlanRequest
+}
+
+func (a *planAgent) Name() string { return "cursor" }
+func (a *planAgent) ListModels(context.Context) ([]string, error) {
+	return []string{"m"}, nil
+}
+func (a *planAgent) CheckLogin(context.Context) error { return nil }
+func (a *planAgent) NewResumeID(context.Context) (string, error) {
+	if a.resumeID == "ERR" {
+		return "", errors.New("resume failed")
+	}
+	return a.resumeID, nil
+}
+func (a *planAgent) Plan(_ context.Context, req codingagents.PlanRequest) (int, error) {
+	a.lastReq = req
+	if a.reqBody != "" {
+		if err := os.WriteFile(req.RequirementsOutputPath, []byte(a.reqBody), 0o644); err != nil {
+			return 0, err
+		}
+	}
+	if a.planBody != "" {
+		if err := os.WriteFile(req.PlanOutputPath, []byte(a.planBody), 0o644); err != nil {
+			return 0, err
+		}
+	}
+	return a.pid, a.planErr
+}
+func (a *planAgent) Work(context.Context, codingagents.WorkRequest) (int, error) {
+	return 0, errors.New("unused")
+}
+func (a *planAgent) Verify(context.Context, codingagents.VerifyRequest) (int, error) {
+	return 0, errors.New("unused")
+}
+
+func TestResolvePlanMarkdown(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "task.md")
+	if err := os.WriteFile(path, []byte("body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	source, err := ResolvePlanMarkdown(path)
+	if err != nil {
+		t.Fatalf("ResolvePlanMarkdown: %v", err)
+	}
+	if source.Target != path || source.Body != "body" {
+		t.Fatalf("source = %+v", source)
+	}
+	badDir := filepath.Join(dir, "dir.md")
+	if err := os.Mkdir(badDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolvePlanMarkdown(badDir); err == nil || !strings.Contains(err.Error(), "is a directory") {
+		t.Fatalf("dir err = %v", err)
+	}
+}
+
+func TestRunPlanMarkdown(t *testing.T) {
+	setupResolverProject(t)
+	sourcePath := filepath.Join(t.TempDir(), "task.md")
+	if err := os.WriteFile(sourcePath, []byte("source body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	agent := &planAgent{resumeID: "resume", reqBody: "refined", planBody: "plan"}
+	var stdout bytes.Buffer
+	if err := RunPlanMarkdown(context.Background(), PlanMarkdownOptions{
+		RawTarget:   sourcePath,
+		Stdout:      &stdout,
+		Stderr:      &bytes.Buffer{},
+		Agent:       agent,
+		Model:       "m",
+		Interactive: true,
+	}); err != nil {
+		t.Fatalf("RunPlanMarkdown: %v", err)
+	}
+	if agent.lastReq.FromFilePath != sourcePath || !agent.lastReq.Interactive {
+		t.Fatalf("last request = %+v", agent.lastReq)
+	}
+	if !strings.Contains(stdout.String(), "requirements.md and plan.md") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	tasks, err := ListAllTasks()
+	if err != nil || len(tasks) != 1 || tasks[0].Status != store.StatusPlanDone {
+		t.Fatalf("tasks = %+v, %v", tasks, err)
+	}
+}
+
+func TestRunPlanMarkdownPlanError(t *testing.T) {
+	setupResolverProject(t)
+	agent := &planAgent{planErr: errors.New("plan failed")}
+	err := RunPlanMarkdown(context.Background(), PlanMarkdownOptions{
+		Source: PlanMarkdownSource{Target: "/tmp/source.md", Body: "body"},
+		Stdout: &bytes.Buffer{},
+		Stderr: &bytes.Buffer{},
+		Agent:  agent,
+		Model:  "m",
+	})
+	if err == nil || !strings.Contains(err.Error(), "plan failed") {
+		t.Fatalf("plan err = %v", err)
+	}
+}
+
+func TestRunPlanMarkdownWarningsAndBackground(t *testing.T) {
+	setupResolverProject(t)
+	agent := &planAgent{resumeID: "ERR", pid: os.Getpid()}
+	var stdout, stderr bytes.Buffer
+	err := RunPlanMarkdown(context.Background(), PlanMarkdownOptions{
+		Source: PlanMarkdownSource{Target: "/tmp/source.md", Body: "body"},
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Agent:  agent,
+		Model:  "m",
+	})
+	if err != nil {
+		t.Fatalf("RunPlanMarkdown background: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "running in background") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "resume failed") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
+func TestStartTargetFiles(t *testing.T) {
+	setupResolverProject(t)
+	path := filepath.Join(t.TempDir(), "task.md")
+	if err := os.WriteFile(path, []byte("body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target, err := NewStartTargetFromMarkdown(path)
+	if err != nil {
+		t.Fatalf("NewStartTargetFromMarkdown: %v", err)
+	}
+	logPath, err := PrepareStartTaskFiles(target)
+	if err != nil {
+		t.Fatalf("PrepareStartTaskFiles: %v", err)
+	}
+	if filepath.Base(logPath) != store.AgentLogFileName {
+		t.Fatalf("log path = %q", logPath)
+	}
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(logPath), store.RequirementsFileName))
+	if err != nil || string(data) != "body" {
+		t.Fatalf("requirements = %q, %v", string(data), err)
+	}
+	logPath, err = PrepareStartTaskFiles(StartTarget{TaskID: "existing"})
+	if err != nil || filepath.Base(logPath) != store.AgentLogFileName {
+		t.Fatalf("existing log path = %q, %v", logPath, err)
+	}
+}
+
+func TestStartTargetErrors(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if _, err := NewStartTargetFromMarkdown("missing.md"); err == nil {
+		t.Fatal("NewStartTargetFromMarkdown error = nil")
+	}
+	if _, err := PrepareStartTaskFiles(StartTarget{TaskID: "new", IsNew: true, Body: "body"}); err == nil {
+		t.Fatal("PrepareStartTaskFiles error = nil")
+	}
+}
