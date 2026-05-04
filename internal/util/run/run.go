@@ -84,11 +84,16 @@ func RunIn(ctx context.Context, dir, name string, args ...string) error {
 // and across the orchestrator that drives them, so earlier bytes
 // must survive later spawns.
 //
-// The returned PID is the OS process id at Start time. Spawn calls
-// cmd.Process.Release so the parent does not retain a Wait state and
-// the child is reparented to init when the parent exits. It is the
-// caller's responsibility to record the PID elsewhere (e.g. on the
-// task row) so a later reaper can poll IsAlive and finalise state.
+// The returned PID is the OS process id at Start time. Spawn does not
+// expose a Wait handle — callers treat the child as fire-and-forget by
+// PID and rely on a later reaper (or WaitForExit) that polls IsAlive.
+// A background goroutine calls cmd.Wait so the kernel reaps the child
+// promptly when it exits; without that reap the child lingers as a
+// zombie and signal(0)-based IsAlive reports it alive forever, which
+// would deadlock WaitForExit. The goroutine has no other side effects:
+// it does not bind the child to ctx and does not signal it. In the
+// fire-and-forget case the parent exits before the goroutine can run
+// and the OS re-parents the orphan to init, which then reaps it.
 //
 // ctx is consulted only by exec.CommandContext for the brief window
 // before Start returns; once the child has been started Spawn does
@@ -130,21 +135,29 @@ func SpawnIn(ctx context.Context, dir, logPath, name string, args ...string) (in
 		return 0, fmt.Errorf("%s: %w", name, err)
 	}
 	pid := cmd.Process.Pid
-	if err := cmd.Process.Release(); err != nil {
-		return pid, fmt.Errorf("%s: release: %w", name, err)
-	}
+	// Reap the child via cmd.Wait in a goroutine instead of detaching
+	// with Process.Release. Release just drops Go's process bookkeeping
+	// and never calls wait4, which leaves the exited child as a zombie;
+	// signal(0) on a zombie returns success on Linux/macOS, so IsAlive
+	// reports it alive and WaitForExit polls forever. Calling Wait here
+	// has no effect on the child's lifecycle (no signal, no ctx binding)
+	// — it just lets the kernel drop the zombie so IsAlive flips to
+	// false promptly. In the fire-and-forget path the parent exits
+	// before this goroutine runs and the orphan is reparented to init,
+	// which reaps it exactly as before.
+	go func() { _ = cmd.Wait() }()
 	return pid, nil
 }
 
 // WaitForExit blocks until the OS process identified by pid is no
 // longer alive, returning nil. It is intended for verify-loop
-// synchronisation against Spawn-ed children whose Wait was released
-// (Spawn calls cmd.Process.Release so the parent cannot Wait): the
-// orchestrator must not read the child's findings file until the
-// child has finished writing it, but Spawn deliberately does not
-// expose a Wait. WaitForExit polls IsAlive on a small ticker and
-// returns ctx.Err() if the context is cancelled before the child
-// exits.
+// synchronisation against Spawn-ed children: Spawn does not expose a
+// Wait handle to the caller (a background goroutine inside Spawn does
+// the wait4 reap so the kernel does not keep zombies around), so the
+// orchestrator polls IsAlive instead and reads the child's findings
+// file only after this returns. WaitForExit polls IsAlive on a small
+// ticker and returns ctx.Err() if the context is cancelled before
+// the child exits.
 //
 // pid <= 0 returns nil immediately because Spawn reserves 0 for the
 // "synchronous / nothing to wait on" case and negative ids are
