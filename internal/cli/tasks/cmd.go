@@ -112,7 +112,25 @@ func listTasks(stdout io.Writer, simple bool) error {
 	if isTerminal(stdout) {
 		return runWatch(os.Stdin, stdout, storeReloader(s, tasksDir))
 	}
-	return renderTable(stdout, tasks, time.Now())
+	return renderTable(stdout, tasks, time.Now(), terminalWidth(stdout))
+}
+
+// terminalWidth returns the column count of the terminal w is
+// attached to, or 0 when w is not an *os.File or term.GetSize
+// fails. The non-TTY one-shot path uses this so the bordered table
+// fits the parent terminal width when its stdout is connected to a
+// terminal (e.g. `j tasks` running interactively but with the watch
+// path skipped); pure pipes/buffers fall back to natural widths.
+func terminalWidth(w io.Writer) int {
+	f, ok := w.(*os.File)
+	if !ok {
+		return 0
+	}
+	cols, _, err := term.GetSize(int(f.Fd()))
+	if err != nil {
+		return 0
+	}
+	return cols
 }
 
 // storeReloader returns a closure the bubbletea model uses to refresh

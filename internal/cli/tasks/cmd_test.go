@@ -277,7 +277,7 @@ func TestRun_DefaultNonTTY_RendersBorder(t *testing.T) {
 	if !strings.Contains(out, "STATUS") {
 		t.Fatalf("default output missing header: %q", out)
 	}
-	if !strings.Contains(out, "planning 1m") {
+	if !strings.Contains(out, "planning(1m") {
 		t.Fatalf("default output should decorate active row with elapsed minutes: %q", out)
 	}
 }
@@ -514,6 +514,26 @@ func TestIsTerminal_PipeFile(t *testing.T) {
 	})
 	if isTerminal(w) {
 		t.Fatal("os.Pipe writer must not be classified as a TTY")
+	}
+}
+
+// TestTerminalWidth covers both branches: a non-File writer always
+// reports 0; an *os.File that isn't a TTY surfaces the term.GetSize
+// error path which also reports 0.
+func TestTerminalWidth(t *testing.T) {
+	if got := terminalWidth(io.Discard); got != 0 {
+		t.Fatalf("io.Discard width = %d, want 0", got)
+	}
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = r.Close()
+		_ = w.Close()
+	})
+	if got := terminalWidth(w); got != 0 {
+		t.Fatalf("os.Pipe writer width = %d, want 0 (GetSize fails on non-TTY)", got)
 	}
 }
 
