@@ -10,6 +10,8 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/resolver"
+	"github.com/spacelions/j/internal/store"
 )
 
 // New returns the `j plan` cobra subcommand. It owns its own flag and
@@ -43,20 +45,20 @@ func New() *cobra.Command {
 			// effects hermetic; that path stays a fast in-memory
 			// no-open shortcut inside the helpers.
 			//
-			// Only forward Interactive when the user was explicit
-			// (cobra flag or env var). When unset we leave it nil
-			// so Run can fall back to the stored value or the
-			// cobra default true.
-			var interactive *bool
+			// resolver.Interactive applies the precedence (explicit
+			// flag or env var > stored bucket > cobra default true).
+			// The non-nil pointer signals "user was explicit"; nil
+			// falls back to the stored value.
+			var explicit *bool
 			if cmd.Flags().Changed("interactive") || os.Getenv("PLAN_INTERACTIVE") != "" {
 				v := viper.GetBool("plan.interactive")
-				interactive = &v
+				explicit = &v
 			}
 			return Run(cmd.Context(), Options{
 				FromFile:    viper.GetString("plan.from_file"),
 				TaskID:      viper.GetString("plan.from_task"),
 				Yes:         viper.GetBool("plan.yes"),
-				Interactive: interactive,
+				Interactive: resolver.Interactive(nil, cmd.ErrOrStderr(), store.BucketPlanner, explicit),
 				Tool:        viper.GetString("plan.tool"),
 				Model:       viper.GetString("plan.model"),
 				Stdin:       cmd.InOrStdin(),

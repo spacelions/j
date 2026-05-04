@@ -8,6 +8,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -30,24 +31,12 @@ type AgentCheckOptions struct {
 type AgentSelector = picker.Selector
 
 // EnsureAgentSelections walks the planner / worker / verifier buckets
-// in order. For each bucket it:
+// in order. For each bucket it calls resolver.AgentFromStore; on
+// resolver.ErrNoStoredSelection it prompts via picker.PickAgent and
+// persists the result with interactive=true.
 //
-//  1. Opens `<cwd>/.j/settings`.
-//  2. Calls picker.AgentFromStore. If the bucket already carries a
-//     valid tool/model pair the helper closes the store and moves to
-//     the next bucket without prompting.
-//  3. On picker.ErrNoStoredSelection it closes the store, runs
-//     picker.PickAgent against opts.UI, and re-opens the store to
-//     persist the selection via store.PersistAgentSelection. The
-//     persisted `interactive` flag defaults to true (resume reads
-//     this on every run; the explicit user choice flows through
-//     the parent commands' --interactive flag).
-//  4. Closes the store before returning to the caller.
-//
-// The store is intentionally never held across a Pick prompt so the
-// bbolt file lock is released between buckets and concurrent
+// The bbolt file lock is released between buckets so concurrent
 // `j tasks` / `j settings` calls in another shell never block.
-//
 // huh.ErrUserAborted from the Selector propagates verbatim so the
 // caller (RunStart / RunContinue) can treat a Ctrl-C as a clean
 // cancel via its existing deferred guard.
@@ -64,18 +53,12 @@ func EnsureAgentSelections(ctx context.Context, opts AgentCheckOptions) error {
 	return nil
 }
 
-// ensureBucketSelection encapsulates the per-bucket lifecycle. The
-// store is opened, queried, and closed once (FromStore happy path) or
-// twice (read + write) per bucket so the lock is never held across the
-// Pick prompt.
 func ensureBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket string) error {
-	agent, model, err := readBucketSelection(ctx, opts, bucket)
+	_, _, err := readBucketSelection(ctx, opts, bucket)
 	if err == nil {
-		_ = agent
-		_ = model
 		return nil
 	}
-	if !errors.Is(err, picker.ErrNoStoredSelection) {
+	if !errors.Is(err, resolver.ErrNoStoredSelection) {
 		return err
 	}
 	fmt.Fprintf(opts.Stderr, "Choose your favourite for %s:\n", bucket)
@@ -83,37 +66,33 @@ func ensureBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket s
 	if err != nil {
 		return err
 	}
-	return persistBucketSelection(opts, bucket, pickedAgent.Name(), pickedModel)
+	persistBucketSelection(opts, bucket, pickedAgent.Name(), pickedModel)
+	return nil
 }
 
-// readBucketSelection opens settings, runs picker.AgentFromStore, and
-// closes settings before returning. A failure to open the settings DB
-// surfaces as ErrNoStoredSelection so the caller falls back to the
-// prompt path the same way an empty bucket would.
+// readBucketSelection opens settings, calls resolver.AgentFromStore,
+// closes settings before returning. A settings-open failure surfaces
+// as ErrNoStoredSelection so callers fall through to the prompt path.
 func readBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket string) (codingagents.Agent, string, error) {
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
-		return nil, "", picker.ErrNoStoredSelection
+		return nil, "", resolver.ErrNoStoredSelection
 	}
 	defer func() { _ = s.Close() }()
-	return picker.AgentFromStore(ctx, s, bucket, opts.Agents)
+	return resolver.AgentFromStore(ctx, s, bucket, opts.Agents)
 }
 
-// persistBucketSelection re-opens settings only for the duration of the
-// write. The `interactive` flag is recorded as true so resume runs read
-// a sensible default; users that want headless resumes set it via the
-// parent commands' --interactive flag (which writes the same key).
-// Persistence is best-effort: a settings open failure is reported via
-// stderr by store.OpenSettings and otherwise swallowed so the user's
+// persistBucketSelection writes the prompt result into the bucket
+// with interactive=true. Persistence is best-effort: a settings open
+// failure is warned to stderr and otherwise swallowed so the user's
 // pick is not lost on a transient lock error.
-func persistBucketSelection(opts AgentCheckOptions, bucket, tool, model string) error {
+func persistBucketSelection(opts AgentCheckOptions, bucket, tool, model string) {
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
-		return nil
+		return
 	}
 	defer func() { _ = s.Close() }()
 	store.PersistAgentSelection(s, opts.Stderr, bucket, tool, model, true)
-	return nil
 }
 
 func (o AgentCheckOptions) withDefaults() AgentCheckOptions {

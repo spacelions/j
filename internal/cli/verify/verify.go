@@ -16,15 +16,15 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
 	"regexp"
 	"strings"
 
-	"github.com/charmbracelet/huh"
 
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/tasklog"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/mustread"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/run"
 )
@@ -46,17 +46,14 @@ type Options struct {
 	// `--yes` / VERIFY_YES flag wiring on the cobra command.
 	Yes bool
 
-	// Interactive is a tri-state: a non-nil value is the explicit
-	// user choice (cobra `--interactive` flag or VERIFY_INTERACTIVE
-	// env var), and nil means "not set, fall back to the stored
-	// `interactive` value or the cobra default true". Stored wins
-	// when Interactive is nil and the bucket has a parseable value;
-	// explicit always wins.
-	Interactive *bool
+	// Interactive is the resolved interactive flag. cobra cmd.go
+	// computes it via resolver.Interactive (explicit > stored > true)
+	// before constructing Options.
+	Interactive bool
 
 	// Tool and Model are one-off overrides for the verifier
 	// bucket's recorded tool/model. When either is set, Run resolves
-	// the verifier via picker.ResolveAgent (filling the missing half
+	// the verifier via resolver.Agent (filling the missing half
 	// from the bucket if needed) and skips persistence: the bucket
 	// is left untouched. Mirrors the `j plan` / `j work` semantics.
 	Tool  string
@@ -116,16 +113,11 @@ var verdictRegexp = regexp.MustCompile(`(?i)^\s*VERDICT:\s*(PASS|FAIL)\s*$`)
 // opens the DB, performs the operation, and closes before any agent
 // work begins.
 func Run(ctx context.Context, opts Options) (err error) {
-	defer func() {
-		if errors.Is(err, huh.ErrUserAborted) {
-			err = nil
-		}
-	}()
+	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
 		return errors.New("J: no coding agents configured")
 	}
-	opts.Interactive = boolPtr(resolveInteractive(opts))
 
 	res, ok, err := resolveTask(ctx, opts)
 	if err != nil {
@@ -345,7 +337,7 @@ func confirmStatusOverride(ctx context.Context, opts Options, cmd string, t stor
 // fire-and-forget child cannot be safely killed by ctx cancellation.
 func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent codingagents.Agent, model, resumeID string, res resolved) (verifyOutcome, error) {
 	agentLogPath := filepath.Join(res.TaskDir, tasklog.AgentLogFileName)
-	mustReadFiles, mustReadErr := mustread.LoadFromDefault()
+	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
 	}
@@ -356,7 +348,7 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 			VerifierPlanOutputPath:     res.VerifierPlanPath,
 			VerifierFindingsOutputPath: res.FindingsPath,
 			Model:                      model,
-			Interactive:                *opts.Interactive,
+			Interactive:                opts.Interactive,
 			Resume:                     i > 0,
 			ResumeChatID:               resumeID,
 			Worktree:                   res.Task.Worktree,
@@ -384,7 +376,7 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 		workReq := codingagents.WorkRequest{
 			PlanPath:     res.PlanPath,
 			Model:        res.Task.InvokedModel,
-			Interactive:  *opts.Interactive,
+			Interactive:  opts.Interactive,
 			ResumeChatID: res.Task.WorkResumeCursor,
 			Resume:       true,
 			FixFindings:  true,
@@ -441,117 +433,19 @@ func ParseVerdict(path string) string {
 	return "FAIL"
 }
 
-// selectVerifier is the single chokepoint for choosing the verifier
-// tool/model. Mirrors selectWorker in `j work`. Precedence:
-//  1. explicit --tool / --model → picker.ResolveAgent fills the missing
-//     half from the verifier bucket; bucket is NOT written.
-//  2. populated verifier bucket → picker.AgentFromStore reuses it.
-//  3. otherwise → picker.PickAgent prompts the user and the result is
-//     persisted to the verifier bucket.
+// selectVerifier delegates to resolver.Agent with the verifier bucket.
 func selectVerifier(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
-	if opts.Tool != "" || opts.Model != "" {
-		agent, model, err := verifierResolveExplicit(ctx, opts)
-		if err == nil {
-			return agent, model, nil
-		}
-		if !errors.Is(err, picker.ErrNoStoredSelection) {
-			return nil, "", err
-		}
-	}
-	agent, model, err := verifierFromStore(ctx, opts)
-	if err == nil {
-		return agent, model, nil
-	}
-	if !errors.Is(err, picker.ErrNoStoredSelection) {
-		return nil, "", err
-	}
-	fmt.Fprintln(opts.Stderr, "Choose your favourite:")
-	agent, model, err = picker.PickAgent(ctx, opts.UI, opts.Agents)
-	if err != nil {
-		return nil, "", err
-	}
-	persistVerifierSelection(opts, agent.Name(), model)
-	return agent, model, nil
+	return resolver.Agent(ctx, resolver.AgentOptions{
+		Bucket:        store.BucketVerifier,
+		Agents:        opts.Agents,
+		ExplicitTool:  opts.Tool,
+		ExplicitModel: opts.Model,
+		UI:            opts.UI,
+		Store:         opts.Store,
+		Stderr:        opts.Stderr,
+		Interactive:   opts.Interactive,
+	})
 }
-
-// verifierResolveExplicit reads the verifier bucket only to fill the
-// missing half of the user-supplied --tool / --model pair. Mirrors
-// workerResolveExplicit in `j work`.
-func verifierResolveExplicit(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
-	if opts.Store != nil {
-		return picker.ResolveAgent(ctx, opts.Store, store.BucketVerifier, opts.Agents, opts.Tool, opts.Model)
-	}
-	s, ok := store.OpenSettings(opts.Stderr)
-	if !ok {
-		return picker.ResolveAgent(ctx, nil, store.BucketVerifier, opts.Agents, opts.Tool, opts.Model)
-	}
-	defer func() { _ = s.Close() }()
-	return picker.ResolveAgent(ctx, s, store.BucketVerifier, opts.Agents, opts.Tool, opts.Model)
-}
-
-// verifierFromStore reads the verifier bucket and returns the
-// chosen tool/model. Mirrors workerFromStore in `j work`.
-func verifierFromStore(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
-	if opts.Store != nil {
-		return picker.AgentFromStore(ctx, opts.Store, store.BucketVerifier, opts.Agents)
-	}
-	s, ok := store.OpenSettings(opts.Stderr)
-	if !ok {
-		return nil, "", picker.ErrNoStoredSelection
-	}
-	defer func() { _ = s.Close() }()
-	return picker.AgentFromStore(ctx, s, store.BucketVerifier, opts.Agents)
-}
-
-// persistVerifierSelection writes the tool/model and interactive flag
-// to the verifier bucket. Mirrors persistWorkerSelection in `j work`.
-func persistVerifierSelection(opts Options, tool, model string) {
-	interactive := true
-	if opts.Interactive != nil {
-		interactive = *opts.Interactive
-	}
-	if opts.Store != nil {
-		store.PersistAgentSelection(opts.Store, opts.Stderr, store.BucketVerifier, tool, model, interactive)
-		return
-	}
-	s, ok := store.OpenSettings(opts.Stderr)
-	if !ok {
-		return
-	}
-	defer func() { _ = s.Close() }()
-	store.PersistAgentSelection(s, opts.Stderr, store.BucketVerifier, tool, model, interactive)
-}
-
-// resolveInteractive applies the documented precedence (explicit >
-// stored > cobra default true) and returns a concrete bool.
-func resolveInteractive(opts Options) bool {
-	if opts.Interactive != nil {
-		return *opts.Interactive
-	}
-	if v, ok := storedVerifierInteractive(opts); ok {
-		return v
-	}
-	return true
-}
-
-// storedVerifierInteractive looks up the verifier bucket's
-// `interactive` entry. Mirrors storedWorkerInteractive in `j work`.
-func storedVerifierInteractive(opts Options) (bool, bool) {
-	if opts.Store != nil {
-		return picker.StoredInteractive(opts.Store, store.BucketVerifier)
-	}
-	s, ok := store.OpenSettings(opts.Stderr)
-	if !ok {
-		return false, false
-	}
-	defer func() { _ = s.Close() }()
-	return picker.StoredInteractive(s, store.BucketVerifier)
-}
-
-// boolPtr is the package-private companion that lets Run / tests
-// build a non-nil *bool from a literal without spelling out a temp
-// variable at every call site.
-func boolPtr(b bool) *bool { return &b }
 
 // lookupResumeAgent returns the first agent in agents whose Name
 // matches tool. The miss path becomes the user-facing

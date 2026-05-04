@@ -19,7 +19,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
-	"github.com/spacelions/j/internal/mustread"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -119,7 +119,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	resumeTask := planResumeBegin(task)
 	tasklog.PersistWarn(opts.Stderr, resumeTask)
 
-	mustReadFiles, mustReadErr := mustread.LoadFromDefault()
+	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		fmt.Fprintf(opts.Stderr, "warning: %v\n", mustReadErr)
 	}

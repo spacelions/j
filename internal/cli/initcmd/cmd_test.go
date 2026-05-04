@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/mustread"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -319,7 +319,7 @@ func readProjectKey(t *testing.T, key string) (string, bool) {
 // bodies stay terse.
 func readMustRead(t *testing.T) (string, bool) {
 	t.Helper()
-	return readProjectKey(t, mustread.Key)
+	return readProjectKey(t, resolver.KeyMustRead)
 }
 
 // TestRun_FreshInit_SeedsMaxIterations pins the unconditional seed:

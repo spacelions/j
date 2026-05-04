@@ -336,7 +336,7 @@ func TestRun_Success_WithFlag(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		FromFile:    target,
-		Interactive: boolPtr(true),
+		Interactive: true,
 		Stdin:       strings.NewReader(""),
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
@@ -403,7 +403,7 @@ func TestRun_Headless_PropagatesFlag(t *testing.T) {
 	agent := newScriptedAgent()
 	err := Run(context.Background(), Options{
 		FromFile:    target,
-		Interactive: boolPtr(false),
+		Interactive: false,
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -908,7 +908,7 @@ func TestRun_Markdown_PersistsPlannerSelection(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		FromFile:    target,
-		Interactive: boolPtr(true),
+		Interactive: true,
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -1050,7 +1050,7 @@ func TestRun_StoreReadError_Surfaces(t *testing.T) {
 		UI:       &scriptedUI{},
 		Store:    s,
 	})
-	if err == nil || !strings.Contains(err.Error(), "picker: read planner") {
+	if err == nil || !strings.Contains(err.Error(), "resolver: read planner") {
 		t.Fatalf("err = %v, want wrapped read error", err)
 	}
 	if agent.planned != 0 {
@@ -1058,55 +1058,9 @@ func TestRun_StoreReadError_Surfaces(t *testing.T) {
 	}
 }
 
-// TestPersistPlannerSelection_NilStore_LazyOpenSucceeds exercises the
-// nil-Store branch when store.OpenSettings can lay hands on a real
-// `<cwd>/.j/settings`: the helper opens, persists, and closes
-// silently and the values land on disk.
-func TestPersistPlannerSelection_NilStore_LazyOpenSucceeds(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	var stderr bytes.Buffer
-	persistPlannerSelection(Options{
-		Stderr:      &stderr,
-		Interactive: boolPtr(true),
-	}, "cursor", "sonnet-4")
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr should stay empty on success, got %q", stderr.String())
-	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	v, ok, err := s.Get(store.BucketPlanner, "tool")
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if !ok || v != "cursor" {
-		t.Fatalf("planner.tool = %q (ok=%v), want cursor", v, ok)
-	}
-}
-
-// TestPersistPlannerSelection_NilStore_LazyOpenFails covers the
-// early-return branch when store.OpenSettings can't open the DB
-// (no .j layout on disk): the helper warns once and returns
-// without panicking.
-func TestPersistPlannerSelection_NilStore_LazyOpenFails(t *testing.T) {
-	t.Chdir(t.TempDir())
-	var stderr bytes.Buffer
-	persistPlannerSelection(Options{Stderr: &stderr}, "cursor", "sonnet-4")
-	if !strings.Contains(stderr.String(), "warning: settings") {
-		t.Fatalf("stderr = %q, want settings warning", stderr.String())
-	}
-}
-
 // TestRun_ExplicitTool_SkipsPersistence asserts the new --tool /
 // --model contract: when both flags are supplied, Run resolves via
-// picker.ResolveAgent, runs the chosen agent, and leaves the planner
+// resolver.Agent, runs the chosen agent, and leaves the planner
 // bucket untouched (no UI prompt and no store write).
 func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	s := openTestStore(t)
@@ -1143,7 +1097,7 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 }
 
 // TestRun_ExplicitTool_NilStore_LazyOpenSucceeds drives the
-// nil-Store branch of plannerResolveExplicit. The lazy open finds
+// nil-Store branch of resolver.Agent (explicit branch). The lazy open finds
 // the seeded planner.model so --tool=cursor resolves cleanly.
 func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -1182,7 +1136,7 @@ func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 }
 
 // TestRun_ExplicitTool_NilStore_LazyOpenFails covers the
-// settings-DB-broken branch of plannerResolveExplicit: with no
+// settings-DB-broken branch of resolver.Agent (explicit branch): with no
 // stored half available, Resolve surfaces the missing-half error
 // before invoking the agent.
 func TestRun_ExplicitTool_NilStore_LazyOpenFails(t *testing.T) {
@@ -1327,7 +1281,7 @@ func TestRun_BackgroundSpawn_RecordsPID(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		FromFile:    target,
-		Interactive: boolPtr(false),
+		Interactive: false,
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -1412,7 +1366,7 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentPlan(t *testing.T) {
 
 	err = Run(context.Background(), Options{
 		FromFile:    target,
-		Interactive: boolPtr(true),
+		Interactive: true,
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},

@@ -1,14 +1,14 @@
 package settings
 
 import (
-	"github.com/spacelions/j/internal/mustread"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
 
 // displayKey maps a bbolt storage key to the kebab-cased form users see
 // in `j settings`. Centralising the mapping here means callers never
 // need to know about the camelCase storage form: the rest of the
-// codebase deals with the storage key (e.g. mustread.Key == "mustRead")
+// codebase deals with the storage key (e.g. resolver.KeyMustRead == "mustRead")
 // and only this package translates to/from the user-facing display.
 //
 // Buckets / keys with no entry in the table fall through verbatim so
@@ -45,7 +45,7 @@ type keyMap struct {
 	toStorage map[string]string
 }
 
-// mustReadDisplay is the kebab-cased form of mustread.Key shown to
+// mustReadDisplay is the kebab-cased form of resolver.KeyMustRead shown to
 // users in `j settings`. Centralising the literal here keeps the
 // display/storage round-trip in lockstep with the storage const.
 const mustReadDisplay = "must-read"
@@ -55,7 +55,7 @@ const mustReadDisplay = "must-read"
 // (`mustRead` ↔ `must-read`); future entries register here.
 var keyTable = map[string]*keyMap{
 	store.BucketProject: {
-		toDisplay: map[string]string{mustread.Key: mustReadDisplay},
-		toStorage: map[string]string{mustReadDisplay: mustread.Key},
+		toDisplay: map[string]string{resolver.KeyMustRead: mustReadDisplay},
+		toStorage: map[string]string{mustReadDisplay: resolver.KeyMustRead},
 	},
 }

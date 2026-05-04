@@ -11,7 +11,7 @@ package testutil
 import (
 	"testing"
 
-	"github.com/spacelions/j/internal/mustread"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -39,7 +39,7 @@ func SeedMustRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("testutil: Open: %v", err)
 	}
-	if err := s.Put(store.BucketProject, mustread.Key, ""); err != nil {
+	if err := s.Put(store.BucketProject, resolver.KeyMustRead, ""); err != nil {
 		_ = s.Close()
 		t.Fatalf("testutil: Put mustRead: %v", err)
 	}

@@ -72,7 +72,7 @@ func New(cfg Config) (agent.Agent, error) {
 				if err := work.Run(ctx, work.Options{
 					TaskID:            taskID,
 					Yes:               true,
-					Interactive:       &interactive,
+					Interactive:       interactive,
 					Stdout:            stderr,
 					Stderr:            stderr,
 					Agents:            agents,

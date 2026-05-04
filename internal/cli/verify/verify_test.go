@@ -361,7 +361,7 @@ func TestRun_PassOnFirstIteration(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 3,
 		Stdout:        &stdout,
 		Stderr:        io.Discard,
@@ -415,7 +415,7 @@ func TestRun_FailThenPass(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 3,
 		Stdout:        io.Discard,
 		Stderr:        io.Discard,
@@ -484,7 +484,7 @@ func TestRun_ThreadsWorktreeIntoRequests(t *testing.T) {
 
 	err = Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 3,
 		Stdout:        io.Discard,
 		Stderr:        io.Discard,
@@ -520,7 +520,7 @@ func TestRun_LoopExhausted(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 2,
 		Stdout:        &stdout,
 		Stderr:        io.Discard,
@@ -560,7 +560,7 @@ func TestRun_MaxIterations1(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 1,
 		Stdout:        io.Discard,
 		Stderr:        io.Discard,
@@ -593,7 +593,7 @@ func TestRun_VerifierError(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 3,
 		Stdout:        io.Discard,
 		Stderr:        io.Discard,
@@ -622,7 +622,7 @@ func TestRun_WorkerFixError(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 3,
 		Stdout:        io.Discard,
 		Stderr:        io.Discard,
@@ -651,7 +651,7 @@ func TestRun_MalformedVerdictTreatedAsFail(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 1,
 		Stdout:        io.Discard,
 		Stderr:        io.Discard,
@@ -1222,7 +1222,7 @@ func TestRun_PersistsVerifierSelection(t *testing.T) {
 
 	err := Run(context.Background(), Options{
 		TaskID:      id,
-		Interactive: boolPtr(true),
+		Interactive: true,
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
@@ -1247,7 +1247,7 @@ func TestRun_PersistsVerifierSelection(t *testing.T) {
 
 // TestRun_ExplicitTool_SkipsPersistence asserts the new --tool /
 // --model contract: when both flags are supplied, Run resolves via
-// picker.ResolveAgent, runs the verifier, and leaves the verifier
+// resolver.Agent, runs the verifier, and leaves the verifier
 // bucket untouched.
 func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	s := openTestStore(t)
@@ -1285,7 +1285,7 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 }
 
 // TestRun_ExplicitTool_NilStore_LazyOpenSucceeds drives the
-// nil-Store branch of verifierResolveExplicit. The lazy open finds
+// nil-Store branch of resolver.Agent (explicit branch). The lazy open finds
 // the seeded verifier.model so --tool=cursor resolves cleanly.
 func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -1325,7 +1325,7 @@ func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 }
 
 // TestRun_ExplicitTool_NilStore_LazyOpenFails covers the
-// settings-DB-broken branch of verifierResolveExplicit.
+// settings-DB-broken branch of resolver.Agent (explicit branch).
 func TestRun_ExplicitTool_NilStore_LazyOpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -1533,57 +1533,6 @@ func TestRun_List_DecodeError(t *testing.T) {
 // TestPersistVerifierSelection_NilStore_LazyOpenSucceeds exercises
 // the nil-Store branch when store.OpenSettings can lay hands on a
 // real `<cwd>/.j/settings`.
-func TestPersistVerifierSelection_NilStore_LazyOpenSucceeds(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	var stderr bytes.Buffer
-	persistVerifierSelection(Options{
-		Stderr:      &stderr,
-		Interactive: boolPtr(true),
-	}, "cursor", "sonnet-4")
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr should stay empty on success, got %q", stderr.String())
-	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	v, ok, err := s.Get(store.BucketVerifier, "tool")
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if !ok || v != "cursor" {
-		t.Fatalf("verifier.tool = %q (ok=%v), want cursor", v, ok)
-	}
-}
-
-// TestPersistVerifierSelection_NilStore_LazyOpenFails covers the
-// early-return branch when store.OpenSettings can't open the DB.
-func TestPersistVerifierSelection_NilStore_LazyOpenFails(t *testing.T) {
-	t.Chdir(t.TempDir())
-	var stderr bytes.Buffer
-	persistVerifierSelection(Options{Stderr: &stderr}, "cursor", "sonnet-4")
-	if !strings.Contains(stderr.String(), "warning: settings") {
-		t.Fatalf("stderr = %q, want settings warning", stderr.String())
-	}
-}
-
-// TestStoredVerifierInteractive_NilStore_LazyOpenFails covers
-// the nil-Store + open-fails branch.
-func TestStoredVerifierInteractive_NilStore_LazyOpenFails(t *testing.T) {
-	t.Chdir(t.TempDir())
-	var stderr bytes.Buffer
-	v, ok := storedVerifierInteractive(Options{Stderr: &stderr})
-	if ok || v {
-		t.Fatalf("storedVerifierInteractive = (%v, %v), want (false, false)", v, ok)
-	}
-}
-
 // spawnVerifyAgent is the integration-test fixture that pins the
 // "orchestrator must wait for the spawned child" contract. Verify
 // launches a real `sh` child whose script sleeps, writes the
@@ -1658,7 +1607,7 @@ func TestRunVerifyLoop_WaitsForSpawnedChild(t *testing.T) {
 	start := time.Now()
 	err := Run(context.Background(), Options{
 		TaskID:        id,
-		Interactive:   boolPtr(false),
+		Interactive:   false,
 		MaxIterations: 3,
 		Stdout:        &stdout,
 		Stderr:        io.Discard,
@@ -1767,7 +1716,7 @@ func TestRunVerifyLoop_VerifierWaitCtxCancelled(t *testing.T) {
 		cancel()
 	}()
 	outcome, err := runVerifyLoop(ctx, Options{
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 3,
 		Stderr:        io.Discard,
 	}, agent, agent, "m", "id", res)
@@ -1797,7 +1746,7 @@ func TestRunVerifyLoop_WorkerWaitCtxCancelled(t *testing.T) {
 		cancel()
 	}()
 	outcome, err := runVerifyLoop(ctx, Options{
-		Interactive:   boolPtr(true),
+		Interactive:   true,
 		MaxIterations: 3,
 		Stderr:        io.Discard,
 	}, verifier, worker, "m", "id", res)
@@ -1812,28 +1761,3 @@ func TestRunVerifyLoop_WorkerWaitCtxCancelled(t *testing.T) {
 	}
 }
 
-// TestStoredVerifierInteractive_NilStore_LazyOpenSucceeds covers
-// the success branch where store.OpenSettings lays hands on a real
-// `<cwd>/.j/settings` and returns the recorded interactive flag.
-func TestStoredVerifierInteractive_NilStore_LazyOpenSucceeds(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	seed, err := store.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := seed.Put(store.BucketVerifier, "interactive", "false"); err != nil {
-		t.Fatal(err)
-	}
-	if err := seed.Close(); err != nil {
-		t.Fatal(err)
-	}
-	v, ok := storedVerifierInteractive(Options{Stderr: io.Discard})
-	if !ok || v {
-		t.Fatalf("storedVerifierInteractive = (%v, %v), want (false, true)", v, ok)
-	}
-}

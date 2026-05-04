@@ -554,7 +554,7 @@ func TestRun_FromTask_BackgroundSpawn_RecordsPID(t *testing.T) {
 	var stdout bytes.Buffer
 	err := Run(context.Background(), Options{
 		TaskID:      id,
-		Interactive: boolPtr(false),
+		Interactive: false,
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
 		Agents:      []codingagents.Agent{agent},
