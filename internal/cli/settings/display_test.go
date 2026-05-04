@@ -60,6 +60,18 @@ func TestStorageKey(t *testing.T) {
 			displayKey: "model",
 			want:       "model",
 		},
+		{
+			name:       "linear_api_key_snake_case",
+			bucket:     store.BucketLinear,
+			displayKey: "api_key",
+			want:       store.KeyLinearAPIKey,
+		},
+		{
+			name:       "linear_api_key_kebab_case",
+			bucket:     store.BucketLinear,
+			displayKey: "api-key",
+			want:       store.KeyLinearAPIKey,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -67,5 +79,34 @@ func TestStorageKey(t *testing.T) {
 				t.Fatalf("storageKey(%q, %q) = %q, want %q", tc.bucket, tc.displayKey, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestDisplayKey_Linear pins the inverse direction of the linear
+// bucket mapping: the camelCase storage key renders as `api_key` in
+// `j settings`.
+func TestDisplayKey_Linear(t *testing.T) {
+	if got := displayKey(store.BucketLinear, store.KeyLinearAPIKey); got != "api_key" {
+		t.Fatalf("displayKey(linear, %s) = %q, want api_key", store.KeyLinearAPIKey, got)
+	}
+	if got := displayKey(store.BucketLinear, store.KeyLinearProject); got != store.KeyLinearProject {
+		t.Fatalf("displayKey(linear, %s) = %q, want passthrough", store.KeyLinearProject, got)
+	}
+}
+
+// TestIsSecretKey covers both project.api_key (legacy Gemini key)
+// and the new linear.apiKey storage key.
+func TestIsSecretKey(t *testing.T) {
+	if !isSecretKey(store.BucketProject, "api_key") {
+		t.Fatal("project.api_key should be masked")
+	}
+	if !isSecretKey(store.BucketLinear, store.KeyLinearAPIKey) {
+		t.Fatal("linear.apiKey should be masked")
+	}
+	if isSecretKey(store.BucketLinear, store.KeyLinearProject) {
+		t.Fatal("linear.project should not be masked")
+	}
+	if isSecretKey("planner", "tool") {
+		t.Fatal("planner.tool should not be masked")
 	}
 }

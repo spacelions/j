@@ -170,6 +170,56 @@ func TestStartTargetFiles(t *testing.T) {
 	}
 }
 
+// TestRunPlanFromBody covers the in-memory-body path used by
+// `j plan --from-linear`: requirements.md is staged from the body
+// before agent.Plan runs, the agent's FromFilePath points at the
+// staged file, and the lifecycle finishes without printing the
+// markdown-target line (the body source has no on-disk path).
+func TestRunPlanFromBody(t *testing.T) {
+	setupResolverProject(t)
+	agent := &planAgent{resumeID: "resume", planBody: "plan body"}
+	var stdout bytes.Buffer
+	body := "# from linear\n\nbody text\n\n---\nLinear: https://x\n"
+	if err := RunPlanFromBody(context.Background(), PlanMarkdownOptions{
+		Stdout:      &stdout,
+		Stderr:      &bytes.Buffer{},
+		Agent:       agent,
+		Model:       "m",
+		Interactive: true,
+	}, body, "linear:ENG-1"); err != nil {
+		t.Fatalf("RunPlanFromBody: %v", err)
+	}
+	if !strings.Contains(agent.lastReq.FromFilePath, "requirements.md") {
+		t.Fatalf("FromFilePath = %q, want staged requirements.md", agent.lastReq.FromFilePath)
+	}
+	staged, err := os.ReadFile(agent.lastReq.FromFilePath)
+	if err != nil {
+		t.Fatalf("read staged: %v", err)
+	}
+	if string(staged) != body {
+		t.Fatalf("staged body = %q, want %q", staged, body)
+	}
+	if !strings.Contains(stdout.String(), "requirements.md and plan.md") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+// TestRunPlanFromBody_DefaultSourceLabel pins the source-label
+// fallback: an empty sourceLabel is replaced by the staged path so
+// the recorded source is never blank.
+func TestRunPlanFromBody_DefaultSourceLabel(t *testing.T) {
+	setupResolverProject(t)
+	agent := &planAgent{resumeID: "resume", planBody: "plan"}
+	if err := RunPlanFromBody(context.Background(), PlanMarkdownOptions{
+		Stdout: &bytes.Buffer{},
+		Stderr: &bytes.Buffer{},
+		Agent:  agent,
+		Model:  "m",
+	}, "body", ""); err != nil {
+		t.Fatalf("RunPlanFromBody: %v", err)
+	}
+}
+
 func TestStartTargetErrors(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if _, err := NewStartTargetFromMarkdown("missing.md"); err == nil {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -163,6 +164,21 @@ type scriptedUI struct {
 	confirmCmd    string
 	confirmTaskID string
 	confirmStatus string
+
+	linearAPIKey       string
+	linearAPIKeyOK     bool
+	linearAPIKeyErr    error
+	linearAPIKeyURL    string
+	linearAPIKeyCalls  int
+	linearProject      linear.Project
+	linearProjectOK    bool
+	linearProjectErr   error
+	linearProjectCalls int
+	linearProjectsSeen []linear.Project
+	linearIdentifier   string
+	linearIDOK         bool
+	linearIDErr        error
+	linearIDCalls      int
 }
 
 func (s *scriptedUI) SelectSource(_ context.Context, _ []picker.Source) (picker.Source, error) {
@@ -221,6 +237,32 @@ func (s *scriptedUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, statu
 		return false, s.confirmErr
 	}
 	return s.confirm, nil
+}
+
+func (s *scriptedUI) PromptLinearAPIKey(_ context.Context, openURL string) (string, bool, error) {
+	s.linearAPIKeyURL = openURL
+	s.linearAPIKeyCalls++
+	if s.linearAPIKeyErr != nil {
+		return "", false, s.linearAPIKeyErr
+	}
+	return s.linearAPIKey, s.linearAPIKeyOK, nil
+}
+
+func (s *scriptedUI) PickLinearProject(_ context.Context, projects []linear.Project) (linear.Project, bool, error) {
+	s.linearProjectCalls++
+	s.linearProjectsSeen = append([]linear.Project(nil), projects...)
+	if s.linearProjectErr != nil {
+		return linear.Project{}, false, s.linearProjectErr
+	}
+	return s.linearProject, s.linearProjectOK, nil
+}
+
+func (s *scriptedUI) PromptLinearIdentifier(_ context.Context) (string, bool, error) {
+	s.linearIDCalls++
+	if s.linearIDErr != nil {
+		return "", false, s.linearIDErr
+	}
+	return s.linearIdentifier, s.linearIDOK, nil
 }
 
 
@@ -535,14 +577,41 @@ func TestRun_FromFileFlag_BypassesSourceSelector(t *testing.T) {
 	}
 }
 
-func TestRun_Linear_NoOp(t *testing.T) {
+// TestRun_Linear_PicksAndPlans drives the picker-driven Linear path
+// end to end with a stubbed GraphQL endpoint and a pre-saved API
+// key + project (so the picker skips the link prompts and only
+// asks for the identifier). The resulting plan should produce a
+// task whose requirements.md starts with the issue title.
+func TestRun_Linear_PicksAndPlans(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
+	if err := linear.SaveAPIKey("lin_api_test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveProject("p"); err != nil {
+		t.Fatal(err)
+	}
+	srv := testutil.NewLinearStubServer(testutil.LinearStubResponses{
+		Issue: &testutil.LinearIssueStub{
+			Identifier:  "ENG-9",
+			Title:       "wire it",
+			Description: "the body",
+			URL:         "https://linear.app/eng/issue/ENG-9",
+		},
+	})
+	t.Cleanup(srv.Close)
+	prev := linear.TestEndpoint
+	linear.TestEndpoint = srv.URL
+	t.Cleanup(func() { linear.TestEndpoint = prev })
+
 	agent := newScriptedAgent()
-	ui := &scriptedUI{source: picker.SourceLinear}
-	var stdout bytes.Buffer
+	ui := &scriptedUI{
+		source:           picker.SourceLinear,
+		linearIdentifier: "ENG-9",
+		linearIDOK:       true,
+	}
 	err := Run(context.Background(), Options{
-		Stdout: &stdout,
+		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
 		UI:     ui,
@@ -550,11 +619,92 @@ func TestRun_Linear_NoOp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if agent.listed != 0 || agent.checked != 0 || agent.planned != 0 {
-		t.Fatalf("linear should not touch the agent: listed=%d checked=%d planned=%d", agent.listed, agent.checked, agent.planned)
+	if agent.planned != 1 {
+		t.Fatalf("agent.planned = %d, want 1", agent.planned)
 	}
-	if !strings.Contains(stdout.String(), "linear") {
-		t.Fatalf("stdout should mention linear: %q", stdout.String())
+	if !strings.Contains(agent.lastReq.FromFilePath, "requirements.md") {
+		t.Fatalf("FromFilePath = %q; want staged requirements.md", agent.lastReq.FromFilePath)
+	}
+	body, err := os.ReadFile(agent.lastReq.FromFilePath)
+	if err != nil {
+		t.Fatalf("read requirements: %v", err)
+	}
+	if !strings.HasPrefix(string(body), "# wire it") {
+		t.Fatalf("requirements body should start with the issue title; got %q", body)
+	}
+	if !strings.Contains(string(body), "Linear: https://linear.app/eng/issue/ENG-9") {
+		t.Fatalf("requirements body should carry the Linear URL footer; got %q", body)
+	}
+}
+
+// TestRun_FromLinearFlag pins --from-linear: with linear.api_key
+// stored, the flag bypasses the source picker and runs the plan
+// against the fetched issue body.
+func TestRun_FromLinearFlag(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	if err := linear.SaveAPIKey("lin_api_test"); err != nil {
+		t.Fatal(err)
+	}
+	srv := testutil.NewLinearStubServer(testutil.LinearStubResponses{
+		Issue: &testutil.LinearIssueStub{Identifier: "ENG-1", Title: "flag", Description: "", URL: "https://linear.app/eng/issue/ENG-1"},
+	})
+	t.Cleanup(srv.Close)
+	prev := linear.TestEndpoint
+	linear.TestEndpoint = srv.URL
+	t.Cleanup(func() { linear.TestEndpoint = prev })
+
+	agent := newScriptedAgent()
+	ui := &scriptedUI{}
+	err := Run(context.Background(), Options{
+		FromLinear: "ENG-1",
+		Stdout:     io.Discard,
+		Stderr:     io.Discard,
+		Agents:     []codingagents.Agent{agent},
+		UI:         ui,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if ui.sourceCalls != 0 {
+		t.Fatalf("--from-linear should bypass the source picker: sourceCalls=%d", ui.sourceCalls)
+	}
+}
+
+// TestRun_FromLinearFlag_MissingKey pins the explicit error when
+// --from-linear is supplied but no API key is stored.
+func TestRun_FromLinearFlag_MissingKey(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	err := Run(context.Background(), Options{
+		FromLinear: "ENG-1",
+		Stdout:     io.Discard,
+		Stderr:     io.Discard,
+		Agents:     []codingagents.Agent{newScriptedAgent()},
+		UI:         &scriptedUI{},
+	})
+	if err == nil || !errors.Is(err, linear.ErrNoAPIKey) {
+		t.Fatalf("err = %v, want linear.ErrNoAPIKey", err)
+	}
+}
+
+// TestRun_FromLinearFlag_InvalidIdentifier pins the validation
+// short-circuit before any HTTP traffic is attempted.
+func TestRun_FromLinearFlag_InvalidIdentifier(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	if err := linear.SaveAPIKey("lin_api_test"); err != nil {
+		t.Fatal(err)
+	}
+	err := Run(context.Background(), Options{
+		FromLinear: "foo",
+		Stdout:     io.Discard,
+		Stderr:     io.Discard,
+		Agents:     []codingagents.Agent{newScriptedAgent()},
+		UI:         &scriptedUI{},
+	})
+	if err == nil || !errors.Is(err, linear.ErrInvalidIdentifier) {
+		t.Fatalf("err = %v, want linear.ErrInvalidIdentifier", err)
 	}
 }
 

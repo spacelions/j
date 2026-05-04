@@ -17,20 +17,23 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/run"
 )
 
 // StartUI is the slice of picker methods RunStart drives when
-// `--from-file` is empty: SelectSource (markdown | linear | task),
-// PickMarkdownInCwd (markdown branch), PickTask (re-plan branch).
-// *picker.Picker satisfies this surface; tests inject a scripted
-// fake.
+// `--from-file` is empty: the source picker (markdown | linear |
+// task), the markdown / re-plan / Linear sub-pickers. *picker.Picker
+// satisfies this surface; tests inject a scripted fake.
 type StartUI interface {
 	SelectSource(ctx context.Context, allowed []picker.Source) (picker.Source, error)
 	PickMarkdownInCwd(ctx context.Context) (string, error)
 	PickTask(ctx context.Context, title string, tasks []store.Task) (string, bool, error)
+	PromptLinearAPIKey(ctx context.Context, openURL string) (string, bool, error)
+	PickLinearProject(ctx context.Context, projects []linear.Project) (linear.Project, bool, error)
+	PromptLinearIdentifier(ctx context.Context) (string, bool, error)
 }
 
 // StartOptions configures RunStart. Stdin/Stdout/Stderr default to the
@@ -45,6 +48,11 @@ type StartOptions struct {
 	// source picker is skipped and the markdown branch fires
 	// directly. When empty, RunStart drives UI.SelectSource.
 	FromFile string
+	// FromLinear is a Linear issue identifier. When set, RunStart
+	// fetches the issue and stages requirements.md from the
+	// rendered markdown without prompting; loses to FromFile if
+	// both are set so the on-disk file always wins.
+	FromLinear string
 
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -87,6 +95,7 @@ func newStartCmd() *cobra.Command {
 			}
 			return RunStart(cmd.Context(), StartOptions{
 				FromFile:             viper.GetString("tasks.start.from_file"),
+				FromLinear:           viper.GetString("tasks.start.from_linear"),
 				PlanRequiresApproval: approval,
 				Stdin:                cmd.InOrStdin(),
 				Stdout:               cmd.OutOrStdout(),
@@ -96,9 +105,12 @@ func newStartCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringP("from-file", "f", "", "Path to a markdown file describing the task")
+	cmd.Flags().String("from-linear", "", "Linear issue identifier (e.g. ENG-123); requires linear.api_key in settings")
 	cmd.Flags().Bool("plan-requires-approval", false, "Override project.plan_requires_approval for this run (use =false to skip once)")
 	_ = viper.BindPFlag("tasks.start.from_file", cmd.Flags().Lookup("from-file"))
 	_ = viper.BindEnv("tasks.start.from_file", "TASKS_START_FROM_FILE")
+	_ = viper.BindPFlag("tasks.start.from_linear", cmd.Flags().Lookup("from-linear"))
+	_ = viper.BindEnv("tasks.start.from_linear", "TASKS_START_FROM_LINEAR")
 	_ = viper.BindPFlag("tasks.start.plan_requires_approval", cmd.Flags().Lookup("plan-requires-approval"))
 	_ = viper.BindEnv("tasks.start.plan_requires_approval", "TASKS_START_PLAN_REQUIRES_APPROVAL")
 	return cmd
@@ -191,7 +203,13 @@ func spawnDetachedOrchestrator(ctx context.Context, binaryOverride, agentLogPath
 }
 
 func resolveStartTarget(ctx context.Context, opts StartOptions) (startTarget, error) {
-	return resolver.ResolveStartTarget(ctx, opts.UI, opts.Stdout, opts.FromFile)
+	if opts.FromFile != "" {
+		return resolver.NewStartTargetFromMarkdown(opts.FromFile)
+	}
+	if opts.FromLinear != "" {
+		return resolver.StartTargetFromLinear(ctx, opts.FromLinear)
+	}
+	return resolver.ResolveStartTarget(ctx, opts.UI, opts.Stdout, "")
 }
 
 // prepareTaskFiles ensures the per-task directory exists and, for

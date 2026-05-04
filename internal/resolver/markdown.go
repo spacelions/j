@@ -51,12 +51,44 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 			return err
 		}
 	}
-
 	taskID := store.NewTaskID()
 	taskDir, err := store.EnsureTaskDir(taskID)
 	if err != nil {
 		return fmt.Errorf("plan: ensure task dir: %w", err)
 	}
+	return runPlanInTaskDir(ctx, opts, taskID, taskDir, source.Target, source.Body)
+}
+
+// RunPlanFromBody mirrors RunPlanMarkdown for the in-memory body
+// flow (`j plan --from-linear`): it mints a task dir, stages the
+// body as requirements.md so the coding agent has a real file to
+// read, and runs the plan against that path. The agent reads
+// requirements.md, refines it, and writes back — same shape as the
+// re-plan flow. sourceLabel is recorded on the lifecycle row so
+// `j tasks` can show the issue identifier instead of an empty
+// source field.
+func RunPlanFromBody(ctx context.Context, opts PlanMarkdownOptions, body, sourceLabel string) error {
+	taskID := store.NewTaskID()
+	taskDir, err := store.EnsureTaskDir(taskID)
+	if err != nil {
+		return fmt.Errorf("plan: ensure task dir: %w", err)
+	}
+	requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
+	if err := os.WriteFile(requirementsPath, []byte(body), 0o644); err != nil {
+		return fmt.Errorf("plan: stage requirements: %w", err)
+	}
+	if sourceLabel == "" {
+		sourceLabel = requirementsPath
+	}
+	return runPlanInTaskDir(ctx, opts, taskID, taskDir, requirementsPath, body)
+}
+
+// runPlanInTaskDir is the shared lifecycle: build PlanRequest, drive
+// agent.Plan, capture the refined requirements / plan, and finalize
+// the task row. Both RunPlanMarkdown (real file) and RunPlanFromBody
+// (in-memory body staged into requirements.md) feed through it so
+// the lifecycle bookkeeping has exactly one source of truth.
+func runPlanInTaskDir(ctx context.Context, opts PlanMarkdownOptions, taskID, taskDir, fromFilePath, sourceBody string) error {
 	requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
 	planPath := filepath.Join(taskDir, store.PlanFileName)
 
@@ -69,9 +101,9 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 	if mustReadErr != nil {
 		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", mustReadErr)
 	}
-	lc := store.NewPlanTask(opts.Stderr, opts.Agent.Name(), opts.Model, taskID, source.Target, source.Body, resumeID)
+	lc := store.NewPlanTask(opts.Stderr, opts.Agent.Name(), opts.Model, taskID, fromFilePath, sourceBody, resumeID)
 	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
-		FromFilePath:           source.Target,
+		FromFilePath:           fromFilePath,
 		Model:                  opts.Model,
 		RequirementsOutputPath: requirementsPath,
 		PlanOutputPath:         planPath,
@@ -84,7 +116,7 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 	if planErr == nil && pid > 0 {
 		if opts.WaitForCompletion {
 			if err := run.WaitForExit(ctx, pid); err != nil {
-				lc.Finish(err, "", "", source.Target)
+				lc.Finish(err, "", "", fromFilePath)
 				return err
 			}
 		} else {
@@ -107,7 +139,7 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 			banner.DangerousFprintf(opts.Stderr, "J: warning: read %s: %v\n", planPath, readErr)
 		}
 	}
-	lc.Finish(planErr, refinedReq, planMD, source.Target)
+	lc.Finish(planErr, refinedReq, planMD, fromFilePath)
 	if planErr != nil {
 		return planErr
 	}
@@ -133,6 +165,15 @@ func NewStartTargetFromMarkdown(raw string) (StartTarget, error) {
 		return StartTarget{}, fmt.Errorf("J: read source: %w", err)
 	}
 	return StartTarget{TaskID: store.NewTaskID(), IsNew: true, Body: string(body), Source: abs}, nil
+}
+
+// NewStartTargetFromBody mints an in-memory StartTarget for sources
+// that don't have a markdown file on disk (the Linear flow).
+// PrepareStartTaskFiles writes the body unchanged to
+// `<taskDir>/requirements.md`. sourceLabel is recorded on the task
+// row so `j tasks` can show the issue identifier instead of a path.
+func NewStartTargetFromBody(body, sourceLabel string) StartTarget {
+	return StartTarget{TaskID: store.NewTaskID(), IsNew: true, Body: body, Source: sourceLabel}
 }
 
 func PrepareStartTaskFiles(target StartTarget) (string, error) {

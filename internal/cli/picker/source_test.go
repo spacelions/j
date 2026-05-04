@@ -6,23 +6,39 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/store"
 )
 
 // scriptedSourceUI is a SourceUI fake that pre-canned answers.
 type scriptedSourceUI struct {
-	source       Source
-	sourceErr    error
-	markdown     string
-	markdownErr  error
-	taskID       string
-	taskOK       bool
-	taskErr      error
-	taskTitle    string
-	mdCalls      int
-	taskCalls    int
-	sourceCalls  int
-	allowedSeen  []Source
+	source      Source
+	sourceErr   error
+	markdown    string
+	markdownErr error
+	taskID      string
+	taskOK      bool
+	taskErr     error
+	taskTitle   string
+	mdCalls     int
+	taskCalls   int
+	sourceCalls int
+	allowedSeen []Source
+
+	linearAPIKey       string
+	linearAPIKeyOK     bool
+	linearAPIKeyErr    error
+	linearAPIKeyURL    string
+	linearAPIKeyCalls  int
+	pickedProject      linear.Project
+	pickedProjectOK    bool
+	pickedProjectErr   error
+	pickedProjectCalls int
+	pickedProjectsSeen []linear.Project
+	linearIdentifier   string
+	linearIDOK         bool
+	linearIDErr        error
+	linearIDCalls      int
 }
 
 func (s *scriptedSourceUI) SelectSource(_ context.Context, allowed []Source) (Source, error) {
@@ -48,6 +64,32 @@ func (s *scriptedSourceUI) PickTask(_ context.Context, title string, _ []store.T
 	return s.taskID, s.taskOK, nil
 }
 
+func (s *scriptedSourceUI) PromptLinearAPIKey(_ context.Context, openURL string) (string, bool, error) {
+	s.linearAPIKeyCalls++
+	s.linearAPIKeyURL = openURL
+	if s.linearAPIKeyErr != nil {
+		return "", false, s.linearAPIKeyErr
+	}
+	return s.linearAPIKey, s.linearAPIKeyOK, nil
+}
+
+func (s *scriptedSourceUI) PickLinearProject(_ context.Context, projects []linear.Project) (linear.Project, bool, error) {
+	s.pickedProjectCalls++
+	s.pickedProjectsSeen = append([]linear.Project(nil), projects...)
+	if s.pickedProjectErr != nil {
+		return linear.Project{}, false, s.pickedProjectErr
+	}
+	return s.pickedProject, s.pickedProjectOK, nil
+}
+
+func (s *scriptedSourceUI) PromptLinearIdentifier(_ context.Context) (string, bool, error) {
+	s.linearIDCalls++
+	if s.linearIDErr != nil {
+		return "", false, s.linearIDErr
+	}
+	return s.linearIdentifier, s.linearIDOK, nil
+}
+
 func TestPickSource_Markdown(t *testing.T) {
 	ui := &scriptedSourceUI{source: SourceMarkdown, markdown: "/abs/feature.md"}
 	res, err := PickSource(context.Background(), ui, []Source{SourceMarkdown, SourceLinear, SourceTask}, nil, nil)
@@ -59,17 +101,89 @@ func TestPickSource_Markdown(t *testing.T) {
 	}
 }
 
-func TestPickSource_Linear(t *testing.T) {
-	ui := &scriptedSourceUI{source: SourceLinear}
+func TestPickSource_Linear_TokenAndProjectStored(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveAPIKey("lin_api_test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveProject("project-1"); err != nil {
+		t.Fatal(err)
+	}
+	ui := &scriptedSourceUI{source: SourceLinear, linearIdentifier: "ENG-12", linearIDOK: true}
 	res, err := PickSource(context.Background(), ui, []Source{SourceMarkdown, SourceLinear}, nil, nil)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
-	if res.Source != SourceLinear || res.Markdown != "" || res.TaskID != "" || res.Cancelled {
+	if res.Source != SourceLinear || res.LinearIdentifier != "ENG-12" || res.Cancelled {
 		t.Fatalf("res = %+v", res)
 	}
-	if ui.mdCalls != 0 || ui.taskCalls != 0 {
-		t.Fatalf("sub-pickers should not fire on linear: md=%d task=%d", ui.mdCalls, ui.taskCalls)
+	if ui.linearAPIKeyCalls != 0 {
+		t.Fatalf("PromptLinearAPIKey should not fire when token is stored: calls=%d", ui.linearAPIKeyCalls)
+	}
+	if ui.pickedProjectCalls != 0 {
+		t.Fatalf("PickLinearProject should not fire when project is stored: calls=%d", ui.pickedProjectCalls)
+	}
+	if ui.linearIDCalls != 1 {
+		t.Fatalf("PromptLinearIdentifier should fire once: calls=%d", ui.linearIDCalls)
+	}
+}
+
+func TestPickSource_Linear_AllPromptsCancelCleanly(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveAPIKey("lin_api_test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveProject("p"); err != nil {
+		t.Fatal(err)
+	}
+	ui := &scriptedSourceUI{source: SourceLinear, linearIDOK: false}
+	res, err := PickSource(context.Background(), ui, []Source{SourceLinear}, nil, nil)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if res.Source != SourceLinear || !res.Cancelled || res.LinearIdentifier != "" {
+		t.Fatalf("res = %+v", res)
+	}
+}
+
+func TestPickSource_Linear_TokenPromptCancelled(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	ui := &scriptedSourceUI{source: SourceLinear, linearAPIKeyOK: false}
+	res, err := PickSource(context.Background(), ui, []Source{SourceLinear}, nil, nil)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !res.Cancelled || res.Source != SourceLinear {
+		t.Fatalf("res = %+v", res)
+	}
+	if ui.linearAPIKeyCalls != 1 {
+		t.Fatalf("PromptLinearAPIKey calls = %d, want 1", ui.linearAPIKeyCalls)
+	}
+	got, _ := linear.LoadAPIKey()
+	if got != "" {
+		t.Fatalf("token should not be saved on cancel: got %q", got)
+	}
+}
+
+func TestPickSource_Linear_TokenPromptError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	want := errors.New("token boom")
+	ui := &scriptedSourceUI{source: SourceLinear, linearAPIKeyErr: want}
+	_, err := PickSource(context.Background(), ui, []Source{SourceLinear}, nil, nil)
+	if !errors.Is(err, want) {
+		t.Fatalf("err = %v, want wrapped 'token boom'", err)
 	}
 }
 
