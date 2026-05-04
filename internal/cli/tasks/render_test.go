@@ -88,7 +88,7 @@ func TestRenderTable_EmptyHeaderOnly(t *testing.T) {
 		t.Fatalf("renderTable: %v", err)
 	}
 	out := buf.String()
-	for _, glyph := range []string{"┌", "┐", "└", "┘", "│", "─"} {
+	for _, glyph := range []string{"╭", "╮", "╰", "╯", "│", "─"} {
 		if !strings.Contains(out, glyph) {
 			t.Fatalf("missing border glyph %q: %q", glyph, out)
 		}
@@ -100,10 +100,11 @@ func TestRenderTable_EmptyHeaderOnly(t *testing.T) {
 	}
 }
 
-// TestRenderTable_GlyphTopology pins the gridline shape: corners,
-// inter-row separators with `┼` intersections, and column-tee glyphs
-// must all surface so a future regression can't silently flatten the
-// table back to header-only ruling.
+// TestRenderTable_GlyphTopology pins the gridline shape: rounded
+// corners (`╭ ╮ ╰ ╯`), inter-row separators with `┼` intersections,
+// and column-tee glyphs (`┬ ┴ ├ ┤`) must all surface so a future
+// regression can't silently flatten the table back to header-only
+// ruling.
 func TestRenderTable_GlyphTopology(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 5, 0, 0, time.UTC)
 	tasks := []store.Task{
@@ -115,7 +116,7 @@ func TestRenderTable_GlyphTopology(t *testing.T) {
 		t.Fatalf("renderTable: %v", err)
 	}
 	out := ansi.Strip(buf.String())
-	for _, glyph := range []string{"┌", "┐", "└", "┘", "├", "┤", "┬", "┴", "┼", "│", "─"} {
+	for _, glyph := range []string{"╭", "╮", "╰", "╯", "├", "┤", "┬", "┴", "┼", "│", "─"} {
 		if !strings.Contains(out, glyph) {
 			t.Fatalf("missing border glyph %q in stripped output: %q", glyph, out)
 		}
@@ -163,30 +164,45 @@ func TestRenderTable_MixedActiveAndInactive(t *testing.T) {
 	}
 }
 
-// TestRenderTable_RowColors checks that consecutive data rows emit
-// distinct ANSI foreground escapes — i.e. the colour rotation actually
-// applies. We use lipgloss to render the same palette colours
-// independently and assert each escape appears in the output.
+// TestRenderTable_RowColors pins the rotation rule:
+//   - `completed` rows are grey (they fade into the chrome),
+//   - `help` rows are red (a stuck task should be impossible to miss),
+//   - every other status — including the phase-done intermediates and
+//     the in-flight states — rotates through the purple/blue/green/
+//     orange palette.
+// We seed live → completed → help → live to prove neither special
+// status burns a palette slot.
 func TestRenderTable_RowColors(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	tasks := []store.Task{
 		{ID: "row-1", Status: store.StatusPlanDone, Summary: "first"},
-		{ID: "row-2", Status: store.StatusWorkDone, Summary: "second"},
+		{ID: "row-2", Status: store.StatusCompleted, Summary: "done"},
+		{ID: "row-3", Status: store.StatusHelp, Summary: "stuck"},
+		{ID: "row-4", Status: store.StatusWorkDone, Summary: "second"},
 	}
 	var buf bytes.Buffer
-	if err := renderTable(&buf, tasks, time.Now(), 0); err != nil {
+	if err := renderTable(&buf, tasks, now, 0); err != nil {
 		t.Fatalf("renderTable: %v", err)
 	}
 	raw := buf.String()
 	if ansi.Strip(raw) == raw {
 		t.Skip("renderer stripped ANSI (no colour profile in test env); rotation cannot be observed")
 	}
-	greySample := lipgloss.NewStyle().Foreground(greyColor).Render("first")
-	greenSample := lipgloss.NewStyle().Foreground(greenColor).Render("second")
-	if !strings.Contains(raw, greySample) {
-		t.Fatalf("first row should render in grey palette colour; got %q", raw)
+	expectations := []struct {
+		text  string
+		color lipgloss.TerminalColor
+		why   string
+	}{
+		{"first", purpleColor, "first live row should render in purple"},
+		{"done", greyColor, "completed row should render in grey"},
+		{"stuck", redColor, "help row should render in red"},
+		{"second", blueColor, "second live row should render in blue (active-palette[1])"},
 	}
-	if !strings.Contains(raw, greenSample) {
-		t.Fatalf("second row should render in green palette colour; got %q", raw)
+	for _, exp := range expectations {
+		sample := lipgloss.NewStyle().Foreground(exp.color).Render(exp.text)
+		if !strings.Contains(raw, sample) {
+			t.Fatalf("%s; got %q", exp.why, raw)
+		}
 	}
 }
 
