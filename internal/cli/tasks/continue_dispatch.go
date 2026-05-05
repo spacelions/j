@@ -1,0 +1,172 @@
+package tasks
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"path/filepath"
+	"time"
+
+	"github.com/spacelions/j/internal/cli/uitheme"
+	"github.com/spacelions/j/internal/cli/verify"
+	"github.com/spacelions/j/internal/cli/work"
+	"github.com/spacelions/j/internal/resolver"
+	"github.com/spacelions/j/internal/store/tasks"
+)
+
+// replanAsDetachedOrchestrator fires a detached `j tasks orchestrate
+// --plan-requires-approval=true` child for the supplied task so it
+// gets re-planned without the user waiting in-process. Used for both
+// the `planning` status (interrupted first run) and the `help` status
+// plan-phase case. Requirements.md is refreshed from Linear if needed
+// before the spawn.
+func replanAsDetachedOrchestrator(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
+	if _, err := resolver.StartTargetFromExistingTask(ctx, t.ID); err != nil {
+		return err
+	}
+	taskDir, err := tasks.EnsureDir(t.ID)
+	if err != nil {
+		return fmt.Errorf("J: ensure task dir: %w", err)
+	}
+	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
+	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
+		"tasks", "orchestrate",
+		"--id", t.ID,
+		"--plan-requires-approval=true",
+	})
+	if err != nil {
+		return err
+	}
+	stampSpawnOnRow(opts.Stderr, t.ID, agentLogPath, pid)
+	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", t.ID), pid, agentLogPath)
+	return nil
+}
+
+// resumeFromPlanDone forks a detached `j tasks orchestrate
+// --skip-planning=true --plan-requires-approval=false` child for the
+// supplied taskID so the implicit-approval handoff drives worker →
+// verifier without re-running the planner. Records the spawned PID
+// + agent.log path on the row, prints the standard `J: task <id>
+// resumed; tail -f <log>` line, and returns immediately.
+func resumeFromPlanDone(ctx context.Context, opts ContinueOptions, taskID string) error {
+	taskDir, err := tasks.EnsureDir(taskID)
+	if err != nil {
+		return fmt.Errorf("J: ensure task dir: %w", err)
+	}
+	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
+	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
+		"tasks", "orchestrate",
+		"--id", taskID,
+		"--plan-requires-approval=false",
+		"--skip-planning=true",
+	})
+	if err != nil {
+		return err
+	}
+	stampSpawnOnRow(opts.Stderr, taskID, agentLogPath, pid)
+	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", taskID), pid, agentLogPath)
+	return nil
+}
+
+// stampSpawnOnRow records BackgroundPID + AgentLogPath on the
+// existing task row after a detached orchestrator spawn. Best-effort
+// — any read / write error surfaces as a single warning on stderr.
+// The detached child is already running, so we never roll back.
+func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		uitheme.DangerousDialogBox(stderr, "J: tasks dir: %v", err)
+		return
+	}
+	defer func() { _ = s.Close() }()
+	row, err := s.GetTask(taskID)
+	if err != nil {
+		uitheme.DangerousDialogBox(stderr, "J: tasks get %q: %v", taskID, err)
+		return
+	}
+	row.AgentLogPath = agentLogPath
+	row.BackgroundPID = pid
+	if err := s.PutTask(row); err != nil {
+		uitheme.DangerousDialogBox(stderr, "J: tasks put: %v", err)
+	}
+}
+
+// dispatchHelp picks a resume target for a `help` task. The latest
+// completed phase wins — verify > work > plan when a phase end
+// timestamp is present — because that is the phase that produced the
+// failure mode the user is recovering from. When no phase timestamps
+// are set we fall back to the resume cursor that is non-empty in the
+// same precedence so a plan-time crash that never wrote PlanEndAt is
+// still resumable. With no usable signal the dispatch errors instead
+// of silently skipping.
+//
+// Plan-phase help is now a detached re-plan spawn (same as
+// StatusPlanning) so the user can review the updated plan before work
+// restarts.
+func dispatchHelp(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
+	switch latestPhase(t) {
+	case "verify":
+		return verify.RunResume(ctx, verify.ResumeOptions{
+			TaskID: t.ID,
+			Stdin:  opts.Stdin,
+			Stdout: opts.Stdout,
+			Stderr: opts.Stderr,
+			Agents: opts.Agents,
+		})
+	case "work":
+		return work.RunResume(ctx, work.ResumeOptions{
+			TaskID: t.ID,
+			Stdin:  opts.Stdin,
+			Stdout: opts.Stdout,
+			Stderr: opts.Stderr,
+			Agents: opts.Agents,
+		})
+	case "plan":
+		return replanAsDetachedOrchestrator(ctx, opts, t)
+	}
+	return fmt.Errorf("J: task %s in `help` has no resumable phase signal", t.ID)
+}
+
+// latestPhase returns "verify", "work", "plan", or "" depending on
+// which phase has the freshest end timestamp (or, if none, which
+// resume cursor is non-empty). Pulled out of dispatchHelp so the
+// precedence is unit-testable in isolation.
+func latestPhase(t tasks.Task) string {
+	if v := latestEndAt(t); v != "" {
+		return v
+	}
+	switch {
+	case t.VerifyResumeSession != "":
+		return "verify"
+	case t.WorkResumeSession != "":
+		return "work"
+	case t.PlanResumeSession != "":
+		return "plan"
+	}
+	return ""
+}
+
+// latestEndAt picks the phase whose EndAt timestamp is the most
+// recent. Returns "" when every EndAt is zero.
+func latestEndAt(t tasks.Task) string {
+	pairs := []struct {
+		name string
+		t    time.Time
+	}{
+		{"verify", t.VerifyEndAt},
+		{"work", t.WorkEndAt},
+		{"plan", t.PlanEndAt},
+	}
+	var best string
+	var bestT time.Time
+	for _, p := range pairs {
+		if p.t.IsZero() {
+			continue
+		}
+		if best == "" || p.t.After(bestT) {
+			best = p.name
+			bestT = p.t
+		}
+	}
+	return best
+}

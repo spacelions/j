@@ -82,7 +82,7 @@ func TestResolveStartTargetSources(t *testing.T) {
 		t.Fatalf("markdown target = %+v, %v", target, err)
 	}
 
-	seedResolverTask(t, tasks.Task{ID: "existing", Status: tasks.StatusPlanDone}, "plan", "")
+	seedResolverTask(t, tasks.Task{ID: "existing", Status: tasks.StatusPlanDone}, "plan", "# req\nbody")
 	target, err = ResolveStartTarget(context.Background(), sourceUI{source: picker.SourceTask, taskID: "existing", ok: true}, bytes.NewBuffer(nil), "")
 	if err != nil || target.TaskID != "existing" || target.IsNew {
 		t.Fatalf("task target = %+v, %v", target, err)

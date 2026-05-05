@@ -48,7 +48,7 @@ func ResolveStartTarget(ctx context.Context, ui StartUI, _ io.Writer, fromFile s
 	case picker.SourceMarkdown:
 		return NewStartTargetFromMarkdown(res.Markdown)
 	case picker.SourceTask:
-		return StartTarget{TaskID: res.TaskID}, nil
+		return StartTargetFromExistingTask(ctx, res.TaskID)
 	case picker.SourceLinear:
 		return StartTargetFromLinear(ctx, res.LinearIdentifier)
 	}

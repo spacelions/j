@@ -10,7 +10,6 @@ import (
 
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/initcmd"
-	"github.com/spacelions/j/internal/cli/plan"
 	"github.com/spacelions/j/internal/cli/run"
 	"github.com/spacelions/j/internal/cli/settings"
 	"github.com/spacelions/j/internal/cli/tasks"
@@ -33,7 +32,6 @@ func Execute() int {
 	root.AddCommand(
 		run.New(),
 		web.New(),
-		plan.New(),
 		work.New(),
 		verify.New(),
 		settings.New(),

@@ -19,7 +19,7 @@ import (
 
 // TestRunForTask_RequiresTaskID pins the empty-id guard.
 func TestRunForTask_RequiresTaskID(t *testing.T) {
-	err := RunForTask(context.Background(), store.TaskConfig{}, "", []codingagents.Agent{stubChain("scripted")}, io.Discard)
+	err := RunForTask(context.Background(), store.TaskConfig{}, "", []codingagents.Agent{stubChain("scripted")}, io.Discard, PlannerOverrides{})
 	if err == nil || !strings.Contains(err.Error(), "task id required") {
 		t.Fatalf("err = %v", err)
 	}
@@ -27,7 +27,7 @@ func TestRunForTask_RequiresTaskID(t *testing.T) {
 
 // TestRunForTask_RequiresAgents pins the no-agents guard.
 func TestRunForTask_RequiresAgents(t *testing.T) {
-	err := RunForTask(context.Background(), store.TaskConfig{}, "t1", nil, io.Discard)
+	err := RunForTask(context.Background(), store.TaskConfig{}, "t1", nil, io.Discard, PlannerOverrides{})
 	if err == nil || !strings.Contains(err.Error(), "no coding agents") {
 		t.Fatalf("err = %v", err)
 	}
@@ -43,7 +43,7 @@ func TestRunForTask_PassFlow(t *testing.T) {
 	stub := stubChain("scripted")
 	stub.verdict = "VERDICT: PASS"
 
-	if err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard); err != nil {
+	if err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, PlannerOverrides{}); err != nil {
 		t.Fatalf("RunForTask: %v", err)
 	}
 	row := readChainTaskRow(t, id)
@@ -66,7 +66,7 @@ func TestRunForTask_FailFlow(t *testing.T) {
 	stub := stubChain("scripted")
 	stub.verdict = "VERDICT: FAIL"
 
-	if err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard); err != nil {
+	if err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, PlannerOverrides{}); err != nil {
 		t.Fatalf("RunForTask: %v", err)
 	}
 	row := readChainTaskRow(t, id)
@@ -77,14 +77,14 @@ func TestRunForTask_FailFlow(t *testing.T) {
 
 func TestTaskSubAgents_PlanApprovalGate(t *testing.T) {
 	agents := []codingagents.Agent{stubChain("scripted")}
-	gated, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, true, false)
+	gated, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, true, false, PlannerOverrides{})
 	if err != nil {
 		t.Fatalf("taskSubAgents gated: %v", err)
 	}
 	if len(gated) != 1 {
 		t.Fatalf("gated SubAgents length = %d, want 1", len(gated))
 	}
-	full, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, false, false)
+	full, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, false, false, PlannerOverrides{})
 	if err != nil {
 		t.Fatalf("taskSubAgents full: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestTaskSubAgents_PlanApprovalGate(t *testing.T) {
 // by `j tasks continue` on a `plan-done` row.
 func TestTaskSubAgents_SkipPlanning(t *testing.T) {
 	agents := []codingagents.Agent{stubChain("scripted")}
-	subs, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, false, true)
+	subs, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, false, true, PlannerOverrides{})
 	if err != nil {
 		t.Fatalf("taskSubAgents skip-planning: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestTaskSubAgents_SkipPlanning(t *testing.T) {
 // skipPlanning=true).
 func TestTaskSubAgents_ConflictingFlagsErr(t *testing.T) {
 	agents := []codingagents.Agent{stubChain("scripted")}
-	_, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, true, true)
+	_, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, true, true, PlannerOverrides{})
 	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
 		t.Fatalf("err = %v, want mutually-exclusive guard", err)
 	}
@@ -147,7 +147,7 @@ func TestRunForTaskWithGate_PlanOnly(t *testing.T) {
 	id := seedChainTask(t, "scripted")
 	stub := stubChain("scripted")
 
-	if err := RunForTaskWithGate(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, true); err != nil {
+	if err := RunForTaskWithGate(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, true, PlannerOverrides{}); err != nil {
 		t.Fatalf("RunForTaskWithGate: %v", err)
 	}
 	row := readChainTaskRow(t, id)
@@ -170,7 +170,7 @@ func TestRunForTask_PlanFailsStopsChain(t *testing.T) {
 	stub := stubChain("scripted")
 	stub.planErr = errors.New("planning boom")
 
-	err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard)
+	err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, PlannerOverrides{})
 	if err == nil || !strings.Contains(err.Error(), "planning boom") {
 		t.Fatalf("err = %v, want planning boom propagation", err)
 	}
@@ -191,7 +191,7 @@ func TestRunForTask_NilStderrDefaultsDiscard(t *testing.T) {
 	id := seedChainTask(t, "scripted")
 	stub := stubChain("scripted")
 	stub.verdict = "VERDICT: PASS"
-	if err := RunForTask(context.Background(), store.TaskConfig{}, id, []codingagents.Agent{stub}, nil); err != nil {
+	if err := RunForTask(context.Background(), store.TaskConfig{}, id, []codingagents.Agent{stub}, nil, PlannerOverrides{}); err != nil {
 		t.Fatalf("RunForTask: %v", err)
 	}
 }
@@ -207,7 +207,7 @@ func TestRunForTask_StderrReceivesPhaseOutput(t *testing.T) {
 	stub.verdict = "VERDICT: PASS"
 
 	var stderr bytes.Buffer
-	if err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, &stderr); err != nil {
+	if err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, &stderr, PlannerOverrides{}); err != nil {
 		t.Fatalf("RunForTask: %v", err)
 	}
 	// The exact line is owned by plan / work / verify so we don't

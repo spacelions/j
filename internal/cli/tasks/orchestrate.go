@@ -37,6 +37,18 @@ type OrchestrateOptions struct {
 	// PlanRequiresApproval=true.
 	SkipPlanning bool
 
+	// Tool and Model are one-off planner overrides forwarded from
+	// `j tasks start --tool/--model`.
+	Tool  string
+	Model string
+
+	// Interactive controls whether the planner runs in TUI mode.
+	// Defaults to false (headless). Set by `j tasks start --interactive`.
+	Interactive bool
+
+	// Yes skips status-mismatch confirmation in the planner.
+	Yes bool
+
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
@@ -74,6 +86,12 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 	if err != nil {
 		return err
 	}
+	overrides := workflow.PlannerOverrides{
+		Tool:        opts.Tool,
+		Model:       opts.Model,
+		Interactive: opts.Interactive,
+		Yes:         opts.Yes,
+	}
 	emitSessionStart(opts.Stderr, opts.TaskID, opts.SkipPlanning)
 	if opts.SkipPlanning {
 		if planRequiresApproval {
@@ -81,7 +99,7 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 		}
 		return workflow.RunForTaskFromWork(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
 	}
-	return workflow.RunForTaskWithGate(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, planRequiresApproval)
+	return workflow.RunForTaskWithGate(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, planRequiresApproval, overrides)
 }
 
 // emitSessionStart writes one `session_start` marker into the agent
@@ -120,8 +138,7 @@ func (o OrchestrateOptions) withDefaults() OrchestrateOptions {
 // `j tasks start` forks a detached child that re-executes the j
 // binary with this sub-command, so help output should not advertise
 // it. The flag surface is `--id` plus the resolved plan-approval gate
-// (both with env bindings for
-// completeness).
+// (both with env bindings for completeness).
 func newOrchestrateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "orchestrate",
@@ -137,10 +154,18 @@ func newOrchestrateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			var interactive bool
+			if cmd.Flags().Changed("interactive") || envSet("TASKS_ORCHESTRATE_INTERACTIVE") {
+				interactive = viper.GetBool("tasks.orchestrate.interactive")
+			}
 			return RunOrchestrate(cmd.Context(), OrchestrateOptions{
 				TaskID:               viper.GetString("tasks.orchestrate.id"),
 				PlanRequiresApproval: approval,
 				SkipPlanning:         viper.GetBool("tasks.orchestrate.skip_planning"),
+				Tool:                 viper.GetString("tasks.orchestrate.tool"),
+				Model:                viper.GetString("tasks.orchestrate.model"),
+				Interactive:          interactive,
+				Yes:                  viper.GetBool("tasks.orchestrate.yes"),
 				Stdin:                cmd.InOrStdin(),
 				Stdout:               cmd.OutOrStdout(),
 				Stderr:               cmd.ErrOrStderr(),
@@ -151,12 +176,24 @@ func newOrchestrateCmd() *cobra.Command {
 	cmd.Flags().String("id", "", "Task id whose planner→worker→verifier chain to drive")
 	cmd.Flags().Bool("plan-requires-approval", false, "Resolved project.plan_requires_approval value")
 	cmd.Flags().Bool("skip-planning", false, "Run only worker → verifier on a task already past the planner")
+	cmd.Flags().String("tool", "", "Planner tool override (cursor|claude)")
+	cmd.Flags().String("model", "", "Planner model override")
+	cmd.Flags().Bool("interactive", false, "Run planner in interactive (TUI) mode")
+	cmd.Flags().Bool("yes", false, "Skip status-mismatch confirmation in the planner")
 	_ = viper.BindPFlag("tasks.orchestrate.id", cmd.Flags().Lookup("id"))
 	_ = viper.BindEnv("tasks.orchestrate.id", "TASKS_ORCHESTRATE_ID")
 	_ = viper.BindPFlag("tasks.orchestrate.plan_requires_approval", cmd.Flags().Lookup("plan-requires-approval"))
 	_ = viper.BindEnv("tasks.orchestrate.plan_requires_approval", "TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL")
 	_ = viper.BindPFlag("tasks.orchestrate.skip_planning", cmd.Flags().Lookup("skip-planning"))
 	_ = viper.BindEnv("tasks.orchestrate.skip_planning", "TASKS_ORCHESTRATE_SKIP_PLANNING")
+	_ = viper.BindPFlag("tasks.orchestrate.tool", cmd.Flags().Lookup("tool"))
+	_ = viper.BindEnv("tasks.orchestrate.tool", "TASKS_ORCHESTRATE_TOOL")
+	_ = viper.BindPFlag("tasks.orchestrate.model", cmd.Flags().Lookup("model"))
+	_ = viper.BindEnv("tasks.orchestrate.model", "TASKS_ORCHESTRATE_MODEL")
+	_ = viper.BindPFlag("tasks.orchestrate.interactive", cmd.Flags().Lookup("interactive"))
+	_ = viper.BindEnv("tasks.orchestrate.interactive", "TASKS_ORCHESTRATE_INTERACTIVE")
+	_ = viper.BindPFlag("tasks.orchestrate.yes", cmd.Flags().Lookup("yes"))
+	_ = viper.BindEnv("tasks.orchestrate.yes", "TASKS_ORCHESTRATE_YES")
 	return cmd
 }
 

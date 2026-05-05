@@ -135,48 +135,6 @@ func TestExecute_WebMissingSettings(t *testing.T) {
 	assertExecuteFails(t, "j init")
 }
 
-func TestExecute_PlanInvalidFromFile_FromFlag(t *testing.T) {
-	resetGlobals(t)
-	mustInit(t)
-	withArgs(t, "plan", "--from-file", "/this/path/does/not/exist.md")
-	assertExecuteFails(t, "J:", "stat")
-}
-
-func TestExecute_PlanInvalidFromFile_FromEnv(t *testing.T) {
-	resetGlobals(t)
-	mustInit(t)
-	t.Setenv("PLAN_FROM_FILE", "/this/path/does/not/exist.md")
-	withArgs(t, "plan")
-	assertExecuteFails(t, "J:", "stat")
-}
-
-// TestExecute_PlanInteractiveFlag_FromFlag confirms --interactive is
-// parsed by cobra and surfaces on the viper singleton via BindPFlag.
-// We piggy-back on the invalid-from-file failure path so the test
-// stays hermetic (no agent invocation), and read viper after Execute
-// to observe the bound value.
-func TestExecute_PlanInteractiveFlag_FromFlag(t *testing.T) {
-	resetGlobals(t)
-	mustInit(t)
-	withArgs(t, "plan", "--interactive=false", "--from-file", "/this/path/does/not/exist.md")
-	assertExecuteFails(t, "stat")
-	if viper.GetBool("plan.interactive") {
-		t.Fatalf("plan.interactive should be false after --interactive=false")
-	}
-}
-
-func TestExecute_PlanInteractiveFlag_FromEnv(t *testing.T) {
-	resetGlobals(t)
-	mustInit(t)
-	t.Setenv("PLAN_INTERACTIVE", "false")
-	t.Setenv("PLAN_FROM_FILE", "/this/path/does/not/exist.md")
-	withArgs(t, "plan")
-	assertExecuteFails(t, "stat")
-	if viper.GetBool("plan.interactive") {
-		t.Fatalf("plan.interactive should be false from PLAN_INTERACTIVE=false")
-	}
-}
-
 // TestExecute_WorkInteractiveFlag_FromFlag confirms --interactive is
 // parsed by cobra and surfaces on the viper singleton via BindPFlag.
 // We piggy-back on the missing-task failure path so the test
