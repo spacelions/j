@@ -11,7 +11,7 @@ import (
 	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/uitheme"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // UI lets `j tasks discard` and `j tasks enter` ask the user
@@ -25,14 +25,14 @@ type UI interface {
 	// translate huh.ErrUserAborted into (false, nil) so a Ctrl-C
 	// during the prompt is indistinguishable from an explicit
 	// decline.
-	ConfirmDiscard(ctx context.Context, task store.Task) (bool, error)
+	ConfirmDiscard(ctx context.Context, t tasks.Task) (bool, error)
 	// PickTask renders a select widget over the supplied tasks and
 	// returns the chosen task's id. ok=false collapses both a
 	// user-abort (Ctrl-C / Esc) and a defensive empty-input case so
 	// callers treat them uniformly as "no selection". Label format
 	// and behaviour delegate to internal/cli/picker so every j
 	// subcommand renders one widget.
-	PickTask(ctx context.Context, tasks []store.Task) (string, bool, error)
+	PickTask(ctx context.Context, tasks []tasks.Task) (string, bool, error)
 }
 
 // huhUI is the huh-backed UI implementation. The form is driven on
@@ -48,12 +48,12 @@ func newHuhUI(in io.Reader, out io.Writer) *huhUI {
 	return &huhUI{in: in, out: out}
 }
 
-func (u *huhUI) ConfirmDiscard(ctx context.Context, task store.Task) (bool, error) {
+func (u *huhUI) ConfirmDiscard(ctx context.Context, t tasks.Task) (bool, error) {
 	v := true
 	err := huh.NewForm(huh.NewGroup(
 		huh.NewConfirm().
-			Title(fmt.Sprintf("Discard task %s?", task.ID)).
-			Description(task.Summary).
+			Title(fmt.Sprintf("Discard task %s?", t.ID)).
+			Description(t.Summary).
 			Affirmative("yes").
 			Negative("no").
 			Value(&v),
@@ -70,7 +70,7 @@ func (u *huhUI) ConfirmDiscard(ctx context.Context, task store.Task) (bool, erro
 // PickTask delegates to the shared picker.PickTask widget so the
 // label format and abort/empty contract stay uniform across every j
 // subcommand.
-func (u *huhUI) PickTask(ctx context.Context, tasks []store.Task) (string, bool, error) {
+func (u *huhUI) PickTask(ctx context.Context, tasks []tasks.Task) (string, bool, error) {
 	return picker.New(u.in, u.out).PickTask(ctx, "Select a task", tasks)
 }
 
@@ -91,17 +91,17 @@ func (u *huhUI) PickTask(ctx context.Context, tasks []store.Task) (string, bool,
 // Errors from ListTasks or the UI propagate; the UI wraps its own
 // errors so RunDiscard / RunEnter can re-emit them without a second
 // wrap.
-func pickFromStore(ctx context.Context, s *store.Store, ui UI, stdout io.Writer) (string, bool, error) {
-	tasks, err := s.ListTasks()
+func pickFromStore(ctx context.Context, s *tasks.Store, ui UI, stdout io.Writer) (string, bool, error) {
+	rows, err := s.ListTasks()
 	if err != nil {
 		return "", false, err
 	}
-	if len(tasks) == 0 {
+	if len(rows) == 0 {
 		banner.Fprintln(stdout, emptyMessage)
 		return "", false, nil
 	}
-	store.SortTasks(tasks)
-	id, ok, err := ui.PickTask(ctx, tasks)
+	tasks.SortTasks(rows)
+	id, ok, err := ui.PickTask(ctx, rows)
 	if err != nil {
 		return "", false, err
 	}

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // scriptedSourceUI is a SourceUI fake that pre-canned answers.
@@ -39,7 +39,7 @@ func (s *scriptedSourceUI) PickMarkdownInCwd(_ context.Context) (string, error) 
 	return s.markdown, s.markdownErr
 }
 
-func (s *scriptedSourceUI) PickTask(_ context.Context, title string, _ []store.Task) (string, bool, error) {
+func (s *scriptedSourceUI) PickTask(_ context.Context, title string, _ []tasks.Task) (string, bool, error) {
 	s.taskCalls++
 	s.taskTitle = title
 	if s.taskErr != nil {
@@ -75,8 +75,8 @@ func TestPickSource_Linear(t *testing.T) {
 
 func TestPickSource_Task_HappyPath(t *testing.T) {
 	ui := &scriptedSourceUI{source: SourceTask, taskID: "01ABC", taskOK: true}
-	listTasks := func() ([]store.Task, error) {
-		return []store.Task{{ID: "01ABC", Status: store.StatusPlanDone, Summary: "x"}}, nil
+	listTasks := func() ([]tasks.Task, error) {
+		return []tasks.Task{{ID: "01ABC", Status: tasks.StatusPlanDone, Summary: "x"}}, nil
 	}
 	res, err := PickSource(context.Background(), ui, []Source{SourceTask}, listTasks, nil)
 	if err != nil {
@@ -92,8 +92,8 @@ func TestPickSource_Task_HappyPath(t *testing.T) {
 
 func TestPickSource_Task_UserCancelled(t *testing.T) {
 	ui := &scriptedSourceUI{source: SourceTask, taskOK: false}
-	listTasks := func() ([]store.Task, error) {
-		return []store.Task{{ID: "01ABC"}}, nil
+	listTasks := func() ([]tasks.Task, error) {
+		return []tasks.Task{{ID: "01ABC"}}, nil
 	}
 	res, err := PickSource(context.Background(), ui, []Source{SourceTask}, listTasks, nil)
 	if err != nil {
@@ -114,7 +114,7 @@ func TestPickSource_Task_NilListTasks(t *testing.T) {
 
 func TestPickSource_Task_EmptyList(t *testing.T) {
 	ui := &scriptedSourceUI{source: SourceTask}
-	listTasks := func() ([]store.Task, error) { return nil, nil }
+	listTasks := func() ([]tasks.Task, error) { return nil, nil }
 	_, err := PickSource(context.Background(), ui, []Source{SourceTask}, listTasks, nil)
 	if err == nil || !strings.Contains(err.Error(), "no tasks") {
 		t.Fatalf("err = %v, want 'no tasks'", err)
@@ -123,7 +123,7 @@ func TestPickSource_Task_EmptyList(t *testing.T) {
 
 func TestPickSource_Task_EmptyList_CustomError(t *testing.T) {
 	ui := &scriptedSourceUI{source: SourceTask}
-	listTasks := func() ([]store.Task, error) { return nil, nil }
+	listTasks := func() ([]tasks.Task, error) { return nil, nil }
 	want := errors.New("plan: no tasks to re-plan; run `j plan` first")
 	_, err := PickSource(context.Background(), ui, []Source{SourceTask}, listTasks, want)
 	if !errors.Is(err, want) {
@@ -134,7 +134,7 @@ func TestPickSource_Task_EmptyList_CustomError(t *testing.T) {
 func TestPickSource_Task_ListError(t *testing.T) {
 	ui := &scriptedSourceUI{source: SourceTask}
 	want := errors.New("list boom")
-	listTasks := func() ([]store.Task, error) { return nil, want }
+	listTasks := func() ([]tasks.Task, error) { return nil, want }
 	_, err := PickSource(context.Background(), ui, []Source{SourceTask}, listTasks, nil)
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v, want wrapped 'list boom'", err)

@@ -8,7 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // Adaptive palette: light values target a white background, dark values
@@ -58,7 +58,7 @@ func formatDuration(d time.Duration) string {
 // inactive states return the raw status string. now is injected so
 // the renderer is fully pure (the TUI passes the latest tick; the
 // non-TTY one-shot passes time.Now()).
-func formatStatus(t store.Task, now time.Time) string {
+func formatStatus(t tasks.Task, now time.Time) string {
 	begin := activeBeginAt(t)
 	if begin == nil {
 		return string(t.Status)
@@ -70,13 +70,13 @@ func formatStatus(t store.Task, now time.Time) string {
 // or nil for help/inactive rows. Help is intentionally excluded: it
 // has no per-phase begin timestamp of its own, and the user-visible
 // row is "the task is stuck" rather than "the task is running".
-func activeBeginAt(t store.Task) *time.Time {
+func activeBeginAt(t tasks.Task) *time.Time {
 	switch t.Status {
-	case store.StatusPlanning:
+	case tasks.StatusPlanning:
 		return t.PlanBeginAt
-	case store.StatusWorking:
+	case tasks.StatusWorking:
 		return t.WorkBeginAt
-	case store.StatusVerifying:
+	case tasks.StatusVerifying:
 		return t.VerifyBeginAt
 	}
 	return nil
@@ -91,7 +91,7 @@ func activeBeginAt(t store.Task) *time.Time {
 // uses natural column widths; width > 0 fits by shrinking the trailing
 // SUMMARY column (truncation with `…` when needed). Writer errors
 // propagate.
-func renderTable(w io.Writer, tasks []store.Task, now time.Time, width int) error {
+func renderTable(w io.Writer, tasks []tasks.Task, now time.Time, width int) error {
 	header := []string{"ID", "STATUS", "TOOL", "MODEL", "SUMMARY"}
 	rows := make([][]string, 0, len(tasks)+1)
 	rows = append(rows, header)
@@ -135,11 +135,11 @@ func renderTable(w io.Writer, tasks []store.Task, now time.Time, width int) erro
 //     phase-done intermediates) rotates through `activeRowPalette`.
 // activeIdx is bumped only on rotating rows so a completed/help row
 // sandwiched between two live rows doesn't waste a palette slot.
-func rowStyle(t store.Task, activeIdx *int) lipgloss.Style {
+func rowStyle(t tasks.Task, activeIdx *int) lipgloss.Style {
 	switch t.Status {
-	case store.StatusCompleted:
+	case tasks.StatusCompleted:
 		return doneStyle
-	case store.StatusHelp:
+	case tasks.StatusHelp:
 		return helpStyle
 	}
 	style := lipgloss.NewStyle().Foreground(activeRowPalette[*activeIdx%len(activeRowPalette)])

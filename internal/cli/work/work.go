@@ -17,6 +17,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/run"
 )
 
@@ -129,7 +130,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 	}
 	lc := res.Task.BeginWorkReuse(opts.Stderr, agent.Name(), model, resumeID)
 
-	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), store.AgentLogFileName)
+	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), tasks.AgentLogFileName)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)

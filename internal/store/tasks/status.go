@@ -1,4 +1,4 @@
-package store
+package tasks
 
 // TaskStatus is the typed string used in Task.Status. Only the values
 // listed below are valid; Valid() is the allowlist guard used by

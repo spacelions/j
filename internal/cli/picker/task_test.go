@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 func TestFormatTaskLabels_StatusAndSummary(t *testing.T) {
-	tasks := []store.Task{
-		{ID: "01A", Status: store.StatusPlanDone, Summary: "first"},
-		{ID: "01B", Status: store.StatusWorking, Summary: "second"},
+	tasks := []tasks.Task{
+		{ID: "01A", Status: tasks.StatusPlanDone, Summary: "first"},
+		{ID: "01B", Status: tasks.StatusWorking, Summary: "second"},
 	}
 	labels, byLabel := formatTaskLabels(tasks)
 	want := []string{
@@ -39,9 +39,9 @@ func TestFormatTaskLabels_StatusAndSummary(t *testing.T) {
 }
 
 func TestFormatTaskLabels_EmptySummaryFallback(t *testing.T) {
-	tasks := []store.Task{
-		{ID: "01A", Status: store.StatusPlanning, Summary: ""},
-		{ID: "01B", Status: store.StatusHelp, Summary: "   \t\n"},
+	tasks := []tasks.Task{
+		{ID: "01A", Status: tasks.StatusPlanning, Summary: ""},
+		{ID: "01B", Status: tasks.StatusHelp, Summary: "   \t\n"},
 	}
 	labels, _ := formatTaskLabels(tasks)
 	for _, got := range labels {

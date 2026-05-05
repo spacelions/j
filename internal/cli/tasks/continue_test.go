@@ -17,6 +17,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -83,24 +84,24 @@ func (a *continueAgent) Verify(_ context.Context, req codingagents.VerifyRequest
 // files. The mutate hook lets each test override fields. The agent
 // buckets are pre-populated so RunContinue's EnsureAgentSelections
 // skips its prompt path.
-func seedTaskFull(t *testing.T, mutate func(*store.Task)) string {
+func seedTaskFull(t *testing.T, mutate func(*tasks.Task)) string {
 	t.Helper()
-	id := store.NewTaskID()
-	taskDir, err := store.EnsureTaskDir(id)
+	id := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(id)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, store.RequirementsFileName), []byte("# req\nbody"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.RequirementsFileName), []byte("# req\nbody"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, store.PlanFileName), []byte("1. step\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.PlanFileName), []byte("1. step\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	begin := time.Now().UTC().Add(-2 * time.Hour)
 	end := begin.Add(time.Hour)
-	task := store.Task{
+	task := tasks.Task{
 		ID:               id,
-		Status:           store.StatusPlanDone,
+		Status:           tasks.StatusPlanDone,
 		InvokedTool:      "cursor",
 		InvokedModel:     "sonnet-4",
 		PlanResumeCursor: "plan-cursor",
@@ -111,11 +112,11 @@ func seedTaskFull(t *testing.T, mutate func(*store.Task)) string {
 	if mutate != nil {
 		mutate(&task)
 	}
-	dbPath, err := store.DefaultTasksDir()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := store.OpenTasks(dbPath)
+	s := tasks.Open(dbPath)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(task); err != nil {
 		t.Fatal(err)
@@ -135,8 +136,8 @@ func setupContinueEnv(t *testing.T) {
 // TestRunContinue_PlanningDispatchesToPlanResume pins planning -> plan.RunResume.
 func TestRunContinue_PlanningDispatchesToPlanResume(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *store.Task) {
-		task.Status = store.StatusPlanning
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		t.Status = tasks.StatusPlanning
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -198,7 +199,7 @@ func TestRunContinue_PlanDoneSpawnsOrchestrator(t *testing.T) {
 	if row.BackgroundPID == 0 {
 		t.Fatalf("BackgroundPID = 0; want non-zero detached child PID")
 	}
-	wantLog := filepath.Join(".j/tasks", id, store.AgentLogFileName)
+	wantLog := filepath.Join(".j/tasks", id, tasks.AgentLogFileName)
 	if !strings.HasSuffix(row.AgentLogPath, wantLog) {
 		t.Fatalf("AgentLogPath = %q, want suffix %q", row.AgentLogPath, wantLog)
 	}
@@ -235,9 +236,9 @@ func TestRunContinue_PlanDoneSpawnFails(t *testing.T) {
 // TestRunContinue_WorkingDispatchesToWorkResume pins working -> work.RunResume.
 func TestRunContinue_WorkingDispatchesToWorkResume(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *store.Task) {
-		task.Status = store.StatusWorking
-		task.WorkResumeCursor = "work-cursor"
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		t.Status = tasks.StatusWorking
+		t.WorkResumeCursor = "work-cursor"
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -262,9 +263,9 @@ func TestRunContinue_WorkingDispatchesToWorkResume(t *testing.T) {
 // TestRunContinue_WorkDoneDispatchesToVerify pins work-done -> verify.Run.
 func TestRunContinue_WorkDoneDispatchesToVerify(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *store.Task) {
-		task.Status = store.StatusWorkDone
-		task.WorkResumeCursor = "work-cursor"
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		t.Status = tasks.StatusWorkDone
+		t.WorkResumeCursor = "work-cursor"
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -289,9 +290,9 @@ func TestRunContinue_WorkDoneDispatchesToVerify(t *testing.T) {
 // TestRunContinue_VerifyingDispatchesToVerifyResume pins verifying -> verify.RunResume.
 func TestRunContinue_VerifyingDispatchesToVerifyResume(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *store.Task) {
-		task.Status = store.StatusVerifying
-		task.VerifyResumeCursor = "verify-cursor"
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		t.Status = tasks.StatusVerifying
+		t.VerifyResumeCursor = "verify-cursor"
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -317,8 +318,8 @@ func TestRunContinue_VerifyingDispatchesToVerifyResume(t *testing.T) {
 // no dispatch, exit 0.
 func TestRunContinue_VerifyDoneShortCircuits(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *store.Task) {
-		task.Status = store.StatusVerifyDone
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		t.Status = tasks.StatusVerifyDone
 	})
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
@@ -347,8 +348,8 @@ func TestRunContinue_VerifyDoneShortCircuits(t *testing.T) {
 // completed status.
 func TestRunContinue_CompletedShortCircuits(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *store.Task) {
-		task.Status = store.StatusCompleted
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		t.Status = tasks.StatusCompleted
 	})
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
@@ -376,13 +377,13 @@ func TestRunContinue_HelpFromVerifyEnd(t *testing.T) {
 	t1 := time.Now().UTC().Add(-3 * time.Hour)
 	t2 := t1.Add(time.Hour)
 	t3 := t2.Add(time.Hour)
-	id := seedTaskFull(t, func(task *store.Task) {
-		task.Status = store.StatusHelp
-		task.VerifyResumeCursor = "verify-cursor"
-		task.WorkResumeCursor = "work-cursor"
-		task.PlanEndAt = &t1
-		task.WorkEndAt = &t2
-		task.VerifyEndAt = &t3
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		t.Status = tasks.StatusHelp
+		t.VerifyResumeCursor = "verify-cursor"
+		t.WorkResumeCursor = "work-cursor"
+		t.PlanEndAt = &t1
+		t.WorkEndAt = &t2
+		t.VerifyEndAt = &t3
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -407,11 +408,11 @@ func TestRunContinue_HelpFromWorkEnd(t *testing.T) {
 	setupContinueEnv(t)
 	t1 := time.Now().UTC().Add(-2 * time.Hour)
 	t2 := t1.Add(time.Hour)
-	id := seedTaskFull(t, func(task *store.Task) {
-		task.Status = store.StatusHelp
-		task.WorkResumeCursor = "work-cursor"
-		task.PlanEndAt = &t1
-		task.WorkEndAt = &t2
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		t.Status = tasks.StatusHelp
+		t.WorkResumeCursor = "work-cursor"
+		t.PlanEndAt = &t1
+		t.WorkEndAt = &t2
 	})
 	agent := newContinueAgent()
 	if err := RunContinue(context.Background(), ContinueOptions{
@@ -434,10 +435,10 @@ func TestRunContinue_HelpFromWorkEnd(t *testing.T) {
 func TestRunContinue_HelpFromPlanEnd(t *testing.T) {
 	setupContinueEnv(t)
 	t1 := time.Now().UTC().Add(-2 * time.Hour)
-	id := seedTaskFull(t, func(task *store.Task) {
-		task.Status = store.StatusHelp
-		task.PlanResumeCursor = "plan-cursor"
-		task.PlanEndAt = &t1
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		t.Status = tasks.StatusHelp
+		t.PlanResumeCursor = "plan-cursor"
+		t.PlanEndAt = &t1
 	})
 	agent := newContinueAgent()
 	if err := RunContinue(context.Background(), ContinueOptions{
@@ -459,11 +460,11 @@ func TestRunContinue_HelpFromPlanEnd(t *testing.T) {
 // fallback when no *EndAt is set: WorkResumeCursor wins over plan.
 func TestRunContinue_HelpFromCursorFallback(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *store.Task) {
-		task.Status = store.StatusHelp
-		task.PlanEndAt = nil
-		task.PlanResumeCursor = "plan-cursor"
-		task.WorkResumeCursor = "work-cursor"
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		t.Status = tasks.StatusHelp
+		t.PlanEndAt = nil
+		t.PlanResumeCursor = "plan-cursor"
+		t.WorkResumeCursor = "work-cursor"
 	})
 	agent := newContinueAgent()
 	if err := RunContinue(context.Background(), ContinueOptions{
@@ -485,12 +486,12 @@ func TestRunContinue_HelpFromCursorFallback(t *testing.T) {
 // *EndAt timestamps and every resume cursor empty cannot be dispatched.
 func TestRunContinue_HelpNoSignal(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *store.Task) {
-		task.Status = store.StatusHelp
-		task.PlanEndAt = nil
-		task.PlanResumeCursor = ""
-		task.WorkResumeCursor = ""
-		task.VerifyResumeCursor = ""
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		t.Status = tasks.StatusHelp
+		t.PlanEndAt = nil
+		t.PlanResumeCursor = ""
+		t.WorkResumeCursor = ""
+		t.VerifyResumeCursor = ""
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -656,16 +657,16 @@ func TestLatestPhase(t *testing.T) {
 	t3 := t2.Add(time.Hour)
 	cases := []struct {
 		name string
-		task store.Task
+		t tasks.Task
 		want string
 	}{
-		{"verify-end-wins", store.Task{PlanEndAt: &t1, WorkEndAt: &t2, VerifyEndAt: &t3}, "verify"},
-		{"work-end-wins", store.Task{PlanEndAt: &t1, WorkEndAt: &t3}, "work"},
-		{"plan-end-only", store.Task{PlanEndAt: &t1}, "plan"},
-		{"verify-cursor-fallback", store.Task{VerifyResumeCursor: "v"}, "verify"},
-		{"work-cursor-fallback", store.Task{WorkResumeCursor: "w"}, "work"},
-		{"plan-cursor-fallback", store.Task{PlanResumeCursor: "p"}, "plan"},
-		{"no-signal", store.Task{}, ""},
+		{"verify-end-wins", tasks.Task{PlanEndAt: &t1, WorkEndAt: &t2, VerifyEndAt: &t3}, "verify"},
+		{"work-end-wins", tasks.Task{PlanEndAt: &t1, WorkEndAt: &t3}, "work"},
+		{"plan-end-only", tasks.Task{PlanEndAt: &t1}, "plan"},
+		{"verify-cursor-fallback", tasks.Task{VerifyResumeCursor: "v"}, "verify"},
+		{"work-cursor-fallback", tasks.Task{WorkResumeCursor: "w"}, "work"},
+		{"plan-cursor-fallback", tasks.Task{PlanResumeCursor: "p"}, "plan"},
+		{"no-signal", tasks.Task{}, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -774,7 +775,7 @@ func TestDispatchByStatus_UnknownStatus(t *testing.T) {
 	err := dispatchByStatus(context.Background(), ContinueOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
-	}, store.Task{ID: "x", Status: "ghost"})
+	}, tasks.Task{ID: "x", Status: "ghost"})
 	if err == nil || !strings.Contains(err.Error(), "unsupported status") {
 		t.Fatalf("err = %v", err)
 	}
@@ -785,8 +786,8 @@ func TestDispatchByStatus_UnknownStatus(t *testing.T) {
 // error.
 func TestRunContinue_DispatchPlanError(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *store.Task) {
-		task.Status = store.StatusPlanning
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		t.Status = tasks.StatusPlanning
 	})
 	agent := &errPlanContinueAgent{
 		continueAgent: *newContinueAgent(),

@@ -19,6 +19,7 @@ import (
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -91,13 +92,13 @@ func readSpawnedArgv(t *testing.T, path string) []string {
 
 // readTaskFromBolt opens the per-project tasks DB and returns the
 // task row for id (or fails the test if missing).
-func readTaskFromBolt(t *testing.T, id string) store.Task {
+func readTaskFromBolt(t *testing.T, id string) tasks.Task {
 	t.Helper()
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := store.OpenTasks(path)
+	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {
@@ -135,13 +136,13 @@ func firstSeededTaskID(t *testing.T) string {
 
 // allTaskRows returns every row in the bbolt store; helper for the
 // source-picker tests that need to assert "no new row created."
-func allTaskRows(t *testing.T) []store.Task {
+func allTaskRows(t *testing.T) []tasks.Task {
 	t.Helper()
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := store.OpenTasks(path)
+	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	rows, err := s.ListTasks()
 	if err != nil {
@@ -179,7 +180,7 @@ func (u *scriptedStartUI) PickMarkdownInCwd(_ context.Context) (string, error) {
 	return u.pickedMarkdownPath, nil
 }
 
-func (u *scriptedStartUI) PickTask(_ context.Context, _ string, _ []store.Task) (string, bool, error) {
+func (u *scriptedStartUI) PickTask(_ context.Context, _ string, _ []tasks.Task) (string, bool, error) {
 	u.taskCalls++
 	if u.taskErr != nil {
 		return "", false, u.taskErr
@@ -230,10 +231,10 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 
 	id := firstSeededTaskID(t)
 	row := readTaskFromBolt(t, id)
-	if row.Status != store.StatusPlanning {
+	if row.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", row.Status)
 	}
-	wantLog := filepath.Join(".j/tasks", id, store.AgentLogFileName)
+	wantLog := filepath.Join(".j/tasks", id, tasks.AgentLogFileName)
 	if !strings.HasSuffix(row.AgentLogPath, wantLog) {
 		t.Fatalf("AgentLogPath = %q, want suffix %q", row.AgentLogPath, wantLog)
 	}
@@ -244,11 +245,11 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 		t.Fatalf("Summary should be derived from the markdown body")
 	}
 
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	reqPath := filepath.Join(tasksDir, id, store.RequirementsFileName)
+	reqPath := filepath.Join(tasksDir, id, tasks.RequirementsFileName)
 	body, err := os.ReadFile(reqPath)
 	if err != nil {
 		t.Fatalf("read requirements.md: %v", err)
@@ -395,7 +396,7 @@ func TestRunStart_NoFromFile_PicksMarkdown(t *testing.T) {
 	}
 	id := firstSeededTaskID(t)
 	row := readTaskFromBolt(t, id)
-	if row.Status != store.StatusPlanning {
+	if row.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", row.Status)
 	}
 	if row.BackgroundPID == 0 {
@@ -414,13 +415,13 @@ func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
 	}
-	existingID := store.NewTaskID()
-	if _, err := store.EnsureTaskDir(existingID); err != nil {
+	existingID := tasks.NewTaskID()
+	if _, err := tasks.EnsureDir(existingID); err != nil {
 		t.Fatal(err)
 	}
-	seedTaskRowDirect(t, store.Task{
+	seedTaskRowDirect(t, tasks.Task{
 		ID:          existingID,
-		Status:      store.StatusPlanDone,
+		Status:      tasks.StatusPlanDone,
 		InvokedTool: "cursor",
 		Summary:     "existing task",
 	})
@@ -459,7 +460,7 @@ func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 	if row.AgentLogPath == "" {
 		t.Fatalf("existing row's AgentLogPath = %q; want non-empty", row.AgentLogPath)
 	}
-	if row.Status != store.StatusPlanDone {
+	if row.Status != tasks.StatusPlanDone {
 		t.Fatalf("Status = %q; the orchestrator updates this asynchronously, the parent must leave it as-is", row.Status)
 	}
 	if row.Summary != "existing task" {
@@ -537,13 +538,13 @@ func TestRunStart_NoFromFile_TaskPickerCancelled(t *testing.T) {
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
 	}
-	existingID := store.NewTaskID()
-	if _, err := store.EnsureTaskDir(existingID); err != nil {
+	existingID := tasks.NewTaskID()
+	if _, err := tasks.EnsureDir(existingID); err != nil {
 		t.Fatal(err)
 	}
-	seedTaskRowDirect(t, store.Task{
+	seedTaskRowDirect(t, tasks.Task{
 		ID:          existingID,
-		Status:      store.StatusPlanDone,
+		Status:      tasks.StatusPlanDone,
 		InvokedTool: "cursor",
 		Summary:     "existing",
 	})
@@ -942,13 +943,13 @@ func TestRunStart_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
 // seedTaskRowDirect inserts a Task row via the per-project tasks
 // bbolt DB. Used by the re-plan tests to pre-seed an existing task
 // without going through any phase lifecycle.
-func seedTaskRowDirect(t *testing.T, row store.Task) {
+func seedTaskRowDirect(t *testing.T, row tasks.Task) {
 	t.Helper()
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := store.OpenTasks(path)
+	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)

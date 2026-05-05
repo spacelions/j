@@ -14,6 +14,7 @@ import (
 
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // scriptedUI returns a pre-set boolean from ConfirmReset and tracks
@@ -65,7 +66,7 @@ func TestRun_FreshInitCreatesAllArtifacts(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	dirExists(t, filepath.Join(dir, ".j"))
-	dirExists(t, filepath.Join(dir, ".j", store.TasksDirName))
+	dirExists(t, filepath.Join(dir, ".j", tasks.DirName))
 	fileExists(t, filepath.Join(dir, ".j", "settings"))
 	if !strings.Contains(stdout.String(), "initialized ") {
 		t.Fatalf("stdout = %q, want initialized", stdout.String())

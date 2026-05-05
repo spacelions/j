@@ -1,4 +1,4 @@
-package store
+package tasks
 
 import (
 	"io"
@@ -18,12 +18,12 @@ import (
 // between writes" stays intact even though there is no longer a lock
 // to release.
 func PersistWarn(stderr io.Writer, task Task) {
-	tasksDir, err := DefaultTasksDir()
+	tasksDir, err := DefaultDir()
 	if err != nil {
 		banner.DangerousBox(stderr, "J: tasks path: %v", err)
 		return
 	}
-	s := OpenTasks(tasksDir)
+	s := Open(tasksDir)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(task); err != nil {
 		banner.DangerousBox(stderr, "J: tasks put: %v", err)

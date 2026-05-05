@@ -528,15 +528,6 @@ func TestDefaultTasksDir_RootedInCwd(t *testing.T) {
 	}
 }
 
-// TestTaskFileName_IsTaskTOML pins the per-task metadata filename so
-// downstream tooling that lists `.j/tasks/<id>/task.toml` cannot
-// silently regress.
-func TestTaskFileName_IsTaskTOML(t *testing.T) {
-	if TaskFileName != "task.toml" {
-		t.Fatalf("TaskFileName = %q, want %q", TaskFileName, "task.toml")
-	}
-}
-
 func TestDefaultTasksDir_PropagatesCwdError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("cwd cannot be removed while in use on windows")

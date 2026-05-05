@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/spacelions/j/internal/cli/banner"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/run"
 )
 
@@ -38,8 +38,8 @@ import (
 // The function returns a refreshed slice in the same order as the
 // input so the printer reflects the just-applied transitions
 // without forcing a re-read of the DB.
-func reapBackgroundTasks(s *store.Store, stderr io.Writer, tasksDir string, in []store.Task) []store.Task {
-	out := make([]store.Task, len(in))
+func reapBackgroundTasks(s *tasks.Store, stderr io.Writer, tasksDir string, in []tasks.Task) []tasks.Task {
+	out := make([]tasks.Task, len(in))
 	for i, t := range in {
 		out[i] = maybeReap(s, stderr, tasksDir, t)
 	}
@@ -53,7 +53,7 @@ func reapBackgroundTasks(s *store.Store, stderr io.Writer, tasksDir string, in [
 // `planning` and `working` rows are reapable; `help`, `plan-done`,
 // and other states are left alone so a stale PID (e.g. from a
 // crashed parent) does not silently mutate finalised data.
-func maybeReap(s *store.Store, stderr io.Writer, tasksDir string, t store.Task) store.Task {
+func maybeReap(s *tasks.Store, stderr io.Writer, tasksDir string, t tasks.Task) tasks.Task {
 	if t.BackgroundPID == 0 {
 		return t
 	}
@@ -61,9 +61,9 @@ func maybeReap(s *store.Store, stderr io.Writer, tasksDir string, t store.Task) 
 		return t
 	}
 	switch t.Status {
-	case store.StatusPlanning:
+	case tasks.StatusPlanning:
 		t = finalisePlanReap(tasksDir, t)
-	case store.StatusWorking:
+	case tasks.StatusWorking:
 		t = finaliseWorkReap(t)
 	default:
 		return t
@@ -82,21 +82,21 @@ func maybeReap(s *store.Store, stderr io.Writer, tasksDir string, t store.Task) 
 // either is missing the row flips to `help` instead so the user
 // notices the failed run via `j tasks`. PlanEndAt is stamped in
 // either branch and BackgroundPID is cleared.
-func finalisePlanReap(tasksDir string, t store.Task) store.Task {
+func finalisePlanReap(tasksDir string, t tasks.Task) tasks.Task {
 	taskDir := filepath.Join(tasksDir, t.ID)
-	requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
-	planPath := filepath.Join(taskDir, store.PlanFileName)
+	requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
+	planPath := filepath.Join(taskDir, tasks.PlanFileName)
 	end := time.Now().UTC()
 	t.PlanEndAt = &end
 	t.BackgroundPID = 0
 	reqData, reqErr := os.ReadFile(requirementsPath)
 	_, planErr := os.Stat(planPath)
 	if reqErr != nil || planErr != nil {
-		t.Status = store.StatusHelp
+		t.Status = tasks.StatusHelp
 		return t
 	}
-	t.Status = store.StatusPlanDone
-	if summary := store.SummarizeMarkdown(string(reqData)); summary != "" {
+	t.Status = tasks.StatusPlanDone
+	if summary := tasks.SummarizeMarkdown(string(reqData)); summary != "" {
 		t.Summary = summary
 	}
 	return t
@@ -107,10 +107,10 @@ func finalisePlanReap(tasksDir string, t store.Task) store.Task {
 // is cleared. There is no artifact gate: cursor-agent edits files in
 // place during work, so the reaper cannot tell success from failure
 // without re-running it; failures surface via the captured agent log.
-func finaliseWorkReap(t store.Task) store.Task {
+func finaliseWorkReap(t tasks.Task) tasks.Task {
 	end := time.Now().UTC()
 	t.WorkEndAt = &end
-	t.Status = store.StatusWorkDone
+	t.Status = tasks.StatusWorkDone
 	t.BackgroundPID = 0
 	return t
 }

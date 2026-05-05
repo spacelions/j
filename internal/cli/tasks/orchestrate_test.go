@@ -15,6 +15,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // chainAgent stands in for a real codingagents.Agent across the
@@ -82,29 +83,29 @@ func (a *chainAgent) Verify(_ context.Context, req codingagents.VerifyRequest) (
 // shell-out branches see the inputs they expect.
 func seedOrchestrateTask(t *testing.T, tool string) string {
 	t.Helper()
-	id := store.NewTaskID()
-	taskDir, err := store.EnsureTaskDir(id)
+	id := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(id)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, store.RequirementsFileName), []byte("# task\nbody"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.RequirementsFileName), []byte("# task\nbody"), 0o644); err != nil {
 		t.Fatalf("write requirements: %v", err)
 	}
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		seedAgentBucket(t, bucket, tool, "m1")
 		writeBucketKey(t, bucket, "interactive", "false")
 	}
-	row := store.Task{
+	row := tasks.Task{
 		ID:          id,
-		Status:      store.StatusPlanning,
+		Status:      tasks.StatusPlanning,
 		InvokedTool: tool,
 		Summary:     "task",
 	}
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := store.OpenTasks(path)
+	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -132,13 +133,13 @@ func writeBucketKey(t *testing.T, bucket, key, value string) {
 	}
 }
 
-func readOrchestrateTaskRow(t *testing.T, id string) store.Task {
+func readOrchestrateTaskRow(t *testing.T, id string) tasks.Task {
 	t.Helper()
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := store.OpenTasks(path)
+	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {
@@ -204,7 +205,7 @@ func TestRunOrchestrate_PassFirstTry(t *testing.T) {
 		t.Fatalf("RunOrchestrate: %v", err)
 	}
 	row := readOrchestrateTaskRow(t, id)
-	if row.Status != store.StatusCompleted {
+	if row.Status != tasks.StatusCompleted {
 		t.Fatalf("Status = %q, want completed", row.Status)
 	}
 	if stub.planCalls.Load() != 1 {
@@ -241,7 +242,7 @@ func TestRunOrchestrate_FailRetryPass(t *testing.T) {
 		t.Fatalf("RunOrchestrate: %v", err)
 	}
 	row := readOrchestrateTaskRow(t, id)
-	if row.Status != store.StatusCompleted {
+	if row.Status != tasks.StatusCompleted {
 		t.Fatalf("Status = %q, want completed", row.Status)
 	}
 	if stub.verifyCalls.Load() != 2 {
@@ -274,7 +275,7 @@ func TestRunOrchestrate_FailExhausts(t *testing.T) {
 		t.Fatalf("RunOrchestrate: %v", err)
 	}
 	row := readOrchestrateTaskRow(t, id)
-	if row.Status != store.StatusVerifyDone {
+	if row.Status != tasks.StatusVerifyDone {
 		t.Fatalf("Status = %q, want verify-done", row.Status)
 	}
 }
@@ -303,7 +304,7 @@ func TestRunOrchestrate_PlanFailsHelp(t *testing.T) {
 		t.Fatalf("worker / verifier should not fire after plan failure")
 	}
 	row := readOrchestrateTaskRow(t, id)
-	if row.Status != store.StatusHelp {
+	if row.Status != tasks.StatusHelp {
 		t.Fatalf("Status = %q, want help", row.Status)
 	}
 }
@@ -328,7 +329,7 @@ func TestRunOrchestrate_PlanApprovalStopsAfterPlan(t *testing.T) {
 		t.Fatalf("RunOrchestrate: %v", err)
 	}
 	row := readOrchestrateTaskRow(t, id)
-	if row.Status != store.StatusPlanDone {
+	if row.Status != tasks.StatusPlanDone {
 		t.Fatalf("Status = %q, want plan-done", row.Status)
 	}
 	if stub.planCalls.Load() != 1 {
@@ -458,11 +459,11 @@ func TestRunOrchestrate_SkipPlanningRunsWorkVerify(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedOrchestrateTask(t, "scripted")
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(tasksDir, id, store.PlanFileName), []byte("1. step"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tasksDir, id, tasks.PlanFileName), []byte("1. step"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	stub := newChainAgent("scripted")

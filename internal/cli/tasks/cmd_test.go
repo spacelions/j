@@ -12,6 +12,7 @@ import (
 
 
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -46,15 +47,15 @@ func runCommand(t *testing.T, args ...string) (string, string, error) {
 // responsible for closing the store before running `j tasks` because
 // bbolt holds an exclusive file lock and the command opens its own
 // store from the same path.
-func openTasksDB(t *testing.T) *store.Store {
+func openTasksDB(t *testing.T) *tasks.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := store.OpenTasks(path)
+	s := tasks.Open(path)
 	return s
 }
 
@@ -155,10 +156,10 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	t2 := t1.Add(time.Hour)
 
-	tasks := []store.Task{
+	tasks := []tasks.Task{
 		{
 			ID:               "ddd-old-plan-done",
-			Status:           store.StatusPlanDone,
+			Status:           tasks.StatusPlanDone,
 			InvokedTool:      "cursor",
 			InvokedModel:     "gpt-5",
 			PlanResumeCursor: "",
@@ -167,7 +168,7 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 		},
 		{
 			ID:               "aaa-new-work-done",
-			Status:           store.StatusWorkDone,
+			Status:           tasks.StatusWorkDone,
 			InvokedTool:      "cursor",
 			InvokedModel:     "sonnet-4",
 			PlanResumeCursor: "8c7e6a9d-0f1a-4b2c-9d8e-1234567890ab",
@@ -177,14 +178,14 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 		},
 		{
 			ID:               "active-1",
-			Status:           store.StatusPlanning,
+			Status:           tasks.StatusPlanning,
 			InvokedTool:      "cursor",
 			InvokedModel:     "sonnet-4",
 			PlanResumeCursor: "11111111-1111-4111-9111-111111111111",
 			Summary:          "draft idea",
 		},
 	}
-	for _, task := range tasks {
+	for _, t := range tasks {
 		if err := s.PutTask(task); err != nil {
 			t.Fatalf("PutTask: %v", err)
 		}
@@ -246,9 +247,9 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 func TestRun_DefaultNonTTY_RendersBorder(t *testing.T) {
 	s := openTasksDB(t)
 	begin := time.Now().UTC().Add(-90 * time.Second)
-	task := store.Task{
+	task := tasks.Task{
 		ID:           "active-default",
-		Status:       store.StatusPlanning,
+		Status:       tasks.StatusPlanning,
 		InvokedTool:  "cursor",
 		InvokedModel: "sonnet-4",
 		Summary:      "draft idea",
@@ -284,9 +285,9 @@ func TestRun_DefaultNonTTY_RendersBorder(t *testing.T) {
 // cursors for every phase.
 func TestRun_HidesSessionLines(t *testing.T) {
 	s := openTasksDB(t)
-	task := store.Task{
+	task := tasks.Task{
 		ID:                 "all-cursors",
-		Status:             store.StatusPlanDone,
+		Status:             tasks.StatusPlanDone,
 		InvokedTool:        "cursor",
 		InvokedModel:       "sonnet-4",
 		PlanResumeCursor:   "plan-cursor-id",
@@ -369,7 +370,7 @@ func TestRun_DecodeError(t *testing.T) {
 // to seed a malformed row without going through PutTask's encoder.
 func writeRawTaskBytes(t *testing.T, id string, value []byte) error {
 	t.Helper()
-	dir, err := store.DefaultTasksDir()
+	dir, err := tasks.DefaultDir()
 	if err != nil {
 		return err
 	}
@@ -377,7 +378,7 @@ func writeRawTaskBytes(t *testing.T, id string, value []byte) error {
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(taskDir, store.TaskFileName), value, 0o644)
+	return os.WriteFile(filepath.Join(taskDir, tasks.TaskFileName), value, 0o644)
 }
 
 // TestStoreReloader_SortsAndReaps drives the closure handed to the
@@ -388,17 +389,17 @@ func TestStoreReloader_SortsAndReaps(t *testing.T) {
 	s := openTasksDB(t)
 	t.Cleanup(func() { _ = s.Close() })
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	if err := s.PutTask(store.Task{
-		ID: "z-old", Status: store.StatusPlanDone, PlanEndAt: &t1,
+	if err := s.PutTask(tasks.Task{
+		ID: "z-old", Status: tasks.StatusPlanDone, PlanEndAt: &t1,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PutTask(store.Task{
-		ID: "a-active", Status: store.StatusPlanning,
+	if err := s.PutTask(tasks.Task{
+		ID: "a-active", Status: tasks.StatusPlanning,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,13 +421,13 @@ func TestStoreReloader_PropagatesListErr(t *testing.T) {
 	if err := writeRawTaskBytes(t, "bad", []byte("not-json")); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := store.OpenTasks(path)
+	s := tasks.Open(path)
 	t.Cleanup(func() { _ = s.Close() })
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -487,8 +488,8 @@ func TestTerminalWidth(t *testing.T) {
 // TestWriteTasks_FlushError exercises the tabwriter flush error path
 // by passing a writer that fails on every Write.
 func TestWriteTasks_FlushError(t *testing.T) {
-	err := writeTasks(failingWriter{}, []store.Task{
-		{ID: "x", Status: store.StatusPlanDone},
+	err := writeTasks(failingWriter{}, []tasks.Task{
+		{ID: "x", Status: tasks.StatusPlanDone},
 	})
 	if err == nil {
 		t.Fatal("expected error from failing writer")

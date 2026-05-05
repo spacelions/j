@@ -9,6 +9,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -62,8 +63,8 @@ func TestNew_ShellOutHappyPath(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	taskID := store.NewTaskID()
-	taskDir, err := store.EnsureTaskDir(taskID)
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
@@ -71,7 +72,7 @@ func TestNew_ShellOutHappyPath(t *testing.T) {
 		t.Fatalf("write requirements: %v", err)
 	}
 	testutil.SeedAgentBucket(t, store.BucketPlanner, "scripted", "m1")
-	testutil.SeedTaskRow(t, store.Task{ID: taskID, Status: store.StatusPlanning, Summary: "task"})
+	testutil.SeedTaskRow(t, tasks.Task{ID: taskID, Status: tasks.StatusPlanning, Summary: "task"})
 
 	stub := newScriptedPlanAgent("scripted")
 	a, err := New(Config{
@@ -90,7 +91,7 @@ func TestNew_ShellOutHappyPath(t *testing.T) {
 		t.Fatalf("expected at least one phase event")
 	}
 	got := testutil.ReadTaskRow(t, taskID)
-	if got.Status != store.StatusPlanDone {
+	if got.Status != tasks.StatusPlanDone {
 		t.Fatalf("Status = %q, want plan-done", got.Status)
 	}
 }
@@ -99,8 +100,8 @@ func TestNew_ShellOutPlanFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	taskID := store.NewTaskID()
-	taskDir, err := store.EnsureTaskDir(taskID)
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
@@ -108,7 +109,7 @@ func TestNew_ShellOutPlanFails(t *testing.T) {
 		t.Fatalf("write requirements: %v", err)
 	}
 	testutil.SeedAgentBucket(t, store.BucketPlanner, "scripted", "m1")
-	testutil.SeedTaskRow(t, store.Task{ID: taskID, Status: store.StatusPlanning, Summary: "task"})
+	testutil.SeedTaskRow(t, tasks.Task{ID: taskID, Status: tasks.StatusPlanning, Summary: "task"})
 
 	stub := newScriptedPlanAgent("scripted")
 	stub.planErr = errors.New("planning boom")
@@ -124,7 +125,7 @@ func TestNew_ShellOutPlanFails(t *testing.T) {
 		t.Fatalf("err = %v, want planning boom propagation", err)
 	}
 	got := testutil.ReadTaskRow(t, taskID)
-	if got.Status != store.StatusHelp {
+	if got.Status != tasks.StatusHelp {
 		t.Fatalf("Status = %q, want help", got.Status)
 	}
 }
@@ -133,8 +134,8 @@ func TestNew_ShellOutDefaultsStderr(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	taskID := store.NewTaskID()
-	taskDir, err := store.EnsureTaskDir(taskID)
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
@@ -142,7 +143,7 @@ func TestNew_ShellOutDefaultsStderr(t *testing.T) {
 		t.Fatalf("write requirements: %v", err)
 	}
 	testutil.SeedAgentBucket(t, store.BucketPlanner, "scripted", "m1")
-	testutil.SeedTaskRow(t, store.Task{ID: taskID, Status: store.StatusPlanning, Summary: "task"})
+	testutil.SeedTaskRow(t, tasks.Task{ID: taskID, Status: tasks.StatusPlanning, Summary: "task"})
 
 	stub := newScriptedPlanAgent("scripted")
 	a, err := New(Config{TaskID: taskID, Agents: []codingagents.Agent{stub}})

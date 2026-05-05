@@ -19,6 +19,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/run"
 )
 
@@ -27,7 +28,7 @@ import (
 type UI interface {
 	SelectSource(ctx context.Context, allowed []picker.Source) (picker.Source, error)
 	PickMarkdownInCwd(ctx context.Context) (string, error)
-	PickTask(ctx context.Context, title string, tasks []store.Task) (string, bool, error)
+	PickTask(ctx context.Context, title string, tasks []tasks.Task) (string, bool, error)
 	SelectTool(ctx context.Context, options []string) (string, error)
 	SelectModel(ctx context.Context, options []string) (string, error)
 	ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error)
@@ -165,13 +166,13 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 		return nil
 	}
 
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		return err
 	}
 	taskDir := filepath.Join(tasksDir, existing.ID)
-	requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
-	planPath := filepath.Join(taskDir, store.PlanFileName)
+	requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
+	planPath := filepath.Join(taskDir, tasks.PlanFileName)
 
 	agent, model, err := selectPlanner(ctx, opts)
 	if err != nil {
@@ -182,7 +183,7 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 	if err != nil {
 		banner.DangerousBox(opts.Stderr, "J: %v", err)
 	}
-	agentLogPath := filepath.Join(taskDir, store.AgentLogFileName)
+	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
@@ -234,11 +235,11 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 	return nil
 }
 
-func loadTaskByID(id string) (store.Task, error) {
+func loadTaskByID(id string) (tasks.Task, error) {
 	return resolver.TaskByID("plan", id)
 }
 
-func listAllTasks() ([]store.Task, error) {
+func listAllTasks() ([]tasks.Task, error) {
 	return resolver.ListTasks("plan")
 }
 

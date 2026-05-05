@@ -13,6 +13,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -46,7 +47,7 @@ func TestRunForTask_PassFlow(t *testing.T) {
 		t.Fatalf("RunForTask: %v", err)
 	}
 	row := readChainTaskRow(t, id)
-	if row.Status != store.StatusCompleted {
+	if row.Status != tasks.StatusCompleted {
 		t.Fatalf("Status = %q, want completed", row.Status)
 	}
 	if stub.planCalls.Load() != 1 || stub.workCalls.Load() != 1 || stub.verifyCalls.Load() != 1 {
@@ -69,7 +70,7 @@ func TestRunForTask_FailFlow(t *testing.T) {
 		t.Fatalf("RunForTask: %v", err)
 	}
 	row := readChainTaskRow(t, id)
-	if row.Status != store.StatusVerifyDone {
+	if row.Status != tasks.StatusVerifyDone {
 		t.Fatalf("Status = %q, want verify-done", row.Status)
 	}
 }
@@ -135,7 +136,7 @@ func TestRunForTaskFromWork_RunsWorkerVerifier(t *testing.T) {
 		t.Fatalf("call counts: work=%d verify=%d", stub.workCalls.Load(), stub.verifyCalls.Load())
 	}
 	row := readChainTaskRow(t, id)
-	if row.Status != store.StatusCompleted {
+	if row.Status != tasks.StatusCompleted {
 		t.Fatalf("Status = %q, want completed", row.Status)
 	}
 }
@@ -150,7 +151,7 @@ func TestRunForTaskWithGate_PlanOnly(t *testing.T) {
 		t.Fatalf("RunForTaskWithGate: %v", err)
 	}
 	row := readChainTaskRow(t, id)
-	if row.Status != store.StatusPlanDone {
+	if row.Status != tasks.StatusPlanDone {
 		t.Fatalf("Status = %q, want plan-done", row.Status)
 	}
 	if stub.planCalls.Load() != 1 || stub.workCalls.Load() != 0 || stub.verifyCalls.Load() != 0 {
@@ -177,7 +178,7 @@ func TestRunForTask_PlanFailsStopsChain(t *testing.T) {
 		t.Fatalf("worker / verifier should not run after planner failure")
 	}
 	row := readChainTaskRow(t, id)
-	if row.Status != store.StatusHelp {
+	if row.Status != tasks.StatusHelp {
 		t.Fatalf("Status = %q, want help", row.Status)
 	}
 }
@@ -231,12 +232,12 @@ func TestRunForTask_FinaliseStuckVerifying(t *testing.T) {
 	testutil.Init(t)
 	id := seedChainTask(t, "scripted")
 	row := readChainTaskRow(t, id)
-	row.Status = store.StatusVerifying
+	row.Status = tasks.StatusVerifying
 	writeChainTaskRow(t, row)
 
 	finaliseVerifyFailIfStuck(io.Discard, id)
 	got := readChainTaskRow(t, id)
-	if got.Status != store.StatusVerifyDone {
+	if got.Status != tasks.StatusVerifyDone {
 		t.Fatalf("Status = %q, want verify-done after mop-up", got.Status)
 	}
 }
@@ -249,12 +250,12 @@ func TestFinaliseVerifyFailIfStuck_NoOpOnTerminal(t *testing.T) {
 	testutil.Init(t)
 	id := seedChainTask(t, "scripted")
 	row := readChainTaskRow(t, id)
-	row.Status = store.StatusCompleted
+	row.Status = tasks.StatusCompleted
 	writeChainTaskRow(t, row)
 
 	finaliseVerifyFailIfStuck(io.Discard, id)
 	got := readChainTaskRow(t, id)
-	if got.Status != store.StatusCompleted {
+	if got.Status != tasks.StatusCompleted {
 		t.Fatalf("Status = %q, want unchanged completed", got.Status)
 	}
 }
@@ -272,23 +273,23 @@ func TestFinaliseVerifyFailIfStuck_MissingRow(t *testing.T) {
 // out branches see the inputs they expect. Returns the new id.
 func seedChainTask(t *testing.T, tool string) string {
 	t.Helper()
-	id := store.NewTaskID()
-	taskDir, err := store.EnsureTaskDir(id)
+	id := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(id)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, store.RequirementsFileName), []byte("# task\nbody"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.RequirementsFileName), []byte("# task\nbody"), 0o644); err != nil {
 		t.Fatalf("write requirements: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, store.PlanFileName), []byte("1. step"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.PlanFileName), []byte("1. step"), 0o644); err != nil {
 		t.Fatalf("write plan: %v", err)
 	}
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		seedAgentBucketWithInteractive(t, bucket, tool, "m1", "false")
 	}
-	writeChainTaskRow(t, store.Task{
+	writeChainTaskRow(t, tasks.Task{
 		ID:          id,
-		Status:      store.StatusPlanning,
+		Status:      tasks.StatusPlanning,
 		InvokedTool: tool,
 		Summary:     "task",
 	})
@@ -320,26 +321,26 @@ func seedAgentBucketWithInteractive(t *testing.T, bucket, tool, model, interacti
 	}
 }
 
-func writeChainTaskRow(t *testing.T, row store.Task) {
+func writeChainTaskRow(t *testing.T, row tasks.Task) {
 	t.Helper()
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := store.OpenTasks(path)
+	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
 	}
 }
 
-func readChainTaskRow(t *testing.T, id string) store.Task {
+func readChainTaskRow(t *testing.T, id string) tasks.Task {
 	t.Helper()
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := store.OpenTasks(path)
+	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {

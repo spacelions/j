@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -35,15 +36,15 @@ func spawnSleepingChild(t *testing.T) int {
 // openTestStore returns a tasks-mode *Store rooted in t.TempDir().
 // The store is closed by t.Cleanup; tests that need the underlying
 // path call DefaultTasksDir after.
-func openTestStore(t *testing.T) *store.Store {
+func openTestStore(t *testing.T) *tasks.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := store.OpenTasks(path)
+	s := tasks.Open(path)
 	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
@@ -53,17 +54,17 @@ func openTestStore(t *testing.T) *store.Store {
 // can use it for subsequent assertions.
 func seedTaskDir(t *testing.T, id, requirements, plan string) string {
 	t.Helper()
-	dir, err := store.EnsureTaskDir(id)
+	dir, err := tasks.EnsureDir(id)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
 	if requirements != "" {
-		if err := os.WriteFile(filepath.Join(dir, store.RequirementsFileName), []byte(requirements), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, tasks.RequirementsFileName), []byte(requirements), 0o644); err != nil {
 			t.Fatalf("write requirements: %v", err)
 		}
 	}
 	if plan != "" {
-		if err := os.WriteFile(filepath.Join(dir, store.PlanFileName), []byte(plan), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, tasks.PlanFileName), []byte(plan), 0o644); err != nil {
 			t.Fatalf("write plan: %v", err)
 		}
 	}
@@ -76,14 +77,14 @@ func seedTaskDir(t *testing.T, id, requirements, plan string) string {
 func TestReap_LivePIDLeftAlone(t *testing.T) {
 	s := openTestStore(t)
 	pid := spawnSleepingChild(t)
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 	begin := time.Now().UTC().Add(-time.Minute)
-	in := []store.Task{{
+	in := []tasks.Task{{
 		ID:            "live-task",
-		Status:        store.StatusPlanning,
+		Status:        tasks.StatusPlanning,
 		BackgroundPID: pid,
 		PlanBeginAt:   &begin,
 		Summary:       "alive",
@@ -94,7 +95,7 @@ func TestReap_LivePIDLeftAlone(t *testing.T) {
 		t.Fatalf("len(out) = %d", len(out))
 	}
 	got := out[0]
-	if got.Status != store.StatusPlanning {
+	if got.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", got.Status)
 	}
 	if got.BackgroundPID != pid {
@@ -111,23 +112,23 @@ func TestReap_LivePIDLeftAlone(t *testing.T) {
 // PlanEndAt is stamped, and BackgroundPID is cleared.
 func TestReap_DeadPlanning_WithArtifacts(t *testing.T) {
 	s := openTestStore(t)
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 	id := "done-with-artifacts"
 	seedTaskDir(t, id, "# refined heading\nbody", "1. step\n2. step")
 	begin := time.Now().UTC().Add(-time.Minute)
-	in := []store.Task{{
+	in := []tasks.Task{{
 		ID:            id,
-		Status:        store.StatusPlanning,
+		Status:        tasks.StatusPlanning,
 		BackgroundPID: deadPID(t),
 		PlanBeginAt:   &begin,
 		Summary:       "stale",
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
 	got := out[0]
-	if got.Status != store.StatusPlanDone {
+	if got.Status != tasks.StatusPlanDone {
 		t.Fatalf("Status = %q, want plan-done", got.Status)
 	}
 	if got.BackgroundPID != 0 {
@@ -143,7 +144,7 @@ func TestReap_DeadPlanning_WithArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	if persisted.Status != store.StatusPlanDone {
+	if persisted.Status != tasks.StatusPlanDone {
 		t.Fatalf("persisted Status = %q", persisted.Status)
 	}
 }
@@ -153,21 +154,21 @@ func TestReap_DeadPlanning_WithArtifacts(t *testing.T) {
 // (e.g. the spawned child crashed early), so the row flips to help.
 func TestReap_DeadPlanning_NoArtifacts(t *testing.T) {
 	s := openTestStore(t)
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 	id := "dead-without-artifacts"
 	seedTaskDir(t, id, "", "")
-	in := []store.Task{{
+	in := []tasks.Task{{
 		ID:            id,
-		Status:        store.StatusPlanning,
+		Status:        tasks.StatusPlanning,
 		BackgroundPID: deadPID(t),
 		Summary:       "fallback",
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
 	got := out[0]
-	if got.Status != store.StatusHelp {
+	if got.Status != tasks.StatusHelp {
 		t.Fatalf("Status = %q, want help", got.Status)
 	}
 	if got.PlanEndAt == nil {
@@ -186,19 +187,19 @@ func TestReap_DeadPlanning_NoArtifacts(t *testing.T) {
 // must flip to help (both files are required for plan-done).
 func TestReap_DeadPlanning_OnlyPlanMissing(t *testing.T) {
 	s := openTestStore(t)
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 	id := "dead-missing-plan"
 	seedTaskDir(t, id, "# heading\nbody", "")
-	in := []store.Task{{
+	in := []tasks.Task{{
 		ID:            id,
-		Status:        store.StatusPlanning,
+		Status:        tasks.StatusPlanning,
 		BackgroundPID: deadPID(t),
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
-	if out[0].Status != store.StatusHelp {
+	if out[0].Status != tasks.StatusHelp {
 		t.Fatalf("Status = %q, want help", out[0].Status)
 	}
 }
@@ -208,22 +209,22 @@ func TestReap_DeadPlanning_OnlyPlanMissing(t *testing.T) {
 // BackgroundPID. There is no artifact gate.
 func TestReap_DeadWorking(t *testing.T) {
 	s := openTestStore(t)
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 	id := "dead-working"
 	seedTaskDir(t, id, "", "")
 	begin := time.Now().UTC().Add(-time.Minute)
-	in := []store.Task{{
+	in := []tasks.Task{{
 		ID:            id,
-		Status:        store.StatusWorking,
+		Status:        tasks.StatusWorking,
 		BackgroundPID: deadPID(t),
 		WorkBeginAt:   &begin,
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
 	got := out[0]
-	if got.Status != store.StatusWorkDone {
+	if got.Status != tasks.StatusWorkDone {
 		t.Fatalf("Status = %q, want work-done", got.Status)
 	}
 	if got.BackgroundPID != 0 {
@@ -239,19 +240,19 @@ func TestReap_DeadWorking(t *testing.T) {
 // is set. Only planning and working transition through the reaper.
 func TestReap_NonActiveStateUntouched(t *testing.T) {
 	s := openTestStore(t)
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	in := []store.Task{{
+	in := []tasks.Task{{
 		ID:            "stale-help",
-		Status:        store.StatusHelp,
+		Status:        tasks.StatusHelp,
 		BackgroundPID: deadPID(t),
 		Summary:       "old",
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
 	got := out[0]
-	if got.Status != store.StatusHelp {
+	if got.Status != tasks.StatusHelp {
 		t.Fatalf("Status = %q, want help (untouched)", got.Status)
 	}
 	if got.BackgroundPID == 0 {
@@ -265,17 +266,17 @@ func TestReap_NonActiveStateUntouched(t *testing.T) {
 // or stat work.
 func TestReap_ZeroPIDUntouched(t *testing.T) {
 	s := openTestStore(t)
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	in := []store.Task{{
+	in := []tasks.Task{{
 		ID:     "no-bg",
-		Status: store.StatusPlanning,
+		Status: tasks.StatusPlanning,
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
 	got := out[0]
-	if got.Status != store.StatusPlanning {
+	if got.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning untouched", got.Status)
 	}
 	if got.BackgroundPID != 0 {
@@ -293,15 +294,15 @@ func TestReap_PutErrorWarns(t *testing.T) {
 	if err := os.WriteFile(parent, []byte("blocker"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := store.OpenTasks(parent)
+	s := tasks.Open(parent)
 	var stderr bytes.Buffer
-	in := []store.Task{{
+	in := []tasks.Task{{
 		ID:            id,
-		Status:        store.StatusPlanning,
+		Status:        tasks.StatusPlanning,
 		BackgroundPID: deadPID(t),
 	}}
 	out := reapBackgroundTasks(s, &stderr, parent, in)
-	if out[0].Status != store.StatusHelp {
+	if out[0].Status != tasks.StatusHelp {
 		t.Fatalf("in-memory row should still transition: %q", out[0].Status)
 	}
 	if !strings.Contains(stderr.String(), "tasks put") {
@@ -317,9 +318,9 @@ func TestReap_ListTasksWiresThroughCommand(t *testing.T) {
 	id := "wired-task"
 	seedTaskDir(t, id, "# wired heading\nbody", "1. step")
 	begin := time.Now().UTC().Add(-time.Hour)
-	row := store.Task{
+	row := tasks.Task{
 		ID:            id,
-		Status:        store.StatusPlanning,
+		Status:        tasks.StatusPlanning,
 		InvokedTool:   "cursor",
 		InvokedModel:  "sonnet-4",
 		BackgroundPID: deadPID(t),
@@ -339,17 +340,17 @@ func TestReap_ListTasksWiresThroughCommand(t *testing.T) {
 	if !strings.Contains(out, id) || !strings.Contains(out, "plan-done") {
 		t.Fatalf("output should reflect reaped row: %q", out)
 	}
-	dbPath, err := store.DefaultTasksDir()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s2 := store.OpenTasks(dbPath)
+	s2 := tasks.Open(dbPath)
 	defer func() { _ = s2.Close() }()
 	persisted, err := s2.GetTask(id)
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	if persisted.Status != store.StatusPlanDone {
+	if persisted.Status != tasks.StatusPlanDone {
 		t.Fatalf("persisted Status = %q", persisted.Status)
 	}
 	if persisted.BackgroundPID != 0 {

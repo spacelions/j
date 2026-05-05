@@ -14,7 +14,7 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -157,7 +157,7 @@ func TestRunEnter_PickerSubshell(t *testing.T) {
 	if spawner.calls != 1 {
 		t.Fatalf("Spawner calls = %d, want 1", spawner.calls)
 	}
-	wantDir := filepath.Join(cwd, ".j", store.TasksDirName, "id-pick")
+	wantDir := filepath.Join(cwd, ".j", tasks.DirName, "id-pick")
 	if spawner.lastDir != wantDir {
 		t.Fatalf("Spawner dir = %q, want %q", spawner.lastDir, wantDir)
 	}
@@ -191,7 +191,7 @@ func TestRunEnter_PickerPrint(t *testing.T) {
 	if spawner.calls != 0 {
 		t.Fatalf("Spawner calls = %d, want 0 on --print", spawner.calls)
 	}
-	wantDir := filepath.Join(cwd, ".j", store.TasksDirName, "id-print")
+	wantDir := filepath.Join(cwd, ".j", tasks.DirName, "id-print")
 	got := strings.TrimRight(stdout.String(), "\n")
 	if got != wantDir {
 		t.Fatalf("stdout = %q, want %q", got, wantDir)
@@ -227,7 +227,7 @@ func TestRunEnter_DirectIDSubshell(t *testing.T) {
 	if spawner.calls != 1 {
 		t.Fatalf("Spawner calls = %d, want 1", spawner.calls)
 	}
-	wantDir := filepath.Join(cwd, ".j", store.TasksDirName, "id-direct")
+	wantDir := filepath.Join(cwd, ".j", tasks.DirName, "id-direct")
 	if spawner.lastDir != wantDir {
 		t.Fatalf("Spawner dir = %q, want %q", spawner.lastDir, wantDir)
 	}
@@ -262,7 +262,7 @@ func TestRunEnter_DirectIDPrint(t *testing.T) {
 	if ui.pickCalls != 0 || spawner.calls != 0 {
 		t.Fatalf("UI/Spawner calls = pick=%d, spawn=%d, want both 0", ui.pickCalls, spawner.calls)
 	}
-	wantDir := filepath.Join(cwd, ".j", store.TasksDirName, "id-direct-print")
+	wantDir := filepath.Join(cwd, ".j", tasks.DirName, "id-direct-print")
 	got := strings.TrimRight(stdout.String(), "\n")
 	if got != wantDir {
 		t.Fatalf("stdout = %q, want %q", got, wantDir)
@@ -666,7 +666,7 @@ func TestNewEnterCmd_RunE_PickerPrintViaEnv(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	wantDir := filepath.Join(cwd, ".j", store.TasksDirName, "id-env-print")
+	wantDir := filepath.Join(cwd, ".j", tasks.DirName, "id-env-print")
 	got := strings.TrimRight(stdout.String(), "\n")
 	if got != wantDir {
 		t.Fatalf("stdout = %q, want %q", got, wantDir)
@@ -697,7 +697,7 @@ func TestNewEnterCmd_RunE_PrintViaEnvFlagID(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	wantDir := filepath.Join(cwd, ".j", store.TasksDirName, "id-env-bool")
+	wantDir := filepath.Join(cwd, ".j", tasks.DirName, "id-env-bool")
 	got := strings.TrimRight(stdout.String(), "\n")
 	if got != wantDir {
 		t.Fatalf("stdout = %q, want %q", got, wantDir)

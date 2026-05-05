@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // Source is the planning input the user picks at the start of a
@@ -37,12 +37,12 @@ type SourceResult struct {
 
 // SourceUI is the slice of UI behaviour PickSource needs. *Picker
 // satisfies it; cli commands' narrow UI interfaces (plan.UI,
-// tasks.StartUI) include the same three methods so their scripted
+// task.StartUI) include the same three methods so their scripted
 // fakes satisfy it too.
 type SourceUI interface {
 	SelectSource(ctx context.Context, allowed []Source) (Source, error)
 	PickMarkdownInCwd(ctx context.Context) (string, error)
-	PickTask(ctx context.Context, title string, tasks []store.Task) (string, bool, error)
+	PickTask(ctx context.Context, title string, tasks []tasks.Task) (string, bool, error)
 }
 
 // SelectSource renders the top-level source widget over the supplied
@@ -83,7 +83,7 @@ func (p *Picker) SelectSource(ctx context.Context, allowed []Source) (Source, er
 // listTasks returns no rows. Callers supply a flow-specific message
 // (e.g. "plan: no tasks to re-plan; run `j plan` first"). Pass nil
 // to fall back to a generic "picker: no tasks available".
-func PickSource(ctx context.Context, ui SourceUI, allowed []Source, listTasks func() ([]store.Task, error), emptyTasksErr error) (SourceResult, error) {
+func PickSource(ctx context.Context, ui SourceUI, allowed []Source, listTasks func() ([]tasks.Task, error), emptyTasksErr error) (SourceResult, error) {
 	src, err := ui.SelectSource(ctx, allowed)
 	if err != nil {
 		return SourceResult{}, err

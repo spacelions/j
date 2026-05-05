@@ -16,6 +16,7 @@ import (
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -55,16 +56,16 @@ func mustInit(t *testing.T) {
 // the store. Used by Run-level tests to assert the lifecycle wrote
 // what they expect. Returns nil for a missing DB so the negative-path
 // cases can distinguish "file missing" from a real bbolt error.
-func readTasks(t *testing.T) []store.Task {
+func readTasks(t *testing.T) []tasks.Task {
 	t.Helper()
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
 		return nil
 	}
-	s := store.OpenTasks(path)
+	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	got, err := s.ListTasks()
 	if err != nil {
@@ -155,8 +156,8 @@ type scriptedUI struct {
 	replanCalls         int
 	confirmCalls        int
 
-	pickedTasks   []store.Task
-	replanTasks   []store.Task
+	pickedTasks   []tasks.Task
+	replanTasks   []tasks.Task
 	confirmCmd    string
 	confirmTaskID string
 	confirmStatus string
@@ -186,7 +187,7 @@ func (s *scriptedUI) PickMarkdownInCwd(_ context.Context) (string, error) {
 // (id, ok, err) contract: ok=false collapses the user-abort path and
 // the "no selection programmed" case so leaving the matching id
 // field empty signals cancel.
-func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []store.Task) (string, bool, error) {
+func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []tasks.Task) (string, bool, error) {
 	if strings.Contains(title, "existing task") {
 		s.replanCalls++
 		s.replanTasks = tasks
@@ -1331,7 +1332,7 @@ func TestRun_BackgroundSpawn_RecordsPID(t *testing.T) {
 		t.Fatalf("len(tasks) = %d, want 1", len(tasks))
 	}
 	got := tasks[0]
-	if got.Status != store.StatusPlanning {
+	if got.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", got.Status)
 	}
 	if got.BackgroundPID != 42424 {
@@ -1367,7 +1368,7 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DefaultPath: %v", err)
 	}
-	tasksPath, err := store.DefaultTasksDir()
+	tasksPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
@@ -1381,7 +1382,7 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentPlan(t *testing.T) {
 		if err := s.Close(); err != nil {
 			return fmt.Errorf("close settings: %w", err)
 		}
-		ts := store.OpenTasks(tasksPath)
+		ts := tasks.Open(tasksPath)
 		if _, err := ts.ListTasks(); err != nil {
 			return fmt.Errorf("tasks store should be readable: %w", err)
 		}
@@ -1406,7 +1407,7 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentPlan(t *testing.T) {
 		t.Fatalf("agent.Plan calls = %d, want 1", agent.planned)
 	}
 	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusPlanDone {
+	if len(tasks) != 1 || tasks[0].Status != tasks.StatusPlanDone {
 		t.Fatalf("tasks = %+v, want one plan-done task", tasks)
 	}
 }

@@ -21,6 +21,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/run"
 )
 
@@ -140,9 +141,9 @@ func Run(ctx context.Context, opts Options) (err error) {
 		return runErr
 	}
 	switch outcome {
-	case store.VerifyOutcomeSuccess:
+	case tasks.VerifyOutcomeSuccess:
 		banner.Fprintf(opts.Stdout, "J: verified task %s\n", res.Task.ID)
-	case store.VerifyOutcomeNoRetries:
+	case tasks.VerifyOutcomeNoRetries:
 		banner.DangerousFprintf(opts.Stdout, "J: verifier exhausted retries on task %s; status verify-done\n", res.Task.ID)
 	}
 	return nil
@@ -168,8 +169,8 @@ func Run(ctx context.Context, opts Options) (err error) {
 // the contract documented on agent.go without binding child
 // lifetime to ctx — see run.Spawn's commentary on why a true
 // fire-and-forget child cannot be safely killed by ctx cancellation.
-func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent codingagents.Agent, model, resumeID string, res resolved) (store.VerifyOutcome, error) {
-	agentLogPath := filepath.Join(res.TaskDir, store.AgentLogFileName)
+func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent codingagents.Agent, model, resumeID string, res resolved) (tasks.VerifyOutcome, error) {
+	agentLogPath := filepath.Join(res.TaskDir, tasks.AgentLogFileName)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
@@ -191,16 +192,16 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 		}
 		pid, err := verifierAgent.Verify(ctx, req)
 		if err != nil {
-			return store.VerifyOutcomeNoRetries, err
+			return tasks.VerifyOutcomeNoRetries, err
 		}
 		if err := run.WaitForExit(ctx, pid); err != nil {
-			return store.VerifyOutcomeNoRetries, err
+			return tasks.VerifyOutcomeNoRetries, err
 		}
 		verdict := resolver.ParseVerdict(res.FindingsPath)
 		emitVerdict(opts.Stderr, res.Task.ID, i, verdict, res.FindingsPath)
 		emitIterationEnd(opts.Stderr, res.Task.ID, i, verdict)
 		if verdict == "PASS" {
-			return store.VerifyOutcomeSuccess, nil
+			return tasks.VerifyOutcomeSuccess, nil
 		}
 		// On FAIL we still need to keep iterating: break out
 		// when the next loop turn would fall off the
@@ -221,13 +222,13 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 		}
 		workPID, err := workerAgent.Work(ctx, workReq)
 		if err != nil {
-			return store.VerifyOutcomeNoRetries, err
+			return tasks.VerifyOutcomeNoRetries, err
 		}
 		if err := run.WaitForExit(ctx, workPID); err != nil {
-			return store.VerifyOutcomeNoRetries, err
+			return tasks.VerifyOutcomeNoRetries, err
 		}
 	}
-	return store.VerifyOutcomeNoRetries, nil
+	return tasks.VerifyOutcomeNoRetries, nil
 }
 
 func resolveTask(ctx context.Context, opts Options) (resolved, bool, error) {

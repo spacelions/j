@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -35,12 +36,12 @@ type fakeUI struct {
 	pickReturn     string
 	pickErr        error
 	pickCalls      int
-	lastPickedFrom []store.Task
+	lastPickedFrom []tasks.Task
 }
 
-func (u *fakeUI) ConfirmDiscard(_ context.Context, task store.Task) (bool, error) {
+func (u *fakeUI) ConfirmDiscard(_ context.Context, t tasks.Task) (bool, error) {
 	u.calls++
-	u.lastTaskID = task.ID
+	u.lastTaskID = t.ID
 	if u.confirmErr != nil {
 		return false, u.confirmErr
 	}
@@ -52,7 +53,7 @@ func (u *fakeUI) ConfirmDiscard(_ context.Context, task store.Task) (bool, error
 // pickReturn was set" so existing call sites that pre-date the
 // contract (which programmed the cancel case via an empty
 // pickReturn) continue to work without a parallel pickOk knob.
-func (u *fakeUI) PickTask(_ context.Context, tasks []store.Task) (string, bool, error) {
+func (u *fakeUI) PickTask(_ context.Context, tasks []tasks.Task) (string, bool, error) {
 	u.pickCalls++
 	u.lastPickedFrom = tasks
 	if u.pickErr != nil {
@@ -70,14 +71,14 @@ func (u *fakeUI) PickTask(_ context.Context, tasks []store.Task) (string, bool, 
 func seedTask(t *testing.T, id, summary string) string {
 	t.Helper()
 	testutil.Init(t)
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := store.OpenTasks(path)
-	if err := s.PutTask(store.Task{
+	s := tasks.Open(path)
+	if err := s.PutTask(tasks.Task{
 		ID:           id,
-		Status:       store.StatusPlanDone,
+		Status:       tasks.StatusPlanDone,
 		InvokedTool:  "cursor",
 		InvokedModel: "sonnet-4",
 		Summary:      summary,
@@ -87,11 +88,11 @@ func seedTask(t *testing.T, id, summary string) string {
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	taskDir, err := store.EnsureTaskDir(id)
+	taskDir, err := tasks.EnsureDir(id)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, store.RequirementsFileName),
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.RequirementsFileName),
 		[]byte("# "+summary+"\nbody"), 0o644); err != nil {
 		t.Fatalf("write requirements: %v", err)
 	}
@@ -103,14 +104,14 @@ func seedTask(t *testing.T, id, summary string) string {
 func seedTaskWithWorktree(t *testing.T, id, summary, worktree string) string {
 	t.Helper()
 	testutil.Init(t)
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := store.OpenTasks(path)
-	if err := s.PutTask(store.Task{
+	s := tasks.Open(path)
+	if err := s.PutTask(tasks.Task{
 		ID:           id,
-		Status:       store.StatusPlanDone,
+		Status:       tasks.StatusPlanDone,
 		InvokedTool:  "cursor",
 		InvokedModel: "sonnet-4",
 		Summary:      summary,
@@ -121,11 +122,11 @@ func seedTaskWithWorktree(t *testing.T, id, summary, worktree string) string {
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	taskDir, err := store.EnsureTaskDir(id)
+	taskDir, err := tasks.EnsureDir(id)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, store.RequirementsFileName),
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.RequirementsFileName),
 		[]byte("# "+summary+"\nbody"), 0o644); err != nil {
 		t.Fatalf("write requirements: %v", err)
 	}
@@ -208,11 +209,11 @@ func readGitStubLogLines(t *testing.T, logFile string) []string {
 // row was either removed or left intact.
 func taskExists(t *testing.T, id string) bool {
 	t.Helper()
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := store.OpenTasks(path)
+	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	_, err = s.GetTask(id)
 	if err == nil {
@@ -428,7 +429,7 @@ func TestRunDiscard_RemoveTaskDirError(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	seedTask(t, "id-rm-fail", "won't remove")
-	tasksDir := filepath.Join(dir, ".j", store.TasksDirName)
+	tasksDir := filepath.Join(dir, ".j", tasks.DirName)
 	if err := os.Chmod(tasksDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -800,7 +801,7 @@ func TestRunDiscard_RemovesWorktreeOnConfirm(t *testing.T) {
 }
 
 // TestRunDiscard_EmptyWorktree_FallsBackToComputedName covers the
-// legacy-row path: task.Worktree is empty (e.g. row created before
+// legacy-row path: t.Worktree is empty (e.g. row created before
 // the persisted-worktree feature), but the on-disk worktree exists
 // under the deterministic slug WorktreeNameFor(project, task). The
 // fallback recomputes that slug from cwd basename + summary and the
@@ -862,7 +863,7 @@ func TestRunDiscard_EmptyWorktree_FallsBackToComputedName(t *testing.T) {
 }
 
 // TestRunDiscard_EmptyWorktree_NoComputedMatch_NoRemove confirms that
-// when task.Worktree is empty AND the computed slug doesn't match any
+// when t.Worktree is empty AND the computed slug doesn't match any
 // listed worktree, the lookup runs but no `worktree remove` is
 // invoked. The row + dir are still discarded.
 func TestRunDiscard_EmptyWorktree_NoComputedMatch_NoRemove(t *testing.T) {

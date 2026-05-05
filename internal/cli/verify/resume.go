@@ -18,7 +18,7 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/resolver"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/run"
 )
 
@@ -96,7 +96,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return errors.New("J: no coding agents configured")
 	}
 
-	task, ok, err := resolveResumeTask(ctx, opts)
+	t, ok, err := resolveResumeTask(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -105,22 +105,22 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return nil
 	}
 
-	agent, ok := lookupResumeAgent(opts.Agents, task.InvokedTool)
+	agent, ok := lookupResumeAgent(opts.Agents, t.InvokedTool)
 	if !ok {
-		return fmt.Errorf("J: unknown tool %q", task.InvokedTool)
+		return fmt.Errorf("J: unknown tool %q", t.InvokedTool)
 	}
 
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		return err
 	}
-	taskDir := filepath.Join(tasksDir, task.ID)
-	planPath := filepath.Join(taskDir, store.PlanFileName)
-	requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
-	verifierPlanPath := filepath.Join(taskDir, store.VerifierPlanFileName)
-	findingsPath := filepath.Join(taskDir, store.VerifierFindingsFileName)
+	taskDir := filepath.Join(tasksDir, t.ID)
+	planPath := filepath.Join(taskDir, tasks.PlanFileName)
+	requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
+	verifierPlanPath := filepath.Join(taskDir, tasks.VerifierPlanFileName)
+	findingsPath := filepath.Join(taskDir, tasks.VerifierFindingsFileName)
 
-	lc := task.BeginVerifyResume(opts.Stderr)
+	lc := t.BeginVerifyResume(opts.Stderr)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
@@ -135,25 +135,25 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		PlanPath:                   planPath,
 		VerifierPlanOutputPath:     verifierPlanPath,
 		VerifierFindingsOutputPath: findingsPath,
-		Model:                      task.InvokedModel,
+		Model:                      t.InvokedModel,
 		Interactive:                true,
-		ResumeChatID:               task.VerifyResumeCursor,
+		ResumeChatID:               t.VerifyResumeCursor,
 		Resume:                     true,
 		MustRead:                   mustReadFiles,
 	})
 	if runErr == nil {
 		runErr = run.WaitForExit(ctx, pid)
 	}
-	outcome := store.VerifyOutcomeNoRetries
+	outcome := tasks.VerifyOutcomeNoRetries
 	if runErr == nil && resolver.ParseVerdict(findingsPath) == "PASS" {
-		outcome = store.VerifyOutcomeSuccess
+		outcome = tasks.VerifyOutcomeSuccess
 	}
 	lc.Finish(outcome, runErr)
 	if runErr != nil {
 		return runErr
 	}
 
-	banner.Fprintf(opts.Stdout, "J: verify resume on task %s\n", task.ID)
+	banner.Fprintf(opts.Stdout, "J: verify resume on task %s\n", t.ID)
 	return nil
 }
 
@@ -162,55 +162,55 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 // is false (with nil error) when no eligible tasks exist; callers
 // should print the "no resumable verify sessions" line and return
 // nil.
-func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, bool, error) {
+func resolveResumeTask(ctx context.Context, opts ResumeOptions) (tasks.Task, bool, error) {
 	if opts.TaskID != "" {
 		return resolveResumeByID(opts.TaskID)
 	}
-	tasks, err := listResumableTasks()
+	rows, err := listResumableTasks()
 	if err != nil {
-		return store.Task{}, false, err
+		return tasks.Task{}, false, err
 	}
-	switch len(tasks) {
+	switch len(rows) {
 	case 0:
-		return store.Task{}, false, nil
+		return tasks.Task{}, false, nil
 	case 1:
-		return tasks[0], true, nil
+		return rows[0], true, nil
 	}
-	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to resume verifying", tasks)
+	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to resume verifying", rows)
 	if err != nil {
-		return store.Task{}, false, err
+		return tasks.Task{}, false, err
 	}
 	if !ok {
-		return store.Task{}, false, nil
+		return tasks.Task{}, false, nil
 	}
-	for _, t := range tasks {
+	for _, t := range rows {
 		if t.ID == chosen {
 			return t, true, nil
 		}
 	}
-	return store.Task{}, false, fmt.Errorf("J: task %q not found", chosen)
+	return tasks.Task{}, false, fmt.Errorf("J: task %q not found", chosen)
 }
 
 // resolveResumeByID loads the named task and validates it has a
 // non-empty VerifyResumeCursor. fs.ErrNotExist becomes the friendly
 // "task %q not found" wrapping; an empty cursor becomes
 // "task %q has no verify session".
-func resolveResumeByID(id string) (store.Task, bool, error) {
-	task, err := resolver.TaskByID("verify", id)
+func resolveResumeByID(id string) (tasks.Task, bool, error) {
+	t, err := resolver.TaskByID("verify", id)
 	if err != nil {
-		return store.Task{}, false, err
+		return tasks.Task{}, false, err
 	}
-	if task.VerifyResumeCursor == "" {
-		return store.Task{}, false, fmt.Errorf("J: task %q has no verify session", id)
+	if t.VerifyResumeCursor == "" {
+		return tasks.Task{}, false, fmt.Errorf("J: task %q has no verify session", id)
 	}
-	return task, true, nil
+	return t, true, nil
 }
 
 // listResumableTasks returns every task with a non-empty
 // VerifyResumeCursor regardless of status, sorted via
-// store.SortTasks. validateForVerify is intentionally NOT applied
+// tasks.SortTasks. validateForVerify is intentionally NOT applied
 // here: resume is permissive by design.
-func listResumableTasks() ([]store.Task, error) {
+func listResumableTasks() ([]tasks.Task, error) {
 	all, err := resolver.ListAllTasks()
 	if err != nil {
 		return nil, err

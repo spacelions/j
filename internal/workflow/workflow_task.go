@@ -15,6 +15,7 @@ import (
 	"github.com/spacelions/j/internal/cli/banner"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/workflow/agents/planner"
 	"github.com/spacelions/j/internal/workflow/agents/verifier"
 	"github.com/spacelions/j/internal/workflow/agents/worker"
@@ -201,21 +202,21 @@ func driveSequential(ctx context.Context, root agent.Agent) error {
 // Best-effort: any read / write error surfaces as a single warning
 // on stderr and the helper returns.
 func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
-	dir, err := store.DefaultTasksDir()
+	dir, err := tasks.DefaultDir()
 	if err != nil {
 		banner.DangerousBox(stderr, "J: tasks dir: %v", err)
 		return
 	}
-	s := store.OpenTasks(dir)
+	s := tasks.Open(dir)
 	defer func() { _ = s.Close() }()
 	t, err := s.GetTask(taskID)
 	if err != nil {
 		return
 	}
-	if t.Status != store.StatusVerifying {
+	if t.Status != tasks.StatusVerifying {
 		return
 	}
-	t.Status = store.StatusVerifyDone
+	t.Status = tasks.StatusVerifyDone
 	if err := s.PutTask(t); err != nil {
 		banner.DangerousBox(stderr, "J: tasks put: %v", err)
 	}

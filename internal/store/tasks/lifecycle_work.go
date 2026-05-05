@@ -1,8 +1,10 @@
-package store
+package tasks
 
 import (
 	"io"
 	"time"
+
+	"github.com/spacelions/j/internal/store"
 )
 
 // WorkLifecycle owns the begin/end task-log writes around a single
@@ -109,7 +111,7 @@ func fillWorktree(task *Task) {
 	if task.Worktree != "" {
 		return
 	}
-	project, _ := ProjectName()
+	project, _ := store.ProjectName()
 	task.Worktree = WorktreeNameFor(project, *task)
 }
 

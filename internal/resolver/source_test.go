@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/spacelions/j/internal/cli/picker"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 type sourceUI struct {
@@ -29,7 +29,7 @@ func (u sourceUI) PickMarkdownInCwd(context.Context) (string, error) {
 	return u.md, u.err
 }
 
-func (u sourceUI) PickTask(context.Context, string, []store.Task) (string, bool, error) {
+func (u sourceUI) PickTask(context.Context, string, []tasks.Task) (string, bool, error) {
 	return u.taskID, u.ok, u.err
 }
 
@@ -59,7 +59,7 @@ func TestResolveStartTargetSources(t *testing.T) {
 		t.Fatalf("markdown target = %+v, %v", target, err)
 	}
 
-	seedResolverTask(t, store.Task{ID: "existing", Status: store.StatusPlanDone}, "plan", "")
+	seedResolverTask(t, tasks.Task{ID: "existing", Status: tasks.StatusPlanDone}, "plan", "")
 	target, err = ResolveStartTarget(context.Background(), sourceUI{source: picker.SourceTask, taskID: "existing", ok: true}, bytes.NewBuffer(nil), "")
 	if err != nil || target.TaskID != "existing" || target.IsNew {
 		t.Fatalf("task target = %+v, %v", target, err)
@@ -79,7 +79,7 @@ func TestResolveStartTargetErrorsAndCancel(t *testing.T) {
 		t.Fatalf("select err = %v", err)
 	}
 
-	seedResolverTask(t, store.Task{ID: "existing", Status: store.StatusPlanDone}, "plan", "")
+	seedResolverTask(t, tasks.Task{ID: "existing", Status: tasks.StatusPlanDone}, "plan", "")
 	target, err := ResolveStartTarget(context.Background(), sourceUI{source: picker.SourceTask, ok: false}, bytes.NewBuffer(nil), "")
 	if err != nil || target.TaskID != "" {
 		t.Fatalf("cancel target = %+v, %v", target, err)

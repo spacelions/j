@@ -18,7 +18,7 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/resolver"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // ResumeOptions configures RunResume. Stdin/Stdout/Stderr default to
@@ -115,7 +115,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return errors.New("J: no coding agents configured")
 	}
 
-	task, ok, err := resolveResumeTask(ctx, opts)
+	t, ok, err := resolveResumeTask(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -124,21 +124,21 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return nil
 	}
 
-	agent, ok := lookupResumeAgent(opts.Agents, task.InvokedTool)
+	agent, ok := lookupResumeAgent(opts.Agents, t.InvokedTool)
 	if !ok {
-		return fmt.Errorf("J: unknown tool %q", task.InvokedTool)
+		return fmt.Errorf("J: unknown tool %q", t.InvokedTool)
 	}
 
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		return err
 	}
-	taskDir := filepath.Join(tasksDir, task.ID)
-	requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
-	planPath := filepath.Join(taskDir, store.PlanFileName)
+	taskDir := filepath.Join(tasksDir, t.ID)
+	requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
+	planPath := filepath.Join(taskDir, tasks.PlanFileName)
 
-	resumeTask := planResumeBegin(task)
-	store.PersistWarn(opts.Stderr, resumeTask)
+	resumeTask := planResumeBegin(t)
+	tasks.PersistWarn(opts.Stderr, resumeTask)
 
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
@@ -152,11 +152,11 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	// path.
 	_, planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           requirementsPath,
-		Model:                  task.InvokedModel,
+		Model:                  t.InvokedModel,
 		RequirementsOutputPath: requirementsPath,
 		PlanOutputPath:         planPath,
 		Interactive:            true,
-		ResumeChatID:           task.PlanResumeCursor,
+		ResumeChatID:           t.PlanResumeCursor,
 		Resume:                 true,
 		MustRead:               mustReadFiles,
 	})
@@ -166,12 +166,12 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		refinedReq = readBestEffortWarn(opts.Stderr, requirementsPath)
 		planMD = readBestEffortWarn(opts.Stderr, planPath)
 	}
-	store.PersistWarn(opts.Stderr, planResumeFinish(resumeTask, planErr, refinedReq, planMD, requirementsPath))
+	tasks.PersistWarn(opts.Stderr, planResumeFinish(resumeTask, planErr, refinedReq, planMD, requirementsPath))
 	if planErr != nil {
 		return planErr
 	}
 
-	banner.Fprintf(opts.Stdout, "J: plan resume on task %s\n", task.ID)
+	banner.Fprintf(opts.Stdout, "J: plan resume on task %s\n", t.ID)
 	return nil
 }
 
@@ -183,57 +183,57 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 // The store is opened, queried, and closed inside this helper so
 // the agent invocation in the caller does not hold the bbolt lock
 // (the same lock would otherwise block concurrent `j tasks` runs).
-func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, bool, error) {
+func resolveResumeTask(ctx context.Context, opts ResumeOptions) (tasks.Task, bool, error) {
 	if opts.TaskID != "" {
 		return resolveResumeByID(opts.TaskID)
 	}
-	tasks, err := listResumableTasks()
+	rows, err := listResumableTasks()
 	if err != nil {
-		return store.Task{}, false, err
+		return tasks.Task{}, false, err
 	}
-	switch len(tasks) {
+	switch len(rows) {
 	case 0:
-		return store.Task{}, false, nil
+		return tasks.Task{}, false, nil
 	case 1:
-		return tasks[0], true, nil
+		return rows[0], true, nil
 	}
-	chosen, ok, err := opts.UI.PickTask(ctx, "Select a plan session to resume", tasks)
+	chosen, ok, err := opts.UI.PickTask(ctx, "Select a plan session to resume", rows)
 	if err != nil {
-		return store.Task{}, false, err
+		return tasks.Task{}, false, err
 	}
 	if !ok {
-		return store.Task{}, false, nil
+		return tasks.Task{}, false, nil
 	}
-	for _, t := range tasks {
+	for _, t := range rows {
 		if t.ID == chosen {
 			return t, true, nil
 		}
 	}
-	return store.Task{}, false, fmt.Errorf("plan resume: task %q not found", chosen)
+	return tasks.Task{}, false, fmt.Errorf("plan resume: task %q not found", chosen)
 }
 
 // resolveResumeByID loads the named task and validates it has a
 // non-empty PlanResumeCursor. fs.ErrNotExist becomes the friendly
 // "task %q not found" wrapping the way callers expect; an empty
 // cursor becomes "task %q has no plan session".
-func resolveResumeByID(id string) (store.Task, bool, error) {
-	task, err := resolver.TaskByID("plan", id)
+func resolveResumeByID(id string) (tasks.Task, bool, error) {
+	t, err := resolver.TaskByID("plan", id)
 	if err != nil {
-		return store.Task{}, false, err
+		return tasks.Task{}, false, err
 	}
-	if task.PlanResumeCursor == "" {
-		return store.Task{}, false, fmt.Errorf("J: task %q has no plan session", id)
+	if t.PlanResumeCursor == "" {
+		return tasks.Task{}, false, fmt.Errorf("J: task %q has no plan session", id)
 	}
-	return task, true, nil
+	return t, true, nil
 }
 
 // listResumableTasks returns every task with a non-empty
-// PlanResumeCursor (any status), sorted via store.SortTasks so the
+// PlanResumeCursor (any status), sorted via tasks.SortTasks so the
 // picker shows the active-then-most-recent order users see in
 // `j tasks`. The bbolt store is closed before the slice is
 // returned so the agent invocation downstream does not contend on
 // the file lock.
-func listResumableTasks() ([]store.Task, error) {
+func listResumableTasks() ([]tasks.Task, error) {
 	all, err := resolver.ListAllTasks()
 	if err != nil {
 		return nil, err

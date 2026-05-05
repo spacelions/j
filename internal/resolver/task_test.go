@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 type taskUI struct {
@@ -17,10 +18,10 @@ type taskUI struct {
 	err    error
 
 	confirm bool
-	tasks   []store.Task
+	tasks   []tasks.Task
 }
 
-func (u *taskUI) PickTask(_ context.Context, _ string, tasks []store.Task) (string, bool, error) {
+func (u *taskUI) PickTask(_ context.Context, _ string, tasks []tasks.Task) (string, bool, error) {
 	u.tasks = tasks
 	if u.err != nil {
 		return "", false, u.err
@@ -40,30 +41,30 @@ func setupResolverProject(t *testing.T) {
 	}
 }
 
-func seedResolverTask(t *testing.T, task store.Task, plan, req string) {
+func seedResolverTask(t *testing.T, t tasks.Task, plan, req string) {
 	t.Helper()
-	if task.ID == "" {
+	if t.ID == "" {
 		t.Fatal("task id required")
 	}
-	dir, err := store.EnsureTaskDir(task.ID)
+	dir, err := tasks.EnsureDir(t.ID)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
 	if plan != "" {
-		if err := os.WriteFile(filepath.Join(dir, store.PlanFileName), []byte(plan), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, tasks.PlanFileName), []byte(plan), 0o644); err != nil {
 			t.Fatalf("write plan: %v", err)
 		}
 	}
 	if req != "" {
-		if err := os.WriteFile(filepath.Join(dir, store.RequirementsFileName), []byte(req), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, tasks.RequirementsFileName), []byte(req), 0o644); err != nil {
 			t.Fatalf("write requirements: %v", err)
 		}
 	}
-	path, err := store.DefaultTasksDir()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := store.OpenTasks(path)
+	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(task); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -71,27 +72,27 @@ func seedResolverTask(t *testing.T, task store.Task, plan, req string) {
 }
 
 func TestTaskAllowlists(t *testing.T) {
-	for _, status := range []store.TaskStatus{store.StatusPlanDone, store.StatusHelp} {
-		if !ReplanAllowed(store.Task{Status: status}) {
+	for _, status := range []tasks.TaskStatus{tasks.StatusPlanDone, tasks.StatusHelp} {
+		if !ReplanAllowed(tasks.Task{Status: status}) {
 			t.Fatalf("ReplanAllowed(%s) = false", status)
 		}
 	}
-	if ReplanAllowed(store.Task{Status: store.StatusWorking}) {
+	if ReplanAllowed(tasks.Task{Status: tasks.StatusWorking}) {
 		t.Fatal("working should not be allowed for replan")
 	}
-	for _, status := range []store.TaskStatus{store.StatusWorkDone, store.StatusVerifyDone, store.StatusHelp} {
-		if !VerifyAllowed(store.Task{Status: status}) {
+	for _, status := range []tasks.TaskStatus{tasks.StatusWorkDone, tasks.StatusVerifyDone, tasks.StatusHelp} {
+		if !VerifyAllowed(tasks.Task{Status: status}) {
 			t.Fatalf("VerifyAllowed(%s) = false", status)
 		}
 	}
-	if VerifyAllowed(store.Task{Status: store.StatusPlanDone}) {
+	if VerifyAllowed(tasks.Task{Status: tasks.StatusPlanDone}) {
 		t.Fatal("plan-done should not be allowed for verify")
 	}
 }
 
 func TestConfirmStatusOverride(t *testing.T) {
 	ui := &taskUI{confirm: true}
-	task := store.Task{ID: "t1", Status: store.StatusWorking}
+	task := tasks.Task{ID: "t1", Status: tasks.StatusWorking}
 	ok, err := ConfirmStatusOverride(context.Background(), ui, false, "work", task, ReplanAllowed)
 	if err != nil || !ok {
 		t.Fatalf("ConfirmStatusOverride = %v, %v", ok, err)
@@ -101,7 +102,7 @@ func TestConfirmStatusOverride(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("yes override = %v, %v", ok, err)
 	}
-	ok, err = ConfirmStatusOverride(context.Background(), ui, false, "work", store.Task{Status: store.StatusPlanDone}, ReplanAllowed)
+	ok, err = ConfirmStatusOverride(context.Background(), ui, false, "work", tasks.Task{Status: tasks.StatusPlanDone}, ReplanAllowed)
 	if err != nil || !ok {
 		t.Fatalf("allowed status = %v, %v", ok, err)
 	}
@@ -109,7 +110,7 @@ func TestConfirmStatusOverride(t *testing.T) {
 
 func TestResolveWorkPlan(t *testing.T) {
 	setupResolverProject(t)
-	seedResolverTask(t, store.Task{ID: "a", Status: store.StatusPlanDone}, "plan", "req")
+	seedResolverTask(t, tasks.Task{ID: "a", Status: tasks.StatusPlanDone}, "plan", "req")
 	res, ok, err := ResolveWorkPlan(context.Background(), WorkPlanOptions{TaskID: "a", UI: &taskUI{}})
 	if err != nil || !ok {
 		t.Fatalf("ResolveWorkPlan by id = %+v, %v, %v", res, ok, err)
@@ -121,8 +122,8 @@ func TestResolveWorkPlan(t *testing.T) {
 
 func TestResolveWorkPlanAutoPicksSingleAllowedTask(t *testing.T) {
 	setupResolverProject(t)
-	seedResolverTask(t, store.Task{ID: "a", Status: store.StatusPlanning}, "a plan", "")
-	seedResolverTask(t, store.Task{ID: "b", Status: store.StatusPlanDone}, "b plan", "")
+	seedResolverTask(t, tasks.Task{ID: "a", Status: tasks.StatusPlanning}, "a plan", "")
+	seedResolverTask(t, tasks.Task{ID: "b", Status: tasks.StatusPlanDone}, "b plan", "")
 	ui := &taskUI{err: errors.New("picker should not run")}
 	res, ok, err := ResolveWorkPlan(context.Background(), WorkPlanOptions{UI: ui})
 	if err != nil || !ok || res.Task.ID != "b" {
@@ -132,8 +133,8 @@ func TestResolveWorkPlanAutoPicksSingleAllowedTask(t *testing.T) {
 
 func TestResolveWorkPlanPickerPaths(t *testing.T) {
 	setupResolverProject(t)
-	seedResolverTask(t, store.Task{ID: "a", Status: store.StatusPlanning}, "a plan", "")
-	seedResolverTask(t, store.Task{ID: "b", Status: store.StatusWorking}, "b plan", "")
+	seedResolverTask(t, tasks.Task{ID: "a", Status: tasks.StatusPlanning}, "a plan", "")
+	seedResolverTask(t, tasks.Task{ID: "b", Status: tasks.StatusWorking}, "b plan", "")
 	ui := &taskUI{pickID: "b", ok: true}
 	res, ok, err := ResolveWorkPlan(context.Background(), WorkPlanOptions{UI: ui})
 	if err != nil || !ok || res.Task.ID != "b" {
@@ -161,7 +162,7 @@ func TestResolveWorkPlanEmptyAndMissing(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `task "missing" not found`) {
 		t.Fatalf("missing err = %v", err)
 	}
-	seedResolverTask(t, store.Task{ID: "noplan", Status: store.StatusPlanDone}, "", "")
+	seedResolverTask(t, tasks.Task{ID: "noplan", Status: tasks.StatusPlanDone}, "", "")
 	_, _, err = ResolveWorkPlan(context.Background(), WorkPlanOptions{TaskID: "noplan", UI: &taskUI{}})
 	if err == nil || !strings.Contains(err.Error(), "work: read plan") {
 		t.Fatalf("missing plan err = %v", err)
@@ -170,20 +171,20 @@ func TestResolveWorkPlanEmptyAndMissing(t *testing.T) {
 
 func TestResolveVerifyTask(t *testing.T) {
 	setupResolverProject(t)
-	seedResolverTask(t, store.Task{ID: "v1", Status: store.StatusWorkDone}, "plan", "")
+	seedResolverTask(t, tasks.Task{ID: "v1", Status: tasks.StatusWorkDone}, "plan", "")
 	res, ok, err := ResolveVerifyTask(context.Background(), VerifyTaskOptions{TaskID: "v1", UI: &taskUI{}})
 	if err != nil || !ok {
 		t.Fatalf("ResolveVerifyTask by id = %+v, %v, %v", res, ok, err)
 	}
-	if res.Task.ID != "v1" || filepath.Base(res.FindingsPath) != store.VerifierFindingsFileName {
+	if res.Task.ID != "v1" || filepath.Base(res.FindingsPath) != tasks.VerifierFindingsFileName {
 		t.Fatalf("resolved verify task = %+v", res)
 	}
 }
 
 func TestResolveVerifyTaskAutoPicksSingleAllowedTask(t *testing.T) {
 	setupResolverProject(t)
-	seedResolverTask(t, store.Task{ID: "a", Status: store.StatusPlanDone}, "a plan", "")
-	seedResolverTask(t, store.Task{ID: "b", Status: store.StatusWorkDone}, "b plan", "")
+	seedResolverTask(t, tasks.Task{ID: "a", Status: tasks.StatusPlanDone}, "a plan", "")
+	seedResolverTask(t, tasks.Task{ID: "b", Status: tasks.StatusWorkDone}, "b plan", "")
 	ui := &taskUI{err: errors.New("picker should not run")}
 	res, ok, err := ResolveVerifyTask(context.Background(), VerifyTaskOptions{UI: ui})
 	if err != nil || !ok || res.Task.ID != "b" {
@@ -193,8 +194,8 @@ func TestResolveVerifyTaskAutoPicksSingleAllowedTask(t *testing.T) {
 
 func TestResolveVerifyTaskPickerPaths(t *testing.T) {
 	setupResolverProject(t)
-	seedResolverTask(t, store.Task{ID: "a", Status: store.StatusPlanning}, "a plan", "")
-	seedResolverTask(t, store.Task{ID: "b", Status: store.StatusWorking}, "b plan", "")
+	seedResolverTask(t, tasks.Task{ID: "a", Status: tasks.StatusPlanning}, "a plan", "")
+	seedResolverTask(t, tasks.Task{ID: "b", Status: tasks.StatusWorking}, "b plan", "")
 	ui := &taskUI{pickID: "b", ok: true}
 	res, ok, err := ResolveVerifyTask(context.Background(), VerifyTaskOptions{UI: ui})
 	if err != nil || !ok || res.Task.ID != "b" {
@@ -222,7 +223,7 @@ func TestResolveVerifyTaskEmptyAndMissing(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `task "missing" not found`) {
 		t.Fatalf("missing err = %v", err)
 	}
-	seedResolverTask(t, store.Task{ID: "noplan", Status: store.StatusWorkDone}, "", "")
+	seedResolverTask(t, tasks.Task{ID: "noplan", Status: tasks.StatusWorkDone}, "", "")
 	_, _, err = ResolveVerifyTask(context.Background(), VerifyTaskOptions{TaskID: "noplan", UI: &taskUI{}})
 	if err == nil || !strings.Contains(err.Error(), "verify: read plan") {
 		t.Fatalf("missing plan err = %v", err)
@@ -231,9 +232,9 @@ func TestResolveVerifyTaskEmptyAndMissing(t *testing.T) {
 
 func TestTaskStoreHelpers(t *testing.T) {
 	setupResolverProject(t)
-	seedResolverTask(t, store.Task{ID: "a", Status: store.StatusPlanDone}, "plan", "")
-	task, err := TaskByID("test", "a")
-	if err != nil || task.ID != "a" {
+	seedResolverTask(t, tasks.Task{ID: "a", Status: tasks.StatusPlanDone}, "plan", "")
+	t, err := TaskByID("test", "a")
+	if err != nil || t.ID != "a" {
 		t.Fatalf("TaskByID = %+v, %v", task, err)
 	}
 	tasks, err := ListTasks("test")

@@ -14,6 +14,7 @@ import (
 
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // scriptedUI is a deterministic UI fake that records prompt invocations
@@ -123,7 +124,7 @@ func TestEnsure_MissingArtifacts(t *testing.T) {
 	}{
 		{"jdir", ""},
 		{"settings", "settings"},
-		{"tasksDir", store.TasksDirName},
+		{"tasksDir", tasks.DirName},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -18,6 +18,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -25,20 +26,20 @@ import (
 // requirements / plan / verifier_findings markdown files. The
 // default row is `verify-done` with a non-empty
 // VerifyResumeCursor; tests override fields via mutate.
-func seedResumableVerify(t *testing.T, mutate func(*store.Task)) (string, *time.Time) {
+func seedResumableVerify(t *testing.T, mutate func(*tasks.Task)) (string, *time.Time) {
 	t.Helper()
-	id := store.NewTaskID()
-	if _, err := store.EnsureTaskDir(id); err != nil {
+	id := tasks.NewTaskID()
+	if _, err := tasks.EnsureDir(id); err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
 	taskDir := filepath.Join(mustTasksDir(t), id)
-	if err := os.WriteFile(filepath.Join(taskDir, store.PlanFileName), []byte("1. step\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.PlanFileName), []byte("1. step\n"), 0o644); err != nil {
 		t.Fatalf("write plan: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, store.RequirementsFileName), []byte("# req\nbody"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.RequirementsFileName), []byte("# req\nbody"), 0o644); err != nil {
 		t.Fatalf("write requirements: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, store.VerifierFindingsFileName), []byte("- prior\nVERDICT: FAIL\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.VerifierFindingsFileName), []byte("- prior\nVERDICT: FAIL\n"), 0o644); err != nil {
 		t.Fatalf("write findings: %v", err)
 	}
 	planBegin := time.Now().UTC().Add(-3 * time.Hour)
@@ -47,9 +48,9 @@ func seedResumableVerify(t *testing.T, mutate func(*store.Task)) (string, *time.
 	workEnd := workBegin.Add(30 * time.Minute)
 	verifyBegin := workEnd.Add(time.Minute)
 	verifyEnd := verifyBegin.Add(time.Minute)
-	task := store.Task{
+	task := tasks.Task{
 		ID:                 id,
-		Status:             store.StatusVerifyDone,
+		Status:             tasks.StatusVerifyDone,
 		InvokedTool:        "cursor",
 		InvokedModel:       "sonnet-4",
 		PlanResumeCursor:   "plan-cursor",
@@ -66,21 +67,21 @@ func seedResumableVerify(t *testing.T, mutate func(*store.Task)) (string, *time.
 	if mutate != nil {
 		mutate(&task)
 	}
-	dbPath, err := store.DefaultTasksDir()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := store.OpenTasks(dbPath)
+	s := tasks.Open(dbPath)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(task); err != nil {
 		t.Fatalf("PutTask: %v", err)
 	}
-	return id, task.VerifyBeginAt
+	return id, t.VerifyBeginAt
 }
 
 func mustTasksDir(t *testing.T) string {
 	t.Helper()
-	d, err := store.DefaultTasksDir()
+	d, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
@@ -159,7 +160,7 @@ func TestRunResume_FromTaskHappyPath(t *testing.T) {
 		t.Fatalf("NewResumeID should not be invoked on resume; calls=%d", agent.resumeIDed)
 	}
 	tasks := readTasks(t)
-	if tasks[0].Status != store.StatusCompleted {
+	if tasks[0].Status != tasks.StatusCompleted {
 		t.Fatalf("Status = %q, want completed (PASS verdict)", tasks[0].Status)
 	}
 	if tasks[0].VerifyBeginAt == nil || !tasks[0].VerifyBeginAt.Equal(*originalBegin) {
@@ -188,7 +189,7 @@ func TestRunResume_FromTaskMissing(t *testing.T) {
 func TestRunResume_FromTaskNoSession(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableVerify(t, func(task *store.Task) { task.VerifyResumeCursor = "" })
+	id, _ := seedResumableVerify(t, func(task *tasks.Task) { t.VerifyResumeCursor = "" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -206,8 +207,8 @@ func TestRunResume_FromTaskNoSession(t *testing.T) {
 func TestRunResume_SelectorPicksSecond(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id1, _ := seedResumableVerify(t, func(task *store.Task) { task.VerifyResumeCursor = "first-cursor" })
-	id2, _ := seedResumableVerify(t, func(task *store.Task) { task.VerifyResumeCursor = "second-cursor" })
+	id1, _ := seedResumableVerify(t, func(task *tasks.Task) { t.VerifyResumeCursor = "first-cursor" })
+	id2, _ := seedResumableVerify(t, func(task *tasks.Task) { t.VerifyResumeCursor = "second-cursor" })
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
 	ui := &scriptedUI{resumePicked: id2}
@@ -251,7 +252,7 @@ func TestRunResume_PickerReturnsUnknownID(t *testing.T) {
 func TestRunResume_UnknownTool(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableVerify(t, func(task *store.Task) { task.InvokedTool = "ghost" })
+	id, _ := seedResumableVerify(t, func(task *tasks.Task) { t.InvokedTool = "ghost" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -284,7 +285,7 @@ func TestRunResume_AgentError(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 	tasks := readTasks(t)
-	if tasks[0].Status != store.StatusHelp {
+	if tasks[0].Status != tasks.StatusHelp {
 		t.Fatalf("Status = %q, want help", tasks[0].Status)
 	}
 }
@@ -294,7 +295,7 @@ func TestRunResume_AgentError(t *testing.T) {
 func TestRunResume_StatusCompletedIsResumable(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableVerify(t, func(task *store.Task) { task.Status = store.StatusCompleted })
+	id, _ := seedResumableVerify(t, func(task *tasks.Task) { t.Status = tasks.StatusCompleted })
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
 	err := RunResume(context.Background(), ResumeOptions{
@@ -320,7 +321,7 @@ func TestRunResume_AutoPicksSingle(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id, _ := seedResumableVerify(t, nil)
-	if err := os.Remove(filepath.Join(mustTasksDir(t), id, store.VerifierFindingsFileName)); err != nil {
+	if err := os.Remove(filepath.Join(mustTasksDir(t), id, tasks.VerifierFindingsFileName)); err != nil {
 		t.Fatalf("remove findings: %v", err)
 	}
 	agent := newScriptedAgent()
@@ -414,7 +415,7 @@ func TestRunResume_AppliesDefaults(t *testing.T) {
 func TestRunResume_ListDecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	dbPath, err := store.DefaultTasksDir()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +476,7 @@ func TestRunResume_StampsCompletedOnPass(t *testing.T) {
 		t.Fatalf("RunResume: %v", err)
 	}
 	tasks := readTasks(t)
-	if tasks[0].Status != store.StatusCompleted {
+	if tasks[0].Status != tasks.StatusCompleted {
 		t.Fatalf("Status = %q, want completed (PASS verdict on resume)", tasks[0].Status)
 	}
 	if tasks[0].DoneAt == nil {
@@ -505,7 +506,7 @@ func TestRunResume_FailLeavesVerifyDone(t *testing.T) {
 		t.Fatalf("RunResume: %v", err)
 	}
 	tasks := readTasks(t)
-	if tasks[0].Status != store.StatusVerifyDone {
+	if tasks[0].Status != tasks.StatusVerifyDone {
 		t.Fatalf("Status = %q, want verify-done", tasks[0].Status)
 	}
 	if tasks[0].DoneAt != nil {
@@ -600,11 +601,11 @@ func TestBeginVerifyTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id, _ := seedResumableVerify(t, nil)
-	dbPath, err := store.DefaultTasksDir()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := store.OpenTasks(dbPath)
+	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -614,7 +615,7 @@ func TestBeginVerifyTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	preCursor := existing.VerifyResumeCursor
 
 	lc := existing.BeginVerifyResume(io.Discard)
-	lc.Finish(store.VerifyOutcomeNoRetries, nil)
+	lc.Finish(tasks.VerifyOutcomeNoRetries, nil)
 
 	tasks := readTasks(t)
 	if tasks[0].VerifyResumeCursor != preCursor {
@@ -630,12 +631,12 @@ func TestBeginVerifyTaskResume_PreservesCursorAndBegin(t *testing.T) {
 func TestBeginVerifyTaskResume_NilBeginAtStampsFresh(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableVerify(t, func(task *store.Task) { task.VerifyBeginAt = nil })
-	dbPath, err := store.DefaultTasksDir()
+	id, _ := seedResumableVerify(t, func(task *tasks.Task) { t.VerifyBeginAt = nil })
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := store.OpenTasks(dbPath)
+	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -643,7 +644,7 @@ func TestBeginVerifyTaskResume_NilBeginAtStampsFresh(t *testing.T) {
 	_ = s.Close()
 
 	lc := existing.BeginVerifyResume(io.Discard)
-	lc.Finish(store.VerifyOutcomeNoRetries, nil)
+	lc.Finish(tasks.VerifyOutcomeNoRetries, nil)
 
 	tasks := readTasks(t)
 	if tasks[0].VerifyBeginAt == nil {
@@ -704,7 +705,7 @@ func TestRunResume_WaitsForSpawnedChild(t *testing.T) {
 	// Drop the seeded findings so the test doesn't accidentally
 	// read a stale "FAIL" if WaitForExit were a no-op; only the
 	// freshly-spawned child's write should reach disk.
-	if err := os.Remove(filepath.Join(mustTasksDir(t), id, store.VerifierFindingsFileName)); err != nil {
+	if err := os.Remove(filepath.Join(mustTasksDir(t), id, tasks.VerifierFindingsFileName)); err != nil {
 		t.Fatalf("remove findings: %v", err)
 	}
 	agent := &spawnVerifyAgent{
@@ -730,10 +731,10 @@ func TestRunResume_WaitsForSpawnedChild(t *testing.T) {
 		t.Fatalf("stdout = %q, want resume line", stdout.String())
 	}
 	tasks := readTasks(t)
-	if tasks[0].Status != store.StatusCompleted {
+	if tasks[0].Status != tasks.StatusCompleted {
 		t.Fatalf("Status = %q, want completed (PASS verdict from spawned child)", tasks[0].Status)
 	}
-	findings := filepath.Join(mustTasksDir(t), id, store.VerifierFindingsFileName)
+	findings := filepath.Join(mustTasksDir(t), id, tasks.VerifierFindingsFileName)
 	data, readErr := os.ReadFile(findings)
 	if readErr != nil {
 		t.Fatalf("read findings: %v", readErr)
@@ -770,7 +771,7 @@ func TestRunResume_VerifierWaitCtxCancelled(t *testing.T) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 	tasks := readTasks(t)
-	if tasks[0].Status != store.StatusHelp {
+	if tasks[0].Status != tasks.StatusHelp {
 		t.Fatalf("Status = %q, want help", tasks[0].Status)
 	}
 }

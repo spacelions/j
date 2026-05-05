@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/spacelions/j/internal/cli/banner"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 func readBestEffortWarn(stderr io.Writer, path string) string {
@@ -18,25 +18,25 @@ func readBestEffortWarn(stderr io.Writer, path string) string {
 	return string(data)
 }
 
-func planResumeBegin(existing store.Task) store.Task {
-	task := existing
-	task.Status = store.StatusPlanning
-	task.PlanEndAt = nil
-	if task.PlanBeginAt == nil {
+func planResumeBegin(existing tasks.Task) tasks.Task {
+	t := existing
+	t.Status = tasks.StatusPlanning
+	t.PlanEndAt = nil
+	if t.PlanBeginAt == nil {
 		begin := time.Now().UTC()
-		task.PlanBeginAt = &begin
+		t.PlanBeginAt = &begin
 	}
-	return task
+	return t
 }
 
-func planResumeFinish(task store.Task, runErr error, refinedRequirements, planMarkdown, target string) store.Task {
+func planResumeFinish(t tasks.Task, runErr error, refinedRequirements, planMarkdown, target string) tasks.Task {
 	end := time.Now().UTC()
-	task.PlanEndAt = &end
+	t.PlanEndAt = &end
 	if runErr != nil {
-		task.Status = store.StatusHelp
-		return task
+		t.Status = tasks.StatusHelp
+		return t
 	}
-	task.Status = store.StatusPlanDone
-	task.Summary = store.Summary(store.PickSource(refinedRequirements, planMarkdown), target)
-	return task
+	t.Status = tasks.StatusPlanDone
+	t.Summary = tasks.Summary(tasks.PickSource(refinedRequirements, planMarkdown), target)
+	return t
 }
