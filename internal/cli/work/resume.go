@@ -114,7 +114,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	lc := task.BeginWorkResume(opts.Stderr)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", mustReadErr)
+		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	// Resume always runs interactive — clarification / iteration
 	// answers need a TUI, and the worker bucket's `interactive`

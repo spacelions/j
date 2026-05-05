@@ -247,20 +247,20 @@ func resumeFromPlanDone(ctx context.Context, opts ContinueOptions, taskID string
 func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
 	tasksDir, err := store.DefaultTasksDir()
 	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks dir: %v\n", err)
+		banner.DangerousBox(stderr, "J: tasks dir: %v", err)
 		return
 	}
 	s := store.OpenTasks(tasksDir)
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(taskID)
 	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks get %q: %v\n", taskID, err)
+		banner.DangerousBox(stderr, "J: tasks get %q: %v", taskID, err)
 		return
 	}
 	row.AgentLogPath = agentLogPath
 	row.BackgroundPID = pid
 	if err := s.PutTask(row); err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks put: %v\n", err)
+		banner.DangerousBox(stderr, "J: tasks put: %v", err)
 	}
 }
 

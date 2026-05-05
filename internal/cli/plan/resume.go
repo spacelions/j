@@ -142,7 +142,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", mustReadErr)
+		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 
 	// Resume always runs interactive — clarification answers need a

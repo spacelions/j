@@ -42,6 +42,10 @@ var (
 			Border(lipgloss.NormalBorder()).
 			BorderForeground(borderColor).
 			Padding(0, 1)
+	dangerBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(dangerColor).
+			Padding(0, 1)
 )
 
 // Text renders s as plain grey terminal text.
@@ -82,6 +86,21 @@ func DangerousFprintf(w io.Writer, format string, a ...any) (int, error) {
 // DangerousFprintln writes orange terminal text to w using fmt.Sprintln semantics.
 func DangerousFprintln(w io.Writer, a ...any) (int, error) {
 	return fmt.Fprint(w, DangerousText(fmt.Sprintln(a...)))
+}
+
+// DangerousBox writes the formatted message inside a bordered orange
+// box — the heavier sibling of DangerousFprintf used for warnings
+// (failed persistence, lock contention, missing artifacts) where the
+// line should visibly separate from surrounding output. The border is
+// rendered in the danger palette so a colour-aware terminal shows
+// orange edges; on a non-TTY writer lipgloss/termenv strips the
+// styling and the box renders as plain ASCII frame characters.
+//
+// The format string should NOT include a leading "warning:" prefix —
+// the orange frame already conveys that semantic, so saying it twice
+// is noise.
+func DangerousBox(w io.Writer, format string, a ...any) {
+	fmt.Fprintln(w, dangerBoxStyle.Render(dangerStyle.Render(fmt.Sprintf(format, a...))))
 }
 
 func renderText(style lipgloss.Style, s string) string {

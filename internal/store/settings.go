@@ -78,12 +78,12 @@ type TaskConfig struct {
 func OpenSettings(stderr io.Writer) (*Store, bool) {
 	path, err := DefaultPath()
 	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: settings path: %v\n", err)
+		banner.DangerousBox(stderr, "J: settings path: %v", err)
 		return nil, false
 	}
 	s, err := Open(path)
 	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: settings db: %v\n", err)
+		banner.DangerousBox(stderr, "J: settings db: %v", err)
 		return nil, false
 	}
 	return s, true
@@ -231,7 +231,7 @@ func PersistAgentSelection(s *Store, stderr io.Writer, bucket, tool, model strin
 	}
 	for _, kv := range entries {
 		if err := s.Put(bucket, kv[0], kv[1]); err != nil {
-			banner.DangerousFprintf(stderr, "J: warning: persist %s: %v\n", kv[0], err)
+			banner.DangerousBox(stderr, "J: persist %s: %v", kv[0], err)
 			return
 		}
 	}

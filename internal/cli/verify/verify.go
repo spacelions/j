@@ -121,7 +121,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 	resumeID, err := verifierAgent.NewResumeID(ctx)
 	if err != nil {
-		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", err)
+		banner.DangerousBox(opts.Stderr, "J: %v", err)
 	}
 
 	// The worker agent for the fix loop must match the tool the
@@ -172,7 +172,7 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 	agentLogPath := filepath.Join(res.TaskDir, store.AgentLogFileName)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", mustReadErr)
+		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	for i := 0; i < opts.MaxIterations; i++ {
 		emitIterationBegin(opts.Stderr, res.Task.ID, i, opts.MaxIterations)

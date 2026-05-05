@@ -304,7 +304,7 @@ func TestReap_PutErrorWarns(t *testing.T) {
 	if out[0].Status != store.StatusHelp {
 		t.Fatalf("in-memory row should still transition: %q", out[0].Status)
 	}
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
 	}
 }

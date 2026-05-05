@@ -20,12 +20,12 @@ import (
 func PersistWarn(stderr io.Writer, task Task) {
 	tasksDir, err := DefaultTasksDir()
 	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks path: %v\n", err)
+		banner.DangerousBox(stderr, "J: tasks path: %v", err)
 		return
 	}
 	s := OpenTasks(tasksDir)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(task); err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks put: %v\n", err)
+		banner.DangerousBox(stderr, "J: tasks put: %v", err)
 	}
 }

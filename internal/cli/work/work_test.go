@@ -1104,7 +1104,7 @@ func TestRun_StoreWriteError_WarnsAndContinues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "warning: persist") {
+	if !strings.Contains(stderr.String(), "persist") {
 		t.Fatalf("stderr = %q, want warning", stderr.String())
 	}
 	if agent.worked != 1 {
@@ -1373,7 +1373,7 @@ func TestOpenLifecycle_PutTaskErrorWarns(t *testing.T) {
 		t.Fatal("store.NewWorkTask returned nil lifecycle")
 	}
 	t.Cleanup(func() { lc.Finish(nil) })
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
 	}
 }

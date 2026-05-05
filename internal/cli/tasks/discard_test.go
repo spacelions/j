@@ -794,7 +794,7 @@ func TestRunDiscard_RemovesWorktreeOnConfirm(t *testing.T) {
 	if !strings.Contains(stdout.String(), "J: discarded id-wt-ok") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	if strings.Contains(stderr.String(), "warning: worktree remove:") {
+	if strings.Contains(stderr.String(), "worktree remove:") {
 		t.Fatalf("unexpected stderr warning: %q", stderr.String())
 	}
 }
@@ -856,7 +856,7 @@ func TestRunDiscard_EmptyWorktree_FallsBackToComputedName(t *testing.T) {
 	if !strings.Contains(stdout.String(), "J: discarded id-fallback") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	if strings.Contains(stderr.String(), "warning: worktree remove:") {
+	if strings.Contains(stderr.String(), "worktree remove:") {
 		t.Fatalf("unexpected stderr warning: %q", stderr.String())
 	}
 }
@@ -983,7 +983,7 @@ func TestRunDiscard_MultipleMatches_PicksFirstAndWarns(t *testing.T) {
 	if want := "worktree|remove|--force|/alpha/dup-wt"; lines[1] != want {
 		t.Fatalf("remove argv = %q, want %q", lines[1], want)
 	}
-	if !strings.Contains(stderr.String(), "warning: worktree remove:") ||
+	if !strings.Contains(stderr.String(), "worktree remove:") ||
 		!strings.Contains(stderr.String(), "multiple worktrees matched") {
 		t.Fatalf("stderr = %q, want multiple-match warning", stderr.String())
 	}
@@ -1027,7 +1027,7 @@ func TestRunDiscard_ListFails_WarnsAndContinues(t *testing.T) {
 	if len(lines) != 1 || lines[0] != "worktree|list|--porcelain" {
 		t.Fatalf("git log = %v, want single list", lines)
 	}
-	if !strings.Contains(stderr.String(), "warning: worktree remove:") {
+	if !strings.Contains(stderr.String(), "worktree remove:") {
 		t.Fatalf("stderr = %q, want warning prefix", stderr.String())
 	}
 	if taskExists(t, "id-list-fail") {
@@ -1067,7 +1067,7 @@ func TestRunDiscard_RemoveFails_WarnsAndContinues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunDiscard: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "warning: worktree remove:") {
+	if !strings.Contains(stderr.String(), "worktree remove:") {
 		t.Fatalf("stderr = %q, want warning prefix", stderr.String())
 	}
 	if taskExists(t, "id-rm-git") {
@@ -1100,7 +1100,7 @@ func TestRunDiscard_GitMissing_WarnsAndContinues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunDiscard: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "warning: worktree remove:") {
+	if !strings.Contains(stderr.String(), "worktree remove:") {
 		t.Fatalf("stderr = %q, want warning prefix", stderr.String())
 	}
 	if taskExists(t, "id-no-git") {

@@ -1026,7 +1026,7 @@ func TestRun_SelectionCancelled_DoesNotPersist(t *testing.T) {
 // best-effort branch: an empty bucket sends Run through the Pick
 // path, and a tool-hook closes the store mid-Pick so the post-Pick
 // Put fails. The agent must still run and stderr must carry the
-// "warning: persist" line.
+// "persist" line.
 func TestRun_StoreWriteError_WarnsAndContinues(t *testing.T) {
 	s := openTestStore(t)
 	target := writeFromFile(t, "body")
@@ -1045,7 +1045,7 @@ func TestRun_StoreWriteError_WarnsAndContinues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "warning: persist") {
+	if !strings.Contains(stderr.String(), "persist") {
 		t.Fatalf("stderr = %q, want warning", stderr.String())
 	}
 	if agent.planned != 1 {

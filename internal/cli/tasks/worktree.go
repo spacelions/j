@@ -75,7 +75,7 @@ func removeTaskWorktree(ctx context.Context, stderr io.Writer, task store.Task) 
 	}
 	out, err := run.Output(ctx, "git", "worktree", "list", "--porcelain")
 	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: worktree remove: %v\n", err)
+		banner.DangerousBox(stderr, "J: worktree remove: %v", err)
 		return
 	}
 	refsHead := "refs/heads/" + name
@@ -89,11 +89,11 @@ func removeTaskWorktree(ctx context.Context, stderr io.Writer, task store.Task) 
 		return
 	}
 	if len(matches) > 1 {
-		banner.DangerousFprintf(stderr, "J: warning: worktree remove: multiple worktrees matched %q; using %s\n", name, matches[0].path)
+		banner.DangerousBox(stderr, "J: worktree remove: multiple worktrees matched %q; using %s", name, matches[0].path)
 	}
 	path := matches[0].path
 	_, err = run.Output(ctx, "git", "worktree", "remove", "--force", path)
 	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: worktree remove: %v\n", err)
+		banner.DangerousBox(stderr, "J: worktree remove: %v", err)
 	}
 }

@@ -62,12 +62,12 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 
 	resumeID, err := opts.Agent.NewResumeID(ctx)
 	if err != nil {
-		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", err)
+		banner.DangerousBox(opts.Stderr, "J: %v", err)
 	}
 	agentLogPath := filepath.Join(taskDir, store.AgentLogFileName)
 	mustReadFiles, mustReadErr := MustRead()
 	if mustReadErr != nil {
-		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", mustReadErr)
+		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	lc := store.NewPlanTask(opts.Stderr, opts.Agent.Name(), opts.Model, taskID, source.Target, source.Body, resumeID)
 	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
@@ -99,12 +99,12 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 		if data, readErr := os.ReadFile(requirementsPath); readErr == nil {
 			refinedReq = string(data)
 		} else {
-			banner.DangerousFprintf(opts.Stderr, "J: warning: read %s: %v\n", requirementsPath, readErr)
+			banner.DangerousBox(opts.Stderr, "J: read %s: %v", requirementsPath, readErr)
 		}
 		if data, readErr := os.ReadFile(planPath); readErr == nil {
 			planMD = string(data)
 		} else {
-			banner.DangerousFprintf(opts.Stderr, "J: warning: read %s: %v\n", planPath, readErr)
+			banner.DangerousBox(opts.Stderr, "J: read %s: %v", planPath, readErr)
 		}
 	}
 	lc.Finish(planErr, refinedReq, planMD, source.Target)

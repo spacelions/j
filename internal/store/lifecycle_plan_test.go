@@ -135,7 +135,7 @@ func TestPlanLifecycle_FinishPutErrorWarns(t *testing.T) {
 	var stderr bytes.Buffer
 	lc := &PlanLifecycle{stderr: &stderr, task: Task{Status: StatusPlanning}}
 	lc.Finish(nil, "", "", "")
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
 	}
 }
@@ -154,7 +154,7 @@ func TestNewPlanTask_PutErrorAtBegin(t *testing.T) {
 		t.Fatal("NewPlanTask returned nil")
 	}
 	t.Cleanup(func() { lc.Finish(nil, "", "", "") })
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
 	}
 }

@@ -288,7 +288,7 @@ func TestEnsureAgentSelections_StoreOpenFailure(t *testing.T) {
 	if sel.ToolCalls != 3 {
 		t.Fatalf("toolCalls = %d, want 3 (every bucket should prompt when settings is unreadable)", sel.ToolCalls)
 	}
-	if !strings.Contains(stderr.String(), "warning: settings db") {
+	if !strings.Contains(stderr.String(), "settings db") {
 		t.Fatalf("stderr should warn about settings db: %q", stderr.String())
 	}
 }

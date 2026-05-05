@@ -111,7 +111,7 @@ func TestRun_FromStore_NilStore_SettingsOpenFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "warning: settings") {
+	if !strings.Contains(stderr.String(), "settings") {
 		t.Fatalf("stderr should warn about settings open: %q", stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "Choose your favourite:") {

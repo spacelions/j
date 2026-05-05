@@ -24,7 +24,7 @@ func TestPersistWarn_OpenFailure(t *testing.T) {
 	}
 	var stderr bytes.Buffer
 	PersistWarn(&stderr, Task{ID: "x", Status: StatusPlanDone})
-	if !strings.Contains(stderr.String(), "warning: tasks") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks warning", stderr.String())
 	}
 }
@@ -39,7 +39,7 @@ func TestPersistWarn_PutError(t *testing.T) {
 	}
 	var stderr bytes.Buffer
 	PersistWarn(&stderr, Task{Status: StatusPlanDone})
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
 	}
 }

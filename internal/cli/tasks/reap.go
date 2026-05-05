@@ -69,7 +69,7 @@ func maybeReap(s *store.Store, stderr io.Writer, tasksDir string, t store.Task) 
 		return t
 	}
 	if err := s.PutTask(t); err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks put: %v\n", err)
+		banner.DangerousBox(stderr, "J: tasks put: %v", err)
 	}
 	return t
 }

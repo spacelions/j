@@ -203,7 +203,7 @@ func driveSequential(ctx context.Context, root agent.Agent) error {
 func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
 	dir, err := store.DefaultTasksDir()
 	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks dir: %v\n", err)
+		banner.DangerousBox(stderr, "J: tasks dir: %v", err)
 		return
 	}
 	s := store.OpenTasks(dir)
@@ -217,6 +217,6 @@ func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
 	}
 	t.Status = store.StatusVerifyDone
 	if err := s.PutTask(t); err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks put: %v\n", err)
+		banner.DangerousBox(stderr, "J: tasks put: %v", err)
 	}
 }

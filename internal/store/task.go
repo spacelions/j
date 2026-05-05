@@ -1,17 +1,14 @@
 package store
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 	"time"
 
-	"github.com/oklog/ulid/v2"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -43,46 +40,13 @@ const VerifierPlanFileName = "verifier_plan.md"
 // line is parsed by the orchestrator into a PASS/FAIL verdict.
 const VerifierFindingsFileName = "verifier_findings.md"
 
-// TaskStatus is the typed string used in Task.Status. Only the values
-// listed below are valid; Valid() is the allowlist guard used by
-// PutTask so a misspelled enum can never reach disk.
-type TaskStatus string
-
-// Allowed Task.Status values. The set is intentionally closed: callers
-// must use one of these constants. New states require a code change so
-// the listing/sorting logic in `j tasks` can be updated together.
-//
-// `verifying`, `verify-done`, and `completed` are reserved for a future
-// `j verify` command and are never written by `j plan` or `j work`
-// today; the data model still includes them so listing/sorting code
-// does not need to change when verification is wired up.
-const (
-	StatusPlanning   TaskStatus = "planning"
-	StatusPlanDone   TaskStatus = "plan-done"
-	StatusWorking    TaskStatus = "working"
-	StatusWorkDone   TaskStatus = "work-done"
-	StatusVerifying  TaskStatus = "verifying"
-	StatusVerifyDone TaskStatus = "verify-done"
-	StatusCompleted  TaskStatus = "completed"
-	StatusHelp       TaskStatus = "help"
-)
-
-// Valid reports whether s is one of the allowlisted TaskStatus values.
-func (s TaskStatus) Valid() bool {
-	switch s {
-	case StatusPlanning, StatusPlanDone, StatusWorking, StatusWorkDone,
-		StatusVerifying, StatusVerifyDone, StatusCompleted, StatusHelp:
-		return true
-	}
-	return false
-}
-
 // Task is the value persisted to `<cwd>/.j/tasks/<id>/task.toml`.
 // Pointer-typed time fields are omitted when unknown so a partially-
 // completed task (planning in flight, work not started) never claims
-// fake timestamps. Both `json` and `toml` tags are present: TOML is
-// the on-disk format; JSON is preserved for the agent log markers
-// emitted via internal/util/agentlog.
+// fake timestamps. JSON tags are preserved for the agent log markers
+// emitted via internal/util/agentlog; the on-disk TOML format is
+// produced via the taskWire shadow type below (see the comment on
+// taskWire for the pelletier `*time.Time` workaround).
 //
 // The body markdown is canonical on disk too:
 // `<cwd>/.j/tasks/<id>/requirements.md` and
@@ -91,67 +55,132 @@ func (s TaskStatus) Valid() bool {
 // Each phase mints its own resume token via Agent.NewResumeID; an
 // empty string means "no session for that phase yet".
 type Task struct {
-	ID           string     `json:"id"            toml:"id"`
-	Status       TaskStatus `json:"status"        toml:"status"`
-	InvokedTool  string     `json:"invoked_tool"  toml:"invoked_tool"`
-	InvokedModel string     `json:"invoked_model" toml:"invoked_model"`
+	ID           string     `json:"id"`
+	Status       TaskStatus `json:"status"`
+	InvokedTool  string     `json:"invoked_tool"`
+	InvokedModel string     `json:"invoked_model"`
 	// Worktree is the bare git-worktree name (no slashes, no path)
 	// the worker and verifier should operate against for this task.
 	// It is minted by `j work` on first run via WorktreeNameFor and
-	// then preserved on every subsequent transition. Empty for
-	// tasks worked before the field was introduced; downstream
-	// agents treat empty as "fall back to the main checkout".
-	Worktree string `json:"worktree,omitempty" toml:"worktree,omitempty"`
-	Summary  string `json:"summary"            toml:"summary"`
+	// then preserved on every subsequent transition. Empty for tasks
+	// worked before the field was introduced; downstream agents
+	// treat empty as "fall back to the main checkout".
+	Worktree string `json:"worktree,omitempty"`
+	Summary  string `json:"summary"`
 
-	PlanResumeCursor   string `json:"plan_resume_cursor"   toml:"plan_resume_cursor"`
-	WorkResumeCursor   string `json:"work_resume_cursor"   toml:"work_resume_cursor"`
-	VerifyResumeCursor string `json:"verify_resume_cursor" toml:"verify_resume_cursor"`
+	PlanResumeCursor   string `json:"plan_resume_cursor"`
+	WorkResumeCursor   string `json:"work_resume_cursor"`
+	VerifyResumeCursor string `json:"verify_resume_cursor"`
 
-	PlanBeginAt   *time.Time `json:"plan_begin_at,omitempty"   toml:"plan_begin_at,omitempty"`
-	PlanEndAt     *time.Time `json:"plan_end_at,omitempty"     toml:"plan_end_at,omitempty"`
-	WorkBeginAt   *time.Time `json:"work_begin_at,omitempty"   toml:"work_begin_at,omitempty"`
-	WorkEndAt     *time.Time `json:"work_end_at,omitempty"     toml:"work_end_at,omitempty"`
-	VerifyBeginAt *time.Time `json:"verify_begin_at,omitempty" toml:"verify_begin_at,omitempty"`
-	VerifyEndAt   *time.Time `json:"verify_end_at,omitempty"   toml:"verify_end_at,omitempty"`
-	DoneAt        *time.Time `json:"done_at,omitempty"         toml:"done_at,omitempty"`
+	PlanBeginAt   *time.Time `json:"plan_begin_at,omitempty"`
+	PlanEndAt     *time.Time `json:"plan_end_at,omitempty"`
+	WorkBeginAt   *time.Time `json:"work_begin_at,omitempty"`
+	WorkEndAt     *time.Time `json:"work_end_at,omitempty"`
+	VerifyBeginAt *time.Time `json:"verify_begin_at,omitempty"`
+	VerifyEndAt   *time.Time `json:"verify_end_at,omitempty"`
+	DoneAt        *time.Time `json:"done_at,omitempty"`
 
 	// BackgroundPID is the OS process id of the detached coding-agent
 	// child spawned for a fire-and-forget headless `j plan` or `j work`
 	// run. It is non-zero only while the row is in flight (planning or
 	// working) and the child has not yet been reaped by `j tasks`.
 	// Foreground (interactive) and resume runs leave it at 0.
-	BackgroundPID int `json:"background_pid,omitempty" toml:"background_pid,omitempty"`
+	BackgroundPID int `json:"background_pid,omitempty"`
 	// AgentLogPath is the absolute path of the per-task log file that
 	// captures the spawned child's stdout/stderr (typically
 	// `<cwd>/.j/tasks/<id>/agent.log`). It is set whenever a
 	// background spawn was attempted so users can follow a backgrounded
 	// run; the reaper does not clear it after the row is finalised so
 	// the trailing log remains discoverable.
-	AgentLogPath string `json:"agent_log_path,omitempty" toml:"agent_log_path,omitempty"`
+	AgentLogPath string `json:"agent_log_path,omitempty"`
 }
 
-// ulidEntropy is the process-local monotonic entropy source feeding
-// NewTaskID. Wrapping crypto/rand.Reader in ulid.Monotonic guarantees
-// strict lexicographic ordering for IDs minted within the same
-// millisecond. The reader is not safe for concurrent use, so callers
-// must hold ulidMu while invoking ulid.MustNew.
-var (
-	ulidMu      sync.Mutex
-	ulidEntropy = ulid.Monotonic(rand.Reader, 0)
-)
+// taskWire is the on-disk projection of Task for TOML serialisation.
+// pelletier/go-toml/v2 has a known asymmetry where `*time.Time`
+// encodes as a quoted TOML string (literal) instead of a TOML
+// datetime, and the resulting file does not round-trip. Using
+// `time.Time` (value) sidesteps that bug, at the cost of always
+// rendering the field even when unset; we use the zero value
+// (`0001-01-01T00:00:00Z`) as the "not set" sentinel and translate
+// to/from `*time.Time` at the encode/decode boundary so the in-memory
+// Task API stays unchanged.
+type taskWire struct {
+	ID                 string     `toml:"id"`
+	Status             TaskStatus `toml:"status"`
+	InvokedTool        string     `toml:"invoked_tool"`
+	InvokedModel       string     `toml:"invoked_model"`
+	Worktree           string     `toml:"worktree"`
+	Summary            string     `toml:"summary"`
+	PlanResumeCursor   string     `toml:"plan_resume_cursor"`
+	WorkResumeCursor   string     `toml:"work_resume_cursor"`
+	VerifyResumeCursor string     `toml:"verify_resume_cursor"`
+	PlanBeginAt        time.Time  `toml:"plan_begin_at"`
+	PlanEndAt          time.Time  `toml:"plan_end_at"`
+	WorkBeginAt        time.Time  `toml:"work_begin_at"`
+	WorkEndAt          time.Time  `toml:"work_end_at"`
+	VerifyBeginAt      time.Time  `toml:"verify_begin_at"`
+	VerifyEndAt        time.Time  `toml:"verify_end_at"`
+	DoneAt             time.Time  `toml:"done_at"`
+	BackgroundPID      int        `toml:"background_pid"`
+	AgentLogPath       string     `toml:"agent_log_path"`
+}
 
-// NewTaskID returns a stable, unique, lexicographically time-sortable
-// task identifier in canonical ULID form: 26 ASCII characters in
-// Crockford base32 (`0-9A-HJKMNP-TV-Z`), where the leading 10 chars
-// encode time.Now().UTC() at millisecond precision and the trailing
-// 16 chars encode 80 bits of randomness from crypto/rand. IDs minted
-// inside the same millisecond are strictly ascending thanks to the
-// monotonic entropy source. The function is safe for concurrent use.
-func NewTaskID() string {
-	ulidMu.Lock()
-	defer ulidMu.Unlock()
-	return ulid.MustNew(ulid.Timestamp(time.Now()), ulidEntropy).String()
+// derefTime returns *p, or the zero time when p is nil.
+func derefTime(p *time.Time) time.Time {
+	if p == nil {
+		return time.Time{}
+	}
+	return *p
+}
+
+// optTimePtr returns a pointer to a copy of v, or nil when v is the
+// zero time (our "not set" sentinel).
+func optTimePtr(v time.Time) *time.Time {
+	if v.IsZero() {
+		return nil
+	}
+	cp := v
+	return &cp
+}
+
+func taskToWire(t Task) taskWire {
+	return taskWire{
+		ID: t.ID, Status: t.Status,
+		InvokedTool: t.InvokedTool, InvokedModel: t.InvokedModel,
+		Worktree: t.Worktree, Summary: t.Summary,
+		PlanResumeCursor:   t.PlanResumeCursor,
+		WorkResumeCursor:   t.WorkResumeCursor,
+		VerifyResumeCursor: t.VerifyResumeCursor,
+		PlanBeginAt:        derefTime(t.PlanBeginAt),
+		PlanEndAt:          derefTime(t.PlanEndAt),
+		WorkBeginAt:        derefTime(t.WorkBeginAt),
+		WorkEndAt:          derefTime(t.WorkEndAt),
+		VerifyBeginAt:      derefTime(t.VerifyBeginAt),
+		VerifyEndAt:        derefTime(t.VerifyEndAt),
+		DoneAt:             derefTime(t.DoneAt),
+		BackgroundPID:      t.BackgroundPID,
+		AgentLogPath:       t.AgentLogPath,
+	}
+}
+
+func wireToTask(w taskWire) Task {
+	return Task{
+		ID: w.ID, Status: w.Status,
+		InvokedTool: w.InvokedTool, InvokedModel: w.InvokedModel,
+		Worktree: w.Worktree, Summary: w.Summary,
+		PlanResumeCursor:   w.PlanResumeCursor,
+		WorkResumeCursor:   w.WorkResumeCursor,
+		VerifyResumeCursor: w.VerifyResumeCursor,
+		PlanBeginAt:        optTimePtr(w.PlanBeginAt),
+		PlanEndAt:          optTimePtr(w.PlanEndAt),
+		WorkBeginAt:        optTimePtr(w.WorkBeginAt),
+		WorkEndAt:          optTimePtr(w.WorkEndAt),
+		VerifyBeginAt:      optTimePtr(w.VerifyBeginAt),
+		VerifyEndAt:        optTimePtr(w.VerifyEndAt),
+		DoneAt:             optTimePtr(w.DoneAt),
+		BackgroundPID:      w.BackgroundPID,
+		AgentLogPath:       w.AgentLogPath,
+	}
 }
 
 // PutTask TOML-encodes t and writes it to
@@ -270,5 +299,3 @@ func (s *Store) ListTasks() ([]Task, error) {
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
-
-

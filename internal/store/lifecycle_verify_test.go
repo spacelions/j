@@ -248,7 +248,7 @@ func TestBeginVerify_PutTaskErrorWarns(t *testing.T) {
 		t.Fatal("BeginVerify returned nil")
 	}
 	t.Cleanup(func() { lc.Finish(VerifyOutcomeSuccess, nil) })
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
 	}
 }
@@ -263,7 +263,7 @@ func TestVerifyLifecycle_FinishPutErrorWarns(t *testing.T) {
 	var stderr bytes.Buffer
 	lc := &VerifyLifecycle{stderr: &stderr, task: Task{Status: StatusVerifying}}
 	lc.Finish(VerifyOutcomeSuccess, nil)
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 }

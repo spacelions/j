@@ -196,7 +196,7 @@ func TestWorkLifecycle_FinishPutErrorWarns(t *testing.T) {
 	var stderr bytes.Buffer
 	lc := &WorkLifecycle{stderr: &stderr, task: Task{Status: StatusWorking}}
 	lc.Finish(nil)
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
