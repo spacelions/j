@@ -56,8 +56,8 @@ func TestModel_TasksMsgReplacesAndClearsErr(t *testing.T) {
 	fresh := []tasks.Task{{ID: "abc", Status: tasks.StatusPlanDone}}
 	updated, cmd := m.Update(tasksMsg(fresh))
 	mm := updated.(model)
-	if !reflect.DeepEqual(mm.rows, fresh) {
-		t.Fatalf("tasks = %#v, want %#v", mm.rows, fresh)
+	if !reflect.DeepEqual(mm.tasks, fresh) {
+		t.Fatalf("tasks = %#v, want %#v", mm.tasks, fresh)
 	}
 	if mm.err != nil {
 		t.Fatalf("err should clear, got %v", mm.err)
@@ -129,7 +129,7 @@ func TestModel_WindowSizeMsgUpdatesWidth(t *testing.T) {
 func TestModel_View_WithTasksAndQuitHint(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 5, 0, 0, time.UTC)
 	begin := now.Add(-80 * time.Second)
-	tasks := []tasks.Task{{
+	rows := []tasks.Task{{
 		ID:           "active-1",
 		Status:       tasks.StatusPlanning,
 		InvokedTool:  "cursor",

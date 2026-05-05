@@ -43,15 +43,15 @@ func TestFormatStatus(t *testing.T) {
 		status tasks.TaskStatus
 		setter func(*tasks.Task, time.Time)
 	}{
-		{"planning", tasks.StatusPlanning, func(task *tasks.Task, t time.Time) { t.PlanBeginAt = &t }},
-		{"working", tasks.StatusWorking, func(task *tasks.Task, t time.Time) { t.WorkBeginAt = &t }},
-		{"verifying", tasks.StatusVerifying, func(task *tasks.Task, t time.Time) { t.VerifyBeginAt = &t }},
+		{"planning", tasks.StatusPlanning, func(row *tasks.Task, ts time.Time) { row.PlanBeginAt = &ts }},
+		{"working", tasks.StatusWorking, func(row *tasks.Task, ts time.Time) { row.WorkBeginAt = &ts }},
+		{"verifying", tasks.StatusVerifying, func(row *tasks.Task, ts time.Time) { row.VerifyBeginAt = &ts }},
 	}
 	for _, tc := range activeCases {
 		t.Run("active/"+tc.name, func(t *testing.T) {
-			task := tasks.Task{Status: tc.status}
-			tc.setter(&task, begin)
-			got := formatStatus(task, now)
+			row := tasks.Task{Status: tc.status}
+			tc.setter(&row, begin)
+			got := formatStatus(row, now)
 			want := string(tc.status) + "(1m:20s)"
 			if got != want {
 				t.Fatalf("formatStatus = %q, want %q", got, want)
@@ -107,7 +107,7 @@ func TestRenderTable_EmptyHeaderOnly(t *testing.T) {
 // ruling.
 func TestRenderTable_GlyphTopology(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 5, 0, 0, time.UTC)
-	tasks := []tasks.Task{
+	rows := []tasks.Task{
 		{ID: "a", Status: tasks.StatusPlanDone, Summary: "first"},
 		{ID: "b", Status: tasks.StatusWorkDone, Summary: "second"},
 	}
@@ -127,7 +127,7 @@ func TestRenderTable_MixedActiveAndInactive(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 5, 0, 0, time.UTC)
 	begin := now.Add(-80 * time.Second)
 	end := now.Add(-time.Hour)
-	tasks := []tasks.Task{
+	rows := []tasks.Task{
 		{
 			ID:           "active-1",
 			Status:       tasks.StatusPlanning,
@@ -174,7 +174,7 @@ func TestRenderTable_MixedActiveAndInactive(t *testing.T) {
 // status burns a palette slot.
 func TestRenderTable_RowColors(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	tasks := []tasks.Task{
+	rows := []tasks.Task{
 		{ID: "row-1", Status: tasks.StatusPlanDone, Summary: "first"},
 		{ID: "row-2", Status: tasks.StatusCompleted, Summary: "done"},
 		{ID: "row-3", Status: tasks.StatusHelp, Summary: "stuck"},
@@ -210,7 +210,7 @@ func TestRenderTable_RowColors(t *testing.T) {
 // truncates with `…` and every output line stays within the requested
 // terminal width.
 func TestRenderTable_FitsToWidth(t *testing.T) {
-	tasks := []tasks.Task{
+	rows := []tasks.Task{
 		{
 			ID:           "row-1",
 			Status:       tasks.StatusPlanDone,

@@ -451,12 +451,12 @@ func TestRun_ThreadsWorktreeIntoRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := tasks.Open(dbPath)
-	t, err := s.GetTask(id)
+	row, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Worktree = "j-my-task"
-	if err := s.PutTask(task); err != nil {
+	row.Worktree = "j-my-task"
+	if err := s.PutTask(row); err != nil {
 		t.Fatal(err)
 	}
 	_ = s.Close()
@@ -1039,12 +1039,12 @@ func TestRun_PickerOverMultipleTasks(t *testing.T) {
 		}
 	}
 	rows := readTasks(t)
-	for _, t := range rows {
-		if t.ID == id2 && t.Status != tasks.StatusCompleted {
-			t.Fatalf("picked task should be completed: %+v", task)
+	for _, row := range rows {
+		if row.ID == id2 && row.Status != tasks.StatusCompleted {
+			t.Fatalf("picked task should be completed: %+v", row)
 		}
-		if t.ID == id1 && t.Status != tasks.StatusWorkDone {
-			t.Fatalf("unpicked task should stay work-done: %+v", task)
+		if row.ID == id1 && row.Status != tasks.StatusWorkDone {
+			t.Fatalf("unpicked task should stay work-done: %+v", row)
 		}
 	}
 }

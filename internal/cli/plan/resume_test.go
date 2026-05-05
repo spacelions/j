@@ -45,7 +45,7 @@ func seedResumableTask(t *testing.T, mutate func(*tasks.Task)) (string, *time.Ti
 	}
 	begin := time.Now().UTC().Add(-2 * time.Hour)
 	end := begin.Add(time.Hour)
-	task := tasks.Task{
+	row := tasks.Task{
 		ID:               id,
 		Status:           tasks.StatusPlanDone,
 		InvokedTool:      "cursor",
@@ -56,7 +56,7 @@ func seedResumableTask(t *testing.T, mutate func(*tasks.Task)) (string, *time.Ti
 		PlanEndAt:        &end,
 	}
 	if mutate != nil {
-		mutate(&task)
+		mutate(&row)
 	}
 	dbPath, err := tasks.DefaultDir()
 	if err != nil {
@@ -64,10 +64,10 @@ func seedResumableTask(t *testing.T, mutate func(*tasks.Task)) (string, *time.Ti
 	}
 	s := tasks.Open(dbPath)
 	defer func() { _ = s.Close() }()
-	if err := s.PutTask(task); err != nil {
+	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
 	}
-	return id, t.PlanBeginAt
+	return id, row.PlanBeginAt
 }
 
 // TestRunResume_EmptySelector pins AC#A2: an initialised project
@@ -225,12 +225,12 @@ func TestRunResume_SelectorPicksSecond(t *testing.T) {
 		t.Fatalf("ResumeChatID = %q, want second-cursor", agent.lastReq.ResumeChatID)
 	}
 	rows := readTasks(t)
-	for _, t := range rows {
-		if t.ID == id2 && t.Status != tasks.StatusPlanDone {
-			t.Fatalf("picked task should be plan-done: %+v", task)
+	for _, row := range rows {
+		if row.ID == id2 && row.Status != tasks.StatusPlanDone {
+			t.Fatalf("picked task should be plan-done: %+v", row)
 		}
-		if t.ID == id1 && t.Status != tasks.StatusPlanDone {
-			t.Fatalf("non-picked task should remain plan-done: %+v", task)
+		if row.ID == id1 && row.Status != tasks.StatusPlanDone {
+			t.Fatalf("non-picked task should remain plan-done: %+v", row)
 		}
 	}
 }

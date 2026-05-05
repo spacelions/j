@@ -11,7 +11,6 @@ import (
 	"time"
 
 
-	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -156,7 +155,7 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	t2 := t1.Add(time.Hour)
 
-	tasks := []tasks.Task{
+	rows := []tasks.Task{
 		{
 			ID:               "ddd-old-plan-done",
 			Status:           tasks.StatusPlanDone,
@@ -185,8 +184,8 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 			Summary:          "draft idea",
 		},
 	}
-	for _, t := range rows {
-		if err := s.PutTask(task); err != nil {
+	for _, row := range rows {
+		if err := s.PutTask(row); err != nil {
 			t.Fatalf("PutTask: %v", err)
 		}
 	}

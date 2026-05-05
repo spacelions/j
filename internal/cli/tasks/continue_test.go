@@ -137,7 +137,7 @@ func setupContinueEnv(t *testing.T) {
 func TestRunContinue_PlanningDispatchesToPlanResume(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
-		t.Status = tasks.StatusPlanning
+		task.Status = tasks.StatusPlanning
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -237,8 +237,8 @@ func TestRunContinue_PlanDoneSpawnFails(t *testing.T) {
 func TestRunContinue_WorkingDispatchesToWorkResume(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
-		t.Status = tasks.StatusWorking
-		t.WorkResumeCursor = "work-cursor"
+		task.Status = tasks.StatusWorking
+		task.WorkResumeCursor = "work-cursor"
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -264,8 +264,8 @@ func TestRunContinue_WorkingDispatchesToWorkResume(t *testing.T) {
 func TestRunContinue_WorkDoneDispatchesToVerify(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
-		t.Status = tasks.StatusWorkDone
-		t.WorkResumeCursor = "work-cursor"
+		task.Status = tasks.StatusWorkDone
+		task.WorkResumeCursor = "work-cursor"
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -291,8 +291,8 @@ func TestRunContinue_WorkDoneDispatchesToVerify(t *testing.T) {
 func TestRunContinue_VerifyingDispatchesToVerifyResume(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
-		t.Status = tasks.StatusVerifying
-		t.VerifyResumeCursor = "verify-cursor"
+		task.Status = tasks.StatusVerifying
+		task.VerifyResumeCursor = "verify-cursor"
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -319,7 +319,7 @@ func TestRunContinue_VerifyingDispatchesToVerifyResume(t *testing.T) {
 func TestRunContinue_VerifyDoneShortCircuits(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
-		t.Status = tasks.StatusVerifyDone
+		task.Status = tasks.StatusVerifyDone
 	})
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
@@ -349,7 +349,7 @@ func TestRunContinue_VerifyDoneShortCircuits(t *testing.T) {
 func TestRunContinue_CompletedShortCircuits(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
-		t.Status = tasks.StatusCompleted
+		task.Status = tasks.StatusCompleted
 	})
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
@@ -378,12 +378,12 @@ func TestRunContinue_HelpFromVerifyEnd(t *testing.T) {
 	t2 := t1.Add(time.Hour)
 	t3 := t2.Add(time.Hour)
 	id := seedTaskFull(t, func(task *tasks.Task) {
-		t.Status = tasks.StatusHelp
-		t.VerifyResumeCursor = "verify-cursor"
-		t.WorkResumeCursor = "work-cursor"
-		t.PlanEndAt = &t1
-		t.WorkEndAt = &t2
-		t.VerifyEndAt = &t3
+		task.Status = tasks.StatusHelp
+		task.VerifyResumeCursor = "verify-cursor"
+		task.WorkResumeCursor = "work-cursor"
+		task.PlanEndAt = &t1
+		task.WorkEndAt = &t2
+		task.VerifyEndAt = &t3
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -409,10 +409,10 @@ func TestRunContinue_HelpFromWorkEnd(t *testing.T) {
 	t1 := time.Now().UTC().Add(-2 * time.Hour)
 	t2 := t1.Add(time.Hour)
 	id := seedTaskFull(t, func(task *tasks.Task) {
-		t.Status = tasks.StatusHelp
-		t.WorkResumeCursor = "work-cursor"
-		t.PlanEndAt = &t1
-		t.WorkEndAt = &t2
+		task.Status = tasks.StatusHelp
+		task.WorkResumeCursor = "work-cursor"
+		task.PlanEndAt = &t1
+		task.WorkEndAt = &t2
 	})
 	agent := newContinueAgent()
 	if err := RunContinue(context.Background(), ContinueOptions{
@@ -436,9 +436,9 @@ func TestRunContinue_HelpFromPlanEnd(t *testing.T) {
 	setupContinueEnv(t)
 	t1 := time.Now().UTC().Add(-2 * time.Hour)
 	id := seedTaskFull(t, func(task *tasks.Task) {
-		t.Status = tasks.StatusHelp
-		t.PlanResumeCursor = "plan-cursor"
-		t.PlanEndAt = &t1
+		task.Status = tasks.StatusHelp
+		task.PlanResumeCursor = "plan-cursor"
+		task.PlanEndAt = &t1
 	})
 	agent := newContinueAgent()
 	if err := RunContinue(context.Background(), ContinueOptions{
@@ -461,10 +461,10 @@ func TestRunContinue_HelpFromPlanEnd(t *testing.T) {
 func TestRunContinue_HelpFromCursorFallback(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
-		t.Status = tasks.StatusHelp
-		t.PlanEndAt = nil
-		t.PlanResumeCursor = "plan-cursor"
-		t.WorkResumeCursor = "work-cursor"
+		task.Status = tasks.StatusHelp
+		task.PlanEndAt = nil
+		task.PlanResumeCursor = "plan-cursor"
+		task.WorkResumeCursor = "work-cursor"
 	})
 	agent := newContinueAgent()
 	if err := RunContinue(context.Background(), ContinueOptions{
@@ -487,11 +487,11 @@ func TestRunContinue_HelpFromCursorFallback(t *testing.T) {
 func TestRunContinue_HelpNoSignal(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
-		t.Status = tasks.StatusHelp
-		t.PlanEndAt = nil
-		t.PlanResumeCursor = ""
-		t.WorkResumeCursor = ""
-		t.VerifyResumeCursor = ""
+		task.Status = tasks.StatusHelp
+		task.PlanEndAt = nil
+		task.PlanResumeCursor = ""
+		task.WorkResumeCursor = ""
+		task.VerifyResumeCursor = ""
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -657,7 +657,7 @@ func TestLatestPhase(t *testing.T) {
 	t3 := t2.Add(time.Hour)
 	cases := []struct {
 		name string
-		t tasks.Task
+		row  tasks.Task
 		want string
 	}{
 		{"verify-end-wins", tasks.Task{PlanEndAt: &t1, WorkEndAt: &t2, VerifyEndAt: &t3}, "verify"},
@@ -670,7 +670,7 @@ func TestLatestPhase(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := latestPhase(c.task); got != c.want {
+			if got := latestPhase(c.row); got != c.want {
 				t.Fatalf("latestPhase = %q, want %q", got, c.want)
 			}
 		})
@@ -787,7 +787,7 @@ func TestDispatchByStatus_UnknownStatus(t *testing.T) {
 func TestRunContinue_DispatchPlanError(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
-		t.Status = tasks.StatusPlanning
+		task.Status = tasks.StatusPlanning
 	})
 	agent := &errPlanContinueAgent{
 		continueAgent: *newContinueAgent(),

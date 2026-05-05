@@ -15,7 +15,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -55,7 +54,7 @@ func (u *fakeUI) ConfirmDiscard(_ context.Context, t tasks.Task) (bool, error) {
 // pickReturn) continue to work without a parallel pickOk knob.
 func (u *fakeUI) PickTask(_ context.Context, rows []tasks.Task) (string, bool, error) {
 	u.pickCalls++
-	u.lastPickedFrom = tasks
+	u.lastPickedFrom = rows
 	if u.pickErr != nil {
 		return "", false, u.pickErr
 	}

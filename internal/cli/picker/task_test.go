@@ -10,7 +10,7 @@ import (
 )
 
 func TestFormatTaskLabels_StatusAndSummary(t *testing.T) {
-	tasks := []tasks.Task{
+	rows := []tasks.Task{
 		{ID: "01A", Status: tasks.StatusPlanDone, Summary: "first"},
 		{ID: "01B", Status: tasks.StatusWorking, Summary: "second"},
 	}
@@ -39,7 +39,7 @@ func TestFormatTaskLabels_StatusAndSummary(t *testing.T) {
 }
 
 func TestFormatTaskLabels_EmptySummaryFallback(t *testing.T) {
-	tasks := []tasks.Task{
+	rows := []tasks.Task{
 		{ID: "01A", Status: tasks.StatusPlanning, Summary: ""},
 		{ID: "01B", Status: tasks.StatusHelp, Summary: "   \t\n"},
 	}

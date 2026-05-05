@@ -693,12 +693,12 @@ func TestRun_PickerOverMultipleTasks(t *testing.T) {
 		t.Fatalf("picker tasks = %v, want %v", gotIDs, wantIDs)
 	}
 	rows := readTasks(t)
-	for _, t := range rows {
-		if t.ID == id2 && t.Status != tasks.StatusWorkDone {
-			t.Fatalf("picked task should be work-done: %+v", task)
+	for _, row := range rows {
+		if row.ID == id2 && row.Status != tasks.StatusWorkDone {
+			t.Fatalf("picked task should be work-done: %+v", row)
 		}
-		if t.ID == id1 && t.Status != tasks.StatusPlanDone {
-			t.Fatalf("unpicked task should stay plan-done: %+v", task)
+		if row.ID == id1 && row.Status != tasks.StatusPlanDone {
+			t.Fatalf("unpicked task should stay plan-done: %+v", row)
 		}
 	}
 }
