@@ -87,9 +87,6 @@ func RunPlanFromBody(ctx context.Context, opts PlanMarkdownOptions, body, source
 	if err := os.WriteFile(requirementsPath, []byte(body), 0o644); err != nil {
 		return fmt.Errorf("plan: stage requirements: %w", err)
 	}
-	if sourceLabel == "" {
-		sourceLabel = requirementsPath
-	}
 	return runPlanInTaskDir(ctx, opts, taskID, taskDir, requirementsPath, body, linearIssue)
 }
 
