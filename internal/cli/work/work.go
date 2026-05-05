@@ -128,9 +128,9 @@ func Run(ctx context.Context, opts Options) (err error) {
 	if !proceed {
 		return nil
 	}
-	lc := res.Task.BeginWorkReuse(opts.Stderr, agent.Name(), model, resumeID)
-
 	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), tasks.AgentLogFileName)
+	lc := res.Task.BeginWorkReuse(opts.Stderr, agent.Name(), model, resumeID, agentLogPath)
+
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)

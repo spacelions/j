@@ -572,7 +572,7 @@ func TestBeginWorkTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	preBegin := existing.WorkBeginAt
 	preCursor := existing.WorkResumeCursor
 
-	lc := existing.BeginWorkResume(io.Discard)
+	lc := existing.BeginWorkResume(io.Discard, "")
 	lc.Finish(nil)
 
 	rows := readTasks(t)
@@ -746,7 +746,7 @@ func TestBeginWorkTaskResume_NilWorkBeginAtStampsFreshOne(t *testing.T) {
 	}
 	_ = s.Close()
 
-	lc := existing.BeginWorkResume(io.Discard)
+	lc := existing.BeginWorkResume(io.Discard, "")
 	lc.Finish(nil)
 
 	rows := readTasks(t)

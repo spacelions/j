@@ -134,8 +134,9 @@ func Run(ctx context.Context, opts Options) (err error) {
 		return fmt.Errorf("J: unknown tool %q (recorded on task %s)", res.Task.InvokedTool, res.Task.ID)
 	}
 
-	lc := res.Task.BeginVerify(opts.Stderr, verifierAgent.Name(), model, resumeID)
-	outcome, runErr := runVerifyLoop(ctx, opts, verifierAgent, workerAgent, model, resumeID, res)
+	agentLogPath := filepath.Join(res.TaskDir, tasks.AgentLogFileName)
+	lc := res.Task.BeginVerify(opts.Stderr, verifierAgent.Name(), model, resumeID, agentLogPath)
+	outcome, runErr := runVerifyLoop(ctx, opts, verifierAgent, workerAgent, model, resumeID, res, agentLogPath)
 	lc.Finish(outcome, runErr)
 	if runErr != nil {
 		return runErr
@@ -169,8 +170,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 // the contract documented on agent.go without binding child
 // lifetime to ctx — see run.Spawn's commentary on why a true
 // fire-and-forget child cannot be safely killed by ctx cancellation.
-func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent codingagents.Agent, model, resumeID string, res resolved) (tasks.VerifyOutcome, error) {
-	agentLogPath := filepath.Join(res.TaskDir, tasks.AgentLogFileName)
+func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent codingagents.Agent, model, resumeID string, res resolved, agentLogPath string) (tasks.VerifyOutcome, error) {
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)

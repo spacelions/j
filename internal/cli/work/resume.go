@@ -110,8 +110,9 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	}
 	taskDir := filepath.Join(tasksDir, t.ID)
 	planPath := filepath.Join(taskDir, tasks.PlanFileName)
+	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 
-	lc := t.BeginWorkResume(opts.Stderr)
+	lc := t.BeginWorkResume(opts.Stderr, agentLogPath)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)

@@ -5,11 +5,14 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/spacelions/j/internal/store")
+	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/util/agentlog"
+)
 
 // TestTask_BeginVerify_FlipsStatusAndStampsResume pins the begin
 // helper: status flips to verifying, the new resume cursor lands on
@@ -35,7 +38,7 @@ func TestTask_BeginVerify_FlipsStatusAndStampsResume(t *testing.T) {
 	preWorkEnd := existing.WorkEndAt
 	preWorkCursor := existing.WorkResumeCursor
 
-	lc := existing.BeginVerify(io.Discard, "cursor", "gpt-5", "fresh-verify-cursor")
+	lc := existing.BeginVerify(io.Discard, "cursor", "gpt-5", "fresh-verify-cursor", "")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 
 	got := listAllTasks(t)[0]
@@ -82,7 +85,7 @@ func TestVerifyLifecycle_FinishNoRetries(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor")
+	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor", "")
 	lc.Finish(VerifyOutcomeNoRetries, nil)
 	got := listAllTasks(t)[0]
 	if got.Status != StatusVerifyDone {
@@ -110,7 +113,7 @@ func TestVerifyLifecycle_FinishErrorPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor")
+	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor", "")
 	lc.Finish(VerifyOutcomeNoRetries, errors.New("boom"))
 	got := listAllTasks(t)[0]
 	if got.Status != StatusHelp {
@@ -136,7 +139,7 @@ func TestVerifyLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor")
+	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor", "")
 	lc.RecordBackground(54321, "/tmp/agent.log")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 	got := listAllTasks(t)[0]
@@ -169,7 +172,7 @@ func TestVerifyLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor")
+	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor", "")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 	lc.RecordBackground(99999, "/tmp/should-not-stick.log")
 	got := listAllTasks(t)[0]
@@ -198,7 +201,7 @@ func TestVerifyLifecycle_FinishIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor")
+	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor", "")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 	lc.Finish(VerifyOutcomeNoRetries, errors.New("ignored"))
 	got := listAllTasks(t)[0]
@@ -226,7 +229,7 @@ func TestBeginVerify_OpenFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	lc := Task{ID: NewTaskID(), Status: StatusWorkDone}.BeginVerify(&stderr, "cursor", "m", "")
+	lc := Task{ID: NewTaskID(), Status: StatusWorkDone}.BeginVerify(&stderr, "cursor", "m", "", "")
 	if lc == nil {
 		t.Fatal("BeginVerify returned nil")
 	}
@@ -244,7 +247,7 @@ func TestBeginVerify_PutTaskErrorWarns(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
-	lc := Task{Status: StatusWorkDone}.BeginVerify(&stderr, "cursor", "m", "")
+	lc := Task{Status: StatusWorkDone}.BeginVerify(&stderr, "cursor", "m", "", "")
 	if lc == nil {
 		t.Fatal("BeginVerify returned nil")
 	}
@@ -290,7 +293,7 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 		t.Fatal(err)
 	}
 	PersistWarn(io.Discard, existing)
-	lc := existing.BeginVerifyResume(io.Discard)
+	lc := existing.BeginVerifyResume(io.Discard, "")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 	got := listAllTasks(t)[0]
 	if got.Status != StatusCompleted {
@@ -304,5 +307,44 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 	}
 	if got.VerifyBeginAt == nil || !got.VerifyBeginAt.Equal(begin) {
 		t.Fatalf("VerifyBeginAt changed: %v", got.VerifyBeginAt)
+	}
+}
+
+// TestVerifyLifecycle_MarkersGoToAgentLogNotStderr is the regression
+// pin for "phase markers must never reach the user's terminal".
+func TestVerifyLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
+	}
+	id := seedWorkDoneTask(t, "x")
+	dbPath, err := DefaultDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := Open(dbPath)
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	logPath := filepath.Join(t.TempDir(), "agent.log")
+	var stderr bytes.Buffer
+	lc := existing.BeginVerify(&stderr, "cursor", "m", "v-cursor", logPath)
+	lc.Finish(VerifyOutcomeSuccess, nil)
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read agent.log: %v", err)
+	}
+	body := string(data)
+	if !strings.Contains(body, `"event":"phase_begin"`) {
+		t.Fatalf("agent.log missing phase_begin: %q", body)
+	}
+	if !strings.Contains(body, `"event":"phase_end"`) {
+		t.Fatalf("agent.log missing phase_end: %q", body)
+	}
+	if strings.Contains(stderr.String(), agentlog.Sentinel) {
+		t.Fatalf("stderr leaked phase marker: %q", stderr.String())
 	}
 }

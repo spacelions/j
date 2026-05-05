@@ -188,7 +188,7 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 	if mustReadErr != nil {
 		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
 	}
-	lc := existing.BeginPlanReuse(opts.Stderr, agent.Name(), model, resumeID)
+	lc := existing.BeginPlanReuse(opts.Stderr, agent.Name(), model, resumeID, agentLogPath)
 	pid, planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           requirementsPath,
 		Model:                  model,
