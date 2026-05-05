@@ -113,7 +113,7 @@ const projectsQuery = `query{projects{nodes{id name}}}`
 
 const assignedIssuesQuery = `query{viewer{assignedIssues(filter:{state:{type:{nin:["completed","canceled"]}}},orderBy:updatedAt,first:50){nodes{identifier title url state{name}}}}}`
 
-const assignedIssuesByProjectQuery = `query($projectId:String!){viewer{assignedIssues(filter:{state:{type:{nin:["completed","canceled"]}},project:{id:{eq:$projectId}}},orderBy:updatedAt,first:50){nodes{identifier title url state{name}}}}}`
+const assignedIssuesByProjectQuery = `query($projectId:ID!){viewer{assignedIssues(filter:{state:{type:{nin:["completed","canceled"]}},project:{id:{eq:$projectId}}},orderBy:updatedAt,first:50){nodes{identifier title url state{name}}}}}`
 
 type issueResponse struct {
 	Data struct {
