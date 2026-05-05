@@ -69,7 +69,7 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 	if mustReadErr != nil {
 		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
 	}
-	lc := tasks.NewPlanTask(opts.Stderr, opts.Agent.Name(), opts.Model, taskID, source.Target, source.Body, resumeID)
+	lc := tasks.NewPlanTask(opts.Stderr, opts.Agent.Name(), opts.Model, taskID, source.Target, source.Body, resumeID, agentLogPath)
 	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           source.Target,
 		Model:                  opts.Model,

@@ -14,10 +14,14 @@ import (
 // Task.BeginPlanReuse and finalised with Finish; callers pair them
 // with a defer so the task is always written even when agent.Plan
 // panics.
+//
+// agentLogPath is the per-task `agent.log` destination for phase
+// markers; empty string disables marker emission (test paths).
 type PlanLifecycle struct {
-	stderr io.Writer
-	task   Task
-	closed bool
+	stderr       io.Writer
+	agentLogPath string
+	task         Task
+	closed       bool
 }
 
 // NewPlanTask records the "planning" entry for a real plan run. The
@@ -25,13 +29,13 @@ type PlanLifecycle struct {
 // under <cwd>/.j/tasks/ uses the same id as the bbolt row), the
 // markdown target the user is planning against (used for the basename
 // fallback when the body has no usable first line), the requirement
-// body, and the plan-phase resume token (empty for agents with no
-// notion of resume or on a NewResumeID failure already warned by the
-// caller).
+// body, the plan-phase resume token (empty for agents with no notion
+// of resume or on a NewResumeID failure already warned by the caller),
+// and the agent.log path that phase markers should land in.
 //
 // Best effort: failure to open the task log or to write the initial
 // row warns once on stderr and execution continues.
-func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement, resumeID string) *PlanLifecycle {
+func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement, resumeID, agentLogPath string) *PlanLifecycle {
 	begin := time.Now().UTC()
 	task := Task{
 		ID:               taskID,
@@ -42,9 +46,9 @@ func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement
 		Summary:          Summary(requirement, target),
 		PlanBeginAt:      &begin,
 	}
-	lc := &PlanLifecycle{stderr: stderr, task: task}
+	lc := &PlanLifecycle{stderr: stderr, agentLogPath: agentLogPath, task: task}
 	PersistWarn(stderr, task)
-	emitPhaseBegin(stderr, "plan", task)
+	emitPhaseBegin(agentLogPath, "plan", task)
 	return lc
 }
 
@@ -59,7 +63,7 @@ func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement
 // reads requirements.md from the existing task directory and feeds
 // it back through agent.Plan, so the summary derivation runs again
 // in Finish.
-func (t Task) BeginPlanReuse(stderr io.Writer, agentName, model, resumeID string) *PlanLifecycle {
+func (t Task) BeginPlanReuse(stderr io.Writer, agentName, model, resumeID, agentLogPath string) *PlanLifecycle {
 	begin := time.Now().UTC()
 	task := t
 	task.Status = StatusPlanning
@@ -71,9 +75,9 @@ func (t Task) BeginPlanReuse(stderr io.Writer, agentName, model, resumeID string
 	if task.PlanBeginAt == nil {
 		task.PlanBeginAt = &begin
 	}
-	lc := &PlanLifecycle{stderr: stderr, task: task}
+	lc := &PlanLifecycle{stderr: stderr, agentLogPath: agentLogPath, task: task}
 	PersistWarn(stderr, task)
-	emitPhaseBegin(stderr, "plan", task)
+	emitPhaseBegin(agentLogPath, "plan", task)
 	return lc
 }
 
@@ -120,7 +124,7 @@ func (lc *PlanLifecycle) Finish(runErr error, refinedRequirements, planMarkdown,
 		lc.task.Summary = Summary(PickSource(refinedRequirements, planMarkdown), target)
 	}
 	PersistWarn(lc.stderr, lc.task)
-	emitPhaseEnd(lc.stderr, "plan", lc.task.PlanBeginAt, lc.task, outcome)
+	emitPhaseEnd(lc.agentLogPath, "plan", lc.task.PlanBeginAt, lc.task, outcome)
 }
 
 // Task returns the in-memory snapshot of the task row. The plan flow

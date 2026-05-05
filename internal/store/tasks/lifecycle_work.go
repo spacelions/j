@@ -16,10 +16,14 @@ import (
 // Constructed with NewWorkTask, Task.BeginWorkReuse, or
 // Task.BeginWorkResume depending on whether the run creates a new row,
 // reuses an existing row, or resumes a prior work session.
+//
+// agentLogPath is the per-task `agent.log` destination for phase
+// markers; empty string disables marker emission (test paths).
 type WorkLifecycle struct {
-	stderr io.Writer
-	task   Task
-	closed bool
+	stderr       io.Writer
+	agentLogPath string
+	task         Task
+	closed       bool
 }
 
 // NewWorkTask records the "working" entry for a newly created work row.
@@ -30,7 +34,7 @@ type WorkLifecycle struct {
 // Worktree is minted via WorktreeNameFor so the worker and the
 // verifier share one rule; callers that pre-populate Worktree (none
 // today — `j plan` does not set it) still have their value preserved.
-func NewWorkTask(stderr io.Writer, agentName, model, taskID, planPath, requirement, planBody, resumeID string) *WorkLifecycle {
+func NewWorkTask(stderr io.Writer, agentName, model, taskID, planPath, requirement, planBody, resumeID, agentLogPath string) *WorkLifecycle {
 	begin := time.Now().UTC()
 	task := Task{
 		ID:               taskID,
@@ -42,7 +46,7 @@ func NewWorkTask(stderr io.Writer, agentName, model, taskID, planPath, requireme
 		WorkBeginAt:      &begin,
 	}
 	fillWorktree(&task)
-	return openWorkLifecycle(stderr, task)
+	return openWorkLifecycle(stderr, task, agentLogPath)
 }
 
 // BeginWorkReuse mutates a copy of the receiver to flip status to
@@ -54,7 +58,7 @@ func NewWorkTask(stderr io.Writer, agentName, model, taskID, planPath, requireme
 // edits persist); an empty one is populated via WorktreeNameFor so
 // rows that pre-date the field still gain a meaningful name on their
 // first bbolt-sourced `j work`.
-func (t Task) BeginWorkReuse(stderr io.Writer, agentName, model, resumeID string) *WorkLifecycle {
+func (t Task) BeginWorkReuse(stderr io.Writer, agentName, model, resumeID, agentLogPath string) *WorkLifecycle {
 	begin := time.Now().UTC()
 	task := t
 	task.Status = StatusWorking
@@ -65,7 +69,7 @@ func (t Task) BeginWorkReuse(stderr io.Writer, agentName, model, resumeID string
 	task.WorkEndAt = nil
 	task.DoneAt = nil
 	fillWorktree(&task)
-	return openWorkLifecycle(stderr, task)
+	return openWorkLifecycle(stderr, task, agentLogPath)
 }
 
 // BeginWorkResume is the resume-flow companion of BeginWorkReuse. The
@@ -80,7 +84,7 @@ func (t Task) BeginWorkReuse(stderr io.Writer, agentName, model, resumeID string
 //     are cleared so Finish stamps fresh values on the next finalize.
 //     Tool/model are kept verbatim because resume never re-prompts
 //     the user for them.
-func (t Task) BeginWorkResume(stderr io.Writer) *WorkLifecycle {
+func (t Task) BeginWorkResume(stderr io.Writer, agentLogPath string) *WorkLifecycle {
 	task := t
 	task.Status = StatusWorking
 	task.WorkEndAt = nil
@@ -89,15 +93,15 @@ func (t Task) BeginWorkResume(stderr io.Writer) *WorkLifecycle {
 		begin := time.Now().UTC()
 		task.WorkBeginAt = &begin
 	}
-	return openWorkLifecycle(stderr, task)
+	return openWorkLifecycle(stderr, task, agentLogPath)
 }
 
 // openWorkLifecycle is the shared helper that best-effort writes the
 // initial row and returns a WorkLifecycle suitable for Finish.
-func openWorkLifecycle(stderr io.Writer, task Task) *WorkLifecycle {
-	lc := &WorkLifecycle{stderr: stderr, task: task}
+func openWorkLifecycle(stderr io.Writer, task Task, agentLogPath string) *WorkLifecycle {
+	lc := &WorkLifecycle{stderr: stderr, agentLogPath: agentLogPath, task: task}
 	PersistWarn(stderr, task)
-	emitPhaseBegin(stderr, "work", task)
+	emitPhaseBegin(agentLogPath, "work", task)
 	return lc
 }
 
@@ -153,7 +157,7 @@ func (lc *WorkLifecycle) Finish(runErr error) {
 		lc.task.Status = StatusWorkDone
 	}
 	PersistWarn(lc.stderr, lc.task)
-	emitPhaseEnd(lc.stderr, "work", lc.task.WorkBeginAt, lc.task, outcome)
+	emitPhaseEnd(lc.agentLogPath, "work", lc.task.WorkBeginAt, lc.task, outcome)
 }
 
 // Task returns the in-memory snapshot of the work task row. Used by

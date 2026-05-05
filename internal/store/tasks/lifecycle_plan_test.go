@@ -5,10 +5,13 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/spacelions/j/internal/store")
+	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/util/agentlog"
+)
 
 // TestNewPlanTask_RecordsAndFinish drives the planning → plan-done
 // happy path: NewPlanTask writes the row at status `planning`, then
@@ -21,7 +24,7 @@ func TestNewPlanTask_RecordsAndFinish(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := NewTaskID()
-	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", id, "/tmp/x.md", "# heading\nbody", "plan-cursor")
+	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", id, "/tmp/x.md", "# heading\nbody", "plan-cursor", "")
 	lc.Finish(nil, "# heading\nbody", "## plan", "/tmp/x.md")
 	tasks := listAllTasks(t)
 	if len(tasks) != 1 || tasks[0].ID != id {
@@ -55,7 +58,7 @@ func TestPlanLifecycle_Finish_ErrorPath(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewPlanTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.md", "x", "")
+	lc := NewPlanTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.md", "x", "", "")
 	lc.Finish(errors.New("boom"), "", "", "/tmp/x.md")
 	tasks := listAllTasks(t)
 	if len(tasks) != 1 || tasks[0].Status != StatusHelp {
@@ -72,7 +75,7 @@ func TestPlanLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "")
+	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "", "")
 	lc.RecordBackground(99887, "/tmp/agent.log")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 	got := listAllTasks(t)[0]
@@ -95,7 +98,7 @@ func TestPlanLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "")
+	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "", "")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 	lc.RecordBackground(11111, "/tmp/should-not-stick.log")
 	got := listAllTasks(t)[0]
@@ -117,7 +120,7 @@ func TestPlanLifecycle_FinishIdempotent(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "")
+	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "", "")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 	lc.Finish(errors.New("boom"), "should not", "change", "anything")
 	tasks := listAllTasks(t)
@@ -150,7 +153,7 @@ func TestNewPlanTask_PutErrorAtBegin(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
-	lc := NewPlanTask(&stderr, "cursor", "m", "", "", "", "")
+	lc := NewPlanTask(&stderr, "cursor", "m", "", "", "", "", "")
 	if lc == nil {
 		t.Fatal("NewPlanTask returned nil")
 	}
@@ -179,7 +182,7 @@ func TestNewPlanTask_OpenFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	lc := NewPlanTask(&stderr, "cursor", "m", NewTaskID(), "", "", "")
+	lc := NewPlanTask(&stderr, "cursor", "m", NewTaskID(), "", "", "", "")
 	if lc == nil {
 		t.Fatal("NewPlanTask returned nil")
 	}
@@ -197,7 +200,7 @@ func TestPlanLifecycle_Task(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := NewTaskID()
-	lc := NewPlanTask(io.Discard, "cursor", "m", id, "", "", "")
+	lc := NewPlanTask(io.Discard, "cursor", "m", id, "", "", "", "")
 	if got := lc.Task(); got.ID != id {
 		t.Fatalf("Task().ID = %q, want %q", got.ID, id)
 	}
@@ -224,7 +227,7 @@ func TestTask_BeginPlanReuse_PreservesLineage(t *testing.T) {
 	_ = s.Close()
 	prePlanBegin := existing.PlanBeginAt
 
-	lc := existing.BeginPlanReuse(io.Discard, "cursor", "gpt-5", "fresh-plan-cursor")
+	lc := existing.BeginPlanReuse(io.Discard, "cursor", "gpt-5", "fresh-plan-cursor", "")
 	lc.Finish(nil, "# refined", "## plan", "/tmp/x.md")
 	got := listAllTasks(t)[0]
 	if got.Status != StatusPlanDone {
@@ -241,5 +244,36 @@ func TestTask_BeginPlanReuse_PreservesLineage(t *testing.T) {
 	}
 	if got.Summary != "refined" {
 		t.Fatalf("Summary = %q", got.Summary)
+	}
+}
+
+// TestPlanLifecycle_MarkersGoToAgentLogNotStderr is the regression
+// pin for "phase markers must never reach the user's terminal". The
+// lifecycle is wired with a temp agent.log path; both markers must
+// land in that file and stderr must stay clean of the agentlog
+// sentinel.
+func TestPlanLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
+	}
+	logPath := filepath.Join(t.TempDir(), "agent.log")
+	var stderr bytes.Buffer
+	lc := NewPlanTask(&stderr, "cursor", "m", NewTaskID(), "/tmp/x.md", "# heading", "", logPath)
+	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read agent.log: %v", err)
+	}
+	body := string(data)
+	if !strings.Contains(body, `"event":"phase_begin"`) {
+		t.Fatalf("agent.log missing phase_begin: %q", body)
+	}
+	if !strings.Contains(body, `"event":"phase_end"`) {
+		t.Fatalf("agent.log missing phase_end: %q", body)
+	}
+	if strings.Contains(stderr.String(), agentlog.Sentinel) {
+		t.Fatalf("stderr leaked phase marker: %q", stderr.String())
 	}
 }

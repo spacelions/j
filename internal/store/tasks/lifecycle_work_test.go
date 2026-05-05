@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spacelions/j/internal/store")
+	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/util/agentlog"
+)
 
 // TestNewWorkTask_RecordsRow pins the fresh work-row write: a fresh
 // row at status=working, work fields populated, and no plan fields.
@@ -19,7 +21,7 @@ func TestNewWorkTask_RecordsRow(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := NewTaskID()
-	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", id, "/tmp/spec.plan.md", "# req", "plan body", "work-cursor")
+	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", id, "/tmp/spec.plan.md", "# req", "plan body", "work-cursor", "")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
 	if got.ID != id || got.Status != StatusWorkDone {
@@ -61,7 +63,7 @@ func TestTask_BeginWorkReuse_PreservesPlanPhase(t *testing.T) {
 	prePlanEnd := existing.PlanEndAt
 	preCursor := existing.PlanResumeCursor
 
-	lc := existing.BeginWorkReuse(io.Discard, "cursor", "gpt-5", "fresh-work-cursor")
+	lc := existing.BeginWorkReuse(io.Discard, "cursor", "gpt-5", "fresh-work-cursor", "")
 	lc.Finish(nil)
 
 	got := listAllTasks(t)[0]
@@ -91,7 +93,7 @@ func TestWorkLifecycle_FinishErrorPath(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "", "body", "")
+	lc := NewWorkTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
 	lc.Finish(errors.New("boom"))
 	got := listAllTasks(t)[0]
 	if got.Status != StatusHelp {
@@ -109,7 +111,7 @@ func TestWorkLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.plan.md", "", "body", "")
+	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
 	lc.RecordBackground(54321, "/tmp/agent.log")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
@@ -131,7 +133,7 @@ func TestWorkLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.plan.md", "", "body", "")
+	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
 	lc.Finish(nil)
 	lc.RecordBackground(99999, "/tmp/should-not-stick.log")
 	got := listAllTasks(t)[0]
@@ -149,7 +151,7 @@ func TestWorkLifecycle_FinishIdempotent(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.plan.md", "", "body", "")
+	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
 	lc.Finish(nil)
 	lc.Finish(errors.New("ignored"))
 	tasks := listAllTasks(t)
@@ -177,7 +179,7 @@ func TestNewWorkTask_OpenFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	lc := NewWorkTask(&stderr, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "", "body", "")
+	lc := NewWorkTask(&stderr, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
 	if lc == nil {
 		t.Fatal("NewWorkTask returned nil")
 	}
@@ -213,7 +215,7 @@ func TestNewWorkTask_MintsWorktreeName(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "# do the thing", "body", "")
+	lc := NewWorkTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "# do the thing", "body", "", "")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
 	if got.Worktree != "myproj-do-the-thing" {
@@ -246,7 +248,7 @@ func TestTask_BeginWorkReuse_MintsWorktreeWhenEmpty(t *testing.T) {
 	if existing.Worktree != "" {
 		t.Fatalf("seed already has worktree %q", existing.Worktree)
 	}
-	lc := existing.BeginWorkReuse(io.Discard, "cursor", "m", "cursor")
+	lc := existing.BeginWorkReuse(io.Discard, "cursor", "m", "cursor", "")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
 	if got.Worktree != "myproj-hello-world" {
@@ -273,7 +275,7 @@ func TestTask_BeginWorkReuse_PreservesPreExistingWorktree(t *testing.T) {
 	}
 	_ = s.Close()
 	existing.Worktree = "manual-override"
-	lc := existing.BeginWorkReuse(io.Discard, "cursor", "m", "cursor")
+	lc := existing.BeginWorkReuse(io.Discard, "cursor", "m", "cursor", "")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
 	if got.Worktree != "manual-override" {
@@ -303,7 +305,7 @@ func TestTask_BeginWorkResume_LeavesWorktreeAlone(t *testing.T) {
 	if existing.Worktree != "" {
 		t.Fatalf("seed already has worktree %q", existing.Worktree)
 	}
-	lc := existing.BeginWorkResume(io.Discard)
+	lc := existing.BeginWorkResume(io.Discard, "")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
 	if got.Worktree != "" {
@@ -323,8 +325,36 @@ func TestWorkLifecycle_Task(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "# do the thing", "body", "")
+	lc := NewWorkTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "# do the thing", "body", "", "")
 	if got := lc.Task(); got.Worktree != "myproj-do-the-thing" {
 		t.Fatalf("Task().Worktree = %q", got.Worktree)
+	}
+}
+
+// TestWorkLifecycle_MarkersGoToAgentLogNotStderr is the regression
+// pin for "phase markers must never reach the user's terminal".
+func TestWorkLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
+	}
+	logPath := filepath.Join(t.TempDir(), "agent.log")
+	var stderr bytes.Buffer
+	lc := NewWorkTask(&stderr, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "", "body", "", logPath)
+	lc.Finish(nil)
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read agent.log: %v", err)
+	}
+	body := string(data)
+	if !strings.Contains(body, `"event":"phase_begin"`) {
+		t.Fatalf("agent.log missing phase_begin: %q", body)
+	}
+	if !strings.Contains(body, `"event":"phase_end"`) {
+		t.Fatalf("agent.log missing phase_end: %q", body)
+	}
+	if strings.Contains(stderr.String(), agentlog.Sentinel) {
+		t.Fatalf("stderr leaked phase marker: %q", stderr.String())
 	}
 }

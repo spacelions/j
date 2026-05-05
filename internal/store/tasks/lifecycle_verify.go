@@ -28,10 +28,14 @@ const (
 // bbolt handle — every task-log write goes through PersistWarn so
 // the bbolt file lock is never held across agent.Verify and a
 // concurrent `j tasks` from another shell is not blocked.
+//
+// agentLogPath is the per-task `agent.log` destination for phase
+// markers; empty string disables marker emission (test paths).
 type VerifyLifecycle struct {
-	stderr io.Writer
-	task   Task
-	closed bool
+	stderr       io.Writer
+	agentLogPath string
+	task         Task
+	closed       bool
 }
 
 // BeginVerify flips an existing task row to `verifying`, stamps
@@ -39,7 +43,7 @@ type VerifyLifecycle struct {
 // failed run, and records the latest tool/model and resume cursor
 // for the verify phase. Plan-phase and work-phase fields are
 // preserved.
-func (t Task) BeginVerify(stderr io.Writer, agentName, model, resumeID string) *VerifyLifecycle {
+func (t Task) BeginVerify(stderr io.Writer, agentName, model, resumeID, agentLogPath string) *VerifyLifecycle {
 	begin := time.Now().UTC()
 	task := t
 	task.Status = StatusVerifying
@@ -49,7 +53,7 @@ func (t Task) BeginVerify(stderr io.Writer, agentName, model, resumeID string) *
 	task.VerifyBeginAt = &begin
 	task.VerifyEndAt = nil
 	task.DoneAt = nil
-	return openVerifyLifecycle(stderr, task)
+	return openVerifyLifecycle(stderr, task, agentLogPath)
 }
 
 // BeginVerifyResume is the resume-flow companion of BeginVerify. It
@@ -62,7 +66,7 @@ func (t Task) BeginVerify(stderr io.Writer, agentName, model, resumeID string) *
 //     DoneAt are cleared so Finish stamps fresh values on the next
 //     finalize. Tool/model are kept verbatim because resume never
 //     re-prompts the user for them.
-func (t Task) BeginVerifyResume(stderr io.Writer) *VerifyLifecycle {
+func (t Task) BeginVerifyResume(stderr io.Writer, agentLogPath string) *VerifyLifecycle {
 	task := t
 	task.Status = StatusVerifying
 	task.VerifyEndAt = nil
@@ -71,15 +75,15 @@ func (t Task) BeginVerifyResume(stderr io.Writer) *VerifyLifecycle {
 		begin := time.Now().UTC()
 		task.VerifyBeginAt = &begin
 	}
-	return openVerifyLifecycle(stderr, task)
+	return openVerifyLifecycle(stderr, task, agentLogPath)
 }
 
 // openVerifyLifecycle is the shared helper that best-effort writes
 // the initial row and returns a VerifyLifecycle suitable for Finish.
-func openVerifyLifecycle(stderr io.Writer, task Task) *VerifyLifecycle {
-	lc := &VerifyLifecycle{stderr: stderr, task: task}
+func openVerifyLifecycle(stderr io.Writer, task Task, agentLogPath string) *VerifyLifecycle {
+	lc := &VerifyLifecycle{stderr: stderr, agentLogPath: agentLogPath, task: task}
 	PersistWarn(stderr, task)
-	emitPhaseBegin(stderr, "verify", task)
+	emitPhaseBegin(agentLogPath, "verify", task)
 	return lc
 }
 
@@ -128,5 +132,5 @@ func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
 		lc.task.Status = StatusVerifyDone
 	}
 	PersistWarn(lc.stderr, lc.task)
-	emitPhaseEnd(lc.stderr, "verify", lc.task.VerifyBeginAt, lc.task, markerOutcome)
+	emitPhaseEnd(lc.agentLogPath, "verify", lc.task.VerifyBeginAt, lc.task, markerOutcome)
 }

@@ -1,24 +1,23 @@
 package tasks
 
 import (
-	"io"
 	"time"
 
 	"github.com/spacelions/j/internal/util/agentlog"
 )
 
-// emitPhaseBegin writes a `phase_begin` marker to w. w is expected to
-// be the same fd the orchestrator wired to the per-task agent.log
-// (see internal/util/run/run.go SpawnIn): in the headless flow that
-// makes the marker land alongside the human transcript; in the
-// foreground flow it shows up on the user's terminal as a one-line
-// summary, which is benign and grep-able via the agentlog.Sentinel.
+// emitPhaseBegin appends a `phase_begin` marker to the per-task
+// `agent.log` at agentLogPath. Markers never land on the user's
+// terminal: an empty agentLogPath is a silent no-op (resume / test
+// paths and pre-existing rows that have no agent.log destination)
+// and any non-empty path is opened, appended to, and closed by
+// agentlog.EmitTo.
 //
 // The helper swallows agentlog write errors. Markers are observability
 // signal, not load-bearing data — losing one is strictly less harmful
 // than aborting a phase begin.
-func emitPhaseBegin(w io.Writer, phase string, t Task) {
-	_ = agentlog.Emit(w, "phase_begin", map[string]any{
+func emitPhaseBegin(agentLogPath, phase string, t Task) {
+	_ = agentlog.EmitTo(agentLogPath, "phase_begin", map[string]any{
 		"phase": phase,
 		"task":  t.ID,
 		"tool":  t.InvokedTool,
@@ -26,11 +25,12 @@ func emitPhaseBegin(w io.Writer, phase string, t Task) {
 	})
 }
 
-// emitPhaseEnd writes a `phase_end` marker to w. duration_ms is
-// computed from beginAt when set so the marker is self-contained;
-// outcome is one of `done` / `help` / `pass` / `fail` per the
-// agent.log marker convention.
-func emitPhaseEnd(w io.Writer, phase string, beginAt *time.Time, t Task, outcome string) {
+// emitPhaseEnd appends a `phase_end` marker to agentLogPath.
+// duration_ms is computed from beginAt when set so the marker is
+// self-contained; outcome is one of `done` / `help` / `pass` / `fail`
+// per the agent.log marker convention. An empty agentLogPath is a
+// silent no-op.
+func emitPhaseEnd(agentLogPath, phase string, beginAt *time.Time, t Task, outcome string) {
 	fields := map[string]any{
 		"phase":   phase,
 		"task":    t.ID,
@@ -39,5 +39,5 @@ func emitPhaseEnd(w io.Writer, phase string, beginAt *time.Time, t Task, outcome
 	if beginAt != nil {
 		fields["duration_ms"] = time.Since(*beginAt).Milliseconds()
 	}
-	_ = agentlog.Emit(w, "phase_end", fields)
+	_ = agentlog.EmitTo(agentLogPath, "phase_end", fields)
 }

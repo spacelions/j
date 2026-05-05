@@ -119,8 +119,9 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
 	verifierPlanPath := filepath.Join(taskDir, tasks.VerifierPlanFileName)
 	findingsPath := filepath.Join(taskDir, tasks.VerifierFindingsFileName)
+	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 
-	lc := t.BeginVerifyResume(opts.Stderr)
+	lc := t.BeginVerifyResume(opts.Stderr, agentLogPath)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)

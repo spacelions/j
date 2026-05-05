@@ -1624,7 +1624,7 @@ func TestRunVerifyLoop_VerifierWaitCtxCancelled(t *testing.T) {
 		Interactive:   true,
 		MaxIterations: 3,
 		Stderr:        io.Discard,
-	}, agent, agent, "m", "id", res)
+	}, agent, agent, "m", "id", res, "")
 	if outcome != tasks.VerifyOutcomeNoRetries {
 		t.Fatalf("outcome = %v, want VerifyOutcomeNoRetries", outcome)
 	}
@@ -1654,7 +1654,7 @@ func TestRunVerifyLoop_WorkerWaitCtxCancelled(t *testing.T) {
 		Interactive:   true,
 		MaxIterations: 3,
 		Stderr:        io.Discard,
-	}, verifier, worker, "m", "id", res)
+	}, verifier, worker, "m", "id", res, "")
 	if outcome != tasks.VerifyOutcomeNoRetries {
 		t.Fatalf("outcome = %v, want VerifyOutcomeNoRetries", outcome)
 	}

@@ -669,7 +669,7 @@ func TestBeginPlanTaskReuse_SeedsBeginIfMissing(t *testing.T) {
 	if _, err := tasks.EnsureDir(existing.ID); err != nil {
 		t.Fatal(err)
 	}
-	lc := existing.BeginPlanReuse(io.Discard, "cursor", "sonnet-4", "resume-id")
+	lc := existing.BeginPlanReuse(io.Discard, "cursor", "sonnet-4", "resume-id", "")
 	if lc == nil {
 		t.Fatal("lifecycle = nil")
 	}
@@ -708,7 +708,7 @@ func TestBeginPlanTaskReuse_PreservesExistingBegin(t *testing.T) {
 	if _, err := tasks.EnsureDir(existing.ID); err != nil {
 		t.Fatal(err)
 	}
-	lc := existing.BeginPlanReuse(io.Discard, "cursor", "sonnet-4", "resume-id")
+	lc := existing.BeginPlanReuse(io.Discard, "cursor", "sonnet-4", "resume-id", "")
 	if lc == nil {
 		t.Fatal("lifecycle = nil")
 	}

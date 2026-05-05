@@ -1369,7 +1369,7 @@ func TestOpenLifecycle_PutTaskErrorWarns(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	lc := tasks.NewWorkTask(&stderr, "cursor", "m", "", "/tmp/x.plan.md", "", "body", "")
+	lc := tasks.NewWorkTask(&stderr, "cursor", "m", "", "/tmp/x.plan.md", "", "body", "", "")
 	if lc == nil {
 		t.Fatal("tasks.NewWorkTask returned nil lifecycle")
 	}
