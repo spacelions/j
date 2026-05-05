@@ -15,4 +15,4 @@ Expected:
   - `work resume --help` stdout mentions the `--from-task` flag and
     `WORK_RESUME_FROM_TASK` env-var binding, and explains the
     permissive eligibility (any status as long as
-    `work_resume_cursor` is non-empty).
+    `work_resume_session` is non-empty).

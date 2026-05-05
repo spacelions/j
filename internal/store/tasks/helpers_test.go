@@ -15,10 +15,6 @@ import (
 // a different alphabet still fails.
 const crockfordBase32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
-// ptr returns &v; used inline to assemble Task pointer-typed fields in
-// fixtures so the call sites stay readable.
-func ptr[T any](v T) *T { return &v }
-
 // openTaskStore chdirs to a fresh temp dir, runs store.EnsureProject, and
 // returns a tasks-mode *Store rooted there. Cleanup is registered via
 // t.Cleanup so callers do not need to close the store themselves.
@@ -100,10 +96,10 @@ func seedPlanDoneTask(t *testing.T, summary string) string {
 		Status:           StatusPlanDone,
 		InvokedTool:      "cursor",
 		InvokedModel:     "sonnet-4",
-		PlanResumeCursor: "seed-plan-cursor",
+		PlanResumeSession: "seed-plan-cursor",
 		Summary:          summary,
-		PlanBeginAt:      &begin,
-		PlanEndAt:        &end,
+		PlanBeginAt:      begin,
+		PlanEndAt:        end,
 	}
 	if err := s.PutTask(task); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -132,13 +128,13 @@ func seedWorkDoneTask(t *testing.T, summary string) string {
 		Status:           StatusWorkDone,
 		InvokedTool:      "cursor",
 		InvokedModel:     "sonnet-4",
-		PlanResumeCursor: "seed-plan-cursor",
-		WorkResumeCursor: "seed-work-cursor",
+		PlanResumeSession: "seed-plan-cursor",
+		WorkResumeSession: "seed-work-cursor",
 		Summary:          summary,
-		PlanBeginAt:      &planBegin,
-		PlanEndAt:        &planEnd,
-		WorkBeginAt:      &workBegin,
-		WorkEndAt:        &workEnd,
+		PlanBeginAt:      planBegin,
+		PlanEndAt:        planEnd,
+		WorkBeginAt:      workBegin,
+		WorkEndAt:        workEnd,
 	}
 	if err := s.PutTask(task); err != nil {
 		t.Fatalf("PutTask: %v", err)

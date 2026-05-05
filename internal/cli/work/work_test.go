@@ -23,7 +23,7 @@ import (
 )
 
 // testCursorChatID is the `cursor-agent create-chat` id from the
-// TestMain stub; Run stores it in Task.WorkResumeCursor for the
+// TestMain stub; Run stores it in Task.WorkResumeSession for the
 // Cursor backend.
 const testCursorChatID = "00000000-0000-4000-8000-000000000001"
 
@@ -308,10 +308,10 @@ func seedPlanDoneTask(t *testing.T, summary, planBody, requirementBody string) s
 		Status:           tasks.StatusPlanDone,
 		InvokedTool:      "cursor",
 		InvokedModel:     "sonnet-4",
-		PlanResumeCursor: "seed-plan-cursor",
+		PlanResumeSession: "seed-plan-cursor",
 		Summary:          summary,
-		PlanBeginAt:      &begin,
-		PlanEndAt:        &end,
+		PlanBeginAt:      begin,
+		PlanEndAt:        end,
 	}
 	if err := s.PutTask(task); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -372,19 +372,19 @@ func TestRun_ByTaskID_Success(t *testing.T) {
 	if got.Status != tasks.StatusWorkDone {
 		t.Fatalf("Status = %q, want work-done", got.Status)
 	}
-	if got.PlanResumeCursor != "seed-plan-cursor" {
-		t.Fatalf("PlanResumeCursor = %q, want seed-plan-cursor", got.PlanResumeCursor)
+	if got.PlanResumeSession != "seed-plan-cursor" {
+		t.Fatalf("PlanResumeSession = %q, want seed-plan-cursor", got.PlanResumeSession)
 	}
-	if got.WorkResumeCursor != testCursorChatID {
-		t.Fatalf("WorkResumeCursor = %q, want %q", got.WorkResumeCursor, testCursorChatID)
+	if got.WorkResumeSession != testCursorChatID {
+		t.Fatalf("WorkResumeSession = %q, want %q", got.WorkResumeSession, testCursorChatID)
 	}
-	if got.PlanBeginAt == nil || got.PlanEndAt == nil {
+	if got.PlanBeginAt.IsZero() || got.PlanEndAt.IsZero() {
 		t.Fatalf("plan timestamps lost on reuse: %+v", got)
 	}
-	if got.WorkBeginAt == nil || got.WorkEndAt == nil {
+	if got.WorkBeginAt.IsZero() || got.WorkEndAt.IsZero() {
 		t.Fatalf("work timestamps not set: %+v", got)
 	}
-	if got.DoneAt != nil {
+	if !got.DoneAt.IsZero() {
 		t.Fatalf("DoneAt should remain nil after work-done: %v", got.DoneAt)
 	}
 }
@@ -1447,7 +1447,7 @@ func TestRun_BackgroundSpawn_RecordsPID(t *testing.T) {
 	if got.AgentLogPath == "" || filepath.Base(got.AgentLogPath) != "agent.log" {
 		t.Fatalf("AgentLogPath = %q, want path ending in agent.log", got.AgentLogPath)
 	}
-	if got.WorkEndAt != nil {
+	if !got.WorkEndAt.IsZero() {
 		t.Fatalf("WorkEndAt should remain nil for background row: %v", got.WorkEndAt)
 	}
 	if agent.lastReq.AgentLogPath != got.AgentLogPath {

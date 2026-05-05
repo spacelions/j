@@ -16,12 +16,11 @@ import (
 
 func persistStartRow(stderr io.Writer, target startTarget, agentLogPath string, pid int) {
 	if target.IsNew {
-		begin := time.Now().UTC()
 		tasks.PersistWarn(stderr, tasks.Task{
 			ID:            target.TaskID,
 			Status:        tasks.StatusPlanning,
 			Summary:       tasks.Summary(target.Body, target.Source),
-			PlanBeginAt:   &begin,
+			PlanBeginAt:   time.Now().UTC(),
 			AgentLogPath:  agentLogPath,
 			BackgroundPID: pid,
 			LinearIssue:   target.LinearIssue,

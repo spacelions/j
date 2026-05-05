@@ -21,17 +21,15 @@ func readBestEffortWarn(stderr io.Writer, path string) string {
 func planResumeBegin(existing tasks.Task) tasks.Task {
 	t := existing
 	t.Status = tasks.StatusPlanning
-	t.PlanEndAt = nil
-	if t.PlanBeginAt == nil {
-		begin := time.Now().UTC()
-		t.PlanBeginAt = &begin
+	t.PlanEndAt = time.Time{}
+	if t.PlanBeginAt.IsZero() {
+		t.PlanBeginAt = time.Now().UTC()
 	}
 	return t
 }
 
 func planResumeFinish(t tasks.Task, runErr error, refinedRequirements, planMarkdown, target string) tasks.Task {
-	end := time.Now().UTC()
-	t.PlanEndAt = &end
+	t.PlanEndAt = time.Now().UTC()
 	if runErr != nil {
 		t.Status = tasks.StatusHelp
 		return t

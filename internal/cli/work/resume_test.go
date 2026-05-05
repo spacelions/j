@@ -23,9 +23,9 @@ import (
 
 // seedResumableWork creates a task row plus the matching plan.md
 // so RunResume's best-effort read does not warn. The default row
-// is `work-done` with a non-empty WorkResumeCursor; tests override
+// is `work-done` with a non-empty WorkResumeSession; tests override
 // fields via mutate.
-func seedResumableWork(t *testing.T, mutate func(*tasks.Task)) (string, *time.Time) {
+func seedResumableWork(t *testing.T, mutate func(*tasks.Task)) (string, time.Time) {
 	t.Helper()
 	id := tasks.NewTaskID()
 	if _, err := tasks.EnsureDir(id); err != nil {
@@ -48,13 +48,13 @@ func seedResumableWork(t *testing.T, mutate func(*tasks.Task)) (string, *time.Ti
 		Status:           tasks.StatusWorkDone,
 		InvokedTool:      "cursor",
 		InvokedModel:     "sonnet-4",
-		PlanResumeCursor: "plan-cursor",
-		WorkResumeCursor: "work-cursor",
+		PlanResumeSession: "plan-cursor",
+		WorkResumeSession: "work-cursor",
 		Summary:          "seeded work",
-		PlanBeginAt:      &planBegin,
-		PlanEndAt:        &planEnd,
-		WorkBeginAt:      &workBegin,
-		WorkEndAt:        &workEnd,
+		PlanBeginAt:      planBegin,
+		PlanEndAt:        planEnd,
+		WorkBeginAt:      workBegin,
+		WorkEndAt:        workEnd,
 	}
 	if mutate != nil {
 		mutate(&row)
@@ -99,7 +99,7 @@ func TestRunResume_Work_EmptySelector(t *testing.T) {
 
 // TestRunResume_Work_FromTaskHappyPath pins the --from-task flow:
 // the agent receives Interactive=true and the recorded
-// WorkResumeCursor + model, the row finishes as work-done, and the
+// WorkResumeSession + model, the row finishes as work-done, and the
 // original WorkBeginAt is preserved. DoneAt stays nil.
 func TestRunResume_Work_FromTaskHappyPath(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -147,13 +147,13 @@ func TestRunResume_Work_FromTaskHappyPath(t *testing.T) {
 	if got.Status != tasks.StatusWorkDone {
 		t.Fatalf("Status = %q, want work-done", got.Status)
 	}
-	if got.WorkBeginAt == nil || !got.WorkBeginAt.Equal(*originalBegin) {
+	if got.WorkBeginAt.IsZero() || !got.WorkBeginAt.Equal(originalBegin) {
 		t.Fatalf("WorkBeginAt = %v, want preserved %v", got.WorkBeginAt, originalBegin)
 	}
-	if got.WorkEndAt == nil {
+	if got.WorkEndAt.IsZero() {
 		t.Fatalf("WorkEndAt should be bumped: %+v", got)
 	}
-	if got.DoneAt != nil {
+	if !got.DoneAt.IsZero() {
 		t.Fatalf("DoneAt should remain nil: %v", got.DoneAt)
 	}
 }
@@ -177,7 +177,7 @@ func TestRunResume_Work_FromTaskMissing(t *testing.T) {
 func TestRunResume_Work_FromTaskNoSession(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkResumeCursor = "" })
+	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkResumeSession = "" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -193,12 +193,12 @@ func TestRunResume_Work_FromTaskNoSession(t *testing.T) {
 
 // TestRunResume_Work_SelectorPicksSecond pins the multi-task path:
 // scripted UI returns the second eligible task and the agent
-// receives that task's WorkResumeCursor.
+// receives that task's WorkResumeSession.
 func TestRunResume_Work_SelectorPicksSecond(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id1, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkResumeCursor = "first-cursor" })
-	id2, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkResumeCursor = "second-cursor" })
+	id1, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkResumeSession = "first-cursor" })
+	id2, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkResumeSession = "second-cursor" })
 	agent := newScriptedAgent()
 	ui := &scriptedUI{resumePicked: id2}
 
@@ -281,10 +281,10 @@ func TestRunResume_Work_AgentError(t *testing.T) {
 	if len(rows) != 1 || rows[0].Status != tasks.StatusHelp {
 		t.Fatalf("tasks = %+v, want one help-status row", rows)
 	}
-	if rows[0].WorkEndAt == nil {
+	if rows[0].WorkEndAt.IsZero() {
 		t.Fatalf("WorkEndAt should be bumped on failure: %+v", rows[0])
 	}
-	if rows[0].DoneAt != nil {
+	if !rows[0].DoneAt.IsZero() {
 		t.Fatalf("DoneAt should remain nil: %v", rows[0].DoneAt)
 	}
 }
@@ -292,7 +292,7 @@ func TestRunResume_Work_AgentError(t *testing.T) {
 // TestRunResume_Work_StatusWorkingIsResumable pins the permissive
 // eligibility filter: a task whose status is `working` (which the
 // non-resume `j work --from-task` path rejects via validateForWork)
-// is still resumable as long as its WorkResumeCursor is non-empty.
+// is still resumable as long as its WorkResumeSession is non-empty.
 func TestRunResume_Work_StatusWorkingIsResumable(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -552,7 +552,7 @@ func TestRunResume_Work_RegisteredAsChild(t *testing.T) {
 }
 
 // TestBeginWorkTaskResume_PreservesCursorAndBegin pins the lifecycle
-// helper directly: WorkResumeCursor is preserved verbatim and the
+// helper directly: WorkResumeSession is preserved verbatim and the
 // existing WorkBeginAt is not overwritten.
 func TestBeginWorkTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -568,7 +568,7 @@ func TestBeginWorkTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	}
 	_ = s.Close()
 	preBegin := existing.WorkBeginAt
-	preCursor := existing.WorkResumeCursor
+	preCursor := existing.WorkResumeSession
 
 	lc := existing.BeginWorkResume(io.Discard, "")
 	lc.Finish(nil)
@@ -578,10 +578,10 @@ func TestBeginWorkTaskResume_PreservesCursorAndBegin(t *testing.T) {
 		t.Fatalf("tasks = %+v", rows)
 	}
 	got := rows[0]
-	if got.WorkResumeCursor != preCursor {
-		t.Fatalf("WorkResumeCursor changed: got %q, want %q", got.WorkResumeCursor, preCursor)
+	if got.WorkResumeSession != preCursor {
+		t.Fatalf("WorkResumeSession changed: got %q, want %q", got.WorkResumeSession, preCursor)
 	}
-	if got.WorkBeginAt == nil || !got.WorkBeginAt.Equal(*preBegin) {
+	if got.WorkBeginAt.IsZero() || !got.WorkBeginAt.Equal(preBegin) {
 		t.Fatalf("WorkBeginAt = %v, want preserved %v", got.WorkBeginAt, preBegin)
 	}
 }
@@ -732,7 +732,7 @@ func seedWorkerInteractive(t *testing.T, value string) {
 func TestBeginWorkTaskResume_NilWorkBeginAtStampsFreshOne(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkBeginAt = nil })
+	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkBeginAt = time.Time{} })
 	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
@@ -747,7 +747,7 @@ func TestBeginWorkTaskResume_NilWorkBeginAtStampsFreshOne(t *testing.T) {
 	lc.Finish(nil)
 
 	rows := readTasks(t)
-	if len(rows) != 1 || rows[0].WorkBeginAt == nil {
+	if len(rows) != 1 || rows[0].WorkBeginAt.IsZero() {
 		t.Fatalf("WorkBeginAt should be stamped: %+v", rows)
 	}
 }

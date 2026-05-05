@@ -11,9 +11,9 @@ func TestSortTasks_ActiveFirstThenByDoneAtDesc(t *testing.T) {
 	t3 := t2.Add(time.Hour)
 
 	tasks := []Task{
-		{ID: "z-done-old", Status: StatusCompleted, DoneAt: ptr(t1)},
-		{ID: "a-done-new", Status: StatusCompleted, DoneAt: ptr(t3)},
-		{ID: "m-plandone", Status: StatusPlanDone, DoneAt: ptr(t2)},
+		{ID: "z-done-old", Status: StatusCompleted, DoneAt: t1},
+		{ID: "a-done-new", Status: StatusCompleted, DoneAt: t3},
+		{ID: "m-plandone", Status: StatusPlanDone, DoneAt: t2},
 		{ID: "active-2", Status: StatusWorking},
 		{ID: "active-1", Status: StatusPlanning},
 		{ID: "active-3", Status: StatusVerifying},
@@ -40,11 +40,11 @@ func TestSortTasks_FallbackTimes(t *testing.T) {
 	t3 := t2.Add(time.Hour)
 	t4 := t3.Add(time.Hour)
 	tasks := []Task{
-		{ID: "plan-only", Status: StatusPlanDone, PlanEndAt: ptr(t1)},
-		{ID: "work-end", Status: StatusWorkDone, WorkEndAt: ptr(t3)},
-		{ID: "verify-end", Status: StatusVerifyDone, VerifyEndAt: ptr(t4)},
+		{ID: "plan-only", Status: StatusPlanDone, PlanEndAt: t1},
+		{ID: "work-end", Status: StatusWorkDone, WorkEndAt: t3},
+		{ID: "verify-end", Status: StatusVerifyDone, VerifyEndAt: t4},
 		{ID: "no-time", Status: StatusPlanDone},
-		{ID: "done", Status: StatusCompleted, DoneAt: ptr(t2)},
+		{ID: "done", Status: StatusCompleted, DoneAt: t2},
 	}
 	SortTasks(tasks)
 	want := []string{"verify-end", "work-end", "done", "plan-only", "no-time"}
@@ -58,8 +58,8 @@ func TestSortTasks_FallbackTimes(t *testing.T) {
 func TestSortTasks_TieBreakers(t *testing.T) {
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	tasks := []Task{
-		{ID: "inactive-a", Status: StatusCompleted, DoneAt: &at},
-		{ID: "inactive-b", Status: StatusCompleted, DoneAt: &at},
+		{ID: "inactive-a", Status: StatusCompleted, DoneAt: at},
+		{ID: "inactive-b", Status: StatusCompleted, DoneAt: at},
 		{ID: "active-b", Status: StatusWorking},
 		{ID: "active-a", Status: StatusPlanning},
 	}

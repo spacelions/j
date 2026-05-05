@@ -29,7 +29,7 @@ import (
 //
 // TaskID short-circuits the selector: when non-empty Run loads that
 // task directly. Otherwise Run lists every task whose
-// VerifyResumeCursor is non-empty (any status — explicitly NOT the
+// VerifyResumeSession is non-empty (any status — explicitly NOT the
 // validateForVerify allowlist), prints
 // "J: there are no resumable verify sessions" if the slice is
 // empty, auto-selects the single eligible row when there is exactly
@@ -65,10 +65,10 @@ func (o ResumeOptions) withDefaults() ResumeOptions {
 
 // RunResume implements `j verify resume`. The lifecycle mirrors
 // `j verify --from-task` reuse with three key differences: the
-// task's existing VerifyResumeCursor is reused (no fresh
+// task's existing VerifyResumeSession is reused (no fresh
 // NewResumeID), the original VerifyBeginAt is preserved, and the
 // eligibility filter is permissive — any task with a non-empty
-// VerifyResumeCursor qualifies, regardless of status.
+// VerifyResumeSession qualifies, regardless of status.
 //
 // Resume always runs interactive — by definition resume is iterative
 // (the user drives the next step from the TUI), and headless mode
@@ -138,7 +138,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		VerifierFindingsOutputPath: findingsPath,
 		Model:                      t.InvokedModel,
 		Interactive:                true,
-		ResumeChatID:               t.VerifyResumeCursor,
+		ResumeChatID:               t.VerifyResumeSession,
 		Resume:                     true,
 		MustRead:                   mustReadFiles,
 	})
@@ -193,7 +193,7 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (tasks.Task, boo
 }
 
 // resolveResumeByID loads the named task and validates it has a
-// non-empty VerifyResumeCursor. fs.ErrNotExist becomes the friendly
+// non-empty VerifyResumeSession. fs.ErrNotExist becomes the friendly
 // "task %q not found" wrapping; an empty cursor becomes
 // "task %q has no verify session".
 func resolveResumeByID(id string) (tasks.Task, bool, error) {
@@ -201,14 +201,14 @@ func resolveResumeByID(id string) (tasks.Task, bool, error) {
 	if err != nil {
 		return tasks.Task{}, false, err
 	}
-	if t.VerifyResumeCursor == "" {
+	if t.VerifyResumeSession == "" {
 		return tasks.Task{}, false, fmt.Errorf("J: task %q has no verify session", id)
 	}
 	return t, true, nil
 }
 
 // listResumableTasks returns every task with a non-empty
-// VerifyResumeCursor regardless of status, sorted via
+// VerifyResumeSession regardless of status, sorted via
 // tasks.SortTasks. validateForVerify is intentionally NOT applied
 // here: resume is permissive by design.
 func listResumableTasks() ([]tasks.Task, error) {
@@ -218,7 +218,7 @@ func listResumableTasks() ([]tasks.Task, error) {
 	}
 	out := all[:0]
 	for _, t := range all {
-		if t.VerifyResumeCursor != "" {
+		if t.VerifyResumeSession != "" {
 			out = append(out, t)
 		}
 	}
@@ -239,7 +239,7 @@ func newResumeCmd() *cobra.Command {
 			"Pass --from-task <id> (or VERIFY_RESUME_FROM_TASK) to skip the picker. " +
 			"With no eligible sessions, prints `J: there are no resumable verify sessions` " +
 			"and exits 0. The eligibility filter is intentionally permissive: tasks " +
-			"in any status are resumable as long as their verify_resume_cursor is non-empty. " +
+			"in any status are resumable as long as their verify_resume_session is non-empty. " +
 			"Resume always runs interactive; the verifier bucket's `interactive` value " +
 			"is ignored.",
 		RunE: func(cmd *cobra.Command, _ []string) error {

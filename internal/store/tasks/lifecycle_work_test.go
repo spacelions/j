@@ -27,16 +27,16 @@ func TestNewWorkTask_RecordsRow(t *testing.T) {
 	if got.ID != id || got.Status != StatusWorkDone {
 		t.Fatalf("got = %+v", got)
 	}
-	if got.WorkResumeCursor != "work-cursor" {
-		t.Fatalf("WorkResumeCursor = %q", got.WorkResumeCursor)
+	if got.WorkResumeSession != "work-cursor" {
+		t.Fatalf("WorkResumeSession = %q", got.WorkResumeSession)
 	}
-	if got.PlanResumeCursor != "" {
-		t.Fatalf("PlanResumeCursor should stay empty for fresh work row: %q", got.PlanResumeCursor)
+	if got.PlanResumeSession != "" {
+		t.Fatalf("PlanResumeSession should stay empty for fresh work row: %q", got.PlanResumeSession)
 	}
-	if got.WorkBeginAt == nil || got.WorkEndAt == nil {
+	if got.WorkBeginAt.IsZero() || got.WorkEndAt.IsZero() {
 		t.Fatalf("work timestamps missing: %+v", got)
 	}
-	if got.DoneAt != nil {
+	if !got.DoneAt.IsZero() {
 		t.Fatalf("DoneAt should not be set for work-done: %v", got.DoneAt)
 	}
 }
@@ -61,7 +61,7 @@ func TestTask_BeginWorkReuse_PreservesPlanPhase(t *testing.T) {
 	_ = s.Close()
 	prePlanBegin := existing.PlanBeginAt
 	prePlanEnd := existing.PlanEndAt
-	preCursor := existing.PlanResumeCursor
+	preCursor := existing.PlanResumeSession
 
 	lc := existing.BeginWorkReuse(io.Discard, "cursor", "gpt-5", "fresh-work-cursor", "")
 	lc.Finish(nil)
@@ -70,19 +70,19 @@ func TestTask_BeginWorkReuse_PreservesPlanPhase(t *testing.T) {
 	if got.Status != StatusWorkDone {
 		t.Fatalf("Status = %q", got.Status)
 	}
-	if got.PlanResumeCursor != preCursor {
-		t.Fatalf("PlanResumeCursor changed: got %q, want %q", got.PlanResumeCursor, preCursor)
+	if got.PlanResumeSession != preCursor {
+		t.Fatalf("PlanResumeSession changed: got %q, want %q", got.PlanResumeSession, preCursor)
 	}
-	if got.WorkResumeCursor != "fresh-work-cursor" {
-		t.Fatalf("WorkResumeCursor = %q", got.WorkResumeCursor)
+	if got.WorkResumeSession != "fresh-work-cursor" {
+		t.Fatalf("WorkResumeSession = %q", got.WorkResumeSession)
 	}
 	if got.InvokedModel != "gpt-5" {
 		t.Fatalf("InvokedModel = %q", got.InvokedModel)
 	}
-	if got.PlanBeginAt == nil || !got.PlanBeginAt.Equal(*prePlanBegin) {
+	if got.PlanBeginAt.IsZero() || !got.PlanBeginAt.Equal(prePlanBegin) {
 		t.Fatalf("PlanBeginAt = %v", got.PlanBeginAt)
 	}
-	if got.PlanEndAt == nil || !got.PlanEndAt.Equal(*prePlanEnd) {
+	if got.PlanEndAt.IsZero() || !got.PlanEndAt.Equal(prePlanEnd) {
 		t.Fatalf("PlanEndAt = %v", got.PlanEndAt)
 	}
 }
@@ -99,7 +99,7 @@ func TestWorkLifecycle_FinishErrorPath(t *testing.T) {
 	if got.Status != StatusHelp {
 		t.Fatalf("Status = %q, want help", got.Status)
 	}
-	if got.DoneAt != nil {
+	if !got.DoneAt.IsZero() {
 		t.Fatalf("DoneAt should remain nil on failure: %v", got.DoneAt)
 	}
 }
