@@ -63,8 +63,8 @@ func TestTask_BeginVerify_FlipsStatusAndStampsResume(t *testing.T) {
 	if got.DoneAt.IsZero() {
 		t.Fatalf("DoneAt should be stamped on completed: %+v", got)
 	}
-	if got.InvokedModel != "gpt-5" {
-		t.Fatalf("InvokedModel = %q", got.InvokedModel)
+	if got.VerifyModel != "gpt-5" {
+		t.Fatalf("VerifyModel = %q", got.VerifyModel)
 	}
 }
 
@@ -284,8 +284,8 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 	existing := Task{
 		ID:                 NewTaskID(),
 		Status:             StatusVerifyDone,
-		InvokedTool:        "cursor",
-		InvokedModel:       "sonnet-4",
+		VerifyTool:         "cursor",
+		VerifyModel:        "sonnet-4",
 		VerifyResumeSession: "v-cursor",
 		VerifyBeginAt:      begin,
 	}
@@ -302,8 +302,8 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 	if got.VerifyResumeSession != "v-cursor" {
 		t.Fatalf("VerifyResumeSession = %q", got.VerifyResumeSession)
 	}
-	if got.InvokedModel != "sonnet-4" {
-		t.Fatalf("InvokedModel = %q", got.InvokedModel)
+	if got.VerifyModel != "sonnet-4" {
+		t.Fatalf("VerifyModel = %q", got.VerifyModel)
 	}
 	if !got.VerifyBeginAt.Equal(begin) {
 		t.Fatalf("VerifyBeginAt changed: %v", got.VerifyBeginAt)

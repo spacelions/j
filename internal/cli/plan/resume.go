@@ -124,9 +124,9 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return nil
 	}
 
-	agent, ok := lookupResumeAgent(opts.Agents, t.InvokedTool)
+	agent, ok := lookupResumeAgent(opts.Agents, t.PlanTool)
 	if !ok {
-		return fmt.Errorf("J: unknown tool %q", t.InvokedTool)
+		return fmt.Errorf("J: unknown tool %q", t.PlanTool)
 	}
 
 	tasksDir, err := tasks.DefaultDir()
@@ -152,7 +152,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	// path.
 	_, planErr := agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           requirementsPath,
-		Model:                  t.InvokedModel,
+		Model:                  t.PlanModel,
 		RequirementsOutputPath: requirementsPath,
 		PlanOutputPath:         planPath,
 		Interactive:            true,

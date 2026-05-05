@@ -46,8 +46,8 @@ func seedResumableWork(t *testing.T, mutate func(*tasks.Task)) (string, time.Tim
 	row := tasks.Task{
 		ID:               id,
 		Status:           tasks.StatusWorkDone,
-		InvokedTool:      "cursor",
-		InvokedModel:     "sonnet-4",
+		WorkTool:         "cursor",
+		WorkModel:        "sonnet-4",
 		PlanResumeSession: "plan-cursor",
 		WorkResumeSession: "work-cursor",
 		Summary:          "seeded work",
@@ -246,7 +246,7 @@ func TestRunResume_Work_PickerReturnsUnknownID(t *testing.T) {
 func TestRunResume_Work_UnknownTool(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.InvokedTool = "ghost" })
+	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkTool = "ghost" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,

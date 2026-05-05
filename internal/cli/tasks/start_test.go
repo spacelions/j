@@ -464,7 +464,7 @@ func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 	seedTaskRowDirect(t, tasks.Task{
 		ID:          existingID,
 		Status:      tasks.StatusPlanDone,
-		InvokedTool: "cursor",
+		PlanTool: "cursor",
 		Summary:     "existing task",
 	})
 	ui := &scriptedStartUI{
@@ -746,7 +746,7 @@ func TestRunStart_NoFromFile_TaskPickerCancelled(t *testing.T) {
 	seedTaskRowDirect(t, tasks.Task{
 		ID:          existingID,
 		Status:      tasks.StatusPlanDone,
-		InvokedTool: "cursor",
+		PlanTool: "cursor",
 		Summary:     "existing",
 	})
 	ui := &scriptedStartUI{source: picker.SourceTask, pickedTaskOK: false}

@@ -51,8 +51,8 @@ func seedResumableVerify(t *testing.T, mutate func(*tasks.Task)) (string, time.T
 	row := tasks.Task{
 		ID:                 id,
 		Status:             tasks.StatusVerifyDone,
-		InvokedTool:        "cursor",
-		InvokedModel:       "sonnet-4",
+		VerifyTool:         "cursor",
+		VerifyModel:        "sonnet-4",
 		PlanResumeSession:   "plan-cursor",
 		WorkResumeSession:   "work-cursor",
 		VerifyResumeSession: "verify-cursor",
@@ -251,7 +251,7 @@ func TestRunResume_PickerReturnsUnknownID(t *testing.T) {
 func TestRunResume_UnknownTool(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableVerify(t, func(row *tasks.Task) { row.InvokedTool = "ghost" })
+	id, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyTool = "ghost" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,

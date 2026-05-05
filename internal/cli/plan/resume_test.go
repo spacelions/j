@@ -48,8 +48,8 @@ func seedResumableTask(t *testing.T, mutate func(*tasks.Task)) (string, time.Tim
 	row := tasks.Task{
 		ID:               id,
 		Status:           tasks.StatusPlanDone,
-		InvokedTool:      "cursor",
-		InvokedModel:     "sonnet-4",
+		PlanTool:         "cursor",
+		PlanModel:        "sonnet-4",
 		PlanResumeSession: "abc",
 		Summary:          "seeded summary",
 		PlanBeginAt:      begin,
@@ -257,11 +257,11 @@ func TestRunResume_PickerReturnsUnknownID(t *testing.T) {
 }
 
 // TestRunResume_UnknownTool pins the lookup-by-tool error when the
-// recorded InvokedTool does not match any wired-in agent.
+// recorded PlanTool does not match any wired-in agent.
 func TestRunResume_UnknownTool(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableTask(t, func(row *tasks.Task) { row.InvokedTool = "ghost" })
+	id, _ := seedResumableTask(t, func(row *tasks.Task) { row.PlanTool = "ghost" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,

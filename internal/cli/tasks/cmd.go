@@ -159,8 +159,9 @@ func writeTasks(out io.Writer, tasks []tasks.Task) error {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSTATUS\tTOOL\tMODEL\tSUMMARY")
 	for _, t := range tasks {
+		tool, model := t.DisplayToolModel()
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
-			t.ID, t.Status, t.InvokedTool, t.InvokedModel, t.Summary)
+			t.ID, t.Status, tool, model, t.Summary)
 	}
 	return tw.Flush()
 }

@@ -120,8 +120,8 @@ func TestTask_JSONRoundTrip(t *testing.T) {
 	in := Task{
 		ID:                 "abc",
 		Status:             StatusPlanDone,
-		InvokedTool:        "cursor",
-		InvokedModel:       "sonnet-4",
+		PlanTool:           "cursor",
+		PlanModel:          "sonnet-4",
 		Summary:            "task",
 		PlanResumeSession:   "plan-uuid",
 		WorkResumeSession:   "work-uuid",
@@ -200,6 +200,12 @@ func TestTask_TOML_OmitsZeroFields(t *testing.T) {
 	}
 	s := string(data)
 	for _, key := range []string{
+		"plan_tool",
+		"plan_model",
+		"work_tool",
+		"work_model",
+		"verify_tool",
+		"verify_model",
 		"worktree",
 		"plan_resume_session",
 		"work_resume_session",
@@ -264,8 +270,8 @@ func TestPutTask_RoundTrip(t *testing.T) {
 		ID:               "id-1",
 		Status:           StatusPlanDone,
 		Summary:          "hello",
-		InvokedTool:      "cursor",
-		InvokedModel:     "sonnet-4",
+		PlanTool:         "cursor",
+		PlanModel:        "sonnet-4",
 		PlanResumeSession: "plan-1",
 	}
 	if err := s.PutTask(task); err != nil {
@@ -319,7 +325,7 @@ func TestGetTask_RoundTrip(t *testing.T) {
 		ID:               "id-get",
 		Status:           StatusPlanDone,
 		Summary:          "hello",
-		InvokedTool:      "cursor",
+		PlanTool:         "cursor",
 		PlanResumeSession: "plan-1",
 	}
 	if err := s.PutTask(in); err != nil {
@@ -564,8 +570,8 @@ func TestBeginPlanReuse_PreservesLinearIssue(t *testing.T) {
 		Status:       StatusPlanDone,
 		LinearIssue:  "ENG-9",
 		PlanBeginAt:  begin,
-		InvokedTool:  "cursor",
-		InvokedModel: "sonnet-4",
+		PlanTool:     "cursor",
+		PlanModel:    "sonnet-4",
 	}
 	lc := original.BeginPlanReuse(io.Discard, "claude", "opus-4", "resume-id", "")
 	got := lc.Task()
@@ -681,8 +687,8 @@ func TestBeginPlanReuse_SetsBeginAtWhenZero(t *testing.T) {
 	task := Task{
 		ID:           NewTaskID(),
 		Status:       StatusPlanDone,
-		InvokedTool:  "cursor",
-		InvokedModel: "m",
+		PlanTool:     "cursor",
+		PlanModel:    "m",
 		// PlanBeginAt deliberately zero
 	}
 	PersistWarn(io.Discard, task)
@@ -758,8 +764,8 @@ func TestBeginVerifyResume_SetsBeginAtWhenZero(t *testing.T) {
 	task := Task{
 		ID:                  NewTaskID(),
 		Status:              StatusVerifyDone,
-		InvokedTool:         "cursor",
-		InvokedModel:        "m",
+		VerifyTool:          "cursor",
+		VerifyModel:         "m",
 		VerifyResumeSession: "v-cursor",
 		// VerifyBeginAt deliberately zero
 	}
@@ -769,4 +775,58 @@ func TestBeginVerifyResume_SetsBeginAtWhenZero(t *testing.T) {
 	if got.VerifyBeginAt.IsZero() {
 		t.Fatal("VerifyBeginAt should be stamped when zero at BeginVerifyResume time")
 	}
+}
+
+// TestDisplayToolModel pins the status-based dispatch table: each status
+// returns the correct phase pair, and StatusHelp falls back through
+// verify → work → plan in priority order.
+func TestDisplayToolModel(t *testing.T) {
+	base := Task{
+		PlanTool:    "ptool",
+		PlanModel:   "pmodel",
+		WorkTool:    "wtool",
+		WorkModel:   "wmodel",
+		VerifyTool:  "vtool",
+		VerifyModel: "vmodel",
+	}
+	cases := []struct {
+		status    TaskStatus
+		wantTool  string
+		wantModel string
+	}{
+		{StatusPlanning, "ptool", "pmodel"},
+		{StatusPlanDone, "ptool", "pmodel"},
+		{StatusWorking, "wtool", "wmodel"},
+		{StatusWorkDone, "wtool", "wmodel"},
+		{StatusVerifying, "vtool", "vmodel"},
+		{StatusVerifyDone, "vtool", "vmodel"},
+		{StatusCompleted, "vtool", "vmodel"},
+		{StatusHelp, "vtool", "vmodel"},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.status), func(t *testing.T) {
+			task := base
+			task.Status = tc.status
+			tool, model := task.DisplayToolModel()
+			if tool != tc.wantTool || model != tc.wantModel {
+				t.Fatalf("DisplayToolModel() = %q/%q, want %q/%q", tool, model, tc.wantTool, tc.wantModel)
+			}
+		})
+	}
+	// StatusHelp falls back: no verify → work
+	t.Run("help_fallback_to_work", func(t *testing.T) {
+		task := Task{Status: StatusHelp, WorkTool: "wtool", WorkModel: "wmodel"}
+		tool, model := task.DisplayToolModel()
+		if tool != "wtool" || model != "wmodel" {
+			t.Fatalf("DisplayToolModel() = %q/%q, want wtool/wmodel", tool, model)
+		}
+	})
+	// StatusHelp falls back: no verify, no work → plan
+	t.Run("help_fallback_to_plan", func(t *testing.T) {
+		task := Task{Status: StatusHelp, PlanTool: "ptool", PlanModel: "pmodel"}
+		tool, model := task.DisplayToolModel()
+		if tool != "ptool" || model != "pmodel" {
+			t.Fatalf("DisplayToolModel() = %q/%q, want ptool/pmodel", tool, model)
+		}
+	})
 }

@@ -76,8 +76,8 @@ func TestTask_BeginWorkReuse_PreservesPlanPhase(t *testing.T) {
 	if got.WorkResumeSession != "fresh-work-cursor" {
 		t.Fatalf("WorkResumeSession = %q", got.WorkResumeSession)
 	}
-	if got.InvokedModel != "gpt-5" {
-		t.Fatalf("InvokedModel = %q", got.InvokedModel)
+	if got.WorkModel != "gpt-5" {
+		t.Fatalf("WorkModel = %q", got.WorkModel)
 	}
 	if got.PlanBeginAt.IsZero() || !got.PlanBeginAt.Equal(prePlanBegin) {
 		t.Fatalf("PlanBeginAt = %v", got.PlanBeginAt)

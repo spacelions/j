@@ -94,8 +94,8 @@ func seedPlanDoneTask(t *testing.T, summary string) string {
 	task := Task{
 		ID:               id,
 		Status:           StatusPlanDone,
-		InvokedTool:      "cursor",
-		InvokedModel:     "sonnet-4",
+		PlanTool:         "cursor",
+		PlanModel:        "sonnet-4",
 		PlanResumeSession: "seed-plan-cursor",
 		Summary:          summary,
 		PlanBeginAt:      begin,
@@ -126,8 +126,10 @@ func seedWorkDoneTask(t *testing.T, summary string) string {
 	task := Task{
 		ID:               id,
 		Status:           StatusWorkDone,
-		InvokedTool:      "cursor",
-		InvokedModel:     "sonnet-4",
+		PlanTool:         "cursor",
+		PlanModel:        "sonnet-4",
+		WorkTool:         "cursor",
+		WorkModel:        "sonnet-4",
 		PlanResumeSession: "seed-plan-cursor",
 		WorkResumeSession: "seed-work-cursor",
 		Summary:          summary,

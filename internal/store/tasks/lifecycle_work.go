@@ -38,8 +38,8 @@ func NewWorkTask(stderr io.Writer, agentName, model, taskID, planPath, requireme
 	task := Task{
 		ID:                taskID,
 		Status:            StatusWorking,
-		InvokedTool:       agentName,
-		InvokedModel:      model,
+		WorkTool:          agentName,
+		WorkModel:         model,
 		WorkResumeSession: resumeID,
 		Summary:           FromPlanAndRequirement(requirement, planBody, planPath),
 		WorkBeginAt:       time.Now().UTC(),
@@ -60,8 +60,8 @@ func NewWorkTask(stderr io.Writer, agentName, model, taskID, planPath, requireme
 func (t Task) BeginWorkReuse(stderr io.Writer, agentName, model, resumeID, agentLogPath string) *WorkLifecycle {
 	task := t
 	task.Status = StatusWorking
-	task.InvokedTool = agentName
-	task.InvokedModel = model
+	task.WorkTool = agentName
+	task.WorkModel = model
 	task.WorkResumeSession = resumeID
 	task.WorkBeginAt = time.Now().UTC()
 	task.WorkEndAt = time.Time{}

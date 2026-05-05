@@ -306,8 +306,8 @@ func seedPlanDoneTask(t *testing.T, summary, planBody, requirementBody string) s
 	task := tasks.Task{
 		ID:               id,
 		Status:           tasks.StatusPlanDone,
-		InvokedTool:      "cursor",
-		InvokedModel:     "sonnet-4",
+		PlanTool:         "cursor",
+		PlanModel:        "sonnet-4",
 		PlanResumeSession: "seed-plan-cursor",
 		Summary:          summary,
 		PlanBeginAt:      begin,
