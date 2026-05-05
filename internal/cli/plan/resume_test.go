@@ -26,7 +26,7 @@ import (
 // the original PlanBeginAt so callers can assert it survived the
 // resume lifecycle. The status / cursor / tool / model defaults match
 // a typical post-`j plan` row; tests override fields via mutate.
-func seedResumableTask(t *testing.T, mutate func(*tasks.Task)) (string, *time.Time) {
+func seedResumableTask(t *testing.T, mutate func(*tasks.Task)) (string, time.Time) {
 	t.Helper()
 	id := tasks.NewTaskID()
 	if _, err := tasks.EnsureDir(id); err != nil {
@@ -50,10 +50,10 @@ func seedResumableTask(t *testing.T, mutate func(*tasks.Task)) (string, *time.Ti
 		Status:           tasks.StatusPlanDone,
 		InvokedTool:      "cursor",
 		InvokedModel:     "sonnet-4",
-		PlanResumeCursor: "abc",
+		PlanResumeSession: "abc",
 		Summary:          "seeded summary",
-		PlanBeginAt:      &begin,
-		PlanEndAt:        &end,
+		PlanBeginAt:      begin,
+		PlanEndAt:        end,
 	}
 	if mutate != nil {
 		mutate(&row)
@@ -149,10 +149,10 @@ func TestRunResume_FromTaskHappyPath(t *testing.T) {
 	if got.Status != tasks.StatusPlanDone {
 		t.Fatalf("Status = %q, want plan-done", got.Status)
 	}
-	if got.PlanBeginAt == nil || !got.PlanBeginAt.Equal(*originalBegin) {
+	if got.PlanBeginAt.IsZero() || !got.PlanBeginAt.Equal(originalBegin) {
 		t.Fatalf("PlanBeginAt = %v, want preserved %v", got.PlanBeginAt, originalBegin)
 	}
-	if got.PlanEndAt == nil {
+	if got.PlanEndAt.IsZero() {
 		t.Fatalf("PlanEndAt should be bumped on success: %+v", got)
 	}
 }
@@ -179,11 +179,11 @@ func TestRunResume_FromTaskMissing(t *testing.T) {
 }
 
 // TestRunResume_FromTaskNoSession pins the empty-cursor error: a
-// task that exists but has no PlanResumeCursor cannot be resumed.
+// task that exists but has no PlanResumeSession cannot be resumed.
 func TestRunResume_FromTaskNoSession(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableTask(t, func(row *tasks.Task) { row.PlanResumeCursor = "" })
+	id, _ := seedResumableTask(t, func(row *tasks.Task) { row.PlanResumeSession = "" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -203,8 +203,8 @@ func TestRunResume_FromTaskNoSession(t *testing.T) {
 func TestRunResume_SelectorPicksSecond(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id1, _ := seedResumableTask(t, func(row *tasks.Task) { row.PlanResumeCursor = "first-cursor" })
-	id2, _ := seedResumableTask(t, func(row *tasks.Task) { row.PlanResumeCursor = "second-cursor" })
+	id1, _ := seedResumableTask(t, func(row *tasks.Task) { row.PlanResumeSession = "first-cursor" })
+	id2, _ := seedResumableTask(t, func(row *tasks.Task) { row.PlanResumeSession = "second-cursor" })
 	agent := newScriptedAgent()
 	ui := &scriptedUI{pickedID: id2}
 
@@ -301,7 +301,7 @@ func TestRunResume_AgentError(t *testing.T) {
 	if len(rows) != 1 || rows[0].Status != tasks.StatusHelp {
 		t.Fatalf("tasks = %+v, want one help-status row", rows)
 	}
-	if rows[0].PlanEndAt == nil {
+	if rows[0].PlanEndAt.IsZero() {
 		t.Fatalf("PlanEndAt should be bumped on failure too: %+v", rows[0])
 	}
 }
@@ -488,13 +488,13 @@ func TestRunResume_FromTaskDecodeError(t *testing.T) {
 // half-stamped state.
 func TestPlanResumeBegin_NilBeginStampsFresh(t *testing.T) {
 	got := planResumeBegin(tasks.Task{ID: "x", Status: tasks.StatusPlanDone})
-	if got.PlanBeginAt == nil {
+	if got.PlanBeginAt.IsZero() {
 		t.Fatal("PlanBeginAt should be stamped when nil")
 	}
 	if got.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", got.Status)
 	}
-	if got.PlanEndAt != nil {
+	if !got.PlanEndAt.IsZero() {
 		t.Fatalf("PlanEndAt should be cleared: %v", got.PlanEndAt)
 	}
 }

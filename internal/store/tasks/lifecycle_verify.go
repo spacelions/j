@@ -40,26 +40,25 @@ type VerifyLifecycle struct {
 
 // BeginVerify flips an existing task row to `verifying`, stamps
 // VerifyBeginAt, clears stale VerifyEndAt / DoneAt from a previous
-// failed run, and records the latest tool/model and resume cursor
+// failed run, and records the latest tool/model and resume session
 // for the verify phase. Plan-phase and work-phase fields are
 // preserved.
 func (t Task) BeginVerify(stderr io.Writer, agentName, model, resumeID, agentLogPath string) *VerifyLifecycle {
-	begin := time.Now().UTC()
 	task := t
 	task.Status = StatusVerifying
 	task.InvokedTool = agentName
 	task.InvokedModel = model
-	task.VerifyResumeCursor = resumeID
-	task.VerifyBeginAt = &begin
-	task.VerifyEndAt = nil
-	task.DoneAt = nil
+	task.VerifyResumeSession = resumeID
+	task.VerifyBeginAt = time.Now().UTC()
+	task.VerifyEndAt = time.Time{}
+	task.DoneAt = time.Time{}
 	return openVerifyLifecycle(stderr, task, agentLogPath)
 }
 
 // BeginVerifyResume is the resume-flow companion of BeginVerify. It
 // diverges from BeginVerify in two places:
 //
-//  1. The existing VerifyResumeCursor is preserved verbatim instead
+//  1. The existing VerifyResumeSession is preserved verbatim instead
 //     of being overwritten with a fresh `Agent.NewResumeID` value.
 //  2. The original VerifyBeginAt timestamp is preserved when set so
 //     the task row keeps its first-run lineage; only VerifyEndAt /
@@ -69,11 +68,10 @@ func (t Task) BeginVerify(stderr io.Writer, agentName, model, resumeID, agentLog
 func (t Task) BeginVerifyResume(stderr io.Writer, agentLogPath string) *VerifyLifecycle {
 	task := t
 	task.Status = StatusVerifying
-	task.VerifyEndAt = nil
-	task.DoneAt = nil
-	if task.VerifyBeginAt == nil {
-		begin := time.Now().UTC()
-		task.VerifyBeginAt = &begin
+	task.VerifyEndAt = time.Time{}
+	task.DoneAt = time.Time{}
+	if task.VerifyBeginAt.IsZero() {
+		task.VerifyBeginAt = time.Now().UTC()
 	}
 	return openVerifyLifecycle(stderr, task, agentLogPath)
 }
@@ -116,8 +114,7 @@ func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
 		return
 	}
 	lc.closed = true
-	end := time.Now().UTC()
-	lc.task.VerifyEndAt = &end
+	lc.task.VerifyEndAt = time.Now().UTC()
 	markerOutcome := "fail"
 	switch {
 	case runErr != nil:
@@ -125,8 +122,7 @@ func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
 		markerOutcome = "help"
 	case outcome == VerifyOutcomeSuccess:
 		lc.task.Status = StatusCompleted
-		done := time.Now().UTC()
-		lc.task.DoneAt = &done
+		lc.task.DoneAt = time.Now().UTC()
 		markerOutcome = "pass"
 	default:
 		lc.task.Status = StatusVerifyDone

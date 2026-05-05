@@ -82,7 +82,7 @@ func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
 
 // testCursorChatID is the session id the fake `cursor-agent` on PATH
 // prints for `create-chat` (see TestMain), matching what Run stores in
-// Task.PlanResumeCursor for the Cursor backend.
+// Task.PlanResumeSession for the Cursor backend.
 const testCursorChatID = "00000000-0000-4000-8000-000000000001"
 
 // TestMain chdir's the entire plan-package test binary into an
@@ -1491,7 +1491,7 @@ func TestRun_BackgroundSpawn_RecordsPID(t *testing.T) {
 	if got.AgentLogPath == "" || filepath.Base(got.AgentLogPath) != "agent.log" {
 		t.Fatalf("AgentLogPath = %q, want path ending in agent.log", got.AgentLogPath)
 	}
-	if got.PlanEndAt != nil {
+	if !got.PlanEndAt.IsZero() {
 		t.Fatalf("PlanEndAt should remain nil for background row: %v", got.PlanEndAt)
 	}
 	// AgentLogPath was passed through to the agent.

@@ -44,9 +44,9 @@ func TestFormatStatus(t *testing.T) {
 		status tsk.TaskStatus
 		setter func(*tsk.Task, time.Time)
 	}{
-		{"planning", tsk.StatusPlanning, func(row *tsk.Task, ts time.Time) { row.PlanBeginAt = &ts }},
-		{"working", tsk.StatusWorking, func(row *tsk.Task, ts time.Time) { row.WorkBeginAt = &ts }},
-		{"verifying", tsk.StatusVerifying, func(row *tsk.Task, ts time.Time) { row.VerifyBeginAt = &ts }},
+		{"planning", tsk.StatusPlanning, func(row *tsk.Task, ts time.Time) { row.PlanBeginAt = ts }},
+		{"working", tsk.StatusWorking, func(row *tsk.Task, ts time.Time) { row.WorkBeginAt = ts }},
+		{"verifying", tsk.StatusVerifying, func(row *tsk.Task, ts time.Time) { row.VerifyBeginAt = ts }},
 	}
 	for _, tc := range activeCases {
 		t.Run("active/"+tc.name, func(t *testing.T) {
@@ -128,7 +128,7 @@ func TestWriteTaskTable_MixedActiveAndInactive(t *testing.T) {
 			InvokedTool:  "cursor",
 			InvokedModel: "sonnet-4",
 			Summary:      "draft idea",
-			PlanBeginAt:  &begin,
+			PlanBeginAt:  begin,
 		},
 		{
 			ID:           "done-1",
@@ -136,7 +136,7 @@ func TestWriteTaskTable_MixedActiveAndInactive(t *testing.T) {
 			InvokedTool:  "cursor",
 			InvokedModel: "gpt-5",
 			Summary:      "old one",
-			PlanEndAt:    &end,
+			PlanEndAt:    end,
 		},
 	}
 	var buf bytes.Buffer

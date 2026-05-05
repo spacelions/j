@@ -54,14 +54,14 @@ func taskIsActive(s TaskStatus) bool {
 // zero time so ID order takes over.
 func taskFallbackTime(t Task) time.Time {
 	switch {
-	case t.DoneAt != nil:
-		return *t.DoneAt
-	case t.VerifyEndAt != nil:
-		return *t.VerifyEndAt
-	case t.WorkEndAt != nil:
-		return *t.WorkEndAt
-	case t.PlanEndAt != nil:
-		return *t.PlanEndAt
+	case !t.DoneAt.IsZero():
+		return t.DoneAt
+	case !t.VerifyEndAt.IsZero():
+		return t.VerifyEndAt
+	case !t.WorkEndAt.IsZero():
+		return t.WorkEndAt
+	case !t.PlanEndAt.IsZero():
+		return t.PlanEndAt
 	}
 	return time.Time{}
 }

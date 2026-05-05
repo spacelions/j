@@ -28,7 +28,7 @@ import (
 //
 // TaskID short-circuits the selector: when non-empty Run loads that
 // task directly. Otherwise Run lists every task whose
-// PlanResumeCursor is non-empty (any status), prints
+// PlanResumeSession is non-empty (any status), prints
 // "J: there are no resumable sessions" if the slice is empty,
 // auto-selects the single eligible row when there is exactly one,
 // and asks UI.PickPlanTask when there are multiple.
@@ -156,7 +156,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		RequirementsOutputPath: requirementsPath,
 		PlanOutputPath:         planPath,
 		Interactive:            true,
-		ResumeChatID:           t.PlanResumeCursor,
+		ResumeChatID:           t.PlanResumeSession,
 		Resume:                 true,
 		MustRead:               mustReadFiles,
 	})
@@ -213,7 +213,7 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (tasks.Task, boo
 }
 
 // resolveResumeByID loads the named task and validates it has a
-// non-empty PlanResumeCursor. fs.ErrNotExist becomes the friendly
+// non-empty PlanResumeSession. fs.ErrNotExist becomes the friendly
 // "task %q not found" wrapping the way callers expect; an empty
 // cursor becomes "task %q has no plan session".
 func resolveResumeByID(id string) (tasks.Task, bool, error) {
@@ -221,14 +221,14 @@ func resolveResumeByID(id string) (tasks.Task, bool, error) {
 	if err != nil {
 		return tasks.Task{}, false, err
 	}
-	if t.PlanResumeCursor == "" {
+	if t.PlanResumeSession == "" {
 		return tasks.Task{}, false, fmt.Errorf("J: task %q has no plan session", id)
 	}
 	return t, true, nil
 }
 
 // listResumableTasks returns every task with a non-empty
-// PlanResumeCursor (any status), sorted via tasks.SortTasks so the
+// PlanResumeSession (any status), sorted via tasks.SortTasks so the
 // picker shows the active-then-most-recent order users see in
 // `j tasks`. The bbolt store is closed before the slice is
 // returned so the agent invocation downstream does not contend on
@@ -240,7 +240,7 @@ func listResumableTasks() ([]tasks.Task, error) {
 	}
 	out := all[:0]
 	for _, t := range all {
-		if t.PlanResumeCursor != "" {
+		if t.PlanResumeSession != "" {
 			out = append(out, t)
 		}
 	}

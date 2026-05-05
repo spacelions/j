@@ -159,26 +159,26 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 			Status:           tasks.StatusPlanDone,
 			InvokedTool:      "cursor",
 			InvokedModel:     "gpt-5",
-			PlanResumeCursor: "",
+			PlanResumeSession: "",
 			Summary:          "old one",
-			PlanEndAt:        &t1,
+			PlanEndAt:        t1,
 		},
 		{
 			ID:               "aaa-new-work-done",
 			Status:           tasks.StatusWorkDone,
 			InvokedTool:      "cursor",
 			InvokedModel:     "sonnet-4",
-			PlanResumeCursor: "8c7e6a9d-0f1a-4b2c-9d8e-1234567890ab",
-			WorkResumeCursor: "11111111-2222-3333-4444-555555555555",
+			PlanResumeSession: "8c7e6a9d-0f1a-4b2c-9d8e-1234567890ab",
+			WorkResumeSession: "11111111-2222-3333-4444-555555555555",
 			Summary:          "new one",
-			WorkEndAt:        &t2,
+			WorkEndAt:        t2,
 		},
 		{
 			ID:               "active-1",
 			Status:           tasks.StatusPlanning,
 			InvokedTool:      "cursor",
 			InvokedModel:     "sonnet-4",
-			PlanResumeCursor: "11111111-1111-4111-9111-111111111111",
+			PlanResumeSession: "11111111-1111-4111-9111-111111111111",
 			Summary:          "draft idea",
 		},
 	}
@@ -250,7 +250,7 @@ func TestRun_DefaultNonTTY_RendersBorder(t *testing.T) {
 		InvokedTool:  "cursor",
 		InvokedModel: "sonnet-4",
 		Summary:      "draft idea",
-		PlanBeginAt:  &begin,
+		PlanBeginAt:  begin,
 	}
 	if err := s.PutTask(task); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -287,9 +287,9 @@ func TestRun_HidesSessionLines(t *testing.T) {
 		Status:             tasks.StatusPlanDone,
 		InvokedTool:        "cursor",
 		InvokedModel:       "sonnet-4",
-		PlanResumeCursor:   "plan-cursor-id",
-		WorkResumeCursor:   "work-cursor-id",
-		VerifyResumeCursor: "verify-cursor-id",
+		PlanResumeSession:   "plan-cursor-id",
+		WorkResumeSession:   "work-cursor-id",
+		VerifyResumeSession: "verify-cursor-id",
 		Summary:            "all cursors set",
 	}
 	if err := s.PutTask(task); err != nil {
@@ -387,7 +387,7 @@ func TestStoreReloader_SortsAndReaps(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	if err := s.PutTask(tasks.Task{
-		ID: "z-old", Status: tasks.StatusPlanDone, PlanEndAt: &t1,
+		ID: "z-old", Status: tasks.StatusPlanDone, PlanEndAt: t1,
 	}); err != nil {
 		t.Fatal(err)
 	}

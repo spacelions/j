@@ -83,7 +83,7 @@ func TestReap_LivePIDLeftAlone(t *testing.T) {
 		ID:            "live-task",
 		Status:        tasks.StatusPlanning,
 		BackgroundPID: pid,
-		PlanBeginAt:   &begin,
+		PlanBeginAt:   begin,
 		Summary:       "alive",
 		AgentLogPath:  filepath.Join(tasksDir, "live-task", "agent.log"),
 	}}
@@ -98,7 +98,7 @@ func TestReap_LivePIDLeftAlone(t *testing.T) {
 	if got.BackgroundPID != pid {
 		t.Fatalf("BackgroundPID cleared on live row: %d", got.BackgroundPID)
 	}
-	if got.PlanEndAt != nil {
+	if !got.PlanEndAt.IsZero() {
 		t.Fatalf("PlanEndAt should remain nil on live row: %v", got.PlanEndAt)
 	}
 }
@@ -120,7 +120,7 @@ func TestReap_DeadPlanning_WithArtifacts(t *testing.T) {
 		ID:            id,
 		Status:        tasks.StatusPlanning,
 		BackgroundPID: deadPID(t),
-		PlanBeginAt:   &begin,
+		PlanBeginAt:   begin,
 		Summary:       "stale",
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
@@ -131,7 +131,7 @@ func TestReap_DeadPlanning_WithArtifacts(t *testing.T) {
 	if got.BackgroundPID != 0 {
 		t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
 	}
-	if got.PlanEndAt == nil {
+	if got.PlanEndAt.IsZero() {
 		t.Fatalf("PlanEndAt should be stamped")
 	}
 	if got.Summary != "refined heading" {
@@ -168,7 +168,7 @@ func TestReap_DeadPlanning_NoArtifacts(t *testing.T) {
 	if got.Status != tasks.StatusHelp {
 		t.Fatalf("Status = %q, want help", got.Status)
 	}
-	if got.PlanEndAt == nil {
+	if got.PlanEndAt.IsZero() {
 		t.Fatalf("PlanEndAt should be stamped on help transition")
 	}
 	if got.BackgroundPID != 0 {
@@ -217,7 +217,7 @@ func TestReap_DeadWorking(t *testing.T) {
 		ID:            id,
 		Status:        tasks.StatusWorking,
 		BackgroundPID: deadPID(t),
-		WorkBeginAt:   &begin,
+		WorkBeginAt:   begin,
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
 	got := out[0]
@@ -227,7 +227,7 @@ func TestReap_DeadWorking(t *testing.T) {
 	if got.BackgroundPID != 0 {
 		t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
 	}
-	if got.WorkEndAt == nil {
+	if got.WorkEndAt.IsZero() {
 		t.Fatalf("WorkEndAt should be stamped")
 	}
 }
@@ -321,7 +321,7 @@ func TestReap_ListTasksWiresThroughCommand(t *testing.T) {
 		InvokedTool:   "cursor",
 		InvokedModel:  "sonnet-4",
 		BackgroundPID: deadPID(t),
-		PlanBeginAt:   &begin,
+		PlanBeginAt:   begin,
 	}
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)

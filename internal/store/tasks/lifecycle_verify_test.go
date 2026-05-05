@@ -36,7 +36,7 @@ func TestTask_BeginVerify_FlipsStatusAndStampsResume(t *testing.T) {
 	_ = s.Close()
 	preWorkBegin := existing.WorkBeginAt
 	preWorkEnd := existing.WorkEndAt
-	preWorkCursor := existing.WorkResumeCursor
+	preWorkCursor := existing.WorkResumeSession
 
 	lc := existing.BeginVerify(io.Discard, "cursor", "gpt-5", "fresh-verify-cursor", "")
 	lc.Finish(VerifyOutcomeSuccess, nil)
@@ -45,22 +45,22 @@ func TestTask_BeginVerify_FlipsStatusAndStampsResume(t *testing.T) {
 	if got.Status != StatusCompleted {
 		t.Fatalf("Status = %q, want completed", got.Status)
 	}
-	if got.VerifyResumeCursor != "fresh-verify-cursor" {
-		t.Fatalf("VerifyResumeCursor = %q", got.VerifyResumeCursor)
+	if got.VerifyResumeSession != "fresh-verify-cursor" {
+		t.Fatalf("VerifyResumeSession = %q", got.VerifyResumeSession)
 	}
-	if got.WorkResumeCursor != preWorkCursor {
-		t.Fatalf("WorkResumeCursor changed: %q vs %q", got.WorkResumeCursor, preWorkCursor)
+	if got.WorkResumeSession != preWorkCursor {
+		t.Fatalf("WorkResumeSession changed: %q vs %q", got.WorkResumeSession, preWorkCursor)
 	}
-	if got.WorkBeginAt == nil || !got.WorkBeginAt.Equal(*preWorkBegin) {
+	if !got.WorkBeginAt.Equal(preWorkBegin) {
 		t.Fatalf("WorkBeginAt changed: %v vs %v", got.WorkBeginAt, preWorkBegin)
 	}
-	if got.WorkEndAt == nil || !got.WorkEndAt.Equal(*preWorkEnd) {
+	if !got.WorkEndAt.Equal(preWorkEnd) {
 		t.Fatalf("WorkEndAt changed: %v vs %v", got.WorkEndAt, preWorkEnd)
 	}
-	if got.VerifyBeginAt == nil || got.VerifyEndAt == nil {
+	if got.VerifyBeginAt.IsZero() || got.VerifyEndAt.IsZero() {
 		t.Fatalf("verify timestamps missing: %+v", got)
 	}
-	if got.DoneAt == nil {
+	if got.DoneAt.IsZero() {
 		t.Fatalf("DoneAt should be stamped on completed: %+v", got)
 	}
 	if got.InvokedModel != "gpt-5" {
@@ -91,8 +91,8 @@ func TestVerifyLifecycle_FinishNoRetries(t *testing.T) {
 	if got.Status != StatusVerifyDone {
 		t.Fatalf("Status = %q, want verify-done", got.Status)
 	}
-	if got.DoneAt != nil {
-		t.Fatalf("DoneAt should remain nil: %v", got.DoneAt)
+	if !got.DoneAt.IsZero() {
+		t.Fatalf("DoneAt should remain zero: %v", got.DoneAt)
 	}
 }
 
@@ -286,8 +286,8 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 		Status:             StatusVerifyDone,
 		InvokedTool:        "cursor",
 		InvokedModel:       "sonnet-4",
-		VerifyResumeCursor: "v-cursor",
-		VerifyBeginAt:      &begin,
+		VerifyResumeSession: "v-cursor",
+		VerifyBeginAt:      begin,
 	}
 	if err := store.EnsureProject(); err != nil {
 		t.Fatal(err)
@@ -299,13 +299,13 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 	if got.Status != StatusCompleted {
 		t.Fatalf("Status = %q", got.Status)
 	}
-	if got.VerifyResumeCursor != "v-cursor" {
-		t.Fatalf("VerifyResumeCursor = %q", got.VerifyResumeCursor)
+	if got.VerifyResumeSession != "v-cursor" {
+		t.Fatalf("VerifyResumeSession = %q", got.VerifyResumeSession)
 	}
 	if got.InvokedModel != "sonnet-4" {
 		t.Fatalf("InvokedModel = %q", got.InvokedModel)
 	}
-	if got.VerifyBeginAt == nil || !got.VerifyBeginAt.Equal(begin) {
+	if !got.VerifyBeginAt.Equal(begin) {
 		t.Fatalf("VerifyBeginAt changed: %v", got.VerifyBeginAt)
 	}
 }

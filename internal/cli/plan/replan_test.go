@@ -52,14 +52,18 @@ func seedReplanTask(t *testing.T, status tasks.TaskStatus, requirement string, p
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 	defer func() { _ = s.Close() }()
+	var planBeginVal time.Time
+	if planBegin != nil {
+		planBeginVal = *planBegin
+	}
 	task := tasks.Task{
 		ID:               id,
 		Status:           status,
 		InvokedTool:      "cursor-prev",
 		InvokedModel:     "opus-prev",
-		PlanResumeCursor: "seed-resume",
+		PlanResumeSession: "seed-resume",
 		Summary:          "seed summary",
-		PlanBeginAt:      planBegin,
+		PlanBeginAt:      planBeginVal,
 	}
 	if err := s.PutTask(task); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -510,10 +514,10 @@ func TestRun_FromTask_PreservesPlanBeginAt(t *testing.T) {
 	if got.Status != tasks.StatusPlanDone {
 		t.Fatalf("Status = %q, want plan-done", got.Status)
 	}
-	if got.PlanBeginAt == nil || !got.PlanBeginAt.Equal(original) {
+	if got.PlanBeginAt.IsZero() || !got.PlanBeginAt.Equal(original) {
 		t.Fatalf("PlanBeginAt = %v, want %v", got.PlanBeginAt, original)
 	}
-	if got.PlanEndAt == nil {
+	if got.PlanEndAt.IsZero() {
 		t.Fatal("PlanEndAt should be set after re-plan finalises")
 	}
 	if !strings.Contains(got.Summary, "refreshed") {
@@ -726,14 +730,14 @@ func TestBeginPlanTaskReuse_SeedsBeginIfMissing(t *testing.T) {
 		t.Fatal("lifecycle = nil")
 	}
 	got := lc.Task()
-	if got.PlanBeginAt == nil {
+	if got.PlanBeginAt.IsZero() {
 		t.Fatal("PlanBeginAt should be stamped when the row had none")
 	}
 	if got.InvokedTool != "cursor" || got.InvokedModel != "sonnet-4" {
 		t.Fatalf("tool/model = %q/%q", got.InvokedTool, got.InvokedModel)
 	}
-	if got.PlanResumeCursor != "resume-id" {
-		t.Fatalf("PlanResumeCursor = %q", got.PlanResumeCursor)
+	if got.PlanResumeSession != "resume-id" {
+		t.Fatalf("PlanResumeSession = %q", got.PlanResumeSession)
 	}
 	if got.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", got.Status)
@@ -753,9 +757,9 @@ func TestBeginPlanTaskReuse_PreservesExistingBegin(t *testing.T) {
 		Status:       tasks.StatusPlanDone,
 		InvokedTool:  "old",
 		InvokedModel: "old",
-		PlanBeginAt:  &original,
-		PlanEndAt:    &existingEnd,
-		DoneAt:       &existingEnd,
+		PlanBeginAt:  original,
+		PlanEndAt:    existingEnd,
+		DoneAt:       existingEnd,
 	}
 	if _, err := tasks.EnsureDir(existing.ID); err != nil {
 		t.Fatal(err)
@@ -765,13 +769,13 @@ func TestBeginPlanTaskReuse_PreservesExistingBegin(t *testing.T) {
 		t.Fatal("lifecycle = nil")
 	}
 	got := lc.Task()
-	if got.PlanBeginAt == nil || !got.PlanBeginAt.Equal(original) {
+	if got.PlanBeginAt.IsZero() || !got.PlanBeginAt.Equal(original) {
 		t.Fatalf("PlanBeginAt = %v, want %v", got.PlanBeginAt, original)
 	}
-	if got.PlanEndAt != nil {
+	if !got.PlanEndAt.IsZero() {
 		t.Fatalf("PlanEndAt should be cleared, got %v", got.PlanEndAt)
 	}
-	if got.DoneAt != nil {
+	if !got.DoneAt.IsZero() {
 		t.Fatalf("DoneAt should be cleared, got %v", got.DoneAt)
 	}
 }

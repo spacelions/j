@@ -45,23 +45,29 @@ func formatDuration(d time.Duration) string {
 }
 
 func formatStatus(t tsk.Task, now time.Time) string {
-	begin := activeBeginAt(t)
-	if begin == nil {
+	begin, ok := activeBeginAt(t)
+	if !ok {
 		return string(t.Status)
 	}
-	return fmt.Sprintf("%s(%s)", t.Status, formatDuration(now.Sub(*begin)))
+	return fmt.Sprintf("%s(%s)", t.Status, formatDuration(now.Sub(begin)))
 }
 
-func activeBeginAt(t tsk.Task) *time.Time {
+func activeBeginAt(t tsk.Task) (time.Time, bool) {
+	var zero time.Time
 	switch t.Status {
 	case tsk.StatusPlanning:
-		return t.PlanBeginAt
+		zero = t.PlanBeginAt
 	case tsk.StatusWorking:
-		return t.WorkBeginAt
+		zero = t.WorkBeginAt
 	case tsk.StatusVerifying:
-		return t.VerifyBeginAt
+		zero = t.VerifyBeginAt
+	default:
+		return time.Time{}, false
 	}
-	return nil
+	if zero.IsZero() {
+		return time.Time{}, false
+	}
+	return zero, true
 }
 
 // WriteTaskTable writes a bordered task table to w. The frame is a thin

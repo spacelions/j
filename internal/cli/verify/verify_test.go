@@ -23,7 +23,7 @@ import (
 )
 
 // testCursorChatID is the `cursor-agent create-chat` id from the
-// TestMain stub; Run stores it in Task.VerifyResumeCursor for the
+// TestMain stub; Run stores it in Task.VerifyResumeSession for the
 // Cursor backend.
 const testCursorChatID = "00000000-0000-4000-8000-000000000099"
 
@@ -313,13 +313,13 @@ func seedWorkDoneTask(t *testing.T, summary, planBody, requirementBody string) s
 		Status:           tasks.StatusWorkDone,
 		InvokedTool:      "cursor",
 		InvokedModel:     "sonnet-4",
-		PlanResumeCursor: "seed-plan-cursor",
-		WorkResumeCursor: "seed-work-cursor",
+		PlanResumeSession: "seed-plan-cursor",
+		WorkResumeSession: "seed-work-cursor",
 		Summary:          summary,
-		PlanBeginAt:      &planBegin,
-		PlanEndAt:        &planEnd,
-		WorkBeginAt:      &workBegin,
-		WorkEndAt:        &workEnd,
+		PlanBeginAt:      planBegin,
+		PlanEndAt:        planEnd,
+		WorkBeginAt:      workBegin,
+		WorkEndAt:        workEnd,
 	}
 	if err := s.PutTask(task); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -365,14 +365,14 @@ func TestRun_PassOnFirstIteration(t *testing.T) {
 		t.Fatalf("tasks = %+v", rows)
 	}
 	got := rows[0]
-	if got.DoneAt == nil {
+	if got.DoneAt.IsZero() {
 		t.Fatalf("DoneAt should be stamped on completed: %+v", got)
 	}
-	if got.VerifyBeginAt == nil || got.VerifyEndAt == nil {
+	if got.VerifyBeginAt.IsZero() || got.VerifyEndAt.IsZero() {
 		t.Fatalf("verify timestamps missing: %+v", got)
 	}
-	if got.VerifyResumeCursor != testCursorChatID {
-		t.Fatalf("VerifyResumeCursor = %q", got.VerifyResumeCursor)
+	if got.VerifyResumeSession != testCursorChatID {
+		t.Fatalf("VerifyResumeSession = %q", got.VerifyResumeSession)
 	}
 	findings := taskFilePath(t, id, tasks.VerifierFindingsFileName)
 	if data, err := os.ReadFile(findings); err != nil {
@@ -419,7 +419,7 @@ func TestRun_FailThenPass(t *testing.T) {
 		t.Fatalf("FixFindings should be true on the fix loop's worker turn: %+v", work)
 	}
 	if work.ResumeChatID != "seed-work-cursor" {
-		t.Fatalf("worker fix turn should reuse seeded WorkResumeCursor, got %q", work.ResumeChatID)
+		t.Fatalf("worker fix turn should reuse seeded WorkResumeSession, got %q", work.ResumeChatID)
 	}
 	// The second verify turn must Resume so the previous
 	// verifier session is reused.
@@ -519,7 +519,7 @@ func TestRun_LoopExhausted(t *testing.T) {
 	if len(rows) != 1 || rows[0].Status != tasks.StatusVerifyDone {
 		t.Fatalf("tasks = %+v, want one verify-done", rows)
 	}
-	if rows[0].DoneAt != nil {
+	if !rows[0].DoneAt.IsZero() {
 		t.Fatalf("DoneAt must remain nil on verify-done: %v", rows[0].DoneAt)
 	}
 }

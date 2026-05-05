@@ -129,7 +129,7 @@ func TestWatchModel_View_WithTasksAndQuitHint(t *testing.T) {
 		InvokedTool:  "cursor",
 		InvokedModel: "sonnet-4",
 		Summary:      "draft idea",
-		PlanBeginAt:  &begin,
+		PlanBeginAt:  begin,
 	}}
 	m := newTestWatchModel(rows, now)
 	out := m.View()

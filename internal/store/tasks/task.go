@@ -22,7 +22,7 @@ import (
 const AgentLogFileName = "agent.log"
 
 // TaskFileName is the per-task TOML file that holds the row metadata
-// (status, summary, resume cursors, phase timestamps, background PID).
+// (status, summary, resume sessions, phase timestamps, background PID).
 // It lives alongside requirements.md / plan.md / agent.log inside
 // `<cwd>/.j/tasks/<id>/`. One file per task means concurrent writers
 // to different tasks never contend, and atomic write+rename guarantees
@@ -41,12 +41,14 @@ const VerifierPlanFileName = "verifier_plan.md"
 const VerifierFindingsFileName = "verifier_findings.md"
 
 // Task is the value persisted to `<cwd>/.j/tasks/<id>/task.toml`.
-// Pointer-typed time fields are omitted when unknown so a partially-
-// completed task (planning in flight, work not started) never claims
-// fake timestamps. JSON tags are preserved for the agent log markers
-// emitted via internal/util/agentlog; the on-disk TOML format is
-// produced via the taskWire shadow type below (see the comment on
-// taskWire for the pelletier `*time.Time` workaround).
+// Value time.Time fields use the zero value as "not set"; callers use
+// .IsZero() to check whether a phase timestamp was recorded.
+// pelletier/go-toml/v2 v2.3.0 has two known bugs: (1) *time.Time
+// encodes as a quoted TOML string instead of a datetime, and (2)
+// time.Time with omitempty is always suppressed even for non-zero
+// values. Both bugs are documented in wire_test.go. The workaround is
+// value time.Time without omitempty; zero timestamps write as
+// 0001-01-01T00:00:00Z and are skipped by .IsZero() on read.
 //
 // The body markdown is canonical on disk too:
 // `<cwd>/.j/tasks/<id>/requirements.md` and
@@ -55,44 +57,44 @@ const VerifierFindingsFileName = "verifier_findings.md"
 // Each phase mints its own resume token via Agent.NewResumeID; an
 // empty string means "no session for that phase yet".
 type Task struct {
-	ID           string     `json:"id"`
-	Status       TaskStatus `json:"status"`
-	InvokedTool  string     `json:"invoked_tool"`
-	InvokedModel string     `json:"invoked_model"`
+	ID           string     `toml:"id"`
+	Status       TaskStatus `toml:"status"`
+	InvokedTool  string     `toml:"invoked_tool"`
+	InvokedModel string     `toml:"invoked_model"`
 	// Worktree is the bare git-worktree name (no slashes, no path)
 	// the worker and verifier should operate against for this task.
 	// It is minted by `j work` on first run via WorktreeNameFor and
 	// then preserved on every subsequent transition. Empty for tasks
 	// worked before the field was introduced; downstream agents
 	// treat empty as "fall back to the main checkout".
-	Worktree string `json:"worktree,omitempty"`
-	Summary  string `json:"summary"`
+	Worktree string `toml:"worktree,omitempty"`
+	Summary  string `toml:"summary"`
 
-	PlanResumeCursor   string `json:"plan_resume_cursor"`
-	WorkResumeCursor   string `json:"work_resume_cursor"`
-	VerifyResumeCursor string `json:"verify_resume_cursor"`
+	PlanResumeSession   string `toml:"plan_resume_session,omitempty"`
+	WorkResumeSession   string `toml:"work_resume_session,omitempty"`
+	VerifyResumeSession string `toml:"verify_resume_session,omitempty"`
 
-	PlanBeginAt   *time.Time `json:"plan_begin_at,omitempty"`
-	PlanEndAt     *time.Time `json:"plan_end_at,omitempty"`
-	WorkBeginAt   *time.Time `json:"work_begin_at,omitempty"`
-	WorkEndAt     *time.Time `json:"work_end_at,omitempty"`
-	VerifyBeginAt *time.Time `json:"verify_begin_at,omitempty"`
-	VerifyEndAt   *time.Time `json:"verify_end_at,omitempty"`
-	DoneAt        *time.Time `json:"done_at,omitempty"`
+	PlanBeginAt   time.Time `toml:"plan_begin_at"`
+	PlanEndAt     time.Time `toml:"plan_end_at"`
+	WorkBeginAt   time.Time `toml:"work_begin_at"`
+	WorkEndAt     time.Time `toml:"work_end_at"`
+	VerifyBeginAt time.Time `toml:"verify_begin_at"`
+	VerifyEndAt   time.Time `toml:"verify_end_at"`
+	DoneAt        time.Time `toml:"done_at"`
 
 	// BackgroundPID is the OS process id of the detached coding-agent
 	// child spawned for a fire-and-forget headless `j plan` or `j work`
 	// run. It is non-zero only while the row is in flight (planning or
 	// working) and the child has not yet been reaped by `j tasks`.
 	// Foreground (interactive) and resume runs leave it at 0.
-	BackgroundPID int `json:"background_pid,omitempty"`
+	BackgroundPID int `toml:"background_pid,omitempty"`
 	// AgentLogPath is the absolute path of the per-task log file that
 	// captures the spawned child's stdout/stderr (typically
 	// `<cwd>/.j/tasks/<id>/agent.log`). It is set whenever a
 	// background spawn was attempted so users can follow a backgrounded
 	// run; the reaper does not clear it after the row is finalised so
 	// the trailing log remains discoverable.
-	AgentLogPath string `json:"agent_log_path,omitempty"`
+	AgentLogPath string `toml:"agent_log_path,omitempty"`
 
 	// LinearIssue is the upstream `<TEAM>-<NUM>` identifier when the
 	// task was created from a Linear issue (via `j plan --from-linear`,
@@ -100,7 +102,7 @@ type Task struct {
 	// branch). Empty for markdown / re-plan sources. The value is
 	// preserved across re-plans so `j tasks` can keep surfacing the
 	// original Linear link.
-	LinearIssue string `json:"linear_issue,omitempty"`
+	LinearIssue string `toml:"linear_issue,omitempty"`
 }
 
 // PutTask TOML-encodes t and writes it to
@@ -126,7 +128,7 @@ func (s *Store) PutTask(t Task) error {
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		return fmt.Errorf("store: mkdir %q: %w", taskDir, err)
 	}
-	data, err := toml.Marshal(taskToWire(t))
+	data, err := toml.Marshal(t)
 	if err != nil {
 		return fmt.Errorf("store: marshal task: %w", err)
 	}
@@ -148,11 +150,11 @@ func (s *Store) GetTask(id string) (Task, error) {
 		}
 		return Task{}, fmt.Errorf("store: read task %q: %w", id, err)
 	}
-	var w taskWire
-	if err := toml.Unmarshal(data, &w); err != nil {
+	var t Task
+	if err := toml.Unmarshal(data, &t); err != nil {
 		return Task{}, fmt.Errorf("store: decode task %q: %w", id, err)
 	}
-	return wireToTask(w), nil
+	return t, nil
 }
 
 // DeleteTask removes the per-task `task.toml` for id. The error wraps
@@ -210,11 +212,11 @@ func (s *Store) ListTasks() ([]Task, error) {
 			}
 			return nil, fmt.Errorf("store: read %q: %w", path, err)
 		}
-		var w taskWire
-		if err := toml.Unmarshal(data, &w); err != nil {
+		var t Task
+		if err := toml.Unmarshal(data, &t); err != nil {
 			return nil, fmt.Errorf("store: decode task %q: %w", entry.Name(), err)
 		}
-		out = append(out, wireToTask(w))
+		out = append(out, t)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil

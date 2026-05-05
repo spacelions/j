@@ -28,7 +28,7 @@ import (
 //
 // TaskID short-circuits the selector: when non-empty Run loads that
 // task directly. Otherwise Run lists every task whose
-// WorkResumeCursor is non-empty (any status — explicitly NOT the
+// WorkResumeSession is non-empty (any status — explicitly NOT the
 // validateForWork allowlist), prints
 // "J: there are no resumable sessions" if the slice is empty,
 // auto-selects the single eligible row when there is exactly one,
@@ -65,10 +65,10 @@ func (o ResumeOptions) withDefaults() ResumeOptions {
 
 // RunResume implements `j work resume`. The lifecycle mirrors
 // `j work --from-task` reuse with three key differences: the
-// task's existing WorkResumeCursor is reused (no fresh
+// task's existing WorkResumeSession is reused (no fresh
 // NewResumeID), the original WorkBeginAt is preserved, and the
 // eligibility filter is permissive — any task with a non-empty
-// WorkResumeCursor qualifies, regardless of status. validateForWork
+// WorkResumeSession qualifies, regardless of status. validateForWork
 // is intentionally NOT called.
 //
 // Resume always runs interactive — by definition resume is iterative
@@ -125,7 +125,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		PlanPath:     planPath,
 		Model:        t.InvokedModel,
 		Interactive:  true,
-		ResumeChatID: t.WorkResumeCursor,
+		ResumeChatID: t.WorkResumeSession,
 		Resume:       true,
 		MustRead:     mustReadFiles,
 	})
@@ -175,7 +175,7 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (tasks.Task, boo
 }
 
 // resolveResumeByID loads the named task and validates it has a
-// non-empty WorkResumeCursor. fs.ErrNotExist becomes the friendly
+// non-empty WorkResumeSession. fs.ErrNotExist becomes the friendly
 // "task %q not found" wrapping the way callers expect; an empty
 // cursor becomes "task %q has no work session".
 func resolveResumeByID(id string) (tasks.Task, bool, error) {
@@ -183,14 +183,14 @@ func resolveResumeByID(id string) (tasks.Task, bool, error) {
 	if err != nil {
 		return tasks.Task{}, false, err
 	}
-	if t.WorkResumeCursor == "" {
+	if t.WorkResumeSession == "" {
 		return tasks.Task{}, false, fmt.Errorf("J: task %q has no work session", id)
 	}
 	return t, true, nil
 }
 
 // listResumableTasks returns every task with a non-empty
-// WorkResumeCursor regardless of status, sorted via tasks.SortTasks
+// WorkResumeSession regardless of status, sorted via tasks.SortTasks
 // so the picker shows the active-then-most-recent order users see
 // in `j tasks`. validateForWork is intentionally NOT applied here:
 // resume is permissive by design, so `working` / `work-done` rows
@@ -202,7 +202,7 @@ func listResumableTasks() ([]tasks.Task, error) {
 	}
 	out := all[:0]
 	for _, t := range all {
-		if t.WorkResumeCursor != "" {
+		if t.WorkResumeSession != "" {
 			out = append(out, t)
 		}
 	}
@@ -239,7 +239,7 @@ func newResumeCmd() *cobra.Command {
 			"With no eligible sessions, prints `J: there are no resumable sessions` " +
 			"and exits 0. The eligibility filter is intentionally permissive: tasks " +
 			"in any status (including `working` and `work-done`) are resumable as " +
-			"long as their work_resume_cursor is non-empty. " +
+			"long as their work_resume_session is non-empty. " +
 			"Resume always runs interactive; the worker bucket's `interactive` " +
 			"value is ignored.",
 		RunE: func(cmd *cobra.Command, _ []string) error {

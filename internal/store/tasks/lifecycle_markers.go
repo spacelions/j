@@ -26,18 +26,18 @@ func emitPhaseBegin(agentLogPath, phase string, t Task) {
 }
 
 // emitPhaseEnd appends a `phase_end` marker to agentLogPath.
-// duration_ms is computed from beginAt when set so the marker is
+// duration_ms is computed from beginAt when non-zero so the marker is
 // self-contained; outcome is one of `done` / `help` / `pass` / `fail`
 // per the agent.log marker convention. An empty agentLogPath is a
 // silent no-op.
-func emitPhaseEnd(agentLogPath, phase string, beginAt *time.Time, t Task, outcome string) {
+func emitPhaseEnd(agentLogPath, phase string, beginAt time.Time, t Task, outcome string) {
 	fields := map[string]any{
 		"phase":   phase,
 		"task":    t.ID,
 		"outcome": outcome,
 	}
-	if beginAt != nil {
-		fields["duration_ms"] = time.Since(*beginAt).Milliseconds()
+	if !beginAt.IsZero() {
+		fields["duration_ms"] = time.Since(beginAt).Milliseconds()
 	}
 	_ = agentlog.EmitTo(agentLogPath, "phase_end", fields)
 }

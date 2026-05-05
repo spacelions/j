@@ -36,16 +36,15 @@ type PlanLifecycle struct {
 // Best effort: failure to open the task log or to write the initial
 // row warns once on stderr and execution continues.
 func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement, resumeID, agentLogPath, linearIssue string) *PlanLifecycle {
-	begin := time.Now().UTC()
 	task := Task{
-		ID:               taskID,
-		Status:           StatusPlanning,
-		InvokedTool:      agentName,
-		InvokedModel:     model,
-		PlanResumeCursor: resumeID,
-		Summary:          Summary(requirement, target),
-		PlanBeginAt:      &begin,
-		LinearIssue:      linearIssue,
+		ID:                  taskID,
+		Status:              StatusPlanning,
+		InvokedTool:         agentName,
+		InvokedModel:        model,
+		PlanResumeSession:   resumeID,
+		Summary:             Summary(requirement, target),
+		PlanBeginAt:         time.Now().UTC(),
+		LinearIssue:         linearIssue,
 	}
 	lc := &PlanLifecycle{stderr: stderr, agentLogPath: agentLogPath, task: task}
 	PersistWarn(stderr, task)
@@ -57,7 +56,7 @@ func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement
 // `planning` for the re-plan flow. PlanEndAt and DoneAt are cleared
 // so the finalize step stamps fresh values; the original
 // PlanBeginAt is preserved verbatim when set so the row keeps its
-// first-run lineage. Tool/model and the plan resume cursor are
+// first-run lineage. Tool/model and the plan resume session are
 // refreshed so the row reflects the latest re-plan invocation.
 //
 // The body / source-path are intentionally not touched: re-plan
@@ -65,16 +64,15 @@ func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement
 // it back through agent.Plan, so the summary derivation runs again
 // in Finish.
 func (t Task) BeginPlanReuse(stderr io.Writer, agentName, model, resumeID, agentLogPath string) *PlanLifecycle {
-	begin := time.Now().UTC()
 	task := t
 	task.Status = StatusPlanning
 	task.InvokedTool = agentName
 	task.InvokedModel = model
-	task.PlanResumeCursor = resumeID
-	task.PlanEndAt = nil
-	task.DoneAt = nil
-	if task.PlanBeginAt == nil {
-		task.PlanBeginAt = &begin
+	task.PlanResumeSession = resumeID
+	task.PlanEndAt = time.Time{}
+	task.DoneAt = time.Time{}
+	if task.PlanBeginAt.IsZero() {
+		task.PlanBeginAt = time.Now().UTC()
 	}
 	lc := &PlanLifecycle{stderr: stderr, agentLogPath: agentLogPath, task: task}
 	PersistWarn(stderr, task)
@@ -114,8 +112,7 @@ func (lc *PlanLifecycle) Finish(runErr error, refinedRequirements, planMarkdown,
 		return
 	}
 	lc.closed = true
-	end := time.Now().UTC()
-	lc.task.PlanEndAt = &end
+	lc.task.PlanEndAt = time.Now().UTC()
 	outcome := "done"
 	if runErr != nil {
 		lc.task.Status = StatusHelp

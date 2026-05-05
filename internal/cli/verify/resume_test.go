@@ -25,8 +25,8 @@ import (
 // seedResumableVerify creates a task row plus the matching
 // requirements / plan / verifier_findings markdown files. The
 // default row is `verify-done` with a non-empty
-// VerifyResumeCursor; tests override fields via mutate.
-func seedResumableVerify(t *testing.T, mutate func(*tasks.Task)) (string, *time.Time) {
+// VerifyResumeSession; tests override fields via mutate.
+func seedResumableVerify(t *testing.T, mutate func(*tasks.Task)) (string, time.Time) {
 	t.Helper()
 	id := tasks.NewTaskID()
 	if _, err := tasks.EnsureDir(id); err != nil {
@@ -53,16 +53,16 @@ func seedResumableVerify(t *testing.T, mutate func(*tasks.Task)) (string, *time.
 		Status:             tasks.StatusVerifyDone,
 		InvokedTool:        "cursor",
 		InvokedModel:       "sonnet-4",
-		PlanResumeCursor:   "plan-cursor",
-		WorkResumeCursor:   "work-cursor",
-		VerifyResumeCursor: "verify-cursor",
+		PlanResumeSession:   "plan-cursor",
+		WorkResumeSession:   "work-cursor",
+		VerifyResumeSession: "verify-cursor",
 		Summary:            "seeded verify",
-		PlanBeginAt:        &planBegin,
-		PlanEndAt:          &planEnd,
-		WorkBeginAt:        &workBegin,
-		WorkEndAt:          &workEnd,
-		VerifyBeginAt:      &verifyBegin,
-		VerifyEndAt:        &verifyEnd,
+		PlanBeginAt:        planBegin,
+		PlanEndAt:          planEnd,
+		WorkBeginAt:        workBegin,
+		WorkEndAt:          workEnd,
+		VerifyBeginAt:      verifyBegin,
+		VerifyEndAt:        verifyEnd,
 	}
 	if mutate != nil {
 		mutate(&row)
@@ -113,7 +113,7 @@ func TestRunResume_EmptySelector(t *testing.T) {
 
 // TestRunResume_FromTaskHappyPath pins the --from-task flow: the
 // agent receives Interactive=true, the recorded
-// VerifyResumeCursor + model, and (because the verifier writes a
+// VerifyResumeSession + model, and (because the verifier writes a
 // PASS verdict by default) the row finishes as completed.
 func TestRunResume_FromTaskHappyPath(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -162,7 +162,7 @@ func TestRunResume_FromTaskHappyPath(t *testing.T) {
 	if rows[0].Status != tasks.StatusCompleted {
 		t.Fatalf("Status = %q, want completed (PASS verdict)", rows[0].Status)
 	}
-	if rows[0].VerifyBeginAt == nil || !rows[0].VerifyBeginAt.Equal(*originalBegin) {
+	if rows[0].VerifyBeginAt.IsZero() || !rows[0].VerifyBeginAt.Equal(originalBegin) {
 		t.Fatalf("VerifyBeginAt should be preserved: %v vs %v", rows[0].VerifyBeginAt, originalBegin)
 	}
 }
@@ -188,7 +188,7 @@ func TestRunResume_FromTaskMissing(t *testing.T) {
 func TestRunResume_FromTaskNoSession(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyResumeCursor = "" })
+	id, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyResumeSession = "" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -206,8 +206,8 @@ func TestRunResume_FromTaskNoSession(t *testing.T) {
 func TestRunResume_SelectorPicksSecond(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id1, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyResumeCursor = "first-cursor" })
-	id2, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyResumeCursor = "second-cursor" })
+	id1, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyResumeSession = "first-cursor" })
+	id2, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyResumeSession = "second-cursor" })
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
 	ui := &scriptedUI{resumePicked: id2}
@@ -478,7 +478,7 @@ func TestRunResume_StampsCompletedOnPass(t *testing.T) {
 	if rows[0].Status != tasks.StatusCompleted {
 		t.Fatalf("Status = %q, want completed (PASS verdict on resume)", rows[0].Status)
 	}
-	if rows[0].DoneAt == nil {
+	if rows[0].DoneAt.IsZero() {
 		t.Fatalf("DoneAt should be stamped: %+v", rows[0])
 	}
 }
@@ -508,7 +508,7 @@ func TestRunResume_FailLeavesVerifyDone(t *testing.T) {
 	if rows[0].Status != tasks.StatusVerifyDone {
 		t.Fatalf("Status = %q, want verify-done", rows[0].Status)
 	}
-	if rows[0].DoneAt != nil {
+	if !rows[0].DoneAt.IsZero() {
 		t.Fatalf("DoneAt should remain nil: %v", rows[0].DoneAt)
 	}
 }
@@ -610,16 +610,16 @@ func TestBeginVerifyTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	}
 	_ = s.Close()
 	preBegin := existing.VerifyBeginAt
-	preCursor := existing.VerifyResumeCursor
+	preCursor := existing.VerifyResumeSession
 
 	lc := existing.BeginVerifyResume(io.Discard, "")
 	lc.Finish(tasks.VerifyOutcomeNoRetries, nil)
 
 	rows := readTasks(t)
-	if rows[0].VerifyResumeCursor != preCursor {
-		t.Fatalf("VerifyResumeCursor changed: got %q, want %q", rows[0].VerifyResumeCursor, preCursor)
+	if rows[0].VerifyResumeSession != preCursor {
+		t.Fatalf("VerifyResumeSession changed: got %q, want %q", rows[0].VerifyResumeSession, preCursor)
 	}
-	if rows[0].VerifyBeginAt == nil || !rows[0].VerifyBeginAt.Equal(*preBegin) {
+	if rows[0].VerifyBeginAt.IsZero() || !rows[0].VerifyBeginAt.Equal(preBegin) {
 		t.Fatalf("VerifyBeginAt = %v, want preserved %v", rows[0].VerifyBeginAt, preBegin)
 	}
 }
@@ -629,7 +629,7 @@ func TestBeginVerifyTaskResume_PreservesCursorAndBegin(t *testing.T) {
 func TestBeginVerifyTaskResume_NilBeginAtStampsFresh(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyBeginAt = nil })
+	id, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyBeginAt = time.Time{} })
 	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
@@ -644,7 +644,7 @@ func TestBeginVerifyTaskResume_NilBeginAtStampsFresh(t *testing.T) {
 	lc.Finish(tasks.VerifyOutcomeNoRetries, nil)
 
 	rows := readTasks(t)
-	if rows[0].VerifyBeginAt == nil {
+	if rows[0].VerifyBeginAt.IsZero() {
 		t.Fatalf("VerifyBeginAt should be stamped: %+v", rows)
 	}
 }

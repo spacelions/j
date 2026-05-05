@@ -309,22 +309,22 @@ func latestPhase(t tasks.Task) string {
 		return v
 	}
 	switch {
-	case t.VerifyResumeCursor != "":
+	case t.VerifyResumeSession != "":
 		return "verify"
-	case t.WorkResumeCursor != "":
+	case t.WorkResumeSession != "":
 		return "work"
-	case t.PlanResumeCursor != "":
+	case t.PlanResumeSession != "":
 		return "plan"
 	}
 	return ""
 }
 
-// latestEndAt picks the phase whose *EndAt timestamp is the most
-// recent. Returns "" when every *EndAt is nil.
+// latestEndAt picks the phase whose EndAt timestamp is the most
+// recent. Returns "" when every EndAt is zero.
 func latestEndAt(t tasks.Task) string {
 	pairs := []struct {
 		name string
-		t    *time.Time
+		t    time.Time
 	}{
 		{"verify", t.VerifyEndAt},
 		{"work", t.WorkEndAt},
@@ -333,12 +333,12 @@ func latestEndAt(t tasks.Task) string {
 	var best string
 	var bestT time.Time
 	for _, p := range pairs {
-		if p.t == nil {
+		if p.t.IsZero() {
 			continue
 		}
 		if best == "" || p.t.After(bestT) {
 			best = p.name
-			bestT = *p.t
+			bestT = p.t
 		}
 	}
 	return best

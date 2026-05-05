@@ -104,10 +104,10 @@ func seedTaskFull(t *testing.T, mutate func(*tasks.Task)) string {
 		Status:           tasks.StatusPlanDone,
 		InvokedTool:      "cursor",
 		InvokedModel:     "sonnet-4",
-		PlanResumeCursor: "plan-cursor",
+		PlanResumeSession: "plan-cursor",
 		Summary:          "seed",
-		PlanBeginAt:      &begin,
-		PlanEndAt:        &end,
+		PlanBeginAt:      begin,
+		PlanEndAt:        end,
 	}
 	if mutate != nil {
 		mutate(&task)
@@ -237,7 +237,7 @@ func TestRunContinue_WorkingDispatchesToWorkResume(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorking
-		task.WorkResumeCursor = "work-cursor"
+		task.WorkResumeSession = "work-cursor"
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -264,7 +264,7 @@ func TestRunContinue_WorkDoneDispatchesToVerify(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorkDone
-		task.WorkResumeCursor = "work-cursor"
+		task.WorkResumeSession = "work-cursor"
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -291,7 +291,7 @@ func TestRunContinue_VerifyingDispatchesToVerifyResume(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusVerifying
-		task.VerifyResumeCursor = "verify-cursor"
+		task.VerifyResumeSession = "verify-cursor"
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -378,11 +378,11 @@ func TestRunContinue_HelpFromVerifyEnd(t *testing.T) {
 	t3 := t2.Add(time.Hour)
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusHelp
-		task.VerifyResumeCursor = "verify-cursor"
-		task.WorkResumeCursor = "work-cursor"
-		task.PlanEndAt = &t1
-		task.WorkEndAt = &t2
-		task.VerifyEndAt = &t3
+		task.VerifyResumeSession = "verify-cursor"
+		task.WorkResumeSession = "work-cursor"
+		task.PlanEndAt = t1
+		task.WorkEndAt = t2
+		task.VerifyEndAt = t3
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -409,9 +409,9 @@ func TestRunContinue_HelpFromWorkEnd(t *testing.T) {
 	t2 := t1.Add(time.Hour)
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusHelp
-		task.WorkResumeCursor = "work-cursor"
-		task.PlanEndAt = &t1
-		task.WorkEndAt = &t2
+		task.WorkResumeSession = "work-cursor"
+		task.PlanEndAt = t1
+		task.WorkEndAt = t2
 	})
 	agent := newContinueAgent()
 	if err := RunContinue(context.Background(), ContinueOptions{
@@ -436,8 +436,8 @@ func TestRunContinue_HelpFromPlanEnd(t *testing.T) {
 	t1 := time.Now().UTC().Add(-2 * time.Hour)
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusHelp
-		task.PlanResumeCursor = "plan-cursor"
-		task.PlanEndAt = &t1
+		task.PlanResumeSession = "plan-cursor"
+		task.PlanEndAt = t1
 	})
 	agent := newContinueAgent()
 	if err := RunContinue(context.Background(), ContinueOptions{
@@ -456,14 +456,14 @@ func TestRunContinue_HelpFromPlanEnd(t *testing.T) {
 }
 
 // TestRunContinue_HelpFromCursorFallback covers the cursor-precedence
-// fallback when no *EndAt is set: WorkResumeCursor wins over plan.
+// fallback when no *EndAt is set: WorkResumeSession wins over plan.
 func TestRunContinue_HelpFromCursorFallback(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusHelp
-		task.PlanEndAt = nil
-		task.PlanResumeCursor = "plan-cursor"
-		task.WorkResumeCursor = "work-cursor"
+		task.PlanEndAt = time.Time{}
+		task.PlanResumeSession = "plan-cursor"
+		task.WorkResumeSession = "work-cursor"
 	})
 	agent := newContinueAgent()
 	if err := RunContinue(context.Background(), ContinueOptions{
@@ -487,10 +487,10 @@ func TestRunContinue_HelpNoSignal(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusHelp
-		task.PlanEndAt = nil
-		task.PlanResumeCursor = ""
-		task.WorkResumeCursor = ""
-		task.VerifyResumeCursor = ""
+		task.PlanEndAt = time.Time{}
+		task.PlanResumeSession = ""
+		task.WorkResumeSession = ""
+		task.VerifyResumeSession = ""
 	})
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
@@ -659,12 +659,12 @@ func TestLatestPhase(t *testing.T) {
 		row  tasks.Task
 		want string
 	}{
-		{"verify-end-wins", tasks.Task{PlanEndAt: &t1, WorkEndAt: &t2, VerifyEndAt: &t3}, "verify"},
-		{"work-end-wins", tasks.Task{PlanEndAt: &t1, WorkEndAt: &t3}, "work"},
-		{"plan-end-only", tasks.Task{PlanEndAt: &t1}, "plan"},
-		{"verify-cursor-fallback", tasks.Task{VerifyResumeCursor: "v"}, "verify"},
-		{"work-cursor-fallback", tasks.Task{WorkResumeCursor: "w"}, "work"},
-		{"plan-cursor-fallback", tasks.Task{PlanResumeCursor: "p"}, "plan"},
+		{"verify-end-wins", tasks.Task{PlanEndAt: t1, WorkEndAt: t2, VerifyEndAt: t3}, "verify"},
+		{"work-end-wins", tasks.Task{PlanEndAt: t1, WorkEndAt: t3}, "work"},
+		{"plan-end-only", tasks.Task{PlanEndAt: t1}, "plan"},
+		{"verify-cursor-fallback", tasks.Task{VerifyResumeSession: "v"}, "verify"},
+		{"work-cursor-fallback", tasks.Task{WorkResumeSession: "w"}, "work"},
+		{"plan-cursor-fallback", tasks.Task{PlanResumeSession: "p"}, "plan"},
 		{"no-signal", tasks.Task{}, ""},
 	}
 	for _, c := range cases {

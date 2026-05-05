@@ -86,8 +86,7 @@ func finalisePlanReap(tasksDir string, t tasks.Task) tasks.Task {
 	taskDir := filepath.Join(tasksDir, t.ID)
 	requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
 	planPath := filepath.Join(taskDir, tasks.PlanFileName)
-	end := time.Now().UTC()
-	t.PlanEndAt = &end
+	t.PlanEndAt = time.Now().UTC()
 	t.BackgroundPID = 0
 	reqData, reqErr := os.ReadFile(requirementsPath)
 	_, planErr := os.Stat(planPath)
@@ -108,8 +107,7 @@ func finalisePlanReap(tasksDir string, t tasks.Task) tasks.Task {
 // place during work, so the reaper cannot tell success from failure
 // without re-running it; failures surface via the captured agent log.
 func finaliseWorkReap(t tasks.Task) tasks.Task {
-	end := time.Now().UTC()
-	t.WorkEndAt = &end
+	t.WorkEndAt = time.Now().UTC()
 	t.Status = tasks.StatusWorkDone
 	t.BackgroundPID = 0
 	return t

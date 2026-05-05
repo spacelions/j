@@ -35,15 +35,14 @@ type WorkLifecycle struct {
 // verifier share one rule; callers that pre-populate Worktree (none
 // today — `j plan` does not set it) still have their value preserved.
 func NewWorkTask(stderr io.Writer, agentName, model, taskID, planPath, requirement, planBody, resumeID, agentLogPath string) *WorkLifecycle {
-	begin := time.Now().UTC()
 	task := Task{
-		ID:               taskID,
-		Status:           StatusWorking,
-		InvokedTool:      agentName,
-		InvokedModel:     model,
-		WorkResumeCursor: resumeID,
-		Summary:          FromPlanAndRequirement(requirement, planBody, planPath),
-		WorkBeginAt:      &begin,
+		ID:                taskID,
+		Status:            StatusWorking,
+		InvokedTool:       agentName,
+		InvokedModel:      model,
+		WorkResumeSession: resumeID,
+		Summary:           FromPlanAndRequirement(requirement, planBody, planPath),
+		WorkBeginAt:       time.Now().UTC(),
 	}
 	fillWorktree(&task)
 	return openWorkLifecycle(stderr, task, agentLogPath)
@@ -52,22 +51,21 @@ func NewWorkTask(stderr io.Writer, agentName, model, taskID, planPath, requireme
 // BeginWorkReuse mutates a copy of the receiver to flip status to
 // `working`, stamp work_begin_at, clear stale work_end_at / done_at
 // from a previous failed run, and record the latest tool/model and
-// resume cursor for the work phase. Plan-phase fields are preserved.
+// resume session for the work phase. Plan-phase fields are preserved.
 //
 // A pre-existing Worktree on the receiver is kept verbatim (so manual
 // edits persist); an empty one is populated via WorktreeNameFor so
 // rows that pre-date the field still gain a meaningful name on their
 // first bbolt-sourced `j work`.
 func (t Task) BeginWorkReuse(stderr io.Writer, agentName, model, resumeID, agentLogPath string) *WorkLifecycle {
-	begin := time.Now().UTC()
 	task := t
 	task.Status = StatusWorking
 	task.InvokedTool = agentName
 	task.InvokedModel = model
-	task.WorkResumeCursor = resumeID
-	task.WorkBeginAt = &begin
-	task.WorkEndAt = nil
-	task.DoneAt = nil
+	task.WorkResumeSession = resumeID
+	task.WorkBeginAt = time.Now().UTC()
+	task.WorkEndAt = time.Time{}
+	task.DoneAt = time.Time{}
 	fillWorktree(&task)
 	return openWorkLifecycle(stderr, task, agentLogPath)
 }
@@ -75,9 +73,9 @@ func (t Task) BeginWorkReuse(stderr io.Writer, agentName, model, resumeID, agent
 // BeginWorkResume is the resume-flow companion of BeginWorkReuse. The
 // two functions diverge in two places:
 //
-//  1. The existing WorkResumeCursor is preserved verbatim instead of
+//  1. The existing WorkResumeSession is preserved verbatim instead of
 //     being overwritten with a fresh `Agent.NewResumeID` value (the
-//     whole point of resume is reusing the cursor recorded on the
+//     whole point of resume is reusing the session recorded on the
 //     task row).
 //  2. The original WorkBeginAt timestamp is preserved when set so the
 //     task row keeps its first-run lineage; only WorkEndAt / DoneAt
@@ -87,11 +85,10 @@ func (t Task) BeginWorkReuse(stderr io.Writer, agentName, model, resumeID, agent
 func (t Task) BeginWorkResume(stderr io.Writer, agentLogPath string) *WorkLifecycle {
 	task := t
 	task.Status = StatusWorking
-	task.WorkEndAt = nil
-	task.DoneAt = nil
-	if task.WorkBeginAt == nil {
-		begin := time.Now().UTC()
-		task.WorkBeginAt = &begin
+	task.WorkEndAt = time.Time{}
+	task.DoneAt = time.Time{}
+	if task.WorkBeginAt.IsZero() {
+		task.WorkBeginAt = time.Now().UTC()
 	}
 	return openWorkLifecycle(stderr, task, agentLogPath)
 }
@@ -147,8 +144,7 @@ func (lc *WorkLifecycle) Finish(runErr error) {
 		return
 	}
 	lc.closed = true
-	end := time.Now().UTC()
-	lc.task.WorkEndAt = &end
+	lc.task.WorkEndAt = time.Now().UTC()
 	outcome := "done"
 	if runErr != nil {
 		lc.task.Status = StatusHelp
