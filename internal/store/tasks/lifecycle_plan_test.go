@@ -34,8 +34,8 @@ func TestNewPlanTask_RecordsAndFinish(t *testing.T) {
 	if got.Status != StatusPlanDone {
 		t.Fatalf("Status = %q, want plan-done", got.Status)
 	}
-	if got.InvokedTool != "cursor" || got.InvokedModel != "sonnet-4" {
-		t.Fatalf("tool/model = %q/%q", got.InvokedTool, got.InvokedModel)
+	if got.PlanTool != "cursor" || got.PlanModel != "sonnet-4" {
+		t.Fatalf("tool/model = %q/%q", got.PlanTool, got.PlanModel)
 	}
 	if got.PlanResumeSession != "plan-cursor" {
 		t.Fatalf("PlanResumeSession = %q", got.PlanResumeSession)
@@ -236,8 +236,8 @@ func TestTask_BeginPlanReuse_PreservesLineage(t *testing.T) {
 	if got.PlanResumeSession != "fresh-plan-cursor" {
 		t.Fatalf("PlanResumeSession = %q", got.PlanResumeSession)
 	}
-	if got.InvokedModel != "gpt-5" {
-		t.Fatalf("InvokedModel = %q", got.InvokedModel)
+	if got.PlanModel != "gpt-5" {
+		t.Fatalf("PlanModel = %q", got.PlanModel)
 	}
 	if !got.PlanBeginAt.Equal(prePlanBegin) {
 		t.Fatalf("PlanBeginAt = %v, want %v", got.PlanBeginAt, prePlanBegin)

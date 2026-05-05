@@ -77,8 +77,8 @@ func seedTask(t *testing.T, id, summary string) string {
 	if err := s.PutTask(tasks.Task{
 		ID:           id,
 		Status:       tasks.StatusPlanDone,
-		InvokedTool:  "cursor",
-		InvokedModel: "sonnet-4",
+		PlanTool:     "cursor",
+		PlanModel:    "sonnet-4",
 		Summary:      summary,
 	}); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -109,8 +109,8 @@ func seedTaskWithWorktree(t *testing.T, id, summary, worktree string) string {
 	if err := s.PutTask(tasks.Task{
 		ID:           id,
 		Status:       tasks.StatusPlanDone,
-		InvokedTool:  "cursor",
-		InvokedModel: "sonnet-4",
+		PlanTool:     "cursor",
+		PlanModel:    "sonnet-4",
 		Summary:      summary,
 		Worktree:     worktree,
 	}); err != nil {

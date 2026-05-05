@@ -157,8 +157,8 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 		{
 			ID:               "ddd-old-plan-done",
 			Status:           tasks.StatusPlanDone,
-			InvokedTool:      "cursor",
-			InvokedModel:     "gpt-5",
+			PlanTool:         "cursor",
+			PlanModel:        "gpt-5",
 			PlanResumeSession: "",
 			Summary:          "old one",
 			PlanEndAt:        t1,
@@ -166,8 +166,8 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 		{
 			ID:               "aaa-new-work-done",
 			Status:           tasks.StatusWorkDone,
-			InvokedTool:      "cursor",
-			InvokedModel:     "sonnet-4",
+			WorkTool:         "cursor",
+			WorkModel:        "sonnet-4",
 			PlanResumeSession: "8c7e6a9d-0f1a-4b2c-9d8e-1234567890ab",
 			WorkResumeSession: "11111111-2222-3333-4444-555555555555",
 			Summary:          "new one",
@@ -176,8 +176,8 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 		{
 			ID:               "active-1",
 			Status:           tasks.StatusPlanning,
-			InvokedTool:      "cursor",
-			InvokedModel:     "sonnet-4",
+			PlanTool:         "cursor",
+			PlanModel:        "sonnet-4",
 			PlanResumeSession: "11111111-1111-4111-9111-111111111111",
 			Summary:          "draft idea",
 		},
@@ -245,10 +245,10 @@ func TestRun_DefaultNonTTY_RendersBorder(t *testing.T) {
 	s := openTasksDB(t)
 	begin := time.Now().UTC().Add(-90 * time.Second)
 	task := tasks.Task{
-		ID:           "active-default",
-		Status:       tasks.StatusPlanning,
-		InvokedTool:  "cursor",
-		InvokedModel: "sonnet-4",
+		ID:       "active-default",
+		Status:   tasks.StatusPlanning,
+		PlanTool: "cursor",
+		PlanModel: "sonnet-4",
 		Summary:      "draft idea",
 		PlanBeginAt:  begin,
 	}
@@ -283,10 +283,10 @@ func TestRun_DefaultNonTTY_RendersBorder(t *testing.T) {
 func TestRun_HidesSessionLines(t *testing.T) {
 	s := openTasksDB(t)
 	task := tasks.Task{
-		ID:                 "all-cursors",
-		Status:             tasks.StatusPlanDone,
-		InvokedTool:        "cursor",
-		InvokedModel:       "sonnet-4",
+		ID:       "all-cursors",
+		Status:   tasks.StatusPlanDone,
+		PlanTool: "cursor",
+		PlanModel: "sonnet-4",
 		PlanResumeSession:   "plan-cursor-id",
 		WorkResumeSession:   "work-cursor-id",
 		VerifyResumeSession: "verify-cursor-id",

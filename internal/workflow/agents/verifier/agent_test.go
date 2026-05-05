@@ -80,7 +80,7 @@ func TestNew_ShellOutPassEscalates(t *testing.T) {
 	testutil.SeedTaskRow(t, tasks.Task{
 		ID:          taskID,
 		Status:      tasks.StatusWorkDone,
-		InvokedTool: "scripted",
+		WorkTool:    "scripted",
 		Summary:     "task",
 	})
 
@@ -123,7 +123,7 @@ func TestNew_ShellOutFailDoesNotEscalate(t *testing.T) {
 	testutil.SeedTaskRow(t, tasks.Task{
 		ID:          taskID,
 		Status:      tasks.StatusWorkDone,
-		InvokedTool: "scripted",
+		WorkTool:    "scripted",
 		Summary:     "task",
 	})
 
@@ -164,7 +164,7 @@ func TestNew_ShellOutVerifyFails(t *testing.T) {
 	testutil.SeedTaskRow(t, tasks.Task{
 		ID:          taskID,
 		Status:      tasks.StatusWorkDone,
-		InvokedTool: "scripted",
+		WorkTool:    "scripted",
 		Summary:     "task",
 	})
 
@@ -202,7 +202,7 @@ func TestNew_ShellOutDefaultsMaxIterations(t *testing.T) {
 	testutil.SeedTaskRow(t, tasks.Task{
 		ID:          taskID,
 		Status:      tasks.StatusWorkDone,
-		InvokedTool: "scripted",
+		WorkTool:    "scripted",
 		Summary:     "task",
 	})
 

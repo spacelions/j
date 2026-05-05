@@ -57,10 +57,15 @@ const VerifierFindingsFileName = "verifier_findings.md"
 // Each phase mints its own resume token via Agent.NewResumeID; an
 // empty string means "no session for that phase yet".
 type Task struct {
-	ID           string     `toml:"id"`
-	Status       TaskStatus `toml:"status"`
-	InvokedTool  string     `toml:"invoked_tool"`
-	InvokedModel string     `toml:"invoked_model"`
+	ID     string     `toml:"id"`
+	Status TaskStatus `toml:"status"`
+
+	PlanTool   string `toml:"plan_tool,omitempty"`
+	PlanModel  string `toml:"plan_model,omitempty"`
+	WorkTool   string `toml:"work_tool,omitempty"`
+	WorkModel  string `toml:"work_model,omitempty"`
+	VerifyTool string `toml:"verify_tool,omitempty"`
+	VerifyModel string `toml:"verify_model,omitempty"`
 	// Worktree is the bare git-worktree name (no slashes, no path)
 	// the worker and verifier should operate against for this task.
 	// It is minted by `j work` on first run via WorktreeNameFor and
@@ -220,4 +225,30 @@ func (s *Store) ListTasks() ([]Task, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
+}
+
+// DisplayToolModel returns the tool and model to surface in `j tasks` for this
+// row. The pair is chosen by status so each phase's values are preserved
+// independently on disk.
+//
+// For StatusHelp the deepest phase that has a non-empty tool is used so the
+// listing shows where the task was when it got stuck.
+func (t Task) DisplayToolModel() (tool, model string) {
+	switch t.Status {
+	case StatusPlanning, StatusPlanDone:
+		return t.PlanTool, t.PlanModel
+	case StatusWorking, StatusWorkDone:
+		return t.WorkTool, t.WorkModel
+	case StatusVerifying, StatusVerifyDone, StatusCompleted:
+		return t.VerifyTool, t.VerifyModel
+	case StatusHelp:
+		if t.VerifyTool != "" {
+			return t.VerifyTool, t.VerifyModel
+		}
+		if t.WorkTool != "" {
+			return t.WorkTool, t.WorkModel
+		}
+		return t.PlanTool, t.PlanModel
+	}
+	return t.PlanTool, t.PlanModel
 }

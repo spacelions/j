@@ -59,8 +59,8 @@ func seedReplanTask(t *testing.T, status tasks.TaskStatus, requirement string, p
 	task := tasks.Task{
 		ID:               id,
 		Status:           status,
-		InvokedTool:      "cursor-prev",
-		InvokedModel:     "opus-prev",
+		PlanTool:         "cursor-prev",
+		PlanModel:        "opus-prev",
 		PlanResumeSession: "seed-resume",
 		Summary:          "seed summary",
 		PlanBeginAt:      planBeginVal,
@@ -523,8 +523,8 @@ func TestRun_FromTask_PreservesPlanBeginAt(t *testing.T) {
 	if !strings.Contains(got.Summary, "refreshed") {
 		t.Fatalf("Summary = %q, want refreshed body", got.Summary)
 	}
-	if got.InvokedTool != "cursor" || got.InvokedModel != "sonnet-4" {
-		t.Fatalf("tool/model = %q/%q, want refreshed values", got.InvokedTool, got.InvokedModel)
+	if got.PlanTool != "cursor" || got.PlanModel != "sonnet-4" {
+		t.Fatalf("tool/model = %q/%q, want refreshed values", got.PlanTool, got.PlanModel)
 	}
 }
 
@@ -718,8 +718,8 @@ func TestBeginPlanTaskReuse_SeedsBeginIfMissing(t *testing.T) {
 	existing := tasks.Task{
 		ID:           tasks.NewTaskID(),
 		Status:       tasks.StatusPlanDone,
-		InvokedTool:  "old",
-		InvokedModel: "old",
+		PlanTool:     "old",
+		PlanModel:    "old",
 		// PlanBeginAt intentionally nil.
 	}
 	if _, err := tasks.EnsureDir(existing.ID); err != nil {
@@ -733,8 +733,8 @@ func TestBeginPlanTaskReuse_SeedsBeginIfMissing(t *testing.T) {
 	if got.PlanBeginAt.IsZero() {
 		t.Fatal("PlanBeginAt should be stamped when the row had none")
 	}
-	if got.InvokedTool != "cursor" || got.InvokedModel != "sonnet-4" {
-		t.Fatalf("tool/model = %q/%q", got.InvokedTool, got.InvokedModel)
+	if got.PlanTool != "cursor" || got.PlanModel != "sonnet-4" {
+		t.Fatalf("tool/model = %q/%q", got.PlanTool, got.PlanModel)
 	}
 	if got.PlanResumeSession != "resume-id" {
 		t.Fatalf("PlanResumeSession = %q", got.PlanResumeSession)
@@ -755,9 +755,9 @@ func TestBeginPlanTaskReuse_PreservesExistingBegin(t *testing.T) {
 	existing := tasks.Task{
 		ID:           tasks.NewTaskID(),
 		Status:       tasks.StatusPlanDone,
-		InvokedTool:  "old",
-		InvokedModel: "old",
-		PlanBeginAt:  original,
+		PlanTool:    "old",
+		PlanModel:   "old",
+		PlanBeginAt: original,
 		PlanEndAt:    existingEnd,
 		DoneAt:       existingEnd,
 	}

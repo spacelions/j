@@ -126,8 +126,8 @@ func TestWatchModel_View_WithTasksAndQuitHint(t *testing.T) {
 	rows := []tsk.Task{{
 		ID:           "active-1",
 		Status:       tsk.StatusPlanning,
-		InvokedTool:  "cursor",
-		InvokedModel: "sonnet-4",
+		PlanTool:  "cursor",
+		PlanModel: "sonnet-4",
 		Summary:      "draft idea",
 		PlanBeginAt:  begin,
 	}}

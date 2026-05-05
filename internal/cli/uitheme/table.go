@@ -84,11 +84,12 @@ func WriteTaskTable(w io.Writer, taskRows []tsk.Task, now time.Time, width int) 
 	rows := make([][]string, 0, len(taskRows)+1)
 	rows = append(rows, header)
 	for _, t := range taskRows {
+		tool, model := t.DisplayToolModel()
 		rows = append(rows, []string{
 			t.ID,
 			formatStatus(t, now),
-			t.InvokedTool,
-			t.InvokedModel,
+			tool,
+			model,
 			t.Summary,
 		})
 	}

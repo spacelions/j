@@ -99,7 +99,7 @@ func seedOrchestrateTask(t *testing.T, tool string) string {
 	row := tasks.Task{
 		ID:          id,
 		Status:      tasks.StatusPlanning,
-		InvokedTool: tool,
+		PlanTool:    tool,
 		Summary:     "task",
 	}
 	s, err := tasks.OpenDefault()

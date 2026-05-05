@@ -290,7 +290,7 @@ func seedChainTask(t *testing.T, tool string) string {
 	writeChainTaskRow(t, tasks.Task{
 		ID:          id,
 		Status:      tasks.StatusPlanning,
-		InvokedTool: tool,
+		PlanTool:    tool,
 		Summary:     "task",
 	})
 	return id

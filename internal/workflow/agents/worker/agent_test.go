@@ -75,7 +75,7 @@ func TestNew_ShellOutHappyPath(t *testing.T) {
 	testutil.SeedTaskRow(t, tasks.Task{
 		ID:          taskID,
 		Status:      tasks.StatusPlanDone,
-		InvokedTool: "scripted",
+		PlanTool:    "scripted",
 		Summary:     "task",
 	})
 
@@ -117,7 +117,7 @@ func TestNew_ShellOutWorkFails(t *testing.T) {
 	testutil.SeedTaskRow(t, tasks.Task{
 		ID:          taskID,
 		Status:      tasks.StatusPlanDone,
-		InvokedTool: "scripted",
+		PlanTool:    "scripted",
 		Summary:     "task",
 	})
 
@@ -156,7 +156,7 @@ func TestNew_ShellOutDefaultsStderr(t *testing.T) {
 	testutil.SeedTaskRow(t, tasks.Task{
 		ID:          taskID,
 		Status:      tasks.StatusPlanDone,
-		InvokedTool: "scripted",
+		PlanTool:    "scripted",
 		Summary:     "task",
 	})
 

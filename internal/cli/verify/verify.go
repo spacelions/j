@@ -129,9 +129,9 @@ func Run(ctx context.Context, opts Options) (err error) {
 	// task was originally worked with so the resume cursor lines
 	// up. lookupResumeAgent resolves it; a missing entry surfaces
 	// as a clean error.
-	workerAgent, ok := lookupResumeAgent(opts.Agents, res.Task.InvokedTool)
+	workerAgent, ok := lookupResumeAgent(opts.Agents, res.Task.WorkTool)
 	if !ok {
-		return fmt.Errorf("J: unknown tool %q (recorded on task %s)", res.Task.InvokedTool, res.Task.ID)
+		return fmt.Errorf("J: unknown tool %q (recorded on task %s)", res.Task.WorkTool, res.Task.ID)
 	}
 
 	agentLogPath := filepath.Join(res.TaskDir, tasks.AgentLogFileName)
@@ -212,7 +212,7 @@ func runVerifyLoop(ctx context.Context, opts Options, lc *tasks.VerifyLifecycle,
 		}
 		workReq := codingagents.WorkRequest{
 			PlanPath:     res.PlanPath,
-			Model:        res.Task.InvokedModel,
+			Model:        res.Task.WorkModel,
 			Interactive:  opts.Interactive,
 			ResumeChatID: res.Task.WorkResumeSession,
 			Resume:       true,

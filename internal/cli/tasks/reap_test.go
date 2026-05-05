@@ -318,8 +318,8 @@ func TestReap_ListTasksWiresThroughCommand(t *testing.T) {
 	row := tasks.Task{
 		ID:            id,
 		Status:        tasks.StatusPlanning,
-		InvokedTool:   "cursor",
-		InvokedModel:  "sonnet-4",
+		PlanTool:      "cursor",
+		PlanModel:     "sonnet-4",
 		BackgroundPID: deadPID(t),
 		PlanBeginAt:   begin,
 	}

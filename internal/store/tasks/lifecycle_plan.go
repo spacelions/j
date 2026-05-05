@@ -39,8 +39,8 @@ func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement
 	task := Task{
 		ID:                  taskID,
 		Status:              StatusPlanning,
-		InvokedTool:         agentName,
-		InvokedModel:        model,
+		PlanTool:            agentName,
+		PlanModel:           model,
 		PlanResumeSession:   resumeID,
 		Summary:             Summary(requirement, target),
 		PlanBeginAt:         time.Now().UTC(),
@@ -66,8 +66,8 @@ func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement
 func (t Task) BeginPlanReuse(stderr io.Writer, agentName, model, resumeID, agentLogPath string) *PlanLifecycle {
 	task := t
 	task.Status = StatusPlanning
-	task.InvokedTool = agentName
-	task.InvokedModel = model
+	task.PlanTool = agentName
+	task.PlanModel = model
 	task.PlanResumeSession = resumeID
 	task.PlanEndAt = time.Time{}
 	task.DoneAt = time.Time{}

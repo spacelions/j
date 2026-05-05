@@ -99,9 +99,9 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return nil
 	}
 
-	agent, ok := lookupResumeAgent(opts.Agents, t.InvokedTool)
+	agent, ok := lookupResumeAgent(opts.Agents, t.WorkTool)
 	if !ok {
-		return fmt.Errorf("J: unknown tool %q", t.InvokedTool)
+		return fmt.Errorf("J: unknown tool %q", t.WorkTool)
 	}
 
 	tasksDir, err := tasks.DefaultDir()
@@ -123,7 +123,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	// since resume never goes headless.
 	_, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:     planPath,
-		Model:        t.InvokedModel,
+		Model:        t.WorkModel,
 		Interactive:  true,
 		ResumeChatID: t.WorkResumeSession,
 		Resume:       true,

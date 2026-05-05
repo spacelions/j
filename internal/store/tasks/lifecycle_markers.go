@@ -17,11 +17,12 @@ import (
 // signal, not load-bearing data — losing one is strictly less harmful
 // than aborting a phase begin.
 func emitPhaseBegin(agentLogPath, phase string, t Task) {
+	tool, model := t.DisplayToolModel()
 	_ = agentlog.EmitTo(agentLogPath, "phase_begin", map[string]any{
 		"phase": phase,
 		"task":  t.ID,
-		"tool":  t.InvokedTool,
-		"model": t.InvokedModel,
+		"tool":  tool,
+		"model": model,
 	})
 }
 

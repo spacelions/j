@@ -105,9 +105,9 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return nil
 	}
 
-	agent, ok := lookupResumeAgent(opts.Agents, t.InvokedTool)
+	agent, ok := lookupResumeAgent(opts.Agents, t.VerifyTool)
 	if !ok {
-		return fmt.Errorf("J: unknown tool %q", t.InvokedTool)
+		return fmt.Errorf("J: unknown tool %q", t.VerifyTool)
 	}
 
 	tasksDir, err := tasks.DefaultDir()
@@ -136,7 +136,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		PlanPath:                   planPath,
 		VerifierPlanOutputPath:     verifierPlanPath,
 		VerifierFindingsOutputPath: findingsPath,
-		Model:                      t.InvokedModel,
+		Model:                      t.VerifyModel,
 		Interactive:                true,
 		ResumeChatID:               t.VerifyResumeSession,
 		Resume:                     true,

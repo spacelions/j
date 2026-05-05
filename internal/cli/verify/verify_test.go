@@ -311,8 +311,8 @@ func seedWorkDoneTask(t *testing.T, summary, planBody, requirementBody string) s
 	task := tasks.Task{
 		ID:               id,
 		Status:           tasks.StatusWorkDone,
-		InvokedTool:      "cursor",
-		InvokedModel:     "sonnet-4",
+		WorkTool:         "cursor",
+		WorkModel:        "sonnet-4",
 		PlanResumeSession: "seed-plan-cursor",
 		WorkResumeSession: "seed-work-cursor",
 		Summary:          summary,
@@ -1130,7 +1130,7 @@ func TestRun_UnknownToolFromUI(t *testing.T) {
 }
 
 // TestRun_UnknownTool_OnTaskRow covers the lookupResumeAgent
-// failure when the task's recorded InvokedTool no longer matches an
+// failure when the task's recorded WorkTool no longer matches an
 // available agent.
 func TestRun_UnknownTool_OnTaskRow(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -1144,7 +1144,7 @@ func TestRun_UnknownTool_OnTaskRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got.InvokedTool = "ghost"
+	got.WorkTool = "ghost"
 	if err := s.PutTask(got); err != nil {
 		t.Fatal(err)
 	}
@@ -1585,7 +1585,7 @@ func startLongChild(t *testing.T) int {
 // location without exercising bbolt.
 func resolvedForTest(taskDir string) resolved {
 	return resolved{
-		Task:             tasks.Task{ID: "x", InvokedModel: "m", InvokedTool: "cursor"},
+		Task:             tasks.Task{ID: "x", WorkModel: "m", WorkTool: "cursor"},
 		TaskDir:          taskDir,
 		RequirementsPath: filepath.Join(taskDir, "req.md"),
 		PlanPath:         filepath.Join(taskDir, "plan.md"),

@@ -46,8 +46,8 @@ type VerifyLifecycle struct {
 func (t Task) BeginVerify(stderr io.Writer, agentName, model, resumeID, agentLogPath string) *VerifyLifecycle {
 	task := t
 	task.Status = StatusVerifying
-	task.InvokedTool = agentName
-	task.InvokedModel = model
+	task.VerifyTool = agentName
+	task.VerifyModel = model
 	task.VerifyResumeSession = resumeID
 	task.VerifyBeginAt = time.Now().UTC()
 	task.VerifyEndAt = time.Time{}

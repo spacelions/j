@@ -124,17 +124,17 @@ func TestWriteTaskTable_MixedActiveAndInactive(t *testing.T) {
 	rows := []tsk.Task{
 		{
 			ID:           "active-1",
-			Status:       tsk.StatusPlanning,
-			InvokedTool:  "cursor",
-			InvokedModel: "sonnet-4",
+			Status:   tsk.StatusPlanning,
+			PlanTool: "cursor",
+			PlanModel: "sonnet-4",
 			Summary:      "draft idea",
 			PlanBeginAt:  begin,
 		},
 		{
 			ID:           "done-1",
-			Status:       tsk.StatusPlanDone,
-			InvokedTool:  "cursor",
-			InvokedModel: "gpt-5",
+			Status:   tsk.StatusPlanDone,
+			PlanTool: "cursor",
+			PlanModel: "gpt-5",
 			Summary:      "old one",
 			PlanEndAt:    end,
 		},
@@ -196,9 +196,9 @@ func TestWriteTaskTable_FitsToWidth(t *testing.T) {
 	rows := []tsk.Task{
 		{
 			ID:           "row-1",
-			Status:       tsk.StatusPlanDone,
-			InvokedTool:  "cursor",
-			InvokedModel: "sonnet-4",
+			Status:   tsk.StatusPlanDone,
+			PlanTool: "cursor",
+			PlanModel: "sonnet-4",
 			Summary:      "this is a very long summary that absolutely should not fit",
 		},
 	}
