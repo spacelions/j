@@ -47,7 +47,7 @@ type keyMap struct {
 func isSecretKey(bucket, storedKey string) bool {
 	switch bucket {
 	case store.BucketProject:
-		return storedKey == "api_key"
+		return storedKey == store.KeyProjectAPIKey
 	case store.BucketLinear:
 		return storedKey == store.KeyLinearAPIKey
 	}

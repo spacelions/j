@@ -43,6 +43,12 @@ const BucketVerifier = "verifier"
 // before starting.
 const BucketProject = "project"
 
+// KeyProjectAPIKey is the storage key (under BucketProject) for the
+// project's Gemini API token. The bucket-and-key pair is the
+// canonical source for the value masked by `j settings` output and
+// referenced by every settings reader.
+const KeyProjectAPIKey = "api_key"
+
 // dirName is the on-disk folder that holds the settings DB. It lives
 // under the current working directory so each project gets its own
 // state.

@@ -39,6 +39,20 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 	requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
 	planPath := filepath.Join(taskDir, tasks.PlanFileName)
 
+	// Linear-sourced tasks: refresh requirements.md from the live
+	// Linear issue before re-planning so the agent sees any title /
+	// description edits made on the Linear side since the original
+	// run. Markdown-sourced tasks keep their existing requirements.md.
+	if existing.LinearIssue != "" {
+		body, _, fetchErr := resolver.FetchLinearBody(ctx, existing.LinearIssue)
+		if fetchErr != nil {
+			return fetchErr
+		}
+		if writeErr := os.WriteFile(requirementsPath, []byte(body), 0o644); writeErr != nil {
+			return writeErr
+		}
+	}
+
 	agent, model, err := selectPlanner(ctx, opts)
 	if err != nil {
 		return err

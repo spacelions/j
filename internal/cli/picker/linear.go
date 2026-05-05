@@ -22,7 +22,7 @@ func (p *Picker) PromptLinearAPIKey(ctx context.Context, openURL string) (string
 	var token string
 	err := p.run(ctx, huh.NewInput().
 		Title("Paste your Linear API key").
-		Description(fmt.Sprintf("Open %s to create one (lin_api_…)", openURL)).
+		Description(fmt.Sprintf("Open %s to create one", openURL)).
 		EchoMode(huh.EchoModePassword).
 		Value(&token))
 	if errors.Is(err, huh.ErrUserAborted) {
