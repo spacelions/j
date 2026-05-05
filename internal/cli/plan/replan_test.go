@@ -45,11 +45,10 @@ func seedReplanTask(t *testing.T, status tasks.TaskStatus, requirement string, p
 			t.Fatalf("write requirements: %v", err)
 		}
 	}
-	dbPath, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := tasks.Open(dbPath)
 	defer func() { _ = s.Close() }()
 	task := tasks.Task{
 		ID:               id,

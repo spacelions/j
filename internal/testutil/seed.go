@@ -45,11 +45,10 @@ func SeedAgentBucket(t *testing.T, bucket, tool, model string) {
 // when invoked with TaskID set.
 func SeedTaskRow(t *testing.T, row tasks.Task) {
 	t.Helper()
-	dir, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatalf("testutil: DefaultTasksDir: %v", err)
 	}
-	s := tasks.Open(dir)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("testutil: PutTask: %v", err)
@@ -60,11 +59,10 @@ func SeedTaskRow(t *testing.T, row tasks.Task) {
 // missing or unreadable.
 func ReadTaskRow(t *testing.T, id string) tasks.Task {
 	t.Helper()
-	dir, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatalf("testutil: DefaultTasksDir: %v", err)
 	}
-	s := tasks.Open(dir)
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {

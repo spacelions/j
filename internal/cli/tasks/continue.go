@@ -108,21 +108,14 @@ func RunContinue(ctx context.Context, opts ContinueOptions) (err error) {
 // resolveContinueTask centralises the --from-task vs picker decision.
 // On --from-task it loads the named row directly; an unknown id
 // surfaces the same `J: no task` message `j tasks enter` prints. On
-// the empty path it opens the store, runs pickFromStore, and closes
-// before returning so the file lock is released ahead of the agent
-// invocation downstream.
+// the empty path pickFromStore prints emptyMessage when the store is
+// empty (or the dir is missing) — ListTasks treats both as an empty
+// list, so this site doesn't need its own short-circuit.
 func resolveContinueTask(ctx context.Context, opts ContinueOptions) (tasks.Task, bool, error) {
-	tasksDir, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		return tasks.Task{}, false, err
 	}
-	if opts.TaskID == "" {
-		if _, statErr := os.Stat(tasksDir); errors.Is(statErr, fs.ErrNotExist) {
-			banner.Fprintln(opts.Stdout, emptyMessage)
-			return tasks.Task{}, false, nil
-		}
-	}
-	s := tasks.Open(tasksDir)
 	task, ok, err := resolveContinueTaskFromStore(ctx, s, opts)
 	_ = s.Close()
 	return task, ok, err
@@ -245,12 +238,11 @@ func resumeFromPlanDone(ctx context.Context, opts ContinueOptions, taskID string
 // — any read / write error surfaces as a single warning on stderr.
 // The detached child is already running, so we never roll back.
 func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
-	tasksDir, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		banner.DangerousBox(stderr, "J: tasks dir: %v", err)
 		return
 	}
-	s := tasks.Open(tasksDir)
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(taskID)
 	if err != nil {

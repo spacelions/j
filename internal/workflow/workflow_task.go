@@ -202,12 +202,11 @@ func driveSequential(ctx context.Context, root agent.Agent) error {
 // Best-effort: any read / write error surfaces as a single warning
 // on stderr and the helper returns.
 func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
-	dir, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		banner.DangerousBox(stderr, "J: tasks dir: %v", err)
 		return
 	}
-	s := tasks.Open(dir)
 	defer func() { _ = s.Close() }()
 	t, err := s.GetTask(taskID)
 	if err != nil {

@@ -18,7 +18,7 @@ type taskUI struct {
 	err    error
 
 	confirm bool
-	rows   []tasks.Task
+	rows    []tasks.Task
 }
 
 func (u *taskUI) PickTask(_ context.Context, _ string, rows []tasks.Task) (string, bool, error) {
@@ -60,11 +60,10 @@ func seedResolverTask(t *testing.T, row tasks.Task, plan, req string) {
 			t.Fatalf("write requirements: %v", err)
 		}
 	}
-	path, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -249,4 +248,3 @@ func TestTaskStoreHelpers(t *testing.T) {
 		t.Fatalf("autoPickAllowed = %q, %v", id, ok)
 	}
 }
-
