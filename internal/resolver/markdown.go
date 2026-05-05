@@ -42,6 +42,9 @@ func ResolvePlanMarkdown(rawTarget string) (PlanMarkdownSource, error) {
 	return PlanMarkdownSource{Target: target, Body: string(body)}, nil
 }
 
+// TODO: this should be moved to cli package and use cli/uitheme for user-facing messages,
+// but for now this is a convenient place to put the core logic of the command without
+// depending on the CLI package.
 func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 	source := opts.Source
 	if source.Target == "" {

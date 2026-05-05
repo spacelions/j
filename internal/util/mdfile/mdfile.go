@@ -31,6 +31,7 @@ var markdownExts = map[string]struct{}{
 var excludedMarkdownBasenames = map[string]struct{}{
 	"agents.md": {},
 	"readme.md": {},
+	"claude.md": {},
 }
 
 // Resolve validates that path points at an existing markdown file and
