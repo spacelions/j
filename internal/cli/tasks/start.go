@@ -96,7 +96,9 @@ func newStartCmd() *cobra.Command {
 		Use:   "start",
 		Short: "Start a new task: drive planner, then pause for approval or continue in the background",
 		Long: "Validates that every agent bucket (planner, worker, verifier) " +
-			"has a tool/model selection, then forks a detached `j tasks orchestrate --id <id>` child. " +
+			"has a tool/model selection, then runs `j tasks orchestrate --id <id>` either " +
+			"inline (with --interactive=true so the TUI can render in the parent's terminal) " +
+			"or as a detached child that the parent reports a PID for and returns from. " +
 			"Pass --from-file/-f (or TASKS_START_FROM_FILE) to point at a markdown task description; " +
 			"--from-task to re-plan an existing task; " +
 			"without either, the source picker is rendered.",
@@ -163,11 +165,13 @@ func newStartCmd() *cobra.Command {
 }
 
 // RunStart implements `j tasks start`. It mints (or re-uses) a task
-// id, optionally stages the user's markdown into requirements.md,
-// seeds the bbolt task row at status `planning` (or stamps the PID
-// onto an existing row), and forks a detached
-// `j tasks orchestrate --id <id>` subprocess. RunStart records the
-// child's PID and returns immediately.
+// id, optionally stages the user's markdown into requirements.md, and
+// seeds the bbolt task row at status `planning`. With
+// `--interactive=true` it re-execs `j tasks orchestrate` inline so the
+// TUI can render in the parent's terminal and blocks until the child
+// exits. Without `--interactive` it forks a detached
+// `j tasks orchestrate --id <id>` subprocess, records the child's PID
+// on the row, prints the fork dialog, and returns immediately.
 func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
@@ -232,6 +236,11 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 		orchestrateArgs = append(orchestrateArgs, "--yes")
 	}
 
+	if opts.Interactive != nil && *opts.Interactive {
+		persistStartRow(opts.Stderr, target, "", 0)
+		return runInlineOrchestrator(ctx, opts.JBinary, orchestrateArgs)
+	}
+
 	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, orchestrateArgs)
 	if err != nil {
 		return err
@@ -251,6 +260,18 @@ func spawnDetachedOrchestrator(ctx context.Context, binaryOverride, agentLogPath
 		return 0, err
 	}
 	return run.SpawnIn(ctx, "", agentLogPath, binary, args...)
+}
+
+// runInlineOrchestrator resolves the j binary and re-execs it inline
+// (blocking, parent's stdin/stdout/stderr inherited) so a TUI can
+// render. Used by the `--interactive=true` paths of `j tasks start`
+// / `re-plan` and unconditionally by `j tasks resume-plan`.
+func runInlineOrchestrator(ctx context.Context, binaryOverride string, args []string) error {
+	binary, err := resolveJBinary(binaryOverride)
+	if err != nil {
+		return err
+	}
+	return run.RunIn(ctx, "", binary, args...)
 }
 
 func resolveStartTarget(ctx context.Context, opts StartOptions) (startTarget, error) {

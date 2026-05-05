@@ -271,6 +271,41 @@ func TestRunRePlan_PickerHappy(t *testing.T) {
 	}
 }
 
+// TestRunRePlan_InteractiveRunsInline pins the foreground path:
+// --interactive=true re-execs `j tasks orchestrate` inline (blocking,
+// terminal-attached). No fork dialog fires and the row's
+// BackgroundPID stays 0 because the inline exec owns its own PID.
+func TestRunRePlan_InteractiveRunsInline(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, nil)
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	var stdout bytes.Buffer
+	if err := RunRePlan(context.Background(), RePlanOptions{
+		FromTask:    id,
+		Interactive: boolPtr(true),
+		Stdin:       strings.NewReader(""),
+		Stdout:      &stdout,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{newContinueAgent()},
+		UI:          &fakeUI{},
+		JBinary:     argvJBinary(t, argvPath),
+	}); err != nil {
+		t.Fatalf("RunRePlan: %v", err)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	want := []string{"tasks", "orchestrate", "--id", id, "--plan-requires-approval=true", "--interactive=true"}
+	if strings.Join(args, " ") != strings.Join(want, " ") {
+		t.Fatalf("argv = %v, want %v", args, want)
+	}
+	if strings.Contains(stdout.String(), "running in background") || strings.Contains(stdout.String(), "tail -f") {
+		t.Fatalf("stdout = %q, want no fork dialog (inline exec)", stdout.String())
+	}
+	row := readTaskFromBolt(t, id)
+	if row.BackgroundPID != 0 {
+		t.Fatalf("BackgroundPID = %d, want 0 (inline exec)", row.BackgroundPID)
+	}
+}
+
 // TestRunRePlan_SpawnFails pins the SpawnIn error branch: pointing
 // JBinary at a missing path surfaces the spawn error.
 func TestRunRePlan_SpawnFails(t *testing.T) {

@@ -118,10 +118,11 @@ func TestRunResumePlan_PickerAbort(t *testing.T) {
 	}
 }
 
-// TestRunResumePlan_HappyPath pins the spawn path: a row with
+// TestRunResumePlan_HappyPath pins the inline-exec path: a row with
 // PlanResumeSession set, a stub J binary recording its argv. The
-// argv must be `tasks orchestrate --id <id> --plan-requires-approval=true`
-// and the row must carry the spawned PID + AgentLogPath.
+// argv must be `tasks orchestrate --id <id> --plan-requires-approval=true
+// --interactive=true` (resume-plan always runs inline with a TUI),
+// the call blocks until the child exits, and no fork dialog fires.
 func TestRunResumePlan_HappyPath(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
@@ -141,25 +142,21 @@ func TestRunResumePlan_HappyPath(t *testing.T) {
 		t.Fatalf("RunResumePlan: %v", err)
 	}
 	args := readSpawnedArgv(t, argvPath)
-	want := []string{"tasks", "orchestrate", "--id", id, "--plan-requires-approval=true"}
+	want := []string{"tasks", "orchestrate", "--id", id, "--plan-requires-approval=true", "--interactive=true"}
 	if strings.Join(args, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", args, want)
 	}
 	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID == 0 {
-		t.Fatalf("BackgroundPID = 0, want non-zero detached child PID")
+	if row.BackgroundPID != 0 {
+		t.Fatalf("BackgroundPID = %d, want 0 (resume-plan runs inline; the orchestrator owns row stamping)", row.BackgroundPID)
 	}
-	wantLog := filepath.Join(".j/tasks", id, tasks.AgentLogFileName)
-	if !strings.HasSuffix(row.AgentLogPath, wantLog) {
-		t.Fatalf("AgentLogPath = %q, want suffix %q", row.AgentLogPath, wantLog)
-	}
-	if !strings.Contains(stdout.String(), "task "+id+" running in background") || !strings.Contains(stdout.String(), "tail -f") {
-		t.Fatalf("stdout = %q, want fork dialog", stdout.String())
+	if strings.Contains(stdout.String(), "running in background") || strings.Contains(stdout.String(), "tail -f") {
+		t.Fatalf("stdout = %q, want no fork dialog (inline exec)", stdout.String())
 	}
 }
 
-// TestRunResumePlan_SpawnFails pins the SpawnIn error branch: pointing
-// JBinary at a missing path surfaces the spawn error.
+// TestRunResumePlan_SpawnFails pins the inline-exec error branch:
+// pointing JBinary at a missing path surfaces the run.RunIn error.
 func TestRunResumePlan_SpawnFails(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
@@ -175,11 +172,11 @@ func TestRunResumePlan_SpawnFails(t *testing.T) {
 		JBinary: "/no/such/binary-xyzzy",
 	})
 	if err == nil {
-		t.Fatal("expected spawn failure")
+		t.Fatal("expected exec failure")
 	}
 	row := readTaskFromBolt(t, id)
 	if row.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0 (no row mutation on spawn failure)", row.BackgroundPID)
+		t.Fatalf("BackgroundPID = %d, want 0", row.BackgroundPID)
 	}
 }
 

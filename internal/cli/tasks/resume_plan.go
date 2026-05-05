@@ -2,10 +2,8 @@ package tasks
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -61,10 +59,10 @@ func (o ResumePlanOptions) withDefaults() ResumePlanOptions {
 
 // RunResumePlan implements `j tasks resume-plan`. It filters the
 // bbolt store to rows whose PlanResumeSession is non-empty, prompts
-// the user to pick one, and forks a detached
-// `j tasks orchestrate --id <id> --plan-requires-approval=true`
-// child so the planner resumes its session without the user waiting
-// in-process.
+// the user to pick one, and re-execs `j tasks orchestrate --id <id>
+// --plan-requires-approval=true --interactive=true` inline so the
+// planner resumes its session in the foreground with the parent's
+// terminal attached.
 func RunResumePlan(ctx context.Context, opts ResumePlanOptions) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
@@ -73,22 +71,15 @@ func RunResumePlan(ctx context.Context, opts ResumePlanOptions) (err error) {
 	if err != nil || !ok {
 		return err
 	}
-	taskDir, err := tasks.EnsureDir(taskID)
-	if err != nil {
-		return fmt.Errorf("J: ensure task dir: %w", err)
+	if _, err := tasks.EnsureDir(taskID); err != nil {
+		return err
 	}
-	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
-	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
+	return runInlineOrchestrator(ctx, opts.JBinary, []string{
 		"tasks", "orchestrate",
 		"--id", taskID,
 		"--plan-requires-approval=true",
+		"--interactive=true",
 	})
-	if err != nil {
-		return err
-	}
-	stampSpawnOnRow(opts.Stderr, taskID, agentLogPath, pid)
-	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", taskID), pid, agentLogPath)
-	return nil
 }
 
 func resolveResumePlanTaskID(ctx context.Context, opts ResumePlanOptions) (string, bool, error) {
@@ -129,18 +120,19 @@ func filterTasksWithPlanSession(rows []tasks.Task) []tasks.Task {
 // The picker filters to rows with a recorded plan resume session so
 // only tasks the agent actually started can be resumed; an empty
 // list short-circuits with a user-facing message and exit 0. No
-// flags: resume always operates against the picker selection.
+// flags: resume always operates against the picker selection and
+// always runs the orchestrator inline with --interactive=true.
 func newResumePlanCmd() *cobra.Command {
 	agents := []codingagents.Agent{cursor.New(), claude.New()}
 	cmd := &cobra.Command{
 		Use:   "resume-plan",
-		Short: "Resume an in-flight planner session: fork a detached planner with --plan-requires-approval=true",
+		Short: "Resume an in-flight planner session in the foreground with --interactive=true",
 		Long: "Filters tasks to rows with a non-empty plan_resume_session and " +
-			"renders the shared task picker. The selected task is re-spawned via " +
-			"a detached `j tasks orchestrate --plan-requires-approval=true` child " +
-			"so the planner resumes its session without the user waiting in-process. " +
-			"When no task carries an active plan session, prints `J: no tasks with " +
-			"an active plan session` and exits 0.",
+			"renders the shared task picker. The selected task re-execs " +
+			"`j tasks orchestrate --plan-requires-approval=true --interactive=true` " +
+			"inline so the planner resumes its session in the foreground with the " +
+			"parent's terminal attached. When no task carries an active plan session, " +
+			"prints `J: no tasks with an active plan session` and exits 0.",
 		PersistentPreRunE: preflight.PreRunE,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
 			return preflight.EnsureAgentSelections(cmd.Context(), preflight.AgentCheckOptions{
