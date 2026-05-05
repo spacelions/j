@@ -5,14 +5,14 @@ import (
 	"os"
 	"time"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
 func readBestEffortWarn(stderr io.Writer, path string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		banner.DangerousBox(stderr, "J: read %s: %v", path, err)
+		uitheme.DangerousDialogBox(stderr, "J: read %s: %v", path, err)
 		return ""
 	}
 	return string(data)

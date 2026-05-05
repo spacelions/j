@@ -1,4 +1,4 @@
-package tasks
+package uitheme
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/spacelions/j/internal/store/tasks"
+	tsk "github.com/spacelions/j/internal/store/tasks"
 )
 
 // Adaptive palette: light values target a white background, dark values
@@ -29,20 +29,12 @@ var (
 		purpleColor, blueColor, greenColor, orangeColor,
 	}
 
-	// borderStyle uses .Faint(true) so the chrome renders at half
-	// intensity in terminals that honour SGR 2 — the box-drawing
-	// glyphs are already the thinnest single-line set Unicode offers,
-	// and dimming is the only way to make them look lighter still.
 	borderStyle = lipgloss.NewStyle().Foreground(greyColor).Faint(true)
 	headerStyle = lipgloss.NewStyle().Foreground(greyColor).Bold(true)
 	doneStyle   = lipgloss.NewStyle().Foreground(greyColor)
 	helpStyle   = lipgloss.NewStyle().Foreground(redColor)
 )
 
-// formatDuration always renders d in `<minutes>m:<seconds>s` form.
-// Negative durations clamp to "0m:0s"; hours roll into minutes (so 90
-// minutes renders "90m:0s") so the field width stays predictable for
-// the ticking column even after a long-running task.
 func formatDuration(d time.Duration) string {
 	if d < 0 {
 		d = 0
@@ -52,13 +44,7 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dm:%ds", mins, secs)
 }
 
-// formatStatus renders a task's STATUS column. Active rows
-// (planning / working / verifying) with a non-nil matching *BeginAt
-// get a parenthesised elapsed time, e.g. "planning(1m:20s)"; help and
-// inactive states return the raw status string. now is injected so
-// the renderer is fully pure (the TUI passes the latest tick; the
-// non-TTY one-shot passes time.Now()).
-func formatStatus(t tasks.Task, now time.Time) string {
+func formatStatus(t tsk.Task, now time.Time) string {
 	begin := activeBeginAt(t)
 	if begin == nil {
 		return string(t.Status)
@@ -66,36 +52,32 @@ func formatStatus(t tasks.Task, now time.Time) string {
 	return fmt.Sprintf("%s(%s)", t.Status, formatDuration(now.Sub(*begin)))
 }
 
-// activeBeginAt picks the *BeginAt that pairs with the active status,
-// or nil for help/inactive rows. Help is intentionally excluded: it
-// has no per-phase begin timestamp of its own, and the user-visible
-// row is "the task is stuck" rather than "the task is running".
-func activeBeginAt(t tasks.Task) *time.Time {
+func activeBeginAt(t tsk.Task) *time.Time {
 	switch t.Status {
-	case tasks.StatusPlanning:
+	case tsk.StatusPlanning:
 		return t.PlanBeginAt
-	case tasks.StatusWorking:
+	case tsk.StatusWorking:
 		return t.WorkBeginAt
-	case tasks.StatusVerifying:
+	case tsk.StatusVerifying:
 		return t.VerifyBeginAt
 	}
 	return nil
 }
 
-// renderTable writes a bordered task table to w. The frame is a thin
+// WriteTaskTable writes a bordered task table to w. The frame is a thin
 // grey rounded box (`╭ ╮ ╰ ╯` corners, grey ─/│ edges and walls, grey
 // `┬ ┴ ├ ┤ ┼` tees and intersections). The header is grey-bold.
 // Active rows (planning / working / verifying / help) rotate through
-// `activeRowPalette` so in-flight tasks pop; completed rows render in
+// activeRowPalette so in-flight tasks pop; completed rows render in
 // grey so they recede. width controls horizontal sizing: width <= 0
 // uses natural column widths; width > 0 fits by shrinking the trailing
 // SUMMARY column (truncation with `…` when needed). Writer errors
 // propagate.
-func renderTable(w io.Writer, tasks []tasks.Task, now time.Time, width int) error {
+func WriteTaskTable(w io.Writer, taskRows []tsk.Task, now time.Time, width int) error {
 	header := []string{"ID", "STATUS", "TOOL", "MODEL", "SUMMARY"}
-	rows := make([][]string, 0, len(tasks)+1)
+	rows := make([][]string, 0, len(taskRows)+1)
 	rows = append(rows, header)
-	for _, t := range tasks {
+	for _, t := range taskRows {
 		rows = append(rows, []string{
 			t.ID,
 			formatStatus(t, now),
@@ -116,7 +98,7 @@ func renderTable(w io.Writer, tasks []tasks.Task, now time.Time, width int) erro
 	for i, r := range rows[1:] {
 		b.WriteString(buildBorderLine(cols, "├", "┼", "┤"))
 		b.WriteByte('\n')
-		b.WriteString(buildContentLine(r, cols, rowStyle(tasks[i], &activeIdx)))
+		b.WriteString(buildContentLine(r, cols, rowStyle(taskRows[i], &activeIdx)))
 		b.WriteByte('\n')
 	}
 	b.WriteString(buildBorderLine(cols, "╰", "┴", "╯"))
@@ -126,20 +108,11 @@ func renderTable(w io.Writer, tasks []tasks.Task, now time.Time, width int) erro
 	return err
 }
 
-// rowStyle picks the foreground for a data row:
-//   - `completed` rows take the grey `doneStyle` so they recede into
-//     the chrome (those tasks are truly done).
-//   - `help` rows take the red `helpStyle` so a stuck task is
-//     impossible to miss.
-//   - Every other status (planning / working / verifying and the
-//     phase-done intermediates) rotates through `activeRowPalette`.
-// activeIdx is bumped only on rotating rows so a completed/help row
-// sandwiched between two live rows doesn't waste a palette slot.
-func rowStyle(t tasks.Task, activeIdx *int) lipgloss.Style {
+func rowStyle(t tsk.Task, activeIdx *int) lipgloss.Style {
 	switch t.Status {
-	case tasks.StatusCompleted:
+	case tsk.StatusCompleted:
 		return doneStyle
-	case tasks.StatusHelp:
+	case tsk.StatusHelp:
 		return helpStyle
 	}
 	style := lipgloss.NewStyle().Foreground(activeRowPalette[*activeIdx%len(activeRowPalette)])
@@ -147,8 +120,6 @@ func rowStyle(t tasks.Task, activeIdx *int) lipgloss.Style {
 	return style
 }
 
-// columnWidths returns the natural per-column width (largest cell)
-// across header + data rows.
 func columnWidths(rows [][]string) []int {
 	widths := make([]int, len(rows[0]))
 	for _, r := range rows {
@@ -161,24 +132,15 @@ func columnWidths(rows [][]string) []int {
 	return widths
 }
 
-// tableTotalWidth returns how wide the rendered table is for the
-// given column widths: padding (1 space each side per cell) +
-// separator glyphs (one between each pair of cells, plus the outer
-// walls) + cell content.
 func tableTotalWidth(cols []int) int {
 	total := 0
 	for _, c := range cols {
-		total += c + 2 // padding spaces on either side
+		total += c + 2
 	}
-	total += len(cols) + 1 // outer walls + inner column separators
+	total += len(cols) + 1
 	return total
 }
 
-// fitToWidth shrinks the trailing column so the rendered table fits
-// into `available` columns. `available <= 0` (terminal width unknown)
-// or already-fitting widths return the slice unchanged. The minimum
-// effective column width is 1 so truncation always leaves room for a
-// `…` indicator.
 func fitToWidth(cols []int, available int) []int {
 	if available <= 0 {
 		return cols
@@ -197,9 +159,6 @@ func fitToWidth(cols []int, available int) []int {
 	return out
 }
 
-// applyColumnWidths truncates any cell wider than its column to fit,
-// appending a `…` when content is dropped. Cells already within the
-// width are returned unchanged.
 func applyColumnWidths(rows [][]string, cols []int) [][]string {
 	out := make([][]string, len(rows))
 	for r, row := range rows {
@@ -212,9 +171,6 @@ func applyColumnWidths(rows [][]string, cols []int) [][]string {
 	return out
 }
 
-// truncateCell returns s if it already fits in `max` display
-// columns; otherwise it returns the leading runes plus `…`. `max <= 0`
-// returns the empty string; `max == 1` returns just `…`.
 func truncateCell(s string, max int) string {
 	if max <= 0 {
 		return ""
@@ -233,12 +189,6 @@ func truncateCell(s string, max int) string {
 	return string(cut) + "…"
 }
 
-// buildBorderLine draws a horizontal frame line for the given column
-// widths: `left` and `right` corner glyphs (rounded `╭ ╮ ╰ ╯` for the
-// top/bottom rows, `├ ┤` for inter-row separators), `mid` at every
-// column junction (`┬ ┼ ┴`), and `─` filling each column span
-// (including its 2-space padding). All glyphs render with the single
-// grey `borderStyle`.
 func buildBorderLine(cols []int, left, mid, right string) string {
 	var b strings.Builder
 	b.WriteString(borderStyle.Render(left))
@@ -252,10 +202,6 @@ func buildBorderLine(cols []int, left, mid, right string) string {
 	return b.String()
 }
 
-// buildContentLine emits one data (or header) row with grey walls and
-// inner column separators; cell content is rendered with `cellStyle`
-// (header: grey-bold; data: rotating active palette colour or grey
-// done-style). Each cell is space-padded to its column width.
 func buildContentLine(cells []string, cols []int, cellStyle lipgloss.Style) string {
 	var b strings.Builder
 	b.WriteString(borderStyle.Render("│"))

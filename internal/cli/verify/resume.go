@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
@@ -101,7 +101,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return err
 	}
 	if !ok {
-		banner.Fprintln(opts.Stdout, "J: there are no resumable verify sessions")
+		uitheme.NormalFprintln(opts.Stdout, "J: there are no resumable verify sessions")
 		return nil
 	}
 
@@ -124,7 +124,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	lc := t.BeginVerifyResume(opts.Stderr, agentLogPath)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
+		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	// Resume always runs interactive — the verifier bucket's
 	// `interactive` value is intentionally ignored on resume.
@@ -154,7 +154,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return runErr
 	}
 
-	banner.Fprintf(opts.Stdout, "J: verify resume on task %s\n", t.ID)
+	uitheme.NormalFprintf(opts.Stdout, "J: verify resume on task %s\n", t.ID)
 	return nil
 }
 

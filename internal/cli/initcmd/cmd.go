@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
@@ -118,7 +118,7 @@ func Run(ctx context.Context, opts Options) error {
 			return err
 		}
 		if !ok {
-			banner.DangerousFprintln(opts.Stdout, "J: init aborted")
+			uitheme.DangerousFprintln(opts.Stdout, "J: init aborted")
 			return nil
 		}
 	}
@@ -141,7 +141,7 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	banner.Fprintf(opts.Stdout, "J: initialized %s\n", jDir)
+	uitheme.NormalFprintf(opts.Stdout, "J: initialized %s\n", jDir)
 	return nil
 }
 

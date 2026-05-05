@@ -19,7 +19,6 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
-	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
@@ -31,7 +30,7 @@ import (
 // signal so a freshly-created store doesn't get a half-finished
 // operation written into it. The CLI prints "initialized; please
 // re-run your command" on stderr alongside this error.
-var ErrNeedsRetry = errors.New("preflight: project just initialized; re-run your command")
+var ErrNeedsRetry = errors.New("project just initialized; re-run your command")
 
 // ErrNotInitialized is returned by Ensure when the user declined
 // the init prompt. The text matches the legacy hand-rolled message
@@ -137,7 +136,7 @@ func Ensure(ctx context.Context, ui UI, stderr io.Writer) error {
 	if err := store.EnsureProject(); err != nil {
 		return err
 	}
-	banner.Fprintln(stderr, "J: initialized; please re-run your command")
+	uitheme.NormalFprintln(stderr, "J: initialized; please re-run your command")
 	return ErrNeedsRetry
 }
 

@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -125,7 +125,7 @@ func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 	t, err := s.GetTask(opts.TaskID)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			banner.Fprintln(opts.Stdout, noTaskMessage)
+			uitheme.NormalFprintln(opts.Stdout, noTaskMessage)
 			return nil
 		}
 		return err
@@ -136,7 +136,7 @@ func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 			return err
 		}
 		if !ok {
-			banner.DangerousFprintln(opts.Stdout, abortedMessage)
+			uitheme.DangerousFprintln(opts.Stdout, abortedMessage)
 			return nil
 		}
 	}
@@ -147,7 +147,7 @@ func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 	if err := tasks.RemoveDir(opts.TaskID); err != nil {
 		return fmt.Errorf("tasks discard: %w", err)
 	}
-	banner.DangerousFprintf(opts.Stdout, "J: discarded %s\n", opts.TaskID)
+	uitheme.DangerousFprintf(opts.Stdout, "J: discarded %s\n", opts.TaskID)
 	return nil
 }
 

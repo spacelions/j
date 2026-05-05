@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/run"
 )
@@ -69,7 +69,7 @@ func maybeReap(s *tasks.Store, stderr io.Writer, tasksDir string, t tasks.Task) 
 		return t
 	}
 	if err := s.PutTask(t); err != nil {
-		banner.DangerousBox(stderr, "J: tasks put: %v", err)
+		uitheme.DangerousDialogBox(stderr, "J: tasks put: %v", err)
 	}
 	return t
 }

@@ -11,7 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store"
 )
 
@@ -42,7 +42,7 @@ func runResetFull(cmd *cobra.Command) error {
 	}
 	if _, err := os.Stat(jDir); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			banner.Fprintln(cmd.OutOrStdout(), "J: nothing to reset")
+			uitheme.NormalFprintln(cmd.OutOrStdout(), "J: nothing to reset")
 			return nil
 		}
 		return err
@@ -53,7 +53,7 @@ func runResetFull(cmd *cobra.Command) error {
 	}
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			banner.Fprintln(cmd.OutOrStdout(), "J: nothing to reset")
+			uitheme.NormalFprintln(cmd.OutOrStdout(), "J: nothing to reset")
 			return nil
 		}
 		return err
@@ -71,7 +71,7 @@ func runResetFull(cmd *cobra.Command) error {
 		return err
 	}
 	if empty {
-		banner.Fprintln(cmd.OutOrStdout(), "J: nothing to reset")
+		uitheme.NormalFprintln(cmd.OutOrStdout(), "J: nothing to reset")
 		return nil
 	}
 	skip, err := cmd.Flags().GetBool("yes")
@@ -84,14 +84,14 @@ func runResetFull(cmd *cobra.Command) error {
 			return err
 		}
 		if !isYesAnswer(answer) {
-			banner.DangerousFprintln(cmd.OutOrStdout(), "J: reset aborted")
+			uitheme.DangerousFprintln(cmd.OutOrStdout(), "J: reset aborted")
 			return nil
 		}
 	}
 	if err := os.RemoveAll(jDir); err != nil {
 		return err
 	}
-	banner.DangerousFprintf(cmd.OutOrStdout(), "J: removed %s\n", jDir)
+	uitheme.DangerousFprintf(cmd.OutOrStdout(), "J: removed %s\n", jDir)
 	return nil
 }
 
@@ -159,7 +159,7 @@ func runResetTargets(cmd *cobra.Command, args []string) error {
 	}
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			banner.Fprintln(cmd.OutOrStdout(), "J: nothing to reset")
+			uitheme.NormalFprintln(cmd.OutOrStdout(), "J: nothing to reset")
 			return nil
 		}
 		return err
@@ -170,13 +170,13 @@ func runResetTargets(cmd *cobra.Command, args []string) error {
 				if err := s.DeleteBucket(t.bucket); err != nil {
 					return err
 				}
-				banner.DangerousFprintf(cmd.OutOrStdout(), "J: unset %s\n", t.bucket)
+				uitheme.DangerousFprintf(cmd.OutOrStdout(), "J: unset %s\n", t.bucket)
 				continue
 			}
 			if err := s.Delete(t.bucket, storageKey(t.bucket, t.key)); err != nil {
 				return err
 			}
-			banner.DangerousFprintf(cmd.OutOrStdout(), "J: unset %s.%s\n", t.bucket, t.key)
+			uitheme.DangerousFprintf(cmd.OutOrStdout(), "J: unset %s.%s\n", t.bucket, t.key)
 		}
 		return nil
 	})

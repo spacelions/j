@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
@@ -120,7 +120,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return err
 	}
 	if !ok {
-		banner.Fprintln(opts.Stdout, "J: there are no resumable sessions")
+		uitheme.NormalFprintln(opts.Stdout, "J: there are no resumable sessions")
 		return nil
 	}
 
@@ -142,7 +142,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
+		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 
 	// Resume always runs interactive — clarification answers need a
@@ -171,7 +171,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return planErr
 	}
 
-	banner.Fprintf(opts.Stdout, "J: plan resume on task %s\n", t.ID)
+	uitheme.NormalFprintf(opts.Stdout, "J: plan resume on task %s\n", t.ID)
 	return nil
 }
 

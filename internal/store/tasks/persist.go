@@ -1,9 +1,8 @@
 package tasks
 
 import (
+	"fmt"
 	"io"
-
-	"github.com/spacelions/j/internal/cli/banner"
 )
 
 // PersistWarn opens a tasks-mode store at `<cwd>/.j/tasks` and writes
@@ -20,12 +19,12 @@ import (
 func PersistWarn(stderr io.Writer, task Task) {
 	tasksDir, err := DefaultDir()
 	if err != nil {
-		banner.DangerousBox(stderr, "J: tasks path: %v", err)
+		fmt.Fprintf(stderr, "J: tasks path: %v\n", err)
 		return
 	}
 	s := Open(tasksDir)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(task); err != nil {
-		banner.DangerousBox(stderr, "J: tasks put: %v", err)
+		fmt.Fprintf(stderr, "J: tasks put: %v\n", err)
 	}
 }

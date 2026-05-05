@@ -14,7 +14,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
@@ -128,7 +128,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 	case picker.SourceMarkdown:
 		return runMarkdown(ctx, opts, res.Markdown)
 	case picker.SourceLinear:
-		banner.Fprintln(opts.Stdout, "J: plan linear source is not yet wired up; nothing to do")
+		uitheme.NormalFprintln(opts.Stdout, "J: plan linear source is not yet wired up; nothing to do")
 		return nil
 	case picker.SourceTask:
 		return runReplanTask(ctx, opts, res.TaskID)
@@ -170,12 +170,12 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 
 	resumeID, err := agent.NewResumeID(ctx)
 	if err != nil {
-		banner.DangerousBox(opts.Stderr, "J: %v", err)
+		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
 	}
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
+		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	lc := existing.BeginPlanReuse(opts.Stderr, agent.Name(), model, resumeID, agentLogPath)
 	pid, planErr := agent.Plan(ctx, codingagents.PlanRequest{
@@ -197,7 +197,7 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 			}
 		} else {
 			lc.RecordBackground(pid, agentLogPath)
-			banner.RunningInBackground(opts.Stdout, agent.Name(), pid, agentLogPath)
+			uitheme.NormalForkDialog(opts.Stdout, agent.Name(), pid, agentLogPath)
 			return nil
 		}
 	}
@@ -207,12 +207,12 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 		if data, readErr := os.ReadFile(requirementsPath); readErr == nil {
 			refinedReq = string(data)
 		} else {
-			banner.DangerousBox(opts.Stderr, "J: read %s: %v", requirementsPath, readErr)
+			uitheme.DangerousDialogBox(opts.Stderr, "J: read %s: %v", requirementsPath, readErr)
 		}
 		if data, readErr := os.ReadFile(planPath); readErr == nil {
 			planMD = string(data)
 		} else {
-			banner.DangerousBox(opts.Stderr, "J: read %s: %v", planPath, readErr)
+			uitheme.DangerousDialogBox(opts.Stderr, "J: read %s: %v", planPath, readErr)
 		}
 	}
 	lc.Finish(planErr, refinedReq, planMD, requirementsPath)
@@ -220,7 +220,7 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 		return planErr
 	}
 
-	banner.Fprintf(opts.Stdout, "J: re-planned task %s\n", existing.ID)
+	uitheme.NormalFprintf(opts.Stdout, "J: re-planned task %s\n", existing.ID)
 	return nil
 }
 

@@ -12,7 +12,7 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
@@ -204,7 +204,7 @@ func driveSequential(ctx context.Context, root agent.Agent) error {
 func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
 	s, err := tasks.OpenDefault()
 	if err != nil {
-		banner.DangerousBox(stderr, "J: tasks dir: %v", err)
+		uitheme.DangerousDialogBox(stderr, "J: tasks dir: %v", err)
 		return
 	}
 	defer func() { _ = s.Close() }()
@@ -217,6 +217,6 @@ func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
 	}
 	t.Status = tasks.StatusVerifyDone
 	if err := s.PutTask(t); err != nil {
-		banner.DangerousBox(stderr, "J: tasks put: %v", err)
+		uitheme.DangerousDialogBox(stderr, "J: tasks put: %v", err)
 	}
 }

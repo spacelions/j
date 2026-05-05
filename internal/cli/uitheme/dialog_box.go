@@ -1,17 +1,4 @@
-// Package banner renders shared terminal-facing text. It owns both the
-// bordered, two-line announcement printed when a `j` subcommand forks
-// the coding-agent into the background and the plain message text used
-// for status, warning, empty-state, and completion lines.
-// The banner is a square `lipgloss.NormalBorder()` box with the
-// subject + PID on the first row, a blank row, and the `tail -f
-// <agent-log>` invitation on the third row. The frame uses a neutral
-// grey border; the subject row uses a violet accent (no bold); the
-// tail row is sky-blue so the copy-paste command reads clearly.
-// Centralising the render here keeps every fork site (`j tasks start`,
-// `j plan`, `j work`) emitting the same shape so the user sees a
-// consistent prompt — and lipgloss/termenv auto-strips the colour when
-// stdout is not a TTY so pipes and tests still see clean text.
-package banner
+package uitheme
 
 import (
 	"fmt"
@@ -26,8 +13,9 @@ import (
 // Adaptive palette: light values target a white background, dark
 // values target a black one. The border is neutral grey; the subject
 // row uses violet accent text; the tail row uses a cool blue for the
-// copy-paste line. Plain message text intentionally reuses the neutral
-// grey, dangerous text uses orange, and neither opts into bold styling.
+// copy-paste line. Normal message text intentionally reuses the
+// neutral grey, dangerous text uses orange, and neither opts into
+// bold styling.
 var (
 	borderColor = lipgloss.AdaptiveColor{Light: "#9CA3AF", Dark: "#6B7280"}
 	dangerColor = lipgloss.AdaptiveColor{Light: "#EA580C", Dark: "#FB923C"}
@@ -48,24 +36,24 @@ var (
 			Padding(0, 1)
 )
 
-// Text renders s as plain grey terminal text.
-func Text(s string) string {
+// NormalText renders s as plain grey terminal text.
+func NormalText(s string) string {
 	return renderText(textStyle, s)
 }
 
-// Fprint writes grey terminal text to w using fmt.Sprint semantics.
-func Fprint(w io.Writer, a ...any) (int, error) {
-	return fmt.Fprint(w, Text(fmt.Sprint(a...)))
+// NormalFprint writes grey terminal text to w using fmt.Sprint semantics.
+func NormalFprint(w io.Writer, a ...any) (int, error) {
+	return fmt.Fprint(w, NormalText(fmt.Sprint(a...)))
 }
 
-// Fprintf writes formatted grey terminal text to w.
-func Fprintf(w io.Writer, format string, a ...any) (int, error) {
-	return fmt.Fprint(w, Text(fmt.Sprintf(format, a...)))
+// NormalFprintf writes formatted grey terminal text to w.
+func NormalFprintf(w io.Writer, format string, a ...any) (int, error) {
+	return fmt.Fprint(w, NormalText(fmt.Sprintf(format, a...)))
 }
 
-// Fprintln writes grey terminal text to w using fmt.Sprintln semantics.
-func Fprintln(w io.Writer, a ...any) (int, error) {
-	return fmt.Fprint(w, Text(fmt.Sprintln(a...)))
+// NormalFprintln writes grey terminal text to w using fmt.Sprintln semantics.
+func NormalFprintln(w io.Writer, a ...any) (int, error) {
+	return fmt.Fprint(w, NormalText(fmt.Sprintln(a...)))
 }
 
 // DangerousText renders s as orange terminal text for warnings and destructive actions.
@@ -88,18 +76,15 @@ func DangerousFprintln(w io.Writer, a ...any) (int, error) {
 	return fmt.Fprint(w, DangerousText(fmt.Sprintln(a...)))
 }
 
-// DangerousBox writes the formatted message inside a bordered orange
+// DangerousDialogBox writes the formatted message inside a bordered orange
 // box — the heavier sibling of DangerousFprintf used for warnings
 // (failed persistence, lock contention, missing artifacts) where the
-// line should visibly separate from surrounding output. The border is
-// rendered in the danger palette so a colour-aware terminal shows
-// orange edges; on a non-TTY writer lipgloss/termenv strips the
-// styling and the box renders as plain ASCII frame characters.
+// line should visibly separate from surrounding output.
 //
 // The format string should NOT include a leading "warning:" prefix —
 // the orange frame already conveys that semantic, so saying it twice
 // is noise.
-func DangerousBox(w io.Writer, format string, a ...any) {
+func DangerousDialogBox(w io.Writer, format string, a ...any) {
 	fmt.Fprintln(w, dangerBoxStyle.Render(dangerStyle.Render(fmt.Sprintf(format, a...))))
 }
 
@@ -121,13 +106,13 @@ func renderText(style lipgloss.Style, s string) string {
 	return b.String()
 }
 
-// RunningInBackground writes the bordered background-fork banner to
-// w. subject is the human-readable noun used in row one (e.g.
+// NormalForkDialog writes the bordered background-fork dialog to w.
+// subject is the human-readable noun used in row one (e.g.
 // "task <id>" or the coding-agent name). pid is the spawned child's
 // PID. absLogPath is the absolute path of the per-task agent.log;
-// the rendered second row prefers the cwd-relative form when the
+// the rendered tail row prefers the cwd-relative form when the
 // log lives under cwd, falling back to the absolute path otherwise.
-func RunningInBackground(w io.Writer, subject string, pid int, absLogPath string) {
+func NormalForkDialog(w io.Writer, subject string, pid int, absLogPath string) {
 	block := strings.Join([]string{
 		subjectStyle.Render(fmt.Sprintf("J: %s running in background (PID=%d)", subject, pid)),
 		"",

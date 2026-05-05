@@ -1,4 +1,4 @@
-package banner
+package uitheme
 
 import (
 	"bytes"
@@ -13,11 +13,11 @@ import (
 	"github.com/muesli/termenv"
 )
 
-func TestText(t *testing.T) {
+func TestNormalText(t *testing.T) {
 	input := "J: no tasks\nJ: work resume on task abc\n"
-	got := Text(input)
+	got := NormalText(input)
 	if stripped := ansi.Strip(got); stripped != input {
-		t.Fatalf("ansi.Strip(Text(%q)) = %q, want %q", input, stripped, input)
+		t.Fatalf("ansi.Strip(NormalText(%q)) = %q, want %q", input, stripped, input)
 	}
 }
 
@@ -29,18 +29,18 @@ func TestDangerousText(t *testing.T) {
 	}
 }
 
-func TestFprintln(t *testing.T) {
+func TestNormalFprintln(t *testing.T) {
 	var buf bytes.Buffer
-	Fprintln(&buf, "J: no tasks")
+	NormalFprintln(&buf, "J: no tasks")
 	if stripped := ansi.Strip(buf.String()); stripped != "J: no tasks\n" {
-		t.Fatalf("ansi.Strip(Fprintln output) = %q, want %q", stripped, "J: no tasks\n")
+		t.Fatalf("ansi.Strip(NormalFprintln output) = %q, want %q", stripped, "J: no tasks\n")
 	}
 }
 
-func TestFprintAndFprintf(t *testing.T) {
+func TestNormalFprintAndFprintf(t *testing.T) {
 	var buf bytes.Buffer
-	Fprint(&buf, "J: ", "hello")
-	Fprintf(&buf, " %s", "world")
+	NormalFprint(&buf, "J: ", "hello")
+	NormalFprintf(&buf, " %s", "world")
 	if stripped := ansi.Strip(buf.String()); stripped != "J: hello world" {
 		t.Fatalf("ansi.Strip(output) = %q", stripped)
 	}
@@ -55,16 +55,13 @@ func TestDangerousFprintln(t *testing.T) {
 	}
 }
 
-func TestDangerousBox(t *testing.T) {
+func TestDangerousDialogBox(t *testing.T) {
 	var buf bytes.Buffer
-	DangerousBox(&buf, "J: tasks db: %v", errors.New("boom"))
+	DangerousDialogBox(&buf, "J: tasks db: %v", errors.New("boom"))
 	stripped := ansi.Strip(buf.String())
 	if !strings.Contains(stripped, "J: tasks db: boom") {
 		t.Fatalf("output missing the formatted body: %q", stripped)
 	}
-	// The box renderer adds NormalBorder() glyphs on every side; assert
-	// the corner characters are present so a regression that drops the
-	// border (e.g. swapping dangerBoxStyle for dangerStyle) fails fast.
 	for _, glyph := range []string{"┌", "┐", "└", "┘"} {
 		if !strings.Contains(stripped, glyph) {
 			t.Fatalf("output missing border glyph %q: %q", glyph, stripped)
@@ -81,19 +78,19 @@ func TestDangerousFprintAndFprintf(t *testing.T) {
 	}
 }
 
-func TestTextWithColorDoesNotRenderBold(t *testing.T) {
+func TestNormalTextWithColorDoesNotRenderBold(t *testing.T) {
 	restoreColorProfile(t)
 	lipgloss.SetColorProfile(termenv.TrueColor)
 
-	got := Text("J: no tasks\n")
+	got := NormalText("J: no tasks\n")
 	if !strings.Contains(got, "\x1b[") {
-		t.Fatalf("Text output should contain ANSI styling when color is enabled, got %q", got)
+		t.Fatalf("NormalText output should contain ANSI styling when color is enabled, got %q", got)
 	}
 	if hasBoldSGR(got) {
-		t.Fatalf("Text output rendered bold SGR: %q", got)
+		t.Fatalf("NormalText output rendered bold SGR: %q", got)
 	}
 	if stripped := ansi.Strip(got); stripped != "J: no tasks\n" {
-		t.Fatalf("ansi.Strip(Text output) = %q, want %q", stripped, "J: no tasks\n")
+		t.Fatalf("ansi.Strip(NormalText output) = %q, want %q", stripped, "J: no tasks\n")
 	}
 }
 
@@ -152,16 +149,6 @@ func TestDisplayLogPath(t *testing.T) {
 	}
 }
 
-// TestDisplayLogPath_FilepathRelFails covers the filepath.Rel error
-// branch: on POSIX, Rel only fails when the target path cannot be
-// resolved against cwd at all (e.g. a Windows-style drive prefix on
-// a unix host) — so emulate the failure by chdir'ing into a relative
-// cwd and passing a relative target on a different volume. Easier
-// path: pass an empty absLogPath into a cwd whose Getwd succeeds;
-// filepath.Rel("/x", "") resolves to "..", hitting the leading-".."
-// fallback branch which is the same `return absLogPath` outcome the
-// Rel-error branch produces, so we cover the "rel == empty / rel
-// starts with .." escape path here too.
 func TestDisplayLogPath_EmptyTargetFallsBack(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if got := displayLogPath(""); got != "" {
@@ -169,14 +156,6 @@ func TestDisplayLogPath_EmptyTargetFallsBack(t *testing.T) {
 	}
 }
 
-// TestDisplayLogPath_GetwdError covers the os.Getwd error branch.
-// Strategy: chdir into a child directory and then RemoveAll the
-// parent so the cwd inode is unlinked. On most Unix flavours this
-// is enough to make subsequent os.Getwd calls fail with ENOENT;
-// when a platform still resolves cwd from the kernel's vfs cache
-// (some Darwin builds), the test falls back to a t.Skip so we
-// don't block development on machines where the branch cannot be
-// driven without a production seam.
 func TestDisplayLogPath_GetwdError(t *testing.T) {
 	parent := t.TempDir()
 	child := filepath.Join(parent, "child")
@@ -204,7 +183,7 @@ func TestDisplayLogPath_GetwdError(t *testing.T) {
 	}
 }
 
-func TestRunningInBackground(t *testing.T) {
+func TestNormalForkDialog(t *testing.T) {
 	cwd := t.TempDir()
 	resolvedCwd, err := filepath.EvalSymlinks(cwd)
 	if err != nil {
@@ -215,7 +194,7 @@ func TestRunningInBackground(t *testing.T) {
 	relPath := filepath.Join(".j", "tasks", "abc", "agent.log")
 
 	var buf bytes.Buffer
-	RunningInBackground(&buf, "task abc", 12345, abs)
+	NormalForkDialog(&buf, "task abc", 12345, abs)
 	out := buf.String()
 
 	wantSubstrings := []string{
@@ -230,15 +209,11 @@ func TestRunningInBackground(t *testing.T) {
 		}
 	}
 
-	// Second row must be a blank text row (no banner glyph) sitting
-	// between the two text rows. The lipgloss border draws side
-	// glyphs on every row, so we expect three content rows separated
-	// by `│ ... │` framing.
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	if len(lines) < 5 {
 		t.Fatalf("rendered banner = %d lines, want >=5\n%s", len(lines), out)
 	}
-	subjectIdx, blankIdx, tailIdx := -1, -1, -1
+	subjectIdx, tailIdx := -1, -1
 	for i, line := range lines {
 		switch {
 		case strings.Contains(line, "running in background"):
@@ -251,7 +226,7 @@ func TestRunningInBackground(t *testing.T) {
 		t.Fatalf("expected exactly one blank row between subject (idx=%d) and tail (idx=%d)\n%s",
 			subjectIdx, tailIdx, out)
 	}
-	blankIdx = subjectIdx + 1
+	blankIdx := subjectIdx + 1
 	blank := lines[blankIdx]
 	stripped := strings.Trim(blank, "│ \t")
 	if stripped != "" {
@@ -259,7 +234,7 @@ func TestRunningInBackground(t *testing.T) {
 	}
 }
 
-func TestRunningInBackgroundDoesNotRenderBold(t *testing.T) {
+func TestNormalForkDialogDoesNotRenderBold(t *testing.T) {
 	restoreColorProfile(t)
 	lipgloss.SetColorProfile(termenv.TrueColor)
 
@@ -272,10 +247,10 @@ func TestRunningInBackgroundDoesNotRenderBold(t *testing.T) {
 	abs := filepath.Join(resolvedCwd, ".j", "tasks", "abc", "agent.log")
 
 	var buf bytes.Buffer
-	RunningInBackground(&buf, "task abc", 12345, abs)
+	NormalForkDialog(&buf, "task abc", 12345, abs)
 	out := buf.String()
 	if hasBoldSGR(out) {
-		t.Fatalf("RunningInBackground output rendered bold SGR: %q", out)
+		t.Fatalf("NormalForkDialog output rendered bold SGR: %q", out)
 	}
 	if stripped := ansi.Strip(out); !strings.Contains(stripped, "J: task abc running in background (PID=12345)") {
 		t.Fatalf("stripped output missing subject row: %q", stripped)

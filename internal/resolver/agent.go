@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
@@ -84,7 +84,7 @@ func Agent(ctx context.Context, opts AgentOptions) (codingagents.Agent, string, 
 		return nil, "", err
 	}
 	if opts.Stderr != nil {
-		banner.Fprintln(opts.Stderr, "J: Choose your favourite:")
+		uitheme.NormalFprintln(opts.Stderr, "J: Choose your favourite:")
 	}
 	agent, model, err = picker.PickAgent(ctx, opts.UI, opts.Agents)
 	if err != nil {

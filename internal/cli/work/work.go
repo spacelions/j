@@ -12,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
@@ -116,7 +116,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 	resumeID, err := agent.NewResumeID(ctx)
 	if err != nil {
-		banner.DangerousBox(opts.Stderr, "J: %v", err)
+		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
 	}
 
 	proceed, confirmErr := resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, "work", res.Task, resolver.ReplanAllowed)
@@ -131,7 +131,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
+		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	pid, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:     res.PlanPath,
@@ -150,7 +150,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 			}
 		} else {
 			lc.RecordBackground(pid, agentLogPath)
-			banner.RunningInBackground(opts.Stdout, agent.Name(), pid, agentLogPath)
+			uitheme.NormalForkDialog(opts.Stdout, agent.Name(), pid, agentLogPath)
 			return nil
 		}
 	}
@@ -159,7 +159,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 		return workErr
 	}
 
-	banner.Fprintf(opts.Stdout, "J: coding on task %s\n", res.Task.ID)
+	uitheme.NormalFprintf(opts.Stdout, "J: coding on task %s\n", res.Task.ID)
 	return nil
 }
 

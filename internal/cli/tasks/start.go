@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/preflight"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
@@ -127,7 +127,7 @@ func newStartCmd() *cobra.Command {
 //     AgentLogPath on the row.
 //  6. Print the bordered two-line background-fork banner (subject
 //     + PID on row one, `tail -f <agent.log>` on row three) via
-//     banner.RunningInBackground and return.
+//     uitheme.NormalForkDialog and return.
 func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	defer func() {
 		if errors.Is(err, huh.ErrUserAborted) {
@@ -174,7 +174,7 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 		return err
 	}
 	persistStartRow(opts.Stderr, target, agentLogPath, pid)
-	banner.RunningInBackground(opts.Stdout, fmt.Sprintf("task %s", target.TaskID), pid, agentLogPath)
+	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", target.TaskID), pid, agentLogPath)
 	return nil
 }
 

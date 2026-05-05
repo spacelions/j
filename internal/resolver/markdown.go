@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/mdfile"
@@ -62,12 +62,12 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 
 	resumeID, err := opts.Agent.NewResumeID(ctx)
 	if err != nil {
-		banner.DangerousBox(opts.Stderr, "J: %v", err)
+		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
 	}
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 	mustReadFiles, mustReadErr := MustRead()
 	if mustReadErr != nil {
-		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
+		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	lc := tasks.NewPlanTask(opts.Stderr, opts.Agent.Name(), opts.Model, taskID, source.Target, source.Body, resumeID, agentLogPath)
 	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
@@ -89,7 +89,7 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 			}
 		} else {
 			lc.RecordBackground(pid, agentLogPath)
-			banner.RunningInBackground(opts.Stdout, opts.Agent.Name(), pid, agentLogPath)
+			uitheme.NormalForkDialog(opts.Stdout, opts.Agent.Name(), pid, agentLogPath)
 			return nil
 		}
 	}
@@ -99,12 +99,12 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 		if data, readErr := os.ReadFile(requirementsPath); readErr == nil {
 			refinedReq = string(data)
 		} else {
-			banner.DangerousBox(opts.Stderr, "J: read %s: %v", requirementsPath, readErr)
+			uitheme.DangerousDialogBox(opts.Stderr, "J: read %s: %v", requirementsPath, readErr)
 		}
 		if data, readErr := os.ReadFile(planPath); readErr == nil {
 			planMD = string(data)
 		} else {
-			banner.DangerousBox(opts.Stderr, "J: read %s: %v", planPath, readErr)
+			uitheme.DangerousDialogBox(opts.Stderr, "J: read %s: %v", planPath, readErr)
 		}
 	}
 	lc.Finish(planErr, refinedReq, planMD, source.Target)
@@ -112,7 +112,7 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 		return planErr
 	}
 
-	banner.Fprintf(opts.Stdout, "J: the requirements.md and plan.md are saved in .j/tasks/%s/\n", taskID)
+	uitheme.NormalFprintf(opts.Stdout, "J: the requirements.md and plan.md are saved in .j/tasks/%s/\n", taskID)
 	return nil
 }
 

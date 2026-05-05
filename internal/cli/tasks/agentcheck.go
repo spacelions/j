@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
@@ -61,7 +61,7 @@ func ensureBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket s
 	if !errors.Is(err, resolver.ErrNoStoredSelection) {
 		return err
 	}
-	banner.Fprintf(opts.Stderr, "J: Choose your favourite for %s:\n", bucket)
+	uitheme.NormalFprintf(opts.Stderr, "J: Choose your favourite for %s:\n", bucket)
 	pickedAgent, pickedModel, err := picker.PickAgent(ctx, opts.UI, opts.Agents)
 	if err != nil {
 		return err

@@ -33,7 +33,7 @@ coverage:
 		-e 'internal/workflow/loadconfig\.go:[0-9]+:[[:space:]]+readSetting[[:space:]]' \
 		-e 'internal/cli/run/run\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
 		-e 'internal/cli/web/web\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
-		-e 'internal/cli/banner/banner\.go:[0-9]+:[[:space:]]+displayLogPath[[:space:]]' \
+		-e 'internal/cli/uitheme/dialog_box\.go:[0-9]+:[[:space:]]+displayLogPath[[:space:]]' \
 		-e 'internal/cli/picker/.*\.go:[0-9]+:[[:space:]]+' \
 		-e 'internal/util/mdfile/mdfile\.go:[0-9]+:[[:space:]]+Resolve[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+AskTarget[[:space:]]' \

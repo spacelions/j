@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/plan"
 	"github.com/spacelions/j/internal/cli/preflight"
@@ -130,7 +130,7 @@ func resolveContinueTaskFromStore(ctx context.Context, s *tasks.Store, opts Cont
 		t, err := s.GetTask(opts.TaskID)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
-				banner.Fprintln(opts.Stdout, noTaskMessage)
+				uitheme.NormalFprintln(opts.Stdout, noTaskMessage)
 				return tasks.Task{}, false, nil
 			}
 			return tasks.Task{}, false, err
@@ -199,7 +199,7 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, t tasks.Task) e
 			Agents: opts.Agents,
 		})
 	case tasks.StatusVerifyDone, tasks.StatusCompleted:
-		banner.Fprintf(opts.Stdout, "J: task %s already finished\n", t.ID)
+		uitheme.NormalFprintf(opts.Stdout, "J: task %s already finished\n", t.ID)
 		return nil
 	case tasks.StatusHelp:
 		return dispatchHelp(ctx, opts, t)
@@ -229,7 +229,7 @@ func resumeFromPlanDone(ctx context.Context, opts ContinueOptions, taskID string
 		return err
 	}
 	stampSpawnOnRow(opts.Stderr, taskID, agentLogPath, pid)
-	banner.RunningInBackground(opts.Stdout, fmt.Sprintf("task %s", taskID), pid, agentLogPath)
+	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", taskID), pid, agentLogPath)
 	return nil
 }
 
@@ -240,19 +240,19 @@ func resumeFromPlanDone(ctx context.Context, opts ContinueOptions, taskID string
 func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
 	s, err := tasks.OpenDefault()
 	if err != nil {
-		banner.DangerousBox(stderr, "J: tasks dir: %v", err)
+		uitheme.DangerousDialogBox(stderr, "J: tasks dir: %v", err)
 		return
 	}
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(taskID)
 	if err != nil {
-		banner.DangerousBox(stderr, "J: tasks get %q: %v", taskID, err)
+		uitheme.DangerousDialogBox(stderr, "J: tasks get %q: %v", taskID, err)
 		return
 	}
 	row.AgentLogPath = agentLogPath
 	row.BackgroundPID = pid
 	if err := s.PutTask(row); err != nil {
-		banner.DangerousBox(stderr, "J: tasks put: %v", err)
+		uitheme.DangerousDialogBox(stderr, "J: tasks put: %v", err)
 	}
 }
 

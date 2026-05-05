@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/store/tasks"
 )
@@ -37,7 +37,7 @@ func ResolveStartTarget(ctx context.Context, ui StartUI, stdout io.Writer, fromF
 	case picker.SourceTask:
 		return StartTarget{TaskID: res.TaskID}, nil
 	case picker.SourceLinear:
-		banner.Fprintln(stdout, "J: tasks linear source is not yet wired up; nothing to do")
+		uitheme.NormalFprintln(stdout, "J: tasks linear source is not yet wired up; nothing to do")
 		return StartTarget{}, nil
 	}
 	return StartTarget{}, fmt.Errorf("tasks: unsupported source %s", res.Source)

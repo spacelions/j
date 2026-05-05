@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -143,7 +143,7 @@ func resolveEnterID(ctx context.Context, s *tasks.Store, opts EnterOptions) (str
 	if opts.TaskID != "" {
 		if _, err := s.GetTask(opts.TaskID); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
-				banner.Fprintln(opts.Stdout, noTaskMessage)
+				uitheme.NormalFprintln(opts.Stdout, noTaskMessage)
 				return "", false, nil
 			}
 			return "", false, err

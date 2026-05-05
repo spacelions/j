@@ -15,8 +15,8 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/preflight"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -86,7 +86,7 @@ func listTasks(stdout io.Writer, simple bool) error {
 		return err
 	}
 	if len(rows) == 0 {
-		banner.Fprintln(stdout, emptyMessage)
+		uitheme.NormalFprintln(stdout, emptyMessage)
 		return nil
 	}
 	rows = reapBackgroundTasks(s, os.Stderr, s.Dir(), rows)
@@ -95,9 +95,9 @@ func listTasks(stdout io.Writer, simple bool) error {
 		return writeTasks(stdout, rows)
 	}
 	if isTerminal(stdout) {
-		return runWatch(os.Stdin, stdout, storeReloader(s, s.Dir()))
+		return uitheme.RunTasksWatch(os.Stdin, stdout, storeReloader(s, s.Dir()))
 	}
-	return renderTable(stdout, rows, time.Now(), terminalWidth(stdout))
+	return uitheme.WriteTaskTable(stdout, rows, time.Now(), terminalWidth(stdout))
 }
 
 // terminalWidth returns the column count of the terminal w is

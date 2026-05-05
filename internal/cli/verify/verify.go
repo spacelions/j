@@ -16,7 +16,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
@@ -122,7 +122,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 	resumeID, err := verifierAgent.NewResumeID(ctx)
 	if err != nil {
-		banner.DangerousBox(opts.Stderr, "J: %v", err)
+		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
 	}
 
 	// The worker agent for the fix loop must match the tool the
@@ -143,9 +143,9 @@ func Run(ctx context.Context, opts Options) (err error) {
 	}
 	switch outcome {
 	case tasks.VerifyOutcomeSuccess:
-		banner.Fprintf(opts.Stdout, "J: verified task %s\n", res.Task.ID)
+		uitheme.NormalFprintf(opts.Stdout, "J: verified task %s\n", res.Task.ID)
 	case tasks.VerifyOutcomeNoRetries:
-		banner.DangerousFprintf(opts.Stdout, "J: verifier exhausted retries on task %s; status verify-done\n", res.Task.ID)
+		uitheme.DangerousFprintf(opts.Stdout, "J: verifier exhausted retries on task %s; status verify-done\n", res.Task.ID)
 	}
 	return nil
 }
@@ -173,7 +173,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 func runVerifyLoop(ctx context.Context, opts Options, lc *tasks.VerifyLifecycle, verifierAgent, workerAgent codingagents.Agent, model, resumeID string, res resolved, agentLogPath string) (tasks.VerifyOutcome, error) {
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
+		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	for i := 0; i < opts.MaxIterations; i++ {
 		lc.IterationBegin(i, opts.MaxIterations)

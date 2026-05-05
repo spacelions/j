@@ -238,7 +238,7 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 // TestRun_DefaultNonTTY_RendersBorder drives the default (no
 // --simple) renderer when stdout is a *bytes.Buffer. isTerminal
 // rejects anything that isn't an *os.File so the dispatch falls
-// through to renderTable rather than the bubbletea TUI; the
+// through to uitheme.WriteTaskTable rather than the bubbletea TUI; the
 // resulting output should carry the lipgloss border glyphs and
 // decorate the active row's status with elapsed time.
 func TestRun_DefaultNonTTY_RendersBorder(t *testing.T) {

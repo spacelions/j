@@ -8,7 +8,6 @@ import (
 
 	"github.com/charmbracelet/huh"
 
-	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store/tasks"
@@ -97,7 +96,7 @@ func pickFromStore(ctx context.Context, s *tasks.Store, ui UI, stdout io.Writer)
 		return "", false, err
 	}
 	if len(rows) == 0 {
-		banner.Fprintln(stdout, emptyMessage)
+		uitheme.NormalFprintln(stdout, emptyMessage)
 		return "", false, nil
 	}
 	tasks.SortTasks(rows)

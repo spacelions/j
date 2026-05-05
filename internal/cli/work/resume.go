@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/banner"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
@@ -95,7 +95,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return err
 	}
 	if !ok {
-		banner.Fprintln(opts.Stdout, "J: there are no resumable sessions")
+		uitheme.NormalFprintln(opts.Stdout, "J: there are no resumable sessions")
 		return nil
 	}
 
@@ -115,7 +115,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	lc := t.BeginWorkResume(opts.Stderr, agentLogPath)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
+		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	// Resume always runs interactive — clarification / iteration
 	// answers need a TUI, and the worker bucket's `interactive`
@@ -134,7 +134,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return workErr
 	}
 
-	banner.Fprintf(opts.Stdout, "J: work resume on task %s\n", t.ID)
+	uitheme.NormalFprintf(opts.Stdout, "J: work resume on task %s\n", t.ID)
 	return nil
 }
 
