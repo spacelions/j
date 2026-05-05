@@ -17,7 +17,6 @@ import (
 	"github.com/spacelions/j/internal/cli/tasks"
 	"github.com/spacelions/j/internal/cli/verify"
 	"github.com/spacelions/j/internal/cli/web"
-	"github.com/spacelions/j/internal/cli/work"
 )
 
 // Execute is the process entry point. It builds the cobra root, parses
@@ -34,7 +33,6 @@ func Execute() int {
 	root.AddCommand(
 		run.New(),
 		web.New(),
-		work.New(),
 		verify.New(),
 		settings.New(),
 		tasks.New(),

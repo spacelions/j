@@ -9,9 +9,10 @@ import (
 
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/verify"
-	"github.com/spacelions/j/internal/cli/work"
 	"github.com/spacelions/j/internal/resolver"
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/workflow/agents/worker"
 )
 
 // replanAsDetachedOrchestrator fires a detached `j tasks orchestrate
@@ -39,32 +40,6 @@ func replanAsDetachedOrchestrator(ctx context.Context, opts ContinueOptions, t t
 	}
 	stampSpawnOnRow(opts.Stderr, t.ID, agentLogPath, pid)
 	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", t.ID), pid, agentLogPath)
-	return nil
-}
-
-// resumeFromPlanDone forks a detached `j tasks orchestrate
-// --skip-planning=true --plan-requires-approval=false` child for the
-// supplied taskID so the implicit-approval handoff drives worker →
-// verifier without re-running the planner. Records the spawned PID
-// + agent.log path on the row, prints the standard `J: task <id>
-// resumed; tail -f <log>` line, and returns immediately.
-func resumeFromPlanDone(ctx context.Context, opts ContinueOptions, taskID string) error {
-	taskDir, err := tasks.EnsureDir(taskID)
-	if err != nil {
-		return fmt.Errorf("J: ensure task dir: %w", err)
-	}
-	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
-	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
-		"tasks", "orchestrate",
-		"--id", taskID,
-		"--plan-requires-approval=false",
-		"--skip-planning=true",
-	})
-	if err != nil {
-		return err
-	}
-	stampSpawnOnRow(opts.Stderr, taskID, agentLogPath, pid)
-	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", taskID), pid, agentLogPath)
 	return nil
 }
 
@@ -114,7 +89,7 @@ func dispatchHelp(ctx context.Context, opts ContinueOptions, t tasks.Task) error
 			Agents: opts.Agents,
 		})
 	case "work":
-		return work.RunResume(ctx, work.ResumeOptions{
+		return worker.RunResume(ctx, worker.ResumeOptions{
 			TaskID: t.ID,
 			Stdin:  opts.Stdin,
 			Stdout: opts.Stdout,
@@ -169,4 +144,22 @@ func latestEndAt(t tasks.Task) string {
 		}
 	}
 	return best
+}
+
+// runPlanDoneWork resolves the tool/model from explicit flags and the
+// stored worker bucket, then calls worker.Run in-process.
+func runPlanDoneWork(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
+	tool, model := resolver.ResolveToolModel(opts.Tool, opts.Model, store.BucketWorker, opts.Stderr)
+	interactive := resolver.Interactive(nil, opts.Stderr, store.BucketWorker, opts.Interactive)
+	return worker.Run(ctx, worker.Options{
+		TaskID:      t.ID,
+		Yes:         true,
+		Interactive: interactive,
+		Tool:        tool,
+		Model:       model,
+		Stdin:       opts.Stdin,
+		Stdout:      opts.Stdout,
+		Stderr:      opts.Stderr,
+		Agents:      opts.Agents,
+	})
 }

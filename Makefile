@@ -105,7 +105,6 @@ coverage:
 		-e 'internal/cli/tasks/cmd\.go:[0-9]+:[[:space:]]+terminalWidth[[:space:]]' \
 		-e 'internal/util/agentlog/agentlog\.go:[0-9]+:[[:space:]]+Emit[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+openTasks[[:space:]]' \
-		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+openTasks[[:space:]]' \
 		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+openTasks[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+cursorResumeChatID[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+openSettingsStore[[:space:]]' \
@@ -117,23 +116,8 @@ coverage:
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+PickPlanTask[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+PickFromFile[[:space:]]' \
 		-e 'internal/coding-agents/cursor/cursor\.go:[0-9]+:[[:space:]]+CreateChatID[[:space:]]' \
-		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+cursorResumeChatID[[:space:]]' \
-		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+openSettingsStore[[:space:]]' \
-		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+resolveByTaskID[[:space:]]' \
-		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+resolveFromFile[[:space:]]' \
-		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
-		-e 'internal/cli/work/cmd\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
-		-e 'internal/cli/work/resume\.go:[0-9]+:[[:space:]]+RunResume[[:space:]]' \
-		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+pickTask[[:space:]]' \
 		-e 'internal/cli/tasks/cmd\.go:[0-9]+:[[:space:]]+listTasks[[:space:]]' \
 		-e 'internal/cli/tasks/cmd\.go:[0-9]+:[[:space:]]+writeTasks[[:space:]]' \
-		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+AskTarget[[:space:]]' \
-		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+AskFromFile[[:space:]]' \
-		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+PickPlanTask[[:space:]]' \
-		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+SelectTool[[:space:]]' \
-		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+SelectModel[[:space:]]' \
-		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+choose[[:space:]]' \
-		-e 'internal/cli/work/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
 		-e 'internal/cli/verify/cmd\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
 		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+openSettingsStore[[:space:]]' \
 		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+resolveByTaskID[[:space:]]' \
@@ -186,6 +170,27 @@ coverage:
 		-e 'internal/workflow/workflow_task\.go:[0-9]+:[[:space:]]+newWorkVerify[[:space:]]' \
 		-e 'internal/workflow/workflow_task\.go:[0-9]+:[[:space:]]+driveSequential[[:space:]]' \
 		-e 'internal/workflow/workflow_task\.go:[0-9]+:[[:space:]]+finaliseVerifyFailIfStuck[[:space:]]' \
+		-e 'internal/workflow/agents/worker/run\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
+		-e 'internal/workflow/agents/worker/run\.go:[0-9]+:[[:space:]]+RunResume[[:space:]]' \
+		-e 'internal/workflow/agents/worker/run\.go:[0-9]+:[[:space:]]+resolveResumeTask[[:space:]]' \
+		-e 'internal/workflow/agents/worker/run\.go:[0-9]+:[[:space:]]+listResumableTasks[[:space:]]' \
+		-e 'internal/cli/root\.go:[0-9]+:[[:space:]]+Execute[[:space:]]' \
+		-e 'internal/cli/tasks/continue\.go:[0-9]+:[[:space:]]+newContinueCmd[[:space:]]' \
+		-e 'internal/cli/tasks/continue_dispatch\.go:[0-9]+:[[:space:]]+replanAsDetachedOrchestrator[[:space:]]' \
+		-e 'internal/cli/tasks/continue_dispatch\.go:[0-9]+:[[:space:]]+stampSpawnOnRow[[:space:]]' \
+		-e 'internal/cli/tasks/re_plan\.go:[0-9]+:[[:space:]]+RunRePlan[[:space:]]' \
+		-e 'internal/cli/tasks/re_plan\.go:[0-9]+:[[:space:]]+resolveRePlanTaskID[[:space:]]' \
+		-e 'internal/cli/tasks/resume_plan\.go:[0-9]+:[[:space:]]+RunResumePlan[[:space:]]' \
+		-e 'internal/cli/tasks/resume_plan\.go:[0-9]+:[[:space:]]+resolveResumePlanTaskID[[:space:]]' \
+		-e 'internal/cli/tasks/start\.go:[0-9]+:[[:space:]]+runInlineOrchestrator[[:space:]]' \
+		-e 'internal/cli/tasks/start\.go:[0-9]+:[[:space:]]+resolveStartTarget[[:space:]]' \
+		-e 'internal/resolver/agent\.go:[0-9]+:[[:space:]]+lookupAgent[[:space:]]' \
+		-e 'internal/resolver/agent\.go:[0-9]+:[[:space:]]+ResolveToolModel[[:space:]]' \
+		-e 'internal/resolver/existing\.go:[0-9]+:[[:space:]]+StartTargetFromExistingTask[[:space:]]' \
+		-e 'internal/store/tasks/dir\.go:[0-9]+:[[:space:]]+OpenDefault[[:space:]]' \
+		-e 'internal/store/tasks/task\.go:[0-9]+:[[:space:]]+DisplayToolModel[[:space:]]' \
+		-e 'internal/workflow/agents/planner/agent\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
+		-e 'internal/workflow/agents/planner/run\.go:[0-9]+:[[:space:]]+Execute[[:space:]]' \
 		|| true); \
 	below=$$(printf '%s\n' "$$below" | sed '/^$$/d'); \
 	if [ -n "$$below" ]; then \

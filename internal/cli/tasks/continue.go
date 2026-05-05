@@ -14,12 +14,12 @@ import (
 	"github.com/spacelions/j/internal/cli/preflight"
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/verify"
-	"github.com/spacelions/j/internal/cli/work"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/workflow/agents/worker"
 )
 
 // ContinueOptions configures RunContinue. Stdin/Stdout/Stderr default
@@ -34,6 +34,18 @@ type ContinueOptions struct {
 	// every task in the bbolt store.
 	TaskID string
 
+	// Tool and Model are the --tool / --model overrides for plan-done
+	// dispatch. When set they are forwarded to worker.Run as explicit
+	// values; when empty RunRead reads from the stored worker bucket.
+	Tool  string
+	Model string
+
+	// Interactive is the resolved --interactive flag for plan-done
+	// dispatch. When the cobra flag is explicitly changed (or the env
+	// var is set) it passes the resolved value; when unset
+	// resolver.Interactive picks the default from the stored bucket.
+	Interactive *bool
+
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
@@ -44,9 +56,8 @@ type ContinueOptions struct {
 	UI UI
 
 	// JBinary is the absolute path to the j binary re-executed by
-	// the plan-done branch as `j tasks orchestrate --skip-planning ...`.
-	// Empty falls back to os.Executable. Tests inject a path-resolvable
-	// stub.
+	// the planning-status dispatch paths. Empty falls back to
+	// os.Executable. Tests inject a path-resolvable stub.
 	JBinary string
 }
 
@@ -126,8 +137,8 @@ func resolveContinueTaskFromStore(ctx context.Context, s *tasks.Store, opts Cont
 // Status. The mapping is:
 //
 //	planning     -> detached re-plan orchestrator
-//	plan-done    -> detached `j tasks orchestrate --skip-planning ...`
-//	working      -> work.RunResume
+//	plan-done    -> worker.Run (in-process, no bucket persist)
+//	working      -> worker.RunResume
 //	work-done    -> verify.Run (--from-task <id>)
 //	verifying    -> verify.RunResume
 //	verify-done  -> "task already finished" (no-op)
@@ -141,9 +152,9 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, t tasks.Task) e
 	case tasks.StatusPlanning:
 		return replanAsDetachedOrchestrator(ctx, opts, t)
 	case tasks.StatusPlanDone:
-		return resumeFromPlanDone(ctx, opts, t.ID)
+		return runPlanDoneWork(ctx, opts, t)
 	case tasks.StatusWorking:
-		return work.RunResume(ctx, work.ResumeOptions{
+		return worker.RunResume(ctx, worker.ResumeOptions{
 			TaskID: t.ID,
 			Stdin:  opts.Stdin,
 			Stdout: opts.Stdout,
@@ -191,13 +202,12 @@ func (o ContinueOptions) withDefaults() ContinueOptions {
 	return o
 }
 
-// newContinueCmd builds the `j tasks continue` cobra subcommand. The
-// flag surface mirrors the resume commands (--from-task) plus an
-// --interactive pass-through that the dispatched phase honours
-// (`j work --interactive=...` is forwarded into work.Options;
-// resume phases ignore the flag because they read the bucket
-// directly). viper.BindPFlag / viper.BindEnv only fail on programmer
-// errors so their returned errors are intentionally discarded.
+// newContinueCmd builds the `j tasks continue` cobra subcommand with
+// --from-task, --tool, --model, and --interactive flags. The --tool,
+// --model, and --interactive flags are forwarded into worker.Run on the
+// plan-done dispatch path; resume phases ignore them. viper.BindPFlag
+// / viper.BindEnv only fail on programmer errors so their errors are
+// intentionally discarded.
 func newContinueCmd() *cobra.Command {
 	agents := []codingagents.Agent{cursor.New(), claude.New()}
 	cmd := &cobra.Command{
@@ -205,11 +215,12 @@ func newContinueCmd() *cobra.Command {
 		Short: "Continue a task by dispatching to the right phase based on status",
 		Long: "Resolves a task (via --from-task or the shared picker) and dispatches " +
 			"to the right phase based on its status: planning -> detached re-plan, " +
-			"plan-done -> `j tasks orchestrate --skip-planning`, working -> `j work resume`, work-done -> " +
-			"`j verify`, verifying -> `j verify resume`. Already-finished tasks " +
-			"(verify-done, completed) print `J: task <id> already finished` and " +
-			"exit 0; a `help` row resumes whichever phase produced the failure " +
-			"(latest *EndAt wins, falling back to the non-empty resume cursor). " +
+			"plan-done -> direct worker run, working -> work resume, " +
+			"work-done -> `j verify`, verifying -> `j verify resume`. " +
+			"Already-finished tasks (verify-done, completed) print " +
+			"`J: task <id> already finished` and exit 0; a `help` row " +
+			"resumes whichever phase produced the failure (latest *EndAt " +
+			"wins, falling back to the non-empty resume cursor). " +
 			"Validates that every agent bucket (planner, worker, verifier) has " +
 			"a tool/model selection — prompting once per missing bucket — before " +
 			"the dispatch fires.",
@@ -223,17 +234,34 @@ func newContinueCmd() *cobra.Command {
 			})
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			var interactive *bool
+			if cmd.Flags().Changed("interactive") || envSet("TASKS_CONTINUE_INTERACTIVE") {
+				v := viper.GetBool("tasks.continue.interactive")
+				interactive = &v
+			}
 			return RunContinue(cmd.Context(), ContinueOptions{
-				TaskID: viper.GetString("tasks.continue.from_task"),
-				Stdin:  cmd.InOrStdin(),
-				Stdout: cmd.OutOrStdout(),
-				Stderr: cmd.ErrOrStderr(),
-				Agents: agents,
+				TaskID:      viper.GetString("tasks.continue.from_task"),
+				Tool:        viper.GetString("tasks.continue.tool"),
+				Model:       viper.GetString("tasks.continue.model"),
+				Interactive: interactive,
+				Stdin:       cmd.InOrStdin(),
+				Stdout:      cmd.OutOrStdout(),
+				Stderr:      cmd.ErrOrStderr(),
+				Agents:      agents,
 			})
 		},
 	}
 	cmd.Flags().String("from-task", "", "Continue the named task without showing the picker")
+	cmd.Flags().String("tool", "", "Coding agent tool for plan-done dispatch (cursor|claude)")
+	cmd.Flags().String("model", "", "Model identifier for plan-done dispatch")
+	cmd.Flags().Bool("interactive", true, "Launch the coding agent in interactive mode on plan-done dispatch")
 	_ = viper.BindPFlag("tasks.continue.from_task", cmd.Flags().Lookup("from-task"))
+	_ = viper.BindPFlag("tasks.continue.tool", cmd.Flags().Lookup("tool"))
+	_ = viper.BindPFlag("tasks.continue.model", cmd.Flags().Lookup("model"))
+	_ = viper.BindPFlag("tasks.continue.interactive", cmd.Flags().Lookup("interactive"))
 	_ = viper.BindEnv("tasks.continue.from_task", "TASKS_CONTINUE_FROM_TASK")
+	_ = viper.BindEnv("tasks.continue.tool", "TASKS_CONTINUE_TOOL")
+	_ = viper.BindEnv("tasks.continue.model", "TASKS_CONTINUE_MODEL")
+	_ = viper.BindEnv("tasks.continue.interactive", "TASKS_CONTINUE_INTERACTIVE")
 	return cmd
 }
