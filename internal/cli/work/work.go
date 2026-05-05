@@ -77,8 +77,6 @@ type Options struct {
 	Store *store.Store
 }
 
-type resolved = resolver.WorkPlan
-
 // Run executes `j work`. It resolves the plan source (Options.TaskID,
 // latest plan-done bbolt row, then UI picker), then dispatches to the
 // existing task row.

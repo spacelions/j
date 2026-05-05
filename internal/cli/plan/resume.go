@@ -217,7 +217,7 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (tasks.Task, boo
 // "task %q not found" wrapping the way callers expect; an empty
 // cursor becomes "task %q has no plan session".
 func resolveResumeByID(id string) (tasks.Task, bool, error) {
-	t, err := resolver.TaskByID("plan", id)
+	t, err := resolver.TaskByID(id)
 	if err != nil {
 		return tasks.Task{}, false, err
 	}

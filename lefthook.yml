@@ -10,7 +10,7 @@ pre-commit:
   commands:
     line-cap:
       priority: 1
-      run: .hooks/check-line-cap.sh {staged_files}
+      run: .hooks/check-line-cap {staged_files}
       exclude:
         - "*_test.go"
         - "vendor/**"

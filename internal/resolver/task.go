@@ -60,7 +60,7 @@ func ResolveWorkPlan(ctx context.Context, opts WorkPlanOptions) (WorkPlan, bool,
 		r, err := resolveWorkByTaskID(opts.TaskID)
 		return r, err == nil, err
 	}
-	rows, err := listResolvableTasks("work")
+	rows, err := listResolvableTasks()
 	if err != nil {
 		return WorkPlan{}, false, err
 	}
@@ -80,7 +80,7 @@ func ResolveWorkPlan(ctx context.Context, opts WorkPlanOptions) (WorkPlan, bool,
 }
 
 func resolveWorkByTaskID(id string) (WorkPlan, error) {
-	row, err := TaskByID("work", id)
+	row, err := TaskByID(id)
 	if err != nil {
 		return WorkPlan{}, err
 	}
@@ -124,7 +124,7 @@ func ResolveVerifyTask(ctx context.Context, opts VerifyTaskOptions) (VerifyTask,
 		r, err := resolveVerifyByTaskID(opts.TaskID)
 		return r, err == nil, err
 	}
-	rows, err := listResolvableTasks("verify")
+	rows, err := listResolvableTasks()
 	if err != nil {
 		return VerifyTask{}, false, err
 	}
@@ -144,7 +144,7 @@ func ResolveVerifyTask(ctx context.Context, opts VerifyTaskOptions) (VerifyTask,
 }
 
 func resolveVerifyByTaskID(id string) (VerifyTask, error) {
-	row, err := TaskByID("verify", id)
+	row, err := TaskByID(id)
 	if err != nil {
 		return VerifyTask{}, err
 	}
@@ -168,15 +168,11 @@ func resolveVerifyByTaskID(id string) (VerifyTask, error) {
 }
 
 func ListAllTasks() ([]tasks.Task, error) {
-	return listResolvableTasks("tasks")
+	return listResolvableTasks()
 }
 
-func ListTasks(prefix string) ([]tasks.Task, error) {
-	return listResolvableTasks(prefix)
-}
-
-func TaskByID(prefix, id string) (tasks.Task, error) {
-	s, err := openTaskStore(prefix)
+func TaskByID(id string) (tasks.Task, error) {
+	s, err := openTaskStore()
 	if err != nil {
 		return tasks.Task{}, err
 	}
@@ -184,15 +180,15 @@ func TaskByID(prefix, id string) (tasks.Task, error) {
 	row, err := s.GetTask(id)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return tasks.Task{}, fmt.Errorf("%s: task %q not found", prefix, id)
+			return tasks.Task{}, fmt.Errorf("task %q not found", id)
 		}
 		return tasks.Task{}, err
 	}
 	return row, nil
 }
 
-func listResolvableTasks(prefix string) ([]tasks.Task, error) {
-	s, err := openTaskStore(prefix)
+func listResolvableTasks() ([]tasks.Task, error) {
+	s, err := openTaskStore()
 	if err != nil {
 		return nil, err
 	}
@@ -217,10 +213,10 @@ func autoPickAllowed(rows []tasks.Task, allowed func(tasks.Task) bool) (string, 
 	return picked, count == 1
 }
 
-func openTaskStore(prefix string) (*tasks.Store, error) {
+func openTaskStore() (*tasks.Store, error) {
 	s, err := tasks.OpenDefault()
 	if err != nil {
-		return nil, fmt.Errorf("%s: tasks dir: %w", prefix, err)
+		return nil, fmt.Errorf("tasks: open store: %w", err)
 	}
 	return s, nil
 }

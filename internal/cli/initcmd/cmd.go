@@ -128,7 +128,7 @@ func Run(ctx context.Context, opts Options) error {
 			return err
 		}
 		if err := os.RemoveAll(jDir); err != nil {
-			return fmt.Errorf("init: remove %q: %w", jDir, err)
+			return fmt.Errorf("J: remove %q: %w", jDir, err)
 		}
 	}
 	if err := store.EnsureProject(); err != nil {

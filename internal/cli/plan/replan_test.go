@@ -194,42 +194,41 @@ func TestConfirmStatusOverride_PromptError(t *testing.T) {
 	}
 }
 
-// TestLoadTaskByID_NotFound confirms the io/fs.ErrNotExist wrap into
+// TestTaskByID_NotFound confirms the io/fs.ErrNotExist wrap into
 // the user-facing "task %q not found" error.
-func TestLoadTaskByID_NotFound(t *testing.T) {
+func TestTaskByID_NotFound(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	_, err := loadTaskByID("ghost")
+	_, err := resolver.TaskByID("ghost")
 	if err == nil || !strings.Contains(err.Error(), `task "ghost" not found`) {
 		t.Fatalf("err = %v", err)
 	}
 }
 
-// TestLoadTaskByID_Success returns the seeded row verbatim.
-func TestLoadTaskByID_Success(t *testing.T) {
+// TestTaskByID_Success returns the seeded row verbatim.
+func TestTaskByID_Success(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedReplanTask(t, tasks.StatusPlanDone, "# req", nil)
-	got, err := loadTaskByID(id)
+	got, err := resolver.TaskByID(id)
 	if err != nil {
-		t.Fatalf("loadTaskByID: %v", err)
+		t.Fatalf("TaskByID: %v", err)
 	}
 	if got.ID != id || got.Status != tasks.StatusPlanDone {
 		t.Fatalf("got = %+v", got)
 	}
 }
 
-// TestListAllTasks_OpenFails covers the open-failure branch.
-// TestListAllTasks_SortsAndReturns confirms the helper returns every
-// row sorted by tasks.SortTasks (active-first ordering).
+// TestListAllTasks_SortsAndReturns confirms resolver.ListAllTasks
+// returns every row sorted by tasks.SortTasks (active-first ordering).
 func TestListAllTasks_SortsAndReturns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id1 := seedReplanTask(t, tasks.StatusPlanDone, "a", nil)
 	id2 := seedReplanTask(t, tasks.StatusPlanning, "b", nil)
-	got, err := listAllTasks()
+	got, err := resolver.ListAllTasks()
 	if err != nil {
-		t.Fatalf("listAllTasks: %v", err)
+		t.Fatalf("ListAllTasks: %v", err)
 	}
 	if len(got) != 2 {
 		t.Fatalf("len = %d, want 2", len(got))

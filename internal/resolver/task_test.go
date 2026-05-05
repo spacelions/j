@@ -232,15 +232,11 @@ func TestResolveVerifyTaskEmptyAndMissing(t *testing.T) {
 func TestTaskStoreHelpers(t *testing.T) {
 	setupResolverProject(t)
 	seedResolverTask(t, tasks.Task{ID: "a", Status: tasks.StatusPlanDone}, "plan", "")
-	row, err := TaskByID("test", "a")
+	row, err := TaskByID("a")
 	if err != nil || row.ID != "a" {
 		t.Fatalf("TaskByID = %+v, %v", row, err)
 	}
-	rows, err := ListTasks("test")
-	if err != nil || len(rows) != 1 {
-		t.Fatalf("ListTasks = %+v, %v", rows, err)
-	}
-	rows, err = ListAllTasks()
+	rows, err := ListAllTasks()
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("ListAllTasks = %+v, %v", rows, err)
 	}

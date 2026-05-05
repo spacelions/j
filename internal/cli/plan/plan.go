@@ -23,17 +23,6 @@ import (
 	"github.com/spacelions/j/internal/util/run"
 )
 
-// UI is the slice of picker methods `j plan` calls. *picker.Picker
-// satisfies it via duck typing; tests inject scripted fakes.
-type UI interface {
-	SelectSource(ctx context.Context, allowed []picker.Source) (picker.Source, error)
-	PickMarkdownInCwd(ctx context.Context) (string, error)
-	PickTask(ctx context.Context, title string, tasks []tasks.Task) (string, bool, error)
-	SelectTool(ctx context.Context, options []string) (string, error)
-	SelectModel(ctx context.Context, options []string) (string, error)
-	ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error)
-}
-
 // Options configures Run. Stdin/Stdout/Stderr default to the process
 // streams. UI defaults to the huh implementation. Agents must be
 // supplied by the caller (the CLI wires the Cursor agent; tests inject
@@ -113,7 +102,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
-		return errors.New("plan: no coding agents configured")
+		return errors.New("J: no coding agents configured")
 	}
 	// --from-task short-circuits the source picker; the explicit
 	// flag is unambiguous so we head straight to the re-plan
@@ -127,8 +116,8 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 	res, err := picker.PickSource(ctx, opts.UI,
 		[]picker.Source{picker.SourceMarkdown, picker.SourceLinear, picker.SourceTask},
-		listAllTasks,
-		errors.New("plan: no tasks to re-plan; run `j plan` first"))
+		resolver.ListAllTasks,
+		errors.New("J: no tasks to re-plan; run `j plan` first"))
 	if err != nil {
 		return err
 	}
@@ -144,7 +133,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 	case picker.SourceTask:
 		return runReplanTask(ctx, opts, res.TaskID)
 	}
-	return fmt.Errorf("plan: unsupported source %s", res.Source)
+	return fmt.Errorf("J: unsupported source %s", res.Source)
 }
 
 // runReplanTask is the re-plan flow: load the existing task row,
@@ -154,7 +143,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 // place. The task row is mutated (status: planning → plan-done,
 // preserving original PlanBeginAt).
 func runReplanTask(ctx context.Context, opts Options, id string) error {
-	existing, err := loadTaskByID(id)
+	existing, err := resolver.TaskByID(id)
 	if err != nil {
 		return err
 	}
@@ -233,14 +222,6 @@ func runReplanTask(ctx context.Context, opts Options, id string) error {
 
 	banner.Fprintf(opts.Stdout, "J: re-planned task %s\n", existing.ID)
 	return nil
-}
-
-func loadTaskByID(id string) (tasks.Task, error) {
-	return resolver.TaskByID("plan", id)
-}
-
-func listAllTasks() ([]tasks.Task, error) {
-	return resolver.ListTasks("plan")
 }
 
 func runMarkdown(ctx context.Context, opts Options, rawTarget string) error {

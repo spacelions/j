@@ -197,7 +197,7 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (tasks.Task, boo
 // "task %q not found" wrapping; an empty cursor becomes
 // "task %q has no verify session".
 func resolveResumeByID(id string) (tasks.Task, bool, error) {
-	t, err := resolver.TaskByID("verify", id)
+	t, err := resolver.TaskByID(id)
 	if err != nil {
 		return tasks.Task{}, false, err
 	}
