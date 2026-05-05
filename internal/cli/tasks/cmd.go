@@ -58,6 +58,8 @@ func New() *cobra.Command {
 	cmd.AddCommand(newStartCmd())
 	cmd.AddCommand(newContinueCmd())
 	cmd.AddCommand(newOrchestrateCmd())
+	cmd.AddCommand(newRePlanCmd())
+	cmd.AddCommand(newResumePlanCmd())
 	return cmd
 }
 
