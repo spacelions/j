@@ -43,6 +43,29 @@ func replanAsDetachedOrchestrator(ctx context.Context, opts ContinueOptions, t t
 	return nil
 }
 
+// resumeWorkAsDetachedOrchestrator forks a detached `j tasks orchestrate
+// --skip-planning=true --interactive=true` child for the supplied task
+// so the worker resumes its session in the foreground.
+func resumeWorkAsDetachedOrchestrator(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
+	taskDir, err := tasks.EnsureDir(t.ID)
+	if err != nil {
+		return fmt.Errorf("J: ensure task dir: %w", err)
+	}
+	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
+	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
+		"tasks", "orchestrate",
+		"--id", t.ID,
+		"--skip-planning=true",
+		"--interactive=true",
+	})
+	if err != nil {
+		return err
+	}
+	stampSpawnOnRow(opts.Stderr, t.ID, agentLogPath, pid)
+	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", t.ID), pid, agentLogPath)
+	return nil
+}
+
 // stampSpawnOnRow records BackgroundPID + AgentLogPath on the
 // existing task row after a detached orchestrator spawn. Best-effort
 // — any read / write error surfaces as a single warning on stderr.
@@ -89,13 +112,7 @@ func dispatchHelp(ctx context.Context, opts ContinueOptions, t tasks.Task) error
 			Agents: opts.Agents,
 		})
 	case "work":
-		return worker.RunResume(ctx, worker.ResumeOptions{
-			TaskID: t.ID,
-			Stdin:  opts.Stdin,
-			Stdout: opts.Stdout,
-			Stderr: opts.Stderr,
-			Agents: opts.Agents,
-		})
+		return resumeWorkAsDetachedOrchestrator(ctx, opts, t)
 	case "plan":
 		return replanAsDetachedOrchestrator(ctx, opts, t)
 	}

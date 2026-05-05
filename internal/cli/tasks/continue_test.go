@@ -386,7 +386,7 @@ func TestRunContinue_HelpFromVerifyEnd(t *testing.T) {
 }
 
 // TestRunContinue_HelpFromWorkEnd: help with only WorkEndAt set ->
-// work.RunResume.
+// detached `j tasks orchestrate --skip-planning=true --interactive=true`.
 func TestRunContinue_HelpFromWorkEnd(t *testing.T) {
 	setupContinueEnv(t)
 	t1 := time.Now().UTC().Add(-2 * time.Hour)
@@ -397,19 +397,27 @@ func TestRunContinue_HelpFromWorkEnd(t *testing.T) {
 		task.PlanEndAt = t1
 		task.WorkEndAt = t2
 	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
 	if err := RunContinue(context.Background(), ContinueOptions{
-		TaskID: id,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &fakeUI{},
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      &fakeUI{},
+		JBinary: argvJBinary(t, argvPath),
 	}); err != nil {
 		t.Fatalf("RunContinue: %v", err)
 	}
-	if agent.worked != 1 {
-		t.Fatalf("worked = %d, want 1", agent.worked)
+	if agent.planned+agent.worked+agent.verified != 0 {
+		t.Fatalf("no in-process agent call should fire (spawned child): planned=%d worked=%d verified=%d",
+			agent.planned, agent.worked, agent.verified)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--skip-planning=true", "--interactive=true"}
+	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
+		t.Fatalf("argv = %v, want %v", args, wantArgs)
 	}
 }
 
@@ -448,7 +456,8 @@ func TestRunContinue_HelpFromPlanEnd(t *testing.T) {
 }
 
 // TestRunContinue_HelpFromCursorFallback covers the cursor-precedence
-// fallback when no *EndAt is set: WorkResumeSession wins over plan.
+// fallback when no *EndAt is set: WorkResumeSession wins over plan,
+// spawning a detached orchestrator with --skip-planning=true.
 func TestRunContinue_HelpFromCursorFallback(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
@@ -457,19 +466,27 @@ func TestRunContinue_HelpFromCursorFallback(t *testing.T) {
 		task.PlanResumeSession = "plan-cursor"
 		task.WorkResumeSession = "work-cursor"
 	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
 	if err := RunContinue(context.Background(), ContinueOptions{
-		TaskID: id,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &fakeUI{},
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      &fakeUI{},
+		JBinary: argvJBinary(t, argvPath),
 	}); err != nil {
 		t.Fatalf("RunContinue: %v", err)
 	}
-	if agent.worked != 1 {
-		t.Fatalf("worked = %d, want 1 (work cursor wins over plan)", agent.worked)
+	if agent.planned+agent.worked+agent.verified != 0 {
+		t.Fatalf("no in-process agent call: planned=%d worked=%d verified=%d",
+			agent.planned, agent.worked, agent.verified)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--skip-planning=true", "--interactive=true"}
+	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
+		t.Fatalf("argv = %v, want %v", args, wantArgs)
 	}
 }
 
