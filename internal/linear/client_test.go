@@ -306,6 +306,9 @@ func TestListAssignedIssues_ProjectFilterForwarded(t *testing.T) {
 	if _, err := c.ListAssignedIssues(context.Background(), ListIssuesOpts{ProjectID: "proj-uuid"}); err != nil {
 		t.Fatalf("ListAssignedIssues: %v", err)
 	}
+	if !strings.Contains(seenBody, "$projectId:ID!") {
+		t.Fatalf("query body declares wrong type for projectId (want ID!): %s", seenBody)
+	}
 	if !strings.Contains(seenBody, "project:{id:{eq:$projectId}}") {
 		t.Fatalf("query body missing project filter: %s", seenBody)
 	}
