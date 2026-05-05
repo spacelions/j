@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
@@ -243,9 +242,11 @@ func (u *scriptedStartUI) ConfirmStatusOverride(_ context.Context, _, _, _ strin
 func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
+	}
 	target := writeStartFile(t, "# task\nbody line")
 	stub := testutil.NewScriptedAgent()
-	sel := &testutil.SelectorFake{Tool: "cursor", Model: "sonnet-4"}
 	binary := noopJBinary(t)
 	var stdout, stderr bytes.Buffer
 
@@ -256,7 +257,6 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 		Stdout:   &stdout,
 		Stderr:   &stderr,
 		Agents:   []codingagents.Agent{stub},
-		Selector: sel,
 		UI:       &scriptedStartUI{},
 		JBinary:  binary,
 	})
@@ -266,9 +266,6 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	}
 	if elapsed > 2*time.Second {
 		t.Fatalf("RunStart took %v, want <2s for the detached spawn", elapsed)
-	}
-	if sel.ToolCalls != 3 || sel.ModelCalls != 3 {
-		t.Fatalf("selector calls = (%d, %d), want (3, 3)", sel.ToolCalls, sel.ModelCalls)
 	}
 	if !strings.Contains(stdout.String(), "running in background (PID=") {
 		t.Fatalf("stdout should announce the task PID: %q", stdout.String())
@@ -308,13 +305,6 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	if !strings.Contains(string(body), "body line") {
 		t.Fatalf("requirements.md missing user body: %q", body)
 	}
-
-	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		tool, model, _ := testutil.ReadAgentBucket(t, bucket)
-		if tool != "cursor" || model != "sonnet-4" {
-			t.Fatalf("bucket %q = (%q, %q)", bucket, tool, model)
-		}
-	}
 }
 
 func TestRunStart_ForwardsResolvedPlanApproval(t *testing.T) {
@@ -346,7 +336,7 @@ func TestRunStart_ForwardsResolvedPlanApproval(t *testing.T) {
 				Stdout:               io.Discard,
 				Stderr:               io.Discard,
 				Agents:               []codingagents.Agent{testutil.NewScriptedAgent()},
-				Selector:             &testutil.SelectorFake{},
+	
 				UI:                   &scriptedStartUI{},
 				JBinary:              argvJBinary(t, argvPath),
 			}); err != nil {
@@ -373,7 +363,6 @@ func TestRunStart_PrePopulatedSkipsPrompts(t *testing.T) {
 		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	target := writeStartFile(t, "# task\nbody")
-	sel := &testutil.SelectorFake{}
 	binary := noopJBinary(t)
 
 	err := RunStart(context.Background(), StartOptions{
@@ -382,15 +371,11 @@ func TestRunStart_PrePopulatedSkipsPrompts(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: sel,
 		UI:       &scriptedStartUI{},
 		JBinary:  binary,
 	})
 	if err != nil {
 		t.Fatalf("RunStart: %v", err)
-	}
-	if sel.ToolCalls != 0 || sel.ModelCalls != 0 {
-		t.Fatalf("selector calls = (%d, %d), want (0, 0) when buckets are populated", sel.ToolCalls, sel.ModelCalls)
 	}
 }
 
@@ -432,7 +417,7 @@ func TestRunStart_NoFromFile_PicksMarkdown(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -491,7 +476,7 @@ func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -563,7 +548,7 @@ func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -621,7 +606,7 @@ func TestRunStart_FromLinearFlag(t *testing.T) {
 		Stdout:     io.Discard,
 		Stderr:     io.Discard,
 		Agents:     []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector:   &testutil.SelectorFake{},
+
 		UI:         ui,
 		JBinary:    noopJBinary(t),
 	})
@@ -673,7 +658,7 @@ func TestRunStart_FromLinearFlag_RecordsLinearIssue(t *testing.T) {
 		Stdout:     io.Discard,
 		Stderr:     io.Discard,
 		Agents:     []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector:   &testutil.SelectorFake{},
+
 		UI:         &scriptedStartUI{},
 		JBinary:    noopJBinary(t),
 	})
@@ -702,7 +687,7 @@ func TestRunStart_FromLinearFlag_MissingKey(t *testing.T) {
 		Stdout:     io.Discard,
 		Stderr:     io.Discard,
 		Agents:     []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector:   &testutil.SelectorFake{},
+
 		UI:         &scriptedStartUI{},
 		JBinary:    noopJBinary(t),
 	})
@@ -734,7 +719,7 @@ func TestRunStart_NoFromFile_NoExistingTasks(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -769,7 +754,7 @@ func TestRunStart_NoFromFile_TaskPickerCancelled(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -779,30 +764,6 @@ func TestRunStart_NoFromFile_TaskPickerCancelled(t *testing.T) {
 	row := readTaskFromBolt(t, existingID)
 	if row.BackgroundPID != 0 {
 		t.Fatalf("existing row's BackgroundPID = %d, want 0 (picker cancel must not fire spawn)", row.BackgroundPID)
-	}
-}
-
-// TestRunStart_SelectorAbortIsClean pins the deferred huh.ErrUserAborted
-// guard for the agent-pick prompt.
-func TestRunStart_SelectorAbortIsClean(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	target := writeStartFile(t, "# task\nbody")
-	sel := &testutil.SelectorFake{ToolErr: huh.ErrUserAborted}
-	if err := RunStart(context.Background(), StartOptions{
-		FromFile: target,
-		Stdin:    strings.NewReader(""),
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: sel,
-		UI:       &scriptedStartUI{},
-		JBinary:  noopJBinary(t),
-	}); err != nil {
-		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
-	}
-	if rows := allTaskRows(t); len(rows) != 0 {
-		t.Fatalf("ListTasks = %d, want 0 after abort", len(rows))
 	}
 }
 
@@ -821,7 +782,7 @@ func TestRunStart_ResolveSourceFails(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
 	})
@@ -844,7 +805,7 @@ func TestRunStart_SpawnFails(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       &scriptedStartUI{},
 		JBinary:  "/no/such/binary-xyzzy",
 	})
@@ -854,9 +815,8 @@ func TestRunStart_SpawnFails(t *testing.T) {
 }
 
 // TestRunStart_AppliesDefaults exercises StartOptions.withDefaults
-// (the nil-stdin / nil-stdout / nil-stderr / nil-Selector / nil-UI
-// branches) by running with populated buckets so the selector + UI
-// are never invoked.
+// (the nil-stdin / nil-stdout / nil-stderr / nil-UI branches) by
+// running with populated buckets so the UI is never invoked.
 func TestRunStart_AppliesDefaults(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -902,7 +862,7 @@ func TestRunStart_BucketInteractiveUntouched(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
 	}); err != nil {
@@ -1108,7 +1068,7 @@ func TestRunStart_ContextCancellable(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
 	})
@@ -1158,7 +1118,7 @@ func TestRunStart_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
 				Stdout:               io.Discard,
 				Stderr:               io.Discard,
 				Agents:               []codingagents.Agent{testutil.NewScriptedAgent()},
-				Selector:             &testutil.SelectorFake{},
+	
 				UI:                   &scriptedStartUI{},
 				JBinary:              argvJBinary(t, argvPath),
 			}); err != nil {

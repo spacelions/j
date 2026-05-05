@@ -4,8 +4,10 @@
 package cli
 
 import (
+	"errors"
 	"os"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
@@ -40,6 +42,9 @@ func Execute() int {
 	)
 	root.SetArgs(os.Args[1:])
 	if err := root.Execute(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return 0
+		}
 		_, _ = uitheme.DangerousFprintf(os.Stderr, "J: %v\n", err)
 		return 1
 	}

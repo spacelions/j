@@ -40,9 +40,8 @@ type StartUI interface {
 // StartOptions configures RunStart. Stdin/Stdout/Stderr default to the
 // process streams; Agents must be supplied by the caller (the cobra
 // wiring injects `[]codingagents.Agent{cursor.New(), claude.New()}`,
-// tests inject scripted ones); Selector defaults to a huh-backed
-// adapter so the agent-pick prompts can run on a real terminal; UI
-// defaults to picker.New so the source / file / re-plan pickers work.
+// tests inject scripted ones); UI defaults to picker.New so the source
+// / file / re-plan pickers work.
 type StartOptions struct {
 	// FromFile is the markdown task description path. When set, the
 	// source picker is skipped and the markdown branch fires directly.
@@ -74,9 +73,6 @@ type StartOptions struct {
 	Stderr io.Writer
 
 	Agents []codingagents.Agent
-	// Selector is the agent-pick UI used by preflight.EnsureAgentSelections to
-	// prompt for any missing planner / worker / verifier bucket.
-	Selector preflight.AgentSelector
 	// UI drives the source / file / re-plan pickers when FromFile /
 	// FromTask are empty. Defaults to picker.New.
 	UI StartUI
@@ -95,6 +91,7 @@ type StartOptions struct {
 type startTarget = resolver.StartTarget
 
 func newStartCmd() *cobra.Command {
+	agents := []codingagents.Agent{cursor.New(), claude.New()}
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start a new task: drive planner, then pause for approval or continue in the background",
@@ -104,6 +101,14 @@ func newStartCmd() *cobra.Command {
 			"--from-task to re-plan an existing task; " +
 			"without either, the source picker is rendered.",
 		PersistentPreRunE: preflight.PreRunE,
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			return preflight.EnsureAgentSelections(cmd.Context(), preflight.AgentCheckOptions{
+				Stdin:  cmd.InOrStdin(),
+				Stdout: cmd.OutOrStdout(),
+				Stderr: cmd.ErrOrStderr(),
+				Agents: agents,
+			})
+		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			approval, err := startPlanRequiresApprovalOverride(cmd)
 			if err != nil {
@@ -126,7 +131,7 @@ func newStartCmd() *cobra.Command {
 				Stdin:                cmd.InOrStdin(),
 				Stdout:               cmd.OutOrStdout(),
 				Stderr:               cmd.ErrOrStderr(),
-				Agents:               []codingagents.Agent{cursor.New(), claude.New()},
+				Agents:               agents,
 			})
 		},
 	}
@@ -168,15 +173,6 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
 		return errors.New("J: no coding agents configured")
-	}
-	if err := preflight.EnsureAgentSelections(ctx, preflight.AgentCheckOptions{
-		Stdin:  opts.Stdin,
-		Stdout: opts.Stdout,
-		Stderr: opts.Stderr,
-		Agents: opts.Agents,
-		UI:     opts.Selector,
-	}); err != nil {
-		return err
 	}
 
 	target, err := resolveStartTarget(ctx, opts)

@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
@@ -638,31 +637,6 @@ func TestRunContinue_NoAgents(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "no coding agents") {
 		t.Fatalf("err = %v", err)
-	}
-}
-
-// TestRunContinue_AgentSelectorAborts pins the deferred huh.ErrUserAborted
-// guard from EnsureAgentSelections: a Ctrl-C in the selector exits
-// cleanly with no dispatch.
-func TestRunContinue_AgentSelectorAborts(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	id := seedTaskFull(t, nil)
-	// No agent buckets seeded so EnsureAgentSelections prompts.
-	agent := newContinueAgent()
-	if err := RunContinue(context.Background(), ContinueOptions{
-		TaskID:   id,
-		Stdin:    strings.NewReader(""),
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{agent},
-		UI:       &fakeUI{},
-		Selector: &testutil.SelectorFake{ToolErr: huh.ErrUserAborted},
-	}); err != nil {
-		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
-	}
-	if agent.planned+agent.worked+agent.verified != 0 {
-		t.Fatalf("no dispatch should fire after abort")
 	}
 }
 

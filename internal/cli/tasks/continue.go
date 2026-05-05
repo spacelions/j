@@ -8,11 +8,9 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/preflight"
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/verify"
@@ -20,15 +18,15 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // ContinueOptions configures RunContinue. Stdin/Stdout/Stderr default
 // to the process streams; UI defaults to the same huh-backed task
-// picker used by `j tasks discard` / `j tasks enter`; Selector defaults
-// to a huh-backed agent selector. Agents must be supplied by the
-// caller (the cobra wiring injects the cursor + claude pair, tests
-// inject scripted ones).
+// picker used by `j tasks discard` / `j tasks enter`. Agents must be
+// supplied by the caller (the cobra wiring injects the cursor + claude
+// pair, tests inject scripted ones).
 type ContinueOptions struct {
 	// TaskID is the optional `--from-task <id>` selector. When set
 	// it skips the picker entirely and dispatches directly. An
@@ -44,11 +42,6 @@ type ContinueOptions struct {
 	// UI drives the task picker. The same UI shape as `j tasks
 	// enter` so the on-disk widget is shared.
 	UI UI
-	// Selector drives the agent-pick prompt(s) when
-	// preflight.EnsureAgentSelections finds an empty bucket. Mirrors the
-	// surface of plan/work UIs but stays minimal since the
-	// markdown / source pickers are not relevant on continue.
-	Selector preflight.AgentSelector
 
 	// JBinary is the absolute path to the j binary re-executed by
 	// the plan-done branch as `j tasks orchestrate --skip-planning ...`.
@@ -65,17 +58,11 @@ type ContinueOptions struct {
 //     same picker `j tasks enter` uses). An empty store prints
 //     the standard `J: no tasks` message and returns nil; a
 //     user-cancel in the picker also returns nil.
-//  3. Validate agent selections via preflight.EnsureAgentSelections so any
-//     missing bucket prompts once before the dispatch fires.
-//  4. Dispatch by Task.Status onto the matching phase Run /
+//  3. Dispatch by Task.Status onto the matching phase Run /
 //     RunResume. Already-finished tasks (verify-done / completed)
 //     short-circuit with `J: task <id> already finished`.
 func RunContinue(ctx context.Context, opts ContinueOptions) (err error) {
-	defer func() {
-		if errors.Is(err, huh.ErrUserAborted) {
-			err = nil
-		}
-	}()
+	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
 		return errors.New("J: no coding agents configured")
@@ -87,16 +74,6 @@ func RunContinue(ctx context.Context, opts ContinueOptions) (err error) {
 	}
 	if !ok {
 		return nil
-	}
-
-	if err := preflight.EnsureAgentSelections(ctx, preflight.AgentCheckOptions{
-		Stdin:  opts.Stdin,
-		Stdout: opts.Stdout,
-		Stderr: opts.Stderr,
-		Agents: opts.Agents,
-		UI:     opts.Selector,
-	}); err != nil {
-		return err
 	}
 
 	return dispatchByStatus(ctx, opts, task)
@@ -211,9 +188,6 @@ func (o ContinueOptions) withDefaults() ContinueOptions {
 	if o.UI == nil {
 		o.UI = newHuhUI(o.Stdin, o.Stderr)
 	}
-	if o.Selector == nil {
-		o.Selector = picker.New(o.Stdin, o.Stderr)
-	}
 	return o
 }
 
@@ -225,6 +199,7 @@ func (o ContinueOptions) withDefaults() ContinueOptions {
 // directly). viper.BindPFlag / viper.BindEnv only fail on programmer
 // errors so their returned errors are intentionally discarded.
 func newContinueCmd() *cobra.Command {
+	agents := []codingagents.Agent{cursor.New(), claude.New()}
 	cmd := &cobra.Command{
 		Use:   "continue",
 		Short: "Continue a task by dispatching to the right phase based on status",
@@ -239,13 +214,21 @@ func newContinueCmd() *cobra.Command {
 			"a tool/model selection — prompting once per missing bucket — before " +
 			"the dispatch fires.",
 		PersistentPreRunE: preflight.PreRunE,
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			return preflight.EnsureAgentSelections(cmd.Context(), preflight.AgentCheckOptions{
+				Stdin:  cmd.InOrStdin(),
+				Stdout: cmd.OutOrStdout(),
+				Stderr: cmd.ErrOrStderr(),
+				Agents: agents,
+			})
+		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return RunContinue(cmd.Context(), ContinueOptions{
 				TaskID: viper.GetString("tasks.continue.from_task"),
 				Stdin:  cmd.InOrStdin(),
 				Stdout: cmd.OutOrStdout(),
 				Stderr: cmd.ErrOrStderr(),
-				Agents: []codingagents.Agent{cursor.New(), claude.New()},
+				Agents: agents,
 			})
 		},
 	}
