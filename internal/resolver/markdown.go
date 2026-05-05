@@ -9,7 +9,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/banner"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/mdfile"
 	"github.com/spacelions/j/internal/util/run"
 )
@@ -52,24 +52,24 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 		}
 	}
 
-	taskID := store.NewTaskID()
-	taskDir, err := store.EnsureTaskDir(taskID)
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
 	if err != nil {
 		return fmt.Errorf("plan: ensure task dir: %w", err)
 	}
-	requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
-	planPath := filepath.Join(taskDir, store.PlanFileName)
+	requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
+	planPath := filepath.Join(taskDir, tasks.PlanFileName)
 
 	resumeID, err := opts.Agent.NewResumeID(ctx)
 	if err != nil {
-		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", err)
+		banner.DangerousBox(opts.Stderr, "J: %v", err)
 	}
-	agentLogPath := filepath.Join(taskDir, store.AgentLogFileName)
+	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 	mustReadFiles, mustReadErr := MustRead()
 	if mustReadErr != nil {
-		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", mustReadErr)
+		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
 	}
-	lc := store.NewPlanTask(opts.Stderr, opts.Agent.Name(), opts.Model, taskID, source.Target, source.Body, resumeID)
+	lc := tasks.NewPlanTask(opts.Stderr, opts.Agent.Name(), opts.Model, taskID, source.Target, source.Body, resumeID)
 	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           source.Target,
 		Model:                  opts.Model,
@@ -99,12 +99,12 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 		if data, readErr := os.ReadFile(requirementsPath); readErr == nil {
 			refinedReq = string(data)
 		} else {
-			banner.DangerousFprintf(opts.Stderr, "J: warning: read %s: %v\n", requirementsPath, readErr)
+			banner.DangerousBox(opts.Stderr, "J: read %s: %v", requirementsPath, readErr)
 		}
 		if data, readErr := os.ReadFile(planPath); readErr == nil {
 			planMD = string(data)
 		} else {
-			banner.DangerousFprintf(opts.Stderr, "J: warning: read %s: %v\n", planPath, readErr)
+			banner.DangerousBox(opts.Stderr, "J: read %s: %v", planPath, readErr)
 		}
 	}
 	lc.Finish(planErr, refinedReq, planMD, source.Target)
@@ -132,19 +132,19 @@ func NewStartTargetFromMarkdown(raw string) (StartTarget, error) {
 	if err != nil {
 		return StartTarget{}, fmt.Errorf("J: read source: %w", err)
 	}
-	return StartTarget{TaskID: store.NewTaskID(), IsNew: true, Body: string(body), Source: abs}, nil
+	return StartTarget{TaskID: tasks.NewTaskID(), IsNew: true, Body: string(body), Source: abs}, nil
 }
 
 func PrepareStartTaskFiles(target StartTarget) (string, error) {
-	taskDir, err := store.EnsureTaskDir(target.TaskID)
+	taskDir, err := tasks.EnsureDir(target.TaskID)
 	if err != nil {
 		return "", fmt.Errorf("J: ensure task dir: %w", err)
 	}
 	if target.IsNew {
-		requirementsPath := filepath.Join(taskDir, store.RequirementsFileName)
+		requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
 		if err := os.WriteFile(requirementsPath, []byte(target.Body), 0o644); err != nil {
 			return "", fmt.Errorf("J: stage requirements: %w", err)
 		}
 	}
-	return filepath.Join(taskDir, store.AgentLogFileName), nil
+	return filepath.Join(taskDir, tasks.AgentLogFileName), nil
 }

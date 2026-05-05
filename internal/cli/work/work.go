@@ -17,6 +17,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/run"
 )
 
@@ -117,7 +118,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 	resumeID, err := agent.NewResumeID(ctx)
 	if err != nil {
-		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", err)
+		banner.DangerousBox(opts.Stderr, "J: %v", err)
 	}
 
 	proceed, confirmErr := resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, "work", res.Task, resolver.ReplanAllowed)
@@ -129,10 +130,10 @@ func Run(ctx context.Context, opts Options) (err error) {
 	}
 	lc := res.Task.BeginWorkReuse(opts.Stderr, agent.Name(), model, resumeID)
 
-	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), store.AgentLogFileName)
+	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), tasks.AgentLogFileName)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", mustReadErr)
+		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	pid, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:     res.PlanPath,

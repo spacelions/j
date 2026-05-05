@@ -10,7 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // noopTick returns a tea.Cmd that does nothing when invoked. It keeps
@@ -20,11 +20,11 @@ func noopTick() tea.Cmd {
 	return func() tea.Msg { return nil }
 }
 
-func newTestModel(tasks []store.Task, now time.Time) model {
+func newTestModel(rows []tasks.Task, now time.Time) model {
 	return model{
-		tasks:  tasks,
+		tasks:  rows,
 		now:    now,
-		reload: func() ([]store.Task, error) { return tasks, nil },
+		reload: func() ([]tasks.Task, error) { return rows, nil },
 		tick:   noopTick,
 	}
 }
@@ -53,7 +53,7 @@ func TestModel_TickAdvancesNowAndReturnsCmd(t *testing.T) {
 func TestModel_TasksMsgReplacesAndClearsErr(t *testing.T) {
 	m := newTestModel(nil, time.Now())
 	m.err = errors.New("stale")
-	fresh := []store.Task{{ID: "abc", Status: store.StatusPlanDone}}
+	fresh := []tasks.Task{{ID: "abc", Status: tasks.StatusPlanDone}}
 	updated, cmd := m.Update(tasksMsg(fresh))
 	mm := updated.(model)
 	if !reflect.DeepEqual(mm.tasks, fresh) {
@@ -129,15 +129,15 @@ func TestModel_WindowSizeMsgUpdatesWidth(t *testing.T) {
 func TestModel_View_WithTasksAndQuitHint(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 5, 0, 0, time.UTC)
 	begin := now.Add(-80 * time.Second)
-	tasks := []store.Task{{
+	rows := []tasks.Task{{
 		ID:           "active-1",
-		Status:       store.StatusPlanning,
+		Status:       tasks.StatusPlanning,
 		InvokedTool:  "cursor",
 		InvokedModel: "sonnet-4",
 		Summary:      "draft idea",
 		PlanBeginAt:  &begin,
 	}}
-	m := newTestModel(tasks, now)
+	m := newTestModel(rows, now)
 	out := m.View()
 	if !strings.Contains(out, "planning(1m:20s)") {
 		t.Fatalf("expected ticking status row: %q", out)
@@ -160,21 +160,21 @@ func TestModel_View_WithErrFooter(t *testing.T) {
 }
 
 func TestReloadCmd_TasksMsgOnSuccess(t *testing.T) {
-	want := []store.Task{{ID: "abc", Status: store.StatusPlanning}}
-	cmd := reloadCmd(func() ([]store.Task, error) { return want, nil })
+	want := []tasks.Task{{ID: "abc", Status: tasks.StatusPlanning}}
+	cmd := reloadCmd(func() ([]tasks.Task, error) { return want, nil })
 	msg := cmd()
 	got, ok := msg.(tasksMsg)
 	if !ok {
 		t.Fatalf("expected tasksMsg, got %T", msg)
 	}
-	if !reflect.DeepEqual([]store.Task(got), want) {
+	if !reflect.DeepEqual([]tasks.Task(got), want) {
 		t.Fatalf("tasks = %#v, want %#v", got, want)
 	}
 }
 
 func TestReloadCmd_ErrMsgOnFailure(t *testing.T) {
 	want := errors.New("boom")
-	cmd := reloadCmd(func() ([]store.Task, error) { return nil, want })
+	cmd := reloadCmd(func() ([]tasks.Task, error) { return nil, want })
 	msg := cmd()
 	got, ok := msg.(errMsg)
 	if !ok {
@@ -203,7 +203,7 @@ func TestDefaultTick_ProducesTickMsg(t *testing.T) {
 // hanging if bubbletea ever stops handling the byte.
 func TestRunWatch_QuitsOnInput(t *testing.T) {
 	out := &bytes.Buffer{}
-	reload := func() ([]store.Task, error) { return nil, nil }
+	reload := func() ([]tasks.Task, error) { return nil, nil }
 	done := make(chan error, 1)
 	go func() {
 		done <- runWatch(strings.NewReader("q"), out, reload)

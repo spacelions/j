@@ -6,15 +6,15 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 func ReadVerdictForTask(taskID string) string {
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		return "FAIL"
 	}
-	return ParseVerdict(filepath.Join(tasksDir, taskID, store.VerifierFindingsFileName))
+	return ParseVerdict(filepath.Join(tasksDir, taskID, tasks.VerifierFindingsFileName))
 }
 
 var verdictRegexp = regexp.MustCompile(`(?i)^\s*VERDICT:\s*(PASS|FAIL)\s*$`)

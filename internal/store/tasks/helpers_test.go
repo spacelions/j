@@ -1,11 +1,12 @@
-package store
+package tasks
 
 import (
 	"errors"
 	"os"
 	"testing"
 	"time"
-)
+
+	"github.com/spacelions/j/internal/store")
 
 // crockfordBase32 is the Crockford base32 alphabet used by ULID
 // (uppercase, with I/L/O/U excluded). It is duplicated here on
@@ -18,23 +19,20 @@ const crockfordBase32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 // fixtures so the call sites stay readable.
 func ptr[T any](v T) *T { return &v }
 
-// openTaskStore chdirs to a fresh temp dir, runs EnsureProject, and
-// returns an opened *Store rooted there. Cleanup is registered via
+// openTaskStore chdirs to a fresh temp dir, runs store.EnsureProject, and
+// returns a tasks-mode *Store rooted there. Cleanup is registered via
 // t.Cleanup so callers do not need to close the store themselves.
 func openTaskStore(t *testing.T) *Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	path, err := DefaultTasksDBPath()
+	dir, err := DefaultDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultDir: %v", err)
 	}
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := Open(dir)
 	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
@@ -61,24 +59,20 @@ func equal(a, b []string) bool {
 	return true
 }
 
-// listAllTasks opens the per-cwd tasks DB, lists every task, and
-// closes the store. Used by lifecycle tests to assert what the
-// PersistWarn-driven helpers wrote. Returns nil for "no DB yet" so
-// the negative-path tests can distinguish "file missing" from a
-// real bbolt error.
+// listAllTasks lists every task at the per-cwd tasks dir. Used by
+// lifecycle tests to assert what the PersistWarn-driven helpers
+// wrote. Returns nil for "no tasks dir yet" so the negative-path
+// tests can distinguish "missing" from a real read error.
 func listAllTasks(t *testing.T) []Task {
 	t.Helper()
-	path, err := DefaultTasksDBPath()
+	dir, err := DefaultDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultDir: %v", err)
 	}
-	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Stat(dir); errors.Is(statErr, os.ErrNotExist) {
 		return nil
 	}
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := Open(dir)
 	defer func() { _ = s.Close() }()
 	got, err := s.ListTasks()
 	if err != nil {
@@ -89,18 +83,15 @@ func listAllTasks(t *testing.T) []Task {
 
 // seedPlanDoneTask seeds a `plan-done` row for the work / verify
 // lifecycle tests. The id is returned so callers can look the row
-// back up. Use after t.Chdir(t.TempDir()) + EnsureProject().
+// back up. Use after t.Chdir(t.TempDir()) + store.EnsureProject().
 func seedPlanDoneTask(t *testing.T, summary string) string {
 	t.Helper()
 	id := NewTaskID()
-	dbPath, err := DefaultTasksDBPath()
+	dir, err := DefaultDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultDir: %v", err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := Open(dir)
 	defer func() { _ = s.Close() }()
 	begin := time.Now().UTC().Add(-time.Hour)
 	end := begin.Add(time.Minute)
@@ -126,14 +117,11 @@ func seedPlanDoneTask(t *testing.T, summary string) string {
 func seedWorkDoneTask(t *testing.T, summary string) string {
 	t.Helper()
 	id := NewTaskID()
-	dbPath, err := DefaultTasksDBPath()
+	dir, err := DefaultDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultDir: %v", err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := Open(dir)
 	defer func() { _ = s.Close() }()
 	planBegin := time.Now().UTC().Add(-2 * time.Hour)
 	planEnd := planBegin.Add(time.Minute)

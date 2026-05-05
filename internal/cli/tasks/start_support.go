@@ -11,15 +11,16 @@ import (
 
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 func persistStartRow(stderr io.Writer, target startTarget, agentLogPath string, pid int) {
 	if target.IsNew {
 		begin := time.Now().UTC()
-		store.PersistWarn(stderr, store.Task{
+		tasks.PersistWarn(stderr, tasks.Task{
 			ID:            target.TaskID,
-			Status:        store.StatusPlanning,
-			Summary:       store.Summary(target.Body, target.Source),
+			Status:        tasks.StatusPlanning,
+			Summary:       tasks.Summary(target.Body, target.Source),
 			PlanBeginAt:   &begin,
 			AgentLogPath:  agentLogPath,
 			BackgroundPID: pid,

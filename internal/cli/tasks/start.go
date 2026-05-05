@@ -18,7 +18,7 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/resolver"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/run"
 )
 
@@ -30,7 +30,7 @@ import (
 type StartUI interface {
 	SelectSource(ctx context.Context, allowed []picker.Source) (picker.Source, error)
 	PickMarkdownInCwd(ctx context.Context) (string, error)
-	PickTask(ctx context.Context, title string, tasks []store.Task) (string, bool, error)
+	PickTask(ctx context.Context, title string, tasks []tasks.Task) (string, bool, error)
 }
 
 // StartOptions configures RunStart. Stdin/Stdout/Stderr default to the

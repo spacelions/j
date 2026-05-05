@@ -8,13 +8,13 @@ import (
 
 	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/picker"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 type StartUI interface {
 	SelectSource(ctx context.Context, allowed []picker.Source) (picker.Source, error)
 	PickMarkdownInCwd(ctx context.Context) (string, error)
-	PickTask(ctx context.Context, title string, tasks []store.Task) (string, bool, error)
+	PickTask(ctx context.Context, title string, tasks []tasks.Task) (string, bool, error)
 }
 
 func ResolveStartTarget(ctx context.Context, ui StartUI, stdout io.Writer, fromFile string) (StartTarget, error) {

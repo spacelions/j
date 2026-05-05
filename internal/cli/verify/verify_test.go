@@ -18,6 +18,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -98,19 +99,16 @@ func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
 
 // readTasks lists every task in the per-cwd tasks DB. Tests call
 // this after Run to assert the lifecycle wrote what we expect.
-func readTasks(t *testing.T) []store.Task {
+func readTasks(t *testing.T) []tasks.Task {
 	t.Helper()
-	path, err := store.DefaultTasksDBPath()
+	path, err := tasks.DefaultDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	got, err := s.ListTasks()
 	if err != nil {
@@ -136,8 +134,8 @@ type scriptedUI struct {
 	pickResumeCalls int
 	confirmCalls    int
 
-	pickedTasks      []store.Task
-	pickResumedTasks []store.Task
+	pickedTasks      []tasks.Task
+	pickResumedTasks []tasks.Task
 	confirmCmd       string
 	confirmTaskID    string
 	confirmStatus    string
@@ -148,10 +146,10 @@ type scriptedUI struct {
 // resumePicked / resumeErr (the resume.go flow); other titles honour
 // pickedID / pickErr (the verify.go non-resume flow). Both branches
 // use the (id, ok, err) contract — empty id signals cancel.
-func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []store.Task) (string, bool, error) {
+func (s *scriptedUI) PickTask(_ context.Context, title string, rows []tasks.Task) (string, bool, error) {
 	if strings.Contains(title, "resume") {
 		s.pickResumeCalls++
-		s.pickResumedTasks = tasks
+		s.pickResumedTasks = rows
 		if s.resumeErr != nil {
 			return "", false, s.resumeErr
 		}
@@ -161,7 +159,7 @@ func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []store.Tas
 		return s.resumePicked, true, nil
 	}
 	s.pickCalls++
-	s.pickedTasks = tasks
+	s.pickedTasks = rows
 	if s.pickErr != nil {
 		return "", false, s.pickErr
 	}
@@ -275,11 +273,11 @@ func (s *scriptedAgent) Verify(_ context.Context, req codingagents.VerifyRequest
 }
 
 // taskFilePath returns the absolute path of a body file (e.g.
-// store.PlanFileName) for an existing task id under the current
+// tasks.PlanFileName) for an existing task id under the current
 // working directory's `.j/tasks/<id>/`.
 func taskFilePath(t *testing.T, id, name string) string {
 	t.Helper()
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
@@ -291,36 +289,33 @@ func taskFilePath(t *testing.T, id, name string) string {
 // files. Use after t.Chdir(t.TempDir()).
 func seedWorkDoneTask(t *testing.T, summary, planBody, requirementBody string) string {
 	t.Helper()
-	id := store.NewTaskID()
-	if _, err := store.EnsureTaskDir(id); err != nil {
+	id := tasks.NewTaskID()
+	if _, err := tasks.EnsureDir(id); err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
-	planPath := taskFilePath(t, id, store.PlanFileName)
+	planPath := taskFilePath(t, id, tasks.PlanFileName)
 	if err := os.WriteFile(planPath, []byte(planBody), 0o644); err != nil {
 		t.Fatalf("write plan: %v", err)
 	}
 	if requirementBody != "" {
-		reqPath := taskFilePath(t, id, store.RequirementsFileName)
+		reqPath := taskFilePath(t, id, tasks.RequirementsFileName)
 		if err := os.WriteFile(reqPath, []byte(requirementBody), 0o644); err != nil {
 			t.Fatalf("write requirements: %v", err)
 		}
 	}
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := tasks.Open(dbPath)
 	defer func() { _ = s.Close() }()
 	planBegin := time.Now().UTC().Add(-2 * time.Hour)
 	planEnd := planBegin.Add(time.Minute)
 	workBegin := planEnd.Add(time.Minute)
 	workEnd := workBegin.Add(time.Minute)
-	task := store.Task{
+	task := tasks.Task{
 		ID:               id,
-		Status:           store.StatusWorkDone,
+		Status:           tasks.StatusWorkDone,
 		InvokedTool:      "cursor",
 		InvokedModel:     "sonnet-4",
 		PlanResumeCursor: "seed-plan-cursor",
@@ -370,11 +365,11 @@ func TestRun_PassOnFirstIteration(t *testing.T) {
 	if !strings.Contains(stdout.String(), "verified task "+id) {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusCompleted {
-		t.Fatalf("tasks = %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusCompleted {
+		t.Fatalf("tasks = %+v", rows)
 	}
-	got := tasks[0]
+	got := rows[0]
 	if got.DoneAt == nil {
 		t.Fatalf("DoneAt should be stamped on completed: %+v", got)
 	}
@@ -384,7 +379,7 @@ func TestRun_PassOnFirstIteration(t *testing.T) {
 	if got.VerifyResumeCursor != testCursorChatID {
 		t.Fatalf("VerifyResumeCursor = %q", got.VerifyResumeCursor)
 	}
-	findings := taskFilePath(t, id, store.VerifierFindingsFileName)
+	findings := taskFilePath(t, id, tasks.VerifierFindingsFileName)
 	if data, err := os.ReadFile(findings); err != nil {
 		t.Fatalf("read findings: %v", err)
 	} else if !strings.Contains(string(data), "VERDICT: PASS") {
@@ -436,9 +431,9 @@ func TestRun_FailThenPass(t *testing.T) {
 	if !agent.verifiedReqs[1].Resume {
 		t.Fatalf("second verify turn should set Resume=true: %+v", agent.verifiedReqs[1])
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusCompleted {
-		t.Fatalf("tasks = %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusCompleted {
+		t.Fatalf("tasks = %+v", rows)
 	}
 }
 
@@ -451,20 +446,17 @@ func TestRun_ThreadsWorktreeIntoRequests(t *testing.T) {
 	mustInit(t)
 	id := seedWorkDoneTask(t, "summary", "plan body", "# req")
 	// Overwrite the seeded row to add a Worktree value.
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
+	s := tasks.Open(dbPath)
+	row, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := s.GetTask(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	task.Worktree = "j-my-task"
-	if err := s.PutTask(task); err != nil {
+	row.Worktree = "j-my-task"
+	if err := s.PutTask(row); err != nil {
 		t.Fatal(err)
 	}
 	_ = s.Close()
@@ -529,12 +521,12 @@ func TestRun_LoopExhausted(t *testing.T) {
 	if !strings.Contains(stdout.String(), "exhausted retries") {
 		t.Fatalf("stdout should mention exhausted retries: %q", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusVerifyDone {
-		t.Fatalf("tasks = %+v, want one verify-done", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusVerifyDone {
+		t.Fatalf("tasks = %+v, want one verify-done", rows)
 	}
-	if tasks[0].DoneAt != nil {
-		t.Fatalf("DoneAt must remain nil on verify-done: %v", tasks[0].DoneAt)
+	if rows[0].DoneAt != nil {
+		t.Fatalf("DoneAt must remain nil on verify-done: %v", rows[0].DoneAt)
 	}
 }
 
@@ -566,9 +558,9 @@ func TestRun_MaxIterations1(t *testing.T) {
 	if len(agent.workedReqs) != 0 {
 		t.Fatalf("work calls = %d, want 0 with max-iterations=1", len(agent.workedReqs))
 	}
-	tasks := readTasks(t)
-	if tasks[0].Status != store.StatusVerifyDone {
-		t.Fatalf("Status = %q", tasks[0].Status)
+	rows := readTasks(t)
+	if rows[0].Status != tasks.StatusVerifyDone {
+		t.Fatalf("Status = %q", rows[0].Status)
 	}
 }
 
@@ -593,9 +585,9 @@ func TestRun_VerifierError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "verify boom") {
 		t.Fatalf("err = %v", err)
 	}
-	tasks := readTasks(t)
-	if tasks[0].Status != store.StatusHelp {
-		t.Fatalf("Status = %q, want help", tasks[0].Status)
+	rows := readTasks(t)
+	if rows[0].Status != tasks.StatusHelp {
+		t.Fatalf("Status = %q, want help", rows[0].Status)
 	}
 }
 
@@ -622,9 +614,9 @@ func TestRun_WorkerFixError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "worker boom") {
 		t.Fatalf("err = %v", err)
 	}
-	tasks := readTasks(t)
-	if tasks[0].Status != store.StatusHelp {
-		t.Fatalf("Status = %q, want help", tasks[0].Status)
+	rows := readTasks(t)
+	if rows[0].Status != tasks.StatusHelp {
+		t.Fatalf("Status = %q, want help", rows[0].Status)
 	}
 }
 
@@ -651,9 +643,9 @@ func TestRun_MalformedVerdictTreatedAsFail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	tasks := readTasks(t)
-	if tasks[0].Status != store.StatusVerifyDone {
-		t.Fatalf("Status = %q", tasks[0].Status)
+	rows := readTasks(t)
+	if rows[0].Status != tasks.StatusVerifyDone {
+		t.Fatalf("Status = %q", rows[0].Status)
 	}
 }
 
@@ -705,21 +697,21 @@ func TestParseVerdict_EdgeCases(t *testing.T) {
 // VERIFY_YES skips it.
 func TestAllowedForVerify(t *testing.T) {
 	cases := []struct {
-		status store.TaskStatus
+		status tasks.TaskStatus
 		want   bool
 	}{
-		{store.StatusWorkDone, true},
-		{store.StatusVerifyDone, true},
-		{store.StatusHelp, true},
-		{store.StatusPlanning, false},
-		{store.StatusPlanDone, false},
-		{store.StatusWorking, false},
-		{store.StatusVerifying, false},
-		{store.StatusCompleted, false},
-		{store.TaskStatus("nonsense"), false},
+		{tasks.StatusWorkDone, true},
+		{tasks.StatusVerifyDone, true},
+		{tasks.StatusHelp, true},
+		{tasks.StatusPlanning, false},
+		{tasks.StatusPlanDone, false},
+		{tasks.StatusWorking, false},
+		{tasks.StatusVerifying, false},
+		{tasks.StatusCompleted, false},
+		{tasks.TaskStatus("nonsense"), false},
 	}
 	for _, c := range cases {
-		got := resolver.VerifyAllowed(store.Task{ID: "x", Status: c.status})
+		got := resolver.VerifyAllowed(tasks.Task{ID: "x", Status: c.status})
 		if got != c.want {
 			t.Errorf("allowedForVerify(%q) = %v, want %v", c.status, got, c.want)
 		}
@@ -758,7 +750,7 @@ func TestRun_NoCandidatesError(t *testing.T) {
 func TestRun_FromTask_NotFound(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	if _, err := store.EnsureTaskDir("seed"); err != nil {
+	if _, err := tasks.EnsureDir("seed"); err != nil {
 		t.Fatal(err)
 	}
 	agent := newScriptedAgent()
@@ -782,19 +774,16 @@ func TestRun_FromTask_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "body", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got.Status = store.StatusCompleted
+	got.Status = tasks.StatusCompleted
 	if err := s.PutTask(got); err != nil {
 		t.Fatal(err)
 	}
@@ -815,9 +804,9 @@ func TestRun_FromTask_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 	if ui.confirmCalls != 1 {
 		t.Fatalf("ConfirmStatusOverride calls = %d, want 1", ui.confirmCalls)
 	}
-	if ui.confirmCmd != "verify" || ui.confirmStatus != string(store.StatusCompleted) || ui.confirmTaskID != id {
+	if ui.confirmCmd != "verify" || ui.confirmStatus != string(tasks.StatusCompleted) || ui.confirmTaskID != id {
 		t.Fatalf("confirm args = (%q, %q, %q), want (verify, %q, %q)",
-			ui.confirmCmd, ui.confirmTaskID, ui.confirmStatus, id, store.StatusCompleted)
+			ui.confirmCmd, ui.confirmTaskID, ui.confirmStatus, id, tasks.StatusCompleted)
 	}
 	if len(agent.verifiedReqs) != 0 {
 		t.Fatal("agent.Verify should not run when the user declines the prompt")
@@ -831,19 +820,16 @@ func TestRun_FromTask_StatusMismatch_AcceptedRuns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got.Status = store.StatusPlanDone
+	got.Status = tasks.StatusPlanDone
 	if err := s.PutTask(got); err != nil {
 		t.Fatal(err)
 	}
@@ -879,19 +865,16 @@ func TestRun_FromTask_StatusMismatch_YesFlagSkipsPrompt(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got.Status = store.StatusVerifying
+	got.Status = tasks.StatusVerifying
 	if err := s.PutTask(got); err != nil {
 		t.Fatal(err)
 	}
@@ -926,19 +909,16 @@ func TestRun_FromTask_StatusMismatch_PromptError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got.Status = store.StatusPlanning
+	got.Status = tasks.StatusPlanning
 	if err := s.PutTask(got); err != nil {
 		t.Fatal(err)
 	}
@@ -967,19 +947,16 @@ func TestRun_FromTask_StatusMismatch_AbortExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got.Status = store.StatusPlanDone
+	got.Status = tasks.StatusPlanDone
 	if err := s.PutTask(got); err != nil {
 		t.Fatal(err)
 	}
@@ -1023,9 +1000,9 @@ func TestRun_AutoPicksLatestWorkDone(t *testing.T) {
 	if ui.pickCalls != 0 {
 		t.Fatalf("PickWorkDoneTask = %d, want 0 for single-task auto-pick", ui.pickCalls)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].ID != id || tasks[0].Status != store.StatusCompleted {
-		t.Fatalf("tasks = %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].ID != id || rows[0].Status != tasks.StatusCompleted {
+		t.Fatalf("tasks = %+v", rows)
 	}
 }
 
@@ -1061,13 +1038,13 @@ func TestRun_PickerOverMultipleTasks(t *testing.T) {
 			t.Fatalf("picker tasks contain unexpected id %q (want %v)", id, want)
 		}
 	}
-	tasks := readTasks(t)
-	for _, task := range tasks {
-		if task.ID == id2 && task.Status != store.StatusCompleted {
-			t.Fatalf("picked task should be completed: %+v", task)
+	rows := readTasks(t)
+	for _, row := range rows {
+		if row.ID == id2 && row.Status != tasks.StatusCompleted {
+			t.Fatalf("picked task should be completed: %+v", row)
 		}
-		if task.ID == id1 && task.Status != store.StatusWorkDone {
-			t.Fatalf("unpicked task should stay work-done: %+v", task)
+		if row.ID == id1 && row.Status != tasks.StatusWorkDone {
+			t.Fatalf("unpicked task should stay work-done: %+v", row)
 		}
 	}
 }
@@ -1170,14 +1147,11 @@ func TestRun_UnknownTool_OnTaskRow(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -1425,7 +1399,7 @@ func TestRun_ByTaskID_PlanReadError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	if err := os.Remove(taskFilePath(t, id, store.PlanFileName)); err != nil {
+	if err := os.Remove(taskFilePath(t, id, tasks.PlanFileName)); err != nil {
 		t.Fatal(err)
 	}
 	agent := newScriptedAgent()
@@ -1442,74 +1416,15 @@ func TestRun_ByTaskID_PlanReadError(t *testing.T) {
 }
 
 // TestRun_ByTaskID_TasksDBUnavailable forces openTaskLog to fail.
-func TestRun_ByTaskID_TasksDBUnavailable(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
-		TaskID: "anything",
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestRun_List_DBUnavailable forces listVerifiableTasks to fail.
-func TestRun_List_DBUnavailable(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestRun_List_DecodeError pins the bbolt decode-error branch.
 func TestRun_List_DecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	dbPath, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.EnsureBucket(store.BucketTasks); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketTasks, "bad", "not-json"); err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
+	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
 
 	agent := newScriptedAgent()
-	err = Run(context.Background(), Options{
+	err := Run(context.Background(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
@@ -1619,11 +1534,11 @@ func TestRunVerifyLoop_WaitsForSpawnedChild(t *testing.T) {
 	if !strings.Contains(stdout.String(), "verified task "+id) {
 		t.Fatalf("stdout = %q, want PASS line", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusCompleted {
-		t.Fatalf("tasks = %+v, want completed", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusCompleted {
+		t.Fatalf("tasks = %+v, want completed", rows)
 	}
-	findings := taskFilePath(t, id, store.VerifierFindingsFileName)
+	findings := taskFilePath(t, id, tasks.VerifierFindingsFileName)
 	data, readErr := os.ReadFile(findings)
 	if readErr != nil {
 		t.Fatalf("read findings: %v", readErr)
@@ -1682,7 +1597,7 @@ func startLongChild(t *testing.T) int {
 // location without exercising bbolt.
 func resolvedForTest(taskDir string) resolved {
 	return resolved{
-		Task:             store.Task{ID: "x", InvokedModel: "m", InvokedTool: "cursor"},
+		Task:             tasks.Task{ID: "x", InvokedModel: "m", InvokedTool: "cursor"},
 		TaskDir:          taskDir,
 		RequirementsPath: filepath.Join(taskDir, "req.md"),
 		PlanPath:         filepath.Join(taskDir, "plan.md"),
@@ -1694,7 +1609,7 @@ func resolvedForTest(taskDir string) resolved {
 // TestRunVerifyLoop_VerifierWaitCtxCancelled covers the new
 // run.WaitForExit error branch after verifierAgent.Verify: the
 // verifier returns a live PID, ctx is cancelled mid-poll, and the
-// loop must return store.VerifyOutcomeNoRetries with ctx.Err().
+// loop must return tasks.VerifyOutcomeNoRetries with ctx.Err().
 func TestRunVerifyLoop_VerifierWaitCtxCancelled(t *testing.T) {
 	pid := startLongChild(t)
 	agent := &liveChildAgent{pid: pid}
@@ -1710,7 +1625,7 @@ func TestRunVerifyLoop_VerifierWaitCtxCancelled(t *testing.T) {
 		MaxIterations: 3,
 		Stderr:        io.Discard,
 	}, agent, agent, "m", "id", res)
-	if outcome != store.VerifyOutcomeNoRetries {
+	if outcome != tasks.VerifyOutcomeNoRetries {
 		t.Fatalf("outcome = %v, want VerifyOutcomeNoRetries", outcome)
 	}
 	if !errors.Is(err, context.Canceled) {
@@ -1740,7 +1655,7 @@ func TestRunVerifyLoop_WorkerWaitCtxCancelled(t *testing.T) {
 		MaxIterations: 3,
 		Stderr:        io.Discard,
 	}, verifier, worker, "m", "id", res)
-	if outcome != store.VerifyOutcomeNoRetries {
+	if outcome != tasks.VerifyOutcomeNoRetries {
 		t.Fatalf("outcome = %v, want VerifyOutcomeNoRetries", outcome)
 	}
 	if !errors.Is(err, context.Canceled) {

@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/banner"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // noTaskMessage is the single line printed to stdout when the named
@@ -88,9 +88,9 @@ func (o DiscardOptions) withDefaults() DiscardOptions {
 //  4. On confirm, removeTaskWorktree removes the task's recorded git
 //     worktree via `git worktree remove --force`, matching
 //     `git worktree list --porcelain` by directory basename or by
-//     refs/heads/<name>. When task.Worktree is empty (legacy rows or
+//     refs/heads/<name>. When t.Worktree is empty (legacy rows or
 //     rows that never went through `j work`) the lookup falls back to
-//     store.WorktreeNameFor(project, task) so the deterministic slug
+//     tasks.WorktreeNameFor(project, task) so the deterministic slug
 //     used by the worker prompt is still tried. Failures print a
 //     single stderr warning and do not abort the discard.
 //  5. DeleteTask removes the bbolt row.
@@ -105,20 +105,17 @@ func (o DiscardOptions) withDefaults() DiscardOptions {
 // re-acquire it.
 func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 	opts = opts.withDefaults()
-	path, err := store.DefaultTasksDBPath()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		return err
 	}
 	if opts.TaskID == "" {
-		if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
+		if _, statErr := os.Stat(tasksDir); errors.Is(statErr, fs.ErrNotExist) {
 			banner.Fprintln(opts.Stdout, emptyMessage)
 			return nil
 		}
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		return err
-	}
+	s := tasks.Open(tasksDir)
 	defer func() { _ = s.Close() }()
 
 	if opts.TaskID == "" {
@@ -132,7 +129,7 @@ func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 		opts.TaskID = id
 	}
 
-	task, err := s.GetTask(opts.TaskID)
+	t, err := s.GetTask(opts.TaskID)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			banner.Fprintln(opts.Stdout, noTaskMessage)
@@ -141,7 +138,7 @@ func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 		return err
 	}
 	if !opts.Yes {
-		ok, err := opts.UI.ConfirmDiscard(ctx, task)
+		ok, err := opts.UI.ConfirmDiscard(ctx, t)
 		if err != nil {
 			return err
 		}
@@ -150,11 +147,11 @@ func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 			return nil
 		}
 	}
-	removeTaskWorktree(ctx, opts.Stderr, task)
+	removeTaskWorktree(ctx, opts.Stderr, t)
 	if err := s.DeleteTask(opts.TaskID); err != nil {
 		return fmt.Errorf("tasks discard: %w", err)
 	}
-	if err := store.RemoveTaskDir(opts.TaskID); err != nil {
+	if err := tasks.RemoveDir(opts.TaskID); err != nil {
 		return fmt.Errorf("tasks discard: %w", err)
 	}
 	banner.DangerousFprintf(opts.Stdout, "J: discarded %s\n", opts.TaskID)

@@ -51,25 +51,14 @@ const dirName = ".j"
 // fileName is the bbolt file inside dirName.
 const fileName = "settings"
 
-// TasksDirName is the per-project tasks directory inside dirName. The
-// directory holds both the bbolt metadata file (TasksDBName) and one
-// subdirectory per task (`<id>/`) with `requirements.md` and
-// `plan.md`.
-const TasksDirName = "tasks"
-
-// TasksDBName is the bbolt filename inside <cwd>/.j/<TasksDirName>/.
-// It carries task metadata only; the body markdown lives in the
-// per-task subdirectories.
-const TasksDBName = "list.db"
-
-// PlanFileName is the filename of the plan markdown stored under
-// <cwd>/.j/tasks/<id>/. j plan writes it; j work reads it.
-const PlanFileName = "plan.md"
-
-// RequirementsFileName is the filename of the requirements markdown
-// stored under <cwd>/.j/tasks/<id>/. j plan writes it; j work and
-// j tasks summary derivation read it.
-const RequirementsFileName = "requirements.md"
+// tasksDirName is the per-project tasks directory inside dirName.
+// The full tasks-package contract (the per-task TOML rows, lifecycle
+// helpers, and so on) lives at internal/store/task; the constant
+// here is private and only used by EnsureProject + ProjectInitialized
+// to lay down the directory shell. Callers that need the externally
+// visible form should import internal/store/task and reference
+// tasks.DirName instead.
+const tasksDirName = "tasks"
 
 // openTimeout bounds how long we'll wait for a file lock when opening
 // the bolt DB. A short timeout keeps tests responsive and surfaces
@@ -82,8 +71,10 @@ type KV struct {
 	Value string
 }
 
-// Store wraps a *bbolt.DB. Construct one with Open and call Close when
-// done. The zero value is not usable.
+// Store wraps a *bbolt.DB for the settings file at `<cwd>/.j/settings`.
+// Construct one with Open and call Close when done. The zero value is
+// not usable. Task-side persistence lives in the sibling
+// `internal/store/task` package; this Store has no notion of tasks.
 type Store struct {
 	db *bolt.DB
 }
@@ -129,37 +120,20 @@ func DefaultPath() (string, error) {
 	return filepath.Join(dir, fileName), nil
 }
 
-// DefaultTasksDir returns the absolute path to the per-project tasks
-// directory (`<cwd>/.j/tasks`). The directory holds the bbolt metadata
-// file (DefaultTasksDBPath) plus one subdirectory per task.
-func DefaultTasksDir() (string, error) {
-	dir, err := DefaultDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, TasksDirName), nil
-}
-
-// DefaultTasksDBPath returns the absolute path to the bbolt task
-// metadata file at `<cwd>/.j/tasks/list.db`.
-func DefaultTasksDBPath() (string, error) {
-	tasksDir, err := DefaultTasksDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(tasksDir, TasksDBName), nil
-}
-
 // EnsureProject creates the per-project state layout under <cwd>/:
 //   - .j/                   (0o755)
 //   - .j/tasks/             (0o755)
 //   - .j/settings           (empty bbolt file with no buckets)
-//   - .j/tasks/list.db      (empty bbolt file with no buckets)
 //
 // It also appends `.j` to <cwd>/.gitignore when one already exists
 // and does not yet carry the entry. The helper is idempotent: a
 // re-run on a fully-initialized layout creates nothing new but is
 // not an error.
+//
+// Tasks are stored as per-task TOML files at
+// `<cwd>/.j/tasks/<id>/task.toml` — there is no central tasks DB
+// file to pre-create here; per-task directories are created on
+// demand by EnsureTaskDir.
 //
 // EnsureProject is the only write-side helper in this package: every
 // other Open / EnsureTaskDir call assumes the layout exists and
@@ -173,14 +147,11 @@ func EnsureProject() error {
 	if err := os.MkdirAll(jDir, 0o755); err != nil {
 		return fmt.Errorf("store: mkdir %q: %w", jDir, err)
 	}
-	tasksDir := filepath.Join(jDir, TasksDirName)
+	tasksDir := filepath.Join(jDir, tasksDirName)
 	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
 		return fmt.Errorf("store: mkdir %q: %w", tasksDir, err)
 	}
 	if err := touchBoltFile(filepath.Join(jDir, fileName)); err != nil {
-		return err
-	}
-	if err := touchBoltFile(filepath.Join(tasksDir, TasksDBName)); err != nil {
 		return err
 	}
 	return ensureGitignoreEntry(jDir)
@@ -213,12 +184,15 @@ func touchBoltFile(path string) error {
 	return nil
 }
 
-// ProjectInitialized reports whether the four artifacts written by
-// EnsureProject (the two directories and the two bbolt files) are
-// all present in the current working directory. It returns
-// (true, nil) only when every artifact exists with the expected
-// type; missing artifacts yield (false, nil) so callers can
-// distinguish "needs init" from "stat error".
+// ProjectInitialized reports whether the three artifacts written by
+// EnsureProject (the .j directory, the settings bbolt file, the
+// tasks subdirectory) are all present in the current working
+// directory. It returns (true, nil) only when every artifact exists
+// with the expected type; missing artifacts yield (false, nil) so
+// callers can distinguish "needs init" from "stat error". Per-task
+// directories under `.j/tasks/<id>/` are not part of the
+// initialisation contract — they are created on demand by
+// EnsureTaskDir as tasks are minted.
 func ProjectInitialized() (bool, error) {
 	jDir, err := DefaultDir()
 	if err != nil {
@@ -230,8 +204,7 @@ func ProjectInitialized() (bool, error) {
 	}{
 		{jDir, true},
 		{filepath.Join(jDir, fileName), false},
-		{filepath.Join(jDir, TasksDirName), true},
-		{filepath.Join(jDir, TasksDirName, TasksDBName), false},
+		{filepath.Join(jDir, tasksDirName), true},
 	}
 	for _, c := range checks {
 		ok, err := pathHasKind(c.path, c.isDir)
@@ -261,60 +234,6 @@ func pathHasKind(path string, isDir bool) (bool, error) {
 		return info.IsDir(), nil
 	}
 	return !info.IsDir(), nil
-}
-
-// EnsureTaskDir creates `<cwd>/.j/tasks/<id>/` (with mkdir -p) and
-// returns its absolute path. The parent `.j/tasks/` directory must
-// already exist (created by `j init` via EnsureProject); a missing
-// parent surfaces a wrapped fs.ErrNotExist so callers can prompt the
-// user to run init.
-func EnsureTaskDir(id string) (string, error) {
-	if id == "" {
-		return "", errors.New("store: empty task id")
-	}
-	tasksDir, err := DefaultTasksDir()
-	if err != nil {
-		return "", err
-	}
-	if _, err := os.Stat(tasksDir); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return "", fmt.Errorf("store: %q missing; run `j init`: %w", tasksDir, err)
-		}
-		return "", fmt.Errorf("store: stat %q: %w", tasksDir, err)
-	}
-	taskDir := filepath.Join(tasksDir, id)
-	if err := os.MkdirAll(taskDir, 0o755); err != nil {
-		return "", fmt.Errorf("store: mkdir %q: %w", taskDir, err)
-	}
-	return taskDir, nil
-}
-
-// RemoveTaskDir removes `<cwd>/.j/tasks/<id>/` and every artifact
-// inside it. The parent `.j/tasks/` directory must already exist
-// (created by `j init` via EnsureProject); a missing parent surfaces
-// a wrapped fs.ErrNotExist so callers can prompt the user to run
-// init (mirroring EnsureTaskDir). The helper is idempotent: a
-// missing per-task directory is treated as a no-op because
-// os.RemoveAll returns nil when the target is absent.
-func RemoveTaskDir(id string) error {
-	if id == "" {
-		return errors.New("store: empty task id")
-	}
-	tasksDir, err := DefaultTasksDir()
-	if err != nil {
-		return err
-	}
-	if _, err := os.Stat(tasksDir); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("store: %q missing; run `j init`: %w", tasksDir, err)
-		}
-		return fmt.Errorf("store: stat %q: %w", tasksDir, err)
-	}
-	taskDir := filepath.Join(tasksDir, id)
-	if err := os.RemoveAll(taskDir); err != nil {
-		return fmt.Errorf("store: remove %q: %w", taskDir, err)
-	}
-	return nil
 }
 
 // Open opens the bolt database at path. The parent directory and the

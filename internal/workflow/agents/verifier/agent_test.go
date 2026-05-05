@@ -13,6 +13,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -67,8 +68,8 @@ func TestNew_ShellOutPassEscalates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	taskID := store.NewTaskID()
-	taskDir, err := store.EnsureTaskDir(taskID)
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
@@ -76,9 +77,9 @@ func TestNew_ShellOutPassEscalates(t *testing.T) {
 		t.Fatalf("write plan: %v", err)
 	}
 	testutil.SeedAgentBucket(t, store.BucketVerifier, "scripted", "m1")
-	testutil.SeedTaskRow(t, store.Task{
+	testutil.SeedTaskRow(t, tasks.Task{
 		ID:          taskID,
-		Status:      store.StatusWorkDone,
+		Status:      tasks.StatusWorkDone,
 		InvokedTool: "scripted",
 		Summary:     "task",
 	})
@@ -101,7 +102,7 @@ func TestNew_ShellOutPassEscalates(t *testing.T) {
 		t.Fatalf("expected an event with Actions.Escalate=true; got %v", events)
 	}
 	got := testutil.ReadTaskRow(t, taskID)
-	if got.Status != store.StatusCompleted {
+	if got.Status != tasks.StatusCompleted {
 		t.Fatalf("Status = %q, want completed", got.Status)
 	}
 }
@@ -110,8 +111,8 @@ func TestNew_ShellOutFailDoesNotEscalate(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	taskID := store.NewTaskID()
-	taskDir, err := store.EnsureTaskDir(taskID)
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
@@ -119,9 +120,9 @@ func TestNew_ShellOutFailDoesNotEscalate(t *testing.T) {
 		t.Fatalf("write plan: %v", err)
 	}
 	testutil.SeedAgentBucket(t, store.BucketVerifier, "scripted", "m1")
-	testutil.SeedTaskRow(t, store.Task{
+	testutil.SeedTaskRow(t, tasks.Task{
 		ID:          taskID,
-		Status:      store.StatusWorkDone,
+		Status:      tasks.StatusWorkDone,
 		InvokedTool: "scripted",
 		Summary:     "task",
 	})
@@ -142,7 +143,7 @@ func TestNew_ShellOutFailDoesNotEscalate(t *testing.T) {
 		t.Fatalf("Escalate must remain false on FAIL")
 	}
 	got := testutil.ReadTaskRow(t, taskID)
-	if got.Status != store.StatusVerifyDone {
+	if got.Status != tasks.StatusVerifyDone {
 		t.Fatalf("Status = %q, want verify-done", got.Status)
 	}
 }
@@ -151,8 +152,8 @@ func TestNew_ShellOutVerifyFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	taskID := store.NewTaskID()
-	taskDir, err := store.EnsureTaskDir(taskID)
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
@@ -160,9 +161,9 @@ func TestNew_ShellOutVerifyFails(t *testing.T) {
 		t.Fatalf("write plan: %v", err)
 	}
 	testutil.SeedAgentBucket(t, store.BucketVerifier, "scripted", "m1")
-	testutil.SeedTaskRow(t, store.Task{
+	testutil.SeedTaskRow(t, tasks.Task{
 		ID:          taskID,
-		Status:      store.StatusWorkDone,
+		Status:      tasks.StatusWorkDone,
 		InvokedTool: "scripted",
 		Summary:     "task",
 	})
@@ -189,8 +190,8 @@ func TestNew_ShellOutDefaultsMaxIterations(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	taskID := store.NewTaskID()
-	taskDir, err := store.EnsureTaskDir(taskID)
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
@@ -198,9 +199,9 @@ func TestNew_ShellOutDefaultsMaxIterations(t *testing.T) {
 		t.Fatalf("write plan: %v", err)
 	}
 	testutil.SeedAgentBucket(t, store.BucketVerifier, "scripted", "m1")
-	testutil.SeedTaskRow(t, store.Task{
+	testutil.SeedTaskRow(t, tasks.Task{
 		ID:          taskID,
-		Status:      store.StatusWorkDone,
+		Status:      tasks.StatusWorkDone,
 		InvokedTool: "scripted",
 		Summary:     "task",
 	})

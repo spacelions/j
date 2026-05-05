@@ -14,6 +14,7 @@ import (
 
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // scriptedUI returns a pre-set boolean from ConfirmReset and tracks
@@ -65,9 +66,8 @@ func TestRun_FreshInitCreatesAllArtifacts(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	dirExists(t, filepath.Join(dir, ".j"))
-	dirExists(t, filepath.Join(dir, ".j", store.TasksDirName))
+	dirExists(t, filepath.Join(dir, ".j", tasks.DirName))
 	fileExists(t, filepath.Join(dir, ".j", "settings"))
-	fileExists(t, filepath.Join(dir, ".j", store.TasksDirName, store.TasksDBName))
 	if !strings.Contains(stdout.String(), "initialized ") {
 		t.Fatalf("stdout = %q, want initialized", stdout.String())
 	}
@@ -189,7 +189,6 @@ func TestRun_PartialState_FillsMissingArtifacts(t *testing.T) {
 		t.Fatalf("UI calls = %d, want 0 (partial state should not prompt)", ui.calls)
 	}
 	fileExists(t, filepath.Join(dir, ".j", "settings"))
-	fileExists(t, filepath.Join(dir, ".j", store.TasksDirName, store.TasksDBName))
 }
 
 func TestRun_UIError(t *testing.T) {

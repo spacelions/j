@@ -86,10 +86,15 @@ coverage:
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+EnsureTaskDir[[:space:]]' \
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+RemoveTaskDir[[:space:]]' \
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+touchBoltFile[[:space:]]' \
-		-e 'internal/store/task\.go:[0-9]+:[[:space:]]+PutTask[[:space:]]' \
-		-e 'internal/store/persist\.go:[0-9]+:[[:space:]]+PersistWarn[[:space:]]' \
-		-e 'internal/store/lifecycle_plan\.go:[0-9]+:[[:space:]]+BeginPlanReuse[[:space:]]' \
-		-e 'internal/store/lifecycle_verify\.go:[0-9]+:[[:space:]]+BeginVerifyResume[[:space:]]' \
+		-e 'internal/store/tasks/task\.go:[0-9]+:[[:space:]]+PutTask[[:space:]]' \
+		-e 'internal/store/tasks/persist\.go:[0-9]+:[[:space:]]+PersistWarn[[:space:]]' \
+		-e 'internal/store/tasks/lifecycle_plan\.go:[0-9]+:[[:space:]]+BeginPlanReuse[[:space:]]' \
+		-e 'internal/store/tasks/lifecycle_verify\.go:[0-9]+:[[:space:]]+BeginVerifyResume[[:space:]]' \
+		-e 'internal/store/tasks/dir\.go:[0-9]+:[[:space:]]+DefaultDir[[:space:]]' \
+		-e 'internal/store/tasks/dir\.go:[0-9]+:[[:space:]]+EnsureDir[[:space:]]' \
+		-e 'internal/store/tasks/dir\.go:[0-9]+:[[:space:]]+RemoveDir[[:space:]]' \
+		-e 'internal/cli/tasks/cmd\.go:[0-9]+:[[:space:]]+terminalWidth[[:space:]]' \
+		-e 'internal/util/agentlog/agentlog\.go:[0-9]+:[[:space:]]+Emit[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+openTasks[[:space:]]' \
 		-e 'internal/cli/work/work\.go:[0-9]+:[[:space:]]+openTasks[[:space:]]' \
 		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+openTasks[[:space:]]' \
@@ -152,6 +157,8 @@ coverage:
 		-e 'internal/resolver/task\.go:[0-9]+:[[:space:]]+resolveVerifyByTaskID[[:space:]]' \
 		-e 'internal/resolver/task\.go:[0-9]+:[[:space:]]+TaskByID[[:space:]]' \
 		-e 'internal/resolver/task\.go:[0-9]+:[[:space:]]+listResolvableTasks[[:space:]]' \
+		-e 'internal/resolver/task\.go:[0-9]+:[[:space:]]+ResolveWorkPlan[[:space:]]' \
+		-e 'internal/resolver/task\.go:[0-9]+:[[:space:]]+ResolveVerifyTask[[:space:]]' \
 		-e 'internal/resolver/task\.go:[0-9]+:[[:space:]]+openTaskStore[[:space:]]' \
 		-e 'internal/resolver/verdict\.go:[0-9]+:[[:space:]]+ReadVerdictForTask[[:space:]]' \
 		-e 'internal/store/settings\.go:[0-9]+:[[:space:]]+OpenSettings[[:space:]]' \
@@ -159,6 +166,11 @@ coverage:
 		-e 'internal/store/settings\.go:[0-9]+:[[:space:]]+LoadTaskConfig[[:space:]]' \
 		-e 'internal/store/settings\.go:[0-9]+:[[:space:]]+LoadPlanRequiresApproval[[:space:]]' \
 		-e 'internal/store/settings\.go:[0-9]+:[[:space:]]+readSetting[[:space:]]' \
+		-e 'internal/store/tasks/task\.go:[0-9]+:[[:space:]]+PutTask[[:space:]]' \
+		-e 'internal/store/tasks/task\.go:[0-9]+:[[:space:]]+GetTask[[:space:]]' \
+		-e 'internal/store/tasks/task\.go:[0-9]+:[[:space:]]+DeleteTask[[:space:]]' \
+		-e 'internal/store/tasks/task\.go:[0-9]+:[[:space:]]+ListTasks[[:space:]]' \
+		-e 'internal/store/tasks/atomic\.go:[0-9]+:[[:space:]]+writeFileAtomic[[:space:]]' \
 		-e 'internal/testutil/.*\.go:[0-9]+:[[:space:]]+' \
 		-e 'internal/workflow/workflow_task\.go:[0-9]+:[[:space:]]+runForTask[[:space:]]' \
 		-e 'internal/workflow/workflow_task\.go:[0-9]+:[[:space:]]+taskSubAgents[[:space:]]' \

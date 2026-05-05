@@ -16,14 +16,14 @@ import (
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // taskFilePath returns the expected absolute location of `<id>/<name>`
 // under the per-cwd tasks directory.
 func taskFilePath(t *testing.T, id, name string) string {
 	t.Helper()
-	dir, err := store.DefaultTasksDir()
+	dir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
@@ -33,28 +33,25 @@ func taskFilePath(t *testing.T, id, name string) string {
 // seedReplanTask writes a task row with the supplied status,
 // requirements body, and (optionally) a fresh PlanBeginAt. Used by
 // the re-plan tests to drive runReplanTask against a known state.
-func seedReplanTask(t *testing.T, status store.TaskStatus, requirement string, planBegin *time.Time) string {
+func seedReplanTask(t *testing.T, status tasks.TaskStatus, requirement string, planBegin *time.Time) string {
 	t.Helper()
-	id := store.NewTaskID()
-	if _, err := store.EnsureTaskDir(id); err != nil {
+	id := tasks.NewTaskID()
+	if _, err := tasks.EnsureDir(id); err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
 	if requirement != "" {
-		reqPath := taskFilePath(t, id, store.RequirementsFileName)
+		reqPath := taskFilePath(t, id, tasks.RequirementsFileName)
 		if err := os.WriteFile(reqPath, []byte(requirement), 0o644); err != nil {
 			t.Fatalf("write requirements: %v", err)
 		}
 	}
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := tasks.Open(dbPath)
 	defer func() { _ = s.Close() }()
-	task := store.Task{
+	task := tasks.Task{
 		ID:               id,
 		Status:           status,
 		InvokedTool:      "cursor-prev",
@@ -75,22 +72,22 @@ func seedReplanTask(t *testing.T, status store.TaskStatus, requirement string, p
 // confirm prompt.
 func TestAllowedForReplan(t *testing.T) {
 	cases := []struct {
-		status store.TaskStatus
+		status tasks.TaskStatus
 		want   bool
 	}{
-		{store.StatusPlanDone, true},
-		{store.StatusHelp, true},
-		{store.StatusPlanning, false},
-		{store.StatusWorking, false},
-		{store.StatusVerifying, false},
-		{store.StatusCompleted, false},
-		{store.StatusWorkDone, false},
-		{store.StatusVerifyDone, false},
-		{store.TaskStatus("unknown"), false},
+		{tasks.StatusPlanDone, true},
+		{tasks.StatusHelp, true},
+		{tasks.StatusPlanning, false},
+		{tasks.StatusWorking, false},
+		{tasks.StatusVerifying, false},
+		{tasks.StatusCompleted, false},
+		{tasks.StatusWorkDone, false},
+		{tasks.StatusVerifyDone, false},
+		{tasks.TaskStatus("unknown"), false},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.status), func(t *testing.T) {
-			got := resolver.ReplanAllowed(store.Task{Status: tc.status})
+			got := resolver.ReplanAllowed(tasks.Task{Status: tc.status})
 			if got != tc.want {
 				t.Fatalf("allowedForReplan(%q) = %v, want %v", tc.status, got, tc.want)
 			}
@@ -105,7 +102,7 @@ func TestConfirmStatusOverride_AllowedShortCircuits(t *testing.T) {
 	ui := &scriptedUI{}
 	proceed, err := resolver.ConfirmStatusOverride(context.Background(), ui, false,
 		"re-plan",
-		store.Task{ID: "id1", Status: store.StatusPlanDone},
+		tasks.Task{ID: "id1", Status: tasks.StatusPlanDone},
 		resolver.ReplanAllowed)
 	if err != nil {
 		t.Fatalf("err = %v", err)
@@ -126,7 +123,7 @@ func TestConfirmStatusOverride_YesFlagSkipsPrompt(t *testing.T) {
 	proceed, err := resolver.ConfirmStatusOverride(context.Background(),
 		ui, true,
 		"re-plan",
-		store.Task{ID: "id1", Status: store.StatusWorking},
+		tasks.Task{ID: "id1", Status: tasks.StatusWorking},
 		resolver.ReplanAllowed)
 	if err != nil {
 		t.Fatalf("err = %v", err)
@@ -147,7 +144,7 @@ func TestConfirmStatusOverride_PromptYes(t *testing.T) {
 	proceed, err := resolver.ConfirmStatusOverride(context.Background(),
 		ui, false,
 		"re-plan",
-		store.Task{ID: "id1", Status: store.StatusWorking},
+		tasks.Task{ID: "id1", Status: tasks.StatusWorking},
 		resolver.ReplanAllowed)
 	if err != nil {
 		t.Fatalf("err = %v", err)
@@ -158,7 +155,7 @@ func TestConfirmStatusOverride_PromptYes(t *testing.T) {
 	if ui.confirmCalls != 1 {
 		t.Fatalf("ConfirmStatusOverride calls = %d, want 1", ui.confirmCalls)
 	}
-	if ui.confirmCmd != "re-plan" || ui.confirmStatus != string(store.StatusWorking) || ui.confirmTaskID != "id1" {
+	if ui.confirmCmd != "re-plan" || ui.confirmStatus != string(tasks.StatusWorking) || ui.confirmTaskID != "id1" {
 		t.Fatalf("confirm args = (%q, %q, %q)", ui.confirmCmd, ui.confirmTaskID, ui.confirmStatus)
 	}
 }
@@ -171,7 +168,7 @@ func TestConfirmStatusOverride_PromptNo(t *testing.T) {
 	proceed, err := resolver.ConfirmStatusOverride(context.Background(),
 		ui, false,
 		"re-plan",
-		store.Task{ID: "id1", Status: store.StatusWorking},
+		tasks.Task{ID: "id1", Status: tasks.StatusWorking},
 		resolver.ReplanAllowed)
 	if err != nil {
 		t.Fatalf("err = %v", err)
@@ -188,7 +185,7 @@ func TestConfirmStatusOverride_PromptError(t *testing.T) {
 	proceed, err := resolver.ConfirmStatusOverride(context.Background(),
 		ui, false,
 		"re-plan",
-		store.Task{ID: "id1", Status: store.StatusWorking},
+		tasks.Task{ID: "id1", Status: tasks.StatusWorking},
 		resolver.ReplanAllowed)
 	if err == nil || !strings.Contains(err.Error(), "confirm boom") {
 		t.Fatalf("err = %v", err)
@@ -213,64 +210,24 @@ func TestLoadTaskByID_NotFound(t *testing.T) {
 func TestLoadTaskByID_Success(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id := seedReplanTask(t, store.StatusPlanDone, "# req", nil)
+	id := seedReplanTask(t, tasks.StatusPlanDone, "# req", nil)
 	got, err := loadTaskByID(id)
 	if err != nil {
 		t.Fatalf("loadTaskByID: %v", err)
 	}
-	if got.ID != id || got.Status != store.StatusPlanDone {
+	if got.ID != id || got.Status != tasks.StatusPlanDone {
 		t.Fatalf("got = %+v", got)
 	}
 }
 
-// TestLoadTaskByID_OpenFails covers the open-failure branch by
-// replacing list.db with a directory before the call.
-func TestLoadTaskByID_OpenFails(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	dbPath, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(dbPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(dbPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	_, err = loadTaskByID("anything")
-	if err == nil || !strings.Contains(err.Error(), "plan: tasks db") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestListAllTasks_OpenFails covers the open-failure branch.
-func TestListAllTasks_OpenFails(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	dbPath, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(dbPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(dbPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	_, err = listAllTasks()
-	if err == nil || !strings.Contains(err.Error(), "plan: tasks db") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestListAllTasks_SortsAndReturns confirms the helper returns every
-// row sorted by store.SortTasks (active-first ordering).
+// row sorted by tasks.SortTasks (active-first ordering).
 func TestListAllTasks_SortsAndReturns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id1 := seedReplanTask(t, store.StatusPlanDone, "a", nil)
-	id2 := seedReplanTask(t, store.StatusPlanning, "b", nil)
+	id1 := seedReplanTask(t, tasks.StatusPlanDone, "a", nil)
+	id2 := seedReplanTask(t, tasks.StatusPlanning, "b", nil)
 	got, err := listAllTasks()
 	if err != nil {
 		t.Fatalf("listAllTasks: %v", err)
@@ -278,7 +235,7 @@ func TestListAllTasks_SortsAndReturns(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("len = %d, want 2", len(got))
 	}
-	// store.SortTasks puts active (planning/working/verifying)
+	// tasks.SortTasks puts active (planning/working/verifying)
 	// rows first; the planning row therefore precedes plan-done.
 	if got[0].ID != id2 || got[1].ID != id1 {
 		t.Fatalf("order = [%s, %s], want [%s, %s]", got[0].ID, got[1].ID, id2, id1)
@@ -290,7 +247,7 @@ func TestListAllTasks_SortsAndReturns(t *testing.T) {
 func TestRun_FromTask_BypassesSourceSelector(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id := seedReplanTask(t, store.StatusPlanDone, "# req\nbody", nil)
+	id := seedReplanTask(t, tasks.StatusPlanDone, "# req\nbody", nil)
 	agent := newScriptedAgent()
 	ui := &scriptedUI{}
 	err := Run(context.Background(), Options{
@@ -339,7 +296,7 @@ func TestRun_FromTask_NotFound(t *testing.T) {
 func TestRun_FromTask_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id := seedReplanTask(t, store.StatusWorking, "# req", nil)
+	id := seedReplanTask(t, tasks.StatusWorking, "# req", nil)
 	agent := newScriptedAgent()
 	ui := &scriptedUI{confirm: false}
 	err := Run(context.Background(), Options{
@@ -355,15 +312,15 @@ func TestRun_FromTask_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 	if ui.confirmCalls != 1 {
 		t.Fatalf("ConfirmStatusOverride calls = %d, want 1", ui.confirmCalls)
 	}
-	if ui.confirmCmd != "re-plan" || ui.confirmTaskID != id || ui.confirmStatus != string(store.StatusWorking) {
+	if ui.confirmCmd != "re-plan" || ui.confirmTaskID != id || ui.confirmStatus != string(tasks.StatusWorking) {
 		t.Fatalf("confirm args = (%q, %q, %q)", ui.confirmCmd, ui.confirmTaskID, ui.confirmStatus)
 	}
 	if agent.planned != 0 {
 		t.Fatal("agent.Plan should not run when the user declines")
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusWorking {
-		t.Fatalf("declined task should stay working: %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusWorking {
+		t.Fatalf("declined task should stay working: %+v", rows)
 	}
 }
 
@@ -373,7 +330,7 @@ func TestRun_FromTask_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 func TestRun_FromTask_StatusMismatch_AcceptedRuns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id := seedReplanTask(t, store.StatusWorking, "# old req\nbody", nil)
+	id := seedReplanTask(t, tasks.StatusWorking, "# old req\nbody", nil)
 	agent := newScriptedAgent()
 	agent.requirement = "# refreshed req"
 	agent.plan = "1. step\n2. step"
@@ -391,9 +348,9 @@ func TestRun_FromTask_StatusMismatch_AcceptedRuns(t *testing.T) {
 	if agent.planned != 1 {
 		t.Fatalf("agent.planned = %d, want 1", agent.planned)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusPlanDone {
-		t.Fatalf("tasks = %+v, want one plan-done row", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusPlanDone {
+		t.Fatalf("tasks = %+v, want one plan-done row", rows)
 	}
 }
 
@@ -403,7 +360,7 @@ func TestRun_FromTask_StatusMismatch_AcceptedRuns(t *testing.T) {
 func TestRun_FromTask_YesFlagSkipsPrompt(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id := seedReplanTask(t, store.StatusVerifying, "# req\nbody", nil)
+	id := seedReplanTask(t, tasks.StatusVerifying, "# req\nbody", nil)
 	agent := newScriptedAgent()
 	ui := &scriptedUI{}
 	err := Run(context.Background(), Options{
@@ -430,7 +387,7 @@ func TestRun_FromTask_YesFlagSkipsPrompt(t *testing.T) {
 func TestRun_FromTask_StatusMismatch_PromptError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id := seedReplanTask(t, store.StatusPlanning, "# req", nil)
+	id := seedReplanTask(t, tasks.StatusPlanning, "# req", nil)
 	agent := newScriptedAgent()
 	ui := &scriptedUI{confirmErr: errors.New("confirm boom")}
 	err := Run(context.Background(), Options{
@@ -454,7 +411,7 @@ func TestRun_FromTask_StatusMismatch_PromptError(t *testing.T) {
 func TestRun_FromTask_StatusMismatch_AbortExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id := seedReplanTask(t, store.StatusCompleted, "# req", nil)
+	id := seedReplanTask(t, tasks.StatusCompleted, "# req", nil)
 	agent := newScriptedAgent()
 	ui := &scriptedUI{confirmErr: huh.ErrUserAborted}
 	err := Run(context.Background(), Options{
@@ -480,7 +437,7 @@ func TestRun_FromTask_PreservesPlanBeginAt(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	original := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
-	id := seedReplanTask(t, store.StatusPlanDone, "# original\nbody", &original)
+	id := seedReplanTask(t, tasks.StatusPlanDone, "# original\nbody", &original)
 	agent := newScriptedAgent()
 	agent.requirement = "# refreshed\nbody"
 	err := Run(context.Background(), Options{
@@ -493,12 +450,12 @@ func TestRun_FromTask_PreservesPlanBeginAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 {
-		t.Fatalf("len = %d, want 1", len(tasks))
+	rows := readTasks(t)
+	if len(rows) != 1 {
+		t.Fatalf("len = %d, want 1", len(rows))
 	}
-	got := tasks[0]
-	if got.Status != store.StatusPlanDone {
+	got := rows[0]
+	if got.Status != tasks.StatusPlanDone {
 		t.Fatalf("Status = %q, want plan-done", got.Status)
 	}
 	if got.PlanBeginAt == nil || !got.PlanBeginAt.Equal(original) {
@@ -521,7 +478,7 @@ func TestRun_FromTask_PreservesPlanBeginAt(t *testing.T) {
 func TestRun_FromTask_AgentError_LogsHelp(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id := seedReplanTask(t, store.StatusPlanDone, "# req", nil)
+	id := seedReplanTask(t, tasks.StatusPlanDone, "# req", nil)
 	agent := newScriptedAgent()
 	agent.planErr = errors.New("boom")
 	err := Run(context.Background(), Options{
@@ -534,9 +491,9 @@ func TestRun_FromTask_AgentError_LogsHelp(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("err = %v", err)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusHelp {
-		t.Fatalf("tasks = %+v, want one help-status row", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusHelp {
+		t.Fatalf("tasks = %+v, want one help-status row", rows)
 	}
 }
 
@@ -547,7 +504,7 @@ func TestRun_FromTask_AgentError_LogsHelp(t *testing.T) {
 func TestRun_FromTask_BackgroundSpawn_RecordsPID(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id := seedReplanTask(t, store.StatusPlanDone, "# req", nil)
+	id := seedReplanTask(t, tasks.StatusPlanDone, "# req", nil)
 	agent := newScriptedAgent()
 	agent.planPID = 31415
 	var stdout bytes.Buffer
@@ -571,12 +528,12 @@ func TestRun_FromTask_BackgroundSpawn_RecordsPID(t *testing.T) {
 	if !strings.Contains(stdout.String(), "┌") || !strings.Contains(stdout.String(), "└") {
 		t.Fatalf("stdout = %q, want bordered box (┌ / └)", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 {
-		t.Fatalf("len = %d, want 1", len(tasks))
+	rows := readTasks(t)
+	if len(rows) != 1 {
+		t.Fatalf("len = %d, want 1", len(rows))
 	}
-	got := tasks[0]
-	if got.Status != store.StatusPlanning {
+	got := rows[0]
+	if got.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning (background row)", got.Status)
 	}
 	if got.BackgroundPID != 31415 {
@@ -591,11 +548,11 @@ func TestRun_FromTask_BackgroundSpawn_RecordsPID(t *testing.T) {
 func TestRun_FromTask_AgentSkipsRequirementsRead(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id := seedReplanTask(t, store.StatusPlanDone, "# req", nil)
+	id := seedReplanTask(t, tasks.StatusPlanDone, "# req", nil)
 	agent := newScriptedAgent()
 	agent.skipWrite = true
 	// Remove the seeded requirements.md so the post-run reads fail.
-	reqPath := taskFilePath(t, id, store.RequirementsFileName)
+	reqPath := taskFilePath(t, id, tasks.RequirementsFileName)
 	if err := os.Remove(reqPath); err != nil {
 		t.Fatal(err)
 	}
@@ -616,9 +573,9 @@ func TestRun_FromTask_AgentSkipsRequirementsRead(t *testing.T) {
 	if !strings.Contains(stderr.String(), "plan.md") {
 		t.Fatalf("stderr should warn about plan.md: %q", stderr.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusPlanDone {
-		t.Fatalf("tasks = %+v, want one plan-done row", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusPlanDone {
+		t.Fatalf("tasks = %+v, want one plan-done row", rows)
 	}
 }
 
@@ -628,7 +585,7 @@ func TestRun_FromTask_AgentSkipsRequirementsRead(t *testing.T) {
 func TestRun_FromTask_NewResumeIDError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id := seedReplanTask(t, store.StatusPlanDone, "# req", nil)
+	id := seedReplanTask(t, tasks.StatusPlanDone, "# req", nil)
 	agent := newScriptedAgent()
 	agent.resumeErr = errors.New("create-chat down")
 	var stderr bytes.Buffer
@@ -653,7 +610,7 @@ func TestRun_FromTask_NewResumeIDError(t *testing.T) {
 func TestRun_SourceTask_PicksAndReplans(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id := seedReplanTask(t, store.StatusPlanDone, "# req\nbody", nil)
+	id := seedReplanTask(t, tasks.StatusPlanDone, "# req\nbody", nil)
 	agent := newScriptedAgent()
 	ui := &scriptedUI{source: picker.SourceTask, replanID: id}
 	err := Run(context.Background(), Options{
@@ -678,7 +635,7 @@ func TestRun_SourceTask_PicksAndReplans(t *testing.T) {
 func TestRun_SourceTask_PickerError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	_ = seedReplanTask(t, store.StatusPlanDone, "# req", nil)
+	_ = seedReplanTask(t, tasks.StatusPlanDone, "# req", nil)
 	agent := newScriptedAgent()
 	ui := &scriptedUI{source: picker.SourceTask, replanErr: errors.New("pick boom")}
 	err := Run(context.Background(), Options{
@@ -697,19 +654,19 @@ func TestRun_SourceTask_PickerError(t *testing.T) {
 
 // TestBeginPlanTaskReuse_SeedsBeginIfMissing confirms the helper
 // stamps a fresh PlanBeginAt when the existing row had none. This
-// is the defensive branch behind the `if task.PlanBeginAt == nil`
+// is the defensive branch behind the `if t.PlanBeginAt == nil`
 // guard.
 func TestBeginPlanTaskReuse_SeedsBeginIfMissing(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	existing := store.Task{
-		ID:           store.NewTaskID(),
-		Status:       store.StatusPlanDone,
+	existing := tasks.Task{
+		ID:           tasks.NewTaskID(),
+		Status:       tasks.StatusPlanDone,
 		InvokedTool:  "old",
 		InvokedModel: "old",
 		// PlanBeginAt intentionally nil.
 	}
-	if _, err := store.EnsureTaskDir(existing.ID); err != nil {
+	if _, err := tasks.EnsureDir(existing.ID); err != nil {
 		t.Fatal(err)
 	}
 	lc := existing.BeginPlanReuse(io.Discard, "cursor", "sonnet-4", "resume-id")
@@ -726,7 +683,7 @@ func TestBeginPlanTaskReuse_SeedsBeginIfMissing(t *testing.T) {
 	if got.PlanResumeCursor != "resume-id" {
 		t.Fatalf("PlanResumeCursor = %q", got.PlanResumeCursor)
 	}
-	if got.Status != store.StatusPlanning {
+	if got.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", got.Status)
 	}
 }
@@ -739,16 +696,16 @@ func TestBeginPlanTaskReuse_PreservesExistingBegin(t *testing.T) {
 	mustInit(t)
 	original := time.Date(2023, 6, 7, 8, 9, 10, 0, time.UTC)
 	existingEnd := original.Add(time.Minute)
-	existing := store.Task{
-		ID:           store.NewTaskID(),
-		Status:       store.StatusPlanDone,
+	existing := tasks.Task{
+		ID:           tasks.NewTaskID(),
+		Status:       tasks.StatusPlanDone,
 		InvokedTool:  "old",
 		InvokedModel: "old",
 		PlanBeginAt:  &original,
 		PlanEndAt:    &existingEnd,
 		DoneAt:       &existingEnd,
 	}
-	if _, err := store.EnsureTaskDir(existing.ID); err != nil {
+	if _, err := tasks.EnsureDir(existing.ID); err != nil {
 		t.Fatal(err)
 	}
 	lc := existing.BeginPlanReuse(io.Discard, "cursor", "sonnet-4", "resume-id")

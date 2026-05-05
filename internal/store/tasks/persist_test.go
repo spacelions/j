@@ -1,4 +1,4 @@
-package store
+package tasks
 
 import (
 	"bytes"
@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-)
+
+	"github.com/spacelions/j/internal/store")
 
 // TestPersistWarn_OpenFailure forces bolt.Open to fail
 // by parking a regular file at .j/tasks; a single warning lands on
@@ -24,7 +25,7 @@ func TestPersistWarn_OpenFailure(t *testing.T) {
 	}
 	var stderr bytes.Buffer
 	PersistWarn(&stderr, Task{ID: "x", Status: StatusPlanDone})
-	if !strings.Contains(stderr.String(), "warning: tasks") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks warning", stderr.String())
 	}
 }
@@ -34,12 +35,12 @@ func TestPersistWarn_OpenFailure(t *testing.T) {
 // must surface on stderr.
 func TestPersistWarn_PutError(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
 	PersistWarn(&stderr, Task{Status: StatusPlanDone})
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
 	}
 }
@@ -48,8 +49,8 @@ func TestPersistWarn_PutError(t *testing.T) {
 // is written and a subsequent ListTasks round-trips the row.
 func TestPersistWarn_RoundTrip(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := NewTaskID()
 	PersistWarn(io.Discard, Task{ID: id, Status: StatusPlanning, Summary: "hello"})

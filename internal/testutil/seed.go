@@ -2,9 +2,11 @@ package testutil
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // SeedAgentBucket pre-populates a bbolt bucket with tool / model /
@@ -38,19 +40,16 @@ func SeedAgentBucket(t *testing.T, bucket, tool, model string) {
 	}
 }
 
-// SeedTaskRow writes the supplied task into the per-project tasks
-// bbolt store so plan / work / verify shell-out branches see the
-// row they expect when invoked with TaskID set.
-func SeedTaskRow(t *testing.T, row store.Task) {
+// SeedTaskRow writes the supplied task to its per-task TOML file so
+// plan / work / verify shell-out branches see the row they expect
+// when invoked with TaskID set.
+func SeedTaskRow(t *testing.T, row tasks.Task) {
 	t.Helper()
-	path, err := store.DefaultTasksDBPath()
+	dir, err := tasks.DefaultDir()
 	if err != nil {
-		t.Fatalf("testutil: DefaultTasksDBPath: %v", err)
+		t.Fatalf("testutil: DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("testutil: Open tasks: %v", err)
-	}
+	s := tasks.Open(dir)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("testutil: PutTask: %v", err)
@@ -59,16 +58,13 @@ func SeedTaskRow(t *testing.T, row store.Task) {
 
 // ReadTaskRow loads a task by id, failing the test when the row is
 // missing or unreadable.
-func ReadTaskRow(t *testing.T, id string) store.Task {
+func ReadTaskRow(t *testing.T, id string) tasks.Task {
 	t.Helper()
-	path, err := store.DefaultTasksDBPath()
+	dir, err := tasks.DefaultDir()
 	if err != nil {
-		t.Fatalf("testutil: DefaultTasksDBPath: %v", err)
+		t.Fatalf("testutil: DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("testutil: Open tasks: %v", err)
-	}
+	s := tasks.Open(dir)
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {
@@ -83,4 +79,22 @@ func ReadTaskRow(t *testing.T, id string) store.Task {
 // agent_test.go files don't each spell out the mode.
 func WriteFile(path, body string) error {
 	return os.WriteFile(path, []byte(body), 0o644)
+}
+
+// SeedRawTaskFile writes raw bytes (typically malformed TOML) to
+// `<.j/tasks>/<id>/task.toml`. Used by decode-error tests that need
+// to plant a corrupted row without going through PutTask's encoder.
+func SeedRawTaskFile(t *testing.T, id string, body []byte) {
+	t.Helper()
+	dir, err := tasks.DefaultDir()
+	if err != nil {
+		t.Fatalf("testutil: DefaultTasksDir: %v", err)
+	}
+	taskDir := filepath.Join(dir, id)
+	if err := os.MkdirAll(taskDir, 0o755); err != nil {
+		t.Fatalf("testutil: mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.TaskFileName), body, 0o644); err != nil {
+		t.Fatalf("testutil: write task.toml: %v", err)
+	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/spacelions/j/internal/cli/banner"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/workflow/agents/planner"
 	"github.com/spacelions/j/internal/workflow/agents/verifier"
 	"github.com/spacelions/j/internal/workflow/agents/worker"
@@ -201,26 +202,22 @@ func driveSequential(ctx context.Context, root agent.Agent) error {
 // Best-effort: any read / write error surfaces as a single warning
 // on stderr and the helper returns.
 func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
-	path, err := store.DefaultTasksDBPath()
+	dir, err := tasks.DefaultDir()
 	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks path: %v\n", err)
+		banner.DangerousBox(stderr, "J: tasks dir: %v", err)
 		return
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks db: %v\n", err)
-		return
-	}
+	s := tasks.Open(dir)
 	defer func() { _ = s.Close() }()
 	t, err := s.GetTask(taskID)
 	if err != nil {
 		return
 	}
-	if t.Status != store.StatusVerifying {
+	if t.Status != tasks.StatusVerifying {
 		return
 	}
-	t.Status = store.StatusVerifyDone
+	t.Status = tasks.StatusVerifyDone
 	if err := s.PutTask(t); err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks put: %v\n", err)
+		banner.DangerousBox(stderr, "J: tasks put: %v", err)
 	}
 }

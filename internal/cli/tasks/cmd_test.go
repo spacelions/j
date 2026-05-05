@@ -10,9 +10,8 @@ import (
 	"testing"
 	"time"
 
-	bolt "go.etcd.io/bbolt"
 
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -47,18 +46,15 @@ func runCommand(t *testing.T, args ...string) (string, string, error) {
 // responsible for closing the store before running `j tasks` because
 // bbolt holds an exclusive file lock and the command opens its own
 // store from the same path.
-func openTasksDB(t *testing.T) *store.Store {
+func openTasksDB(t *testing.T) *tasks.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	path, err := store.DefaultTasksDBPath()
+	path, err := tasks.DefaultDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := tasks.Open(path)
 	return s
 }
 
@@ -159,10 +155,10 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	t2 := t1.Add(time.Hour)
 
-	tasks := []store.Task{
+	rows := []tasks.Task{
 		{
 			ID:               "ddd-old-plan-done",
-			Status:           store.StatusPlanDone,
+			Status:           tasks.StatusPlanDone,
 			InvokedTool:      "cursor",
 			InvokedModel:     "gpt-5",
 			PlanResumeCursor: "",
@@ -171,7 +167,7 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 		},
 		{
 			ID:               "aaa-new-work-done",
-			Status:           store.StatusWorkDone,
+			Status:           tasks.StatusWorkDone,
 			InvokedTool:      "cursor",
 			InvokedModel:     "sonnet-4",
 			PlanResumeCursor: "8c7e6a9d-0f1a-4b2c-9d8e-1234567890ab",
@@ -181,15 +177,15 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 		},
 		{
 			ID:               "active-1",
-			Status:           store.StatusPlanning,
+			Status:           tasks.StatusPlanning,
 			InvokedTool:      "cursor",
 			InvokedModel:     "sonnet-4",
 			PlanResumeCursor: "11111111-1111-4111-9111-111111111111",
 			Summary:          "draft idea",
 		},
 	}
-	for _, task := range tasks {
-		if err := s.PutTask(task); err != nil {
+	for _, row := range rows {
+		if err := s.PutTask(row); err != nil {
 			t.Fatalf("PutTask: %v", err)
 		}
 	}
@@ -250,9 +246,9 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 func TestRun_DefaultNonTTY_RendersBorder(t *testing.T) {
 	s := openTasksDB(t)
 	begin := time.Now().UTC().Add(-90 * time.Second)
-	task := store.Task{
+	task := tasks.Task{
 		ID:           "active-default",
-		Status:       store.StatusPlanning,
+		Status:       tasks.StatusPlanning,
 		InvokedTool:  "cursor",
 		InvokedModel: "sonnet-4",
 		Summary:      "draft idea",
@@ -288,9 +284,9 @@ func TestRun_DefaultNonTTY_RendersBorder(t *testing.T) {
 // cursors for every phase.
 func TestRun_HidesSessionLines(t *testing.T) {
 	s := openTasksDB(t)
-	task := store.Task{
+	task := tasks.Task{
 		ID:                 "all-cursors",
-		Status:             store.StatusPlanDone,
+		Status:             tasks.StatusPlanDone,
 		InvokedTool:        "cursor",
 		InvokedModel:       "sonnet-4",
 		PlanResumeCursor:   "plan-cursor-id",
@@ -323,30 +319,8 @@ func TestRun_HidesSessionLines(t *testing.T) {
 	}
 }
 
-// TestRun_StatNonENOENTPropagates makes the list.db path a directory
-// holding a file so os.Stat succeeds (it's a directory) but bolt.Open
-// fails when listTasks tries to open it. This exercises the non-
-// ENOENT propagation path for the underlying open error. We bypass
-// cobra so pre-flight does not heal the corrupt layout.
-func TestRun_StatNonENOENTPropagates(t *testing.T) {
-	t.Chdir(t.TempDir())
-	tasksPath, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(tasksPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(tasksPath, "blocker"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := listTasks(io.Discard, false); err == nil {
-		t.Fatal("expected open to fail when path is a non-empty directory")
-	}
-}
-
 // TestRun_DefaultTasksPathError replaces the cwd with one we then
-// remove so DefaultTasksDBPath -> os.Getwd fails. On macOS getwd may
+// remove so DefaultTasksDir -> os.Getwd fails. On macOS getwd may
 // still succeed via cached inodes; in that case the test skips. We
 // bypass cobra (and pre-flight) so the broken cwd reaches listTasks.
 func TestRun_DefaultTasksPathError(t *testing.T) {
@@ -367,24 +341,7 @@ func TestRun_DefaultTasksPathError(t *testing.T) {
 		t.Skip("os.Getwd unexpectedly succeeded; cannot exercise failure path")
 	}
 	if err := listTasks(io.Discard, false); err == nil {
-		t.Fatal("expected DefaultTasksDBPath to surface getwd error")
-	}
-}
-
-// TestRun_OpenError points the tasks DB path at an existing directory
-// so bolt.Open fails, exercising the open-error branch in listTasks.
-// We bypass cobra (and pre-flight) so the corrupt layout survives.
-func TestRun_OpenError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := listTasks(io.Discard, false); err == nil {
-		t.Fatal("expected open error when tasks path is a directory")
+		t.Fatal("expected DefaultTasksDir to surface getwd error")
 	}
 }
 
@@ -407,27 +364,20 @@ func TestRun_DecodeError(t *testing.T) {
 // writeRawTaskBytes opens the tasks DB at the test's cwd and writes a
 // raw value under the tasks bucket. It's a low-level helper used to
 // drive the JSON decode failure branch in ListTasks.
-func writeRawTaskBytes(t *testing.T, key string, value []byte) error {
+// writeRawTaskBytes plants a raw byte payload as `<id>/task.toml`
+// under the per-cwd tasks dir. Used by decode-error tests that need
+// to seed a malformed row without going through PutTask's encoder.
+func writeRawTaskBytes(t *testing.T, id string, value []byte) error {
 	t.Helper()
-	path, err := store.DefaultTasksDBPath()
+	dir, err := tasks.DefaultDir()
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	taskDir := filepath.Join(dir, id)
+	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		return err
 	}
-	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: time.Second})
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	return db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte(store.BucketTasks))
-		if err != nil {
-			return err
-		}
-		return b.Put([]byte(key), value)
-	})
+	return os.WriteFile(filepath.Join(taskDir, tasks.TaskFileName), value, 0o644)
 }
 
 // TestStoreReloader_SortsAndReaps drives the closure handed to the
@@ -438,17 +388,17 @@ func TestStoreReloader_SortsAndReaps(t *testing.T) {
 	s := openTasksDB(t)
 	t.Cleanup(func() { _ = s.Close() })
 	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	if err := s.PutTask(store.Task{
-		ID: "z-old", Status: store.StatusPlanDone, PlanEndAt: &t1,
+	if err := s.PutTask(tasks.Task{
+		ID: "z-old", Status: tasks.StatusPlanDone, PlanEndAt: &t1,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PutTask(store.Task{
-		ID: "a-active", Status: store.StatusPlanning,
+	if err := s.PutTask(tasks.Task{
+		ID: "a-active", Status: tasks.StatusPlanning,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,16 +420,13 @@ func TestStoreReloader_PropagatesListErr(t *testing.T) {
 	if err := writeRawTaskBytes(t, "bad", []byte("not-json")); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	path, err := store.DefaultTasksDBPath()
+	path, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.Open(path)
 	t.Cleanup(func() { _ = s.Close() })
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,8 +487,8 @@ func TestTerminalWidth(t *testing.T) {
 // TestWriteTasks_FlushError exercises the tabwriter flush error path
 // by passing a writer that fails on every Write.
 func TestWriteTasks_FlushError(t *testing.T) {
-	err := writeTasks(failingWriter{}, []store.Task{
-		{ID: "x", Status: store.StatusPlanDone},
+	err := writeTasks(failingWriter{}, []tasks.Task{
+		{ID: "x", Status: tasks.StatusPlanDone},
 	})
 	if err == nil {
 		t.Fatal("expected error from failing writer")

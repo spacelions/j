@@ -23,7 +23,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // ContinueOptions configures RunContinue. Stdin/Stdout/Stderr default
@@ -111,21 +111,18 @@ func RunContinue(ctx context.Context, opts ContinueOptions) (err error) {
 // the empty path it opens the store, runs pickFromStore, and closes
 // before returning so the file lock is released ahead of the agent
 // invocation downstream.
-func resolveContinueTask(ctx context.Context, opts ContinueOptions) (store.Task, bool, error) {
-	path, err := store.DefaultTasksDBPath()
+func resolveContinueTask(ctx context.Context, opts ContinueOptions) (tasks.Task, bool, error) {
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
-		return store.Task{}, false, err
+		return tasks.Task{}, false, err
 	}
 	if opts.TaskID == "" {
-		if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
+		if _, statErr := os.Stat(tasksDir); errors.Is(statErr, fs.ErrNotExist) {
 			banner.Fprintln(opts.Stdout, emptyMessage)
-			return store.Task{}, false, nil
+			return tasks.Task{}, false, nil
 		}
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		return store.Task{}, false, err
-	}
+	s := tasks.Open(tasksDir)
 	task, ok, err := resolveContinueTaskFromStore(ctx, s, opts)
 	_ = s.Close()
 	return task, ok, err
@@ -135,27 +132,27 @@ func resolveContinueTask(ctx context.Context, opts ContinueOptions) (store.Task,
 // once a store handle is open it either loads the named id or runs the
 // shared picker. Splitting it out keeps the open/close cycle in one
 // place so the lock release is structurally guaranteed.
-func resolveContinueTaskFromStore(ctx context.Context, s *store.Store, opts ContinueOptions) (store.Task, bool, error) {
+func resolveContinueTaskFromStore(ctx context.Context, s *tasks.Store, opts ContinueOptions) (tasks.Task, bool, error) {
 	if opts.TaskID != "" {
-		task, err := s.GetTask(opts.TaskID)
+		t, err := s.GetTask(opts.TaskID)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				banner.Fprintln(opts.Stdout, noTaskMessage)
-				return store.Task{}, false, nil
+				return tasks.Task{}, false, nil
 			}
-			return store.Task{}, false, err
+			return tasks.Task{}, false, err
 		}
-		return task, true, nil
+		return t, true, nil
 	}
 	id, ok, err := pickFromStore(ctx, s, opts.UI, opts.Stdout)
 	if err != nil || !ok {
-		return store.Task{}, false, err
+		return tasks.Task{}, false, err
 	}
-	task, err := s.GetTask(id)
+	t, err := s.GetTask(id)
 	if err != nil {
-		return store.Task{}, false, err
+		return tasks.Task{}, false, err
 	}
-	return task, true, nil
+	return t, true, nil
 }
 
 // dispatchByStatus routes a task to the right phase based on its
@@ -172,49 +169,49 @@ func resolveContinueTaskFromStore(ctx context.Context, s *store.Store, opts Cont
 //
 // Any unknown status surfaces a user-facing error so a future state
 // addition cannot silently drop into a no-op.
-func dispatchByStatus(ctx context.Context, opts ContinueOptions, task store.Task) error {
-	switch task.Status {
-	case store.StatusPlanning:
+func dispatchByStatus(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
+	switch t.Status {
+	case tasks.StatusPlanning:
 		return plan.RunResume(ctx, plan.ResumeOptions{
-			TaskID: task.ID,
+			TaskID: t.ID,
 			Stdin:  opts.Stdin,
 			Stdout: opts.Stdout,
 			Stderr: opts.Stderr,
 			Agents: opts.Agents,
 		})
-	case store.StatusPlanDone:
-		return resumeFromPlanDone(ctx, opts, task.ID)
-	case store.StatusWorking:
+	case tasks.StatusPlanDone:
+		return resumeFromPlanDone(ctx, opts, t.ID)
+	case tasks.StatusWorking:
 		return work.RunResume(ctx, work.ResumeOptions{
-			TaskID: task.ID,
+			TaskID: t.ID,
 			Stdin:  opts.Stdin,
 			Stdout: opts.Stdout,
 			Stderr: opts.Stderr,
 			Agents: opts.Agents,
 		})
-	case store.StatusWorkDone:
+	case tasks.StatusWorkDone:
 		return verify.Run(ctx, verify.Options{
-			TaskID: task.ID,
+			TaskID: t.ID,
 			Stdin:  opts.Stdin,
 			Stdout: opts.Stdout,
 			Stderr: opts.Stderr,
 			Agents: opts.Agents,
 		})
-	case store.StatusVerifying:
+	case tasks.StatusVerifying:
 		return verify.RunResume(ctx, verify.ResumeOptions{
-			TaskID: task.ID,
+			TaskID: t.ID,
 			Stdin:  opts.Stdin,
 			Stdout: opts.Stdout,
 			Stderr: opts.Stderr,
 			Agents: opts.Agents,
 		})
-	case store.StatusVerifyDone, store.StatusCompleted:
-		banner.Fprintf(opts.Stdout, "J: task %s already finished\n", task.ID)
+	case tasks.StatusVerifyDone, tasks.StatusCompleted:
+		banner.Fprintf(opts.Stdout, "J: task %s already finished\n", t.ID)
 		return nil
-	case store.StatusHelp:
-		return dispatchHelp(ctx, opts, task)
+	case tasks.StatusHelp:
+		return dispatchHelp(ctx, opts, t)
 	}
-	return fmt.Errorf("J: task %s has unsupported status %q", task.ID, task.Status)
+	return fmt.Errorf("J: task %s has unsupported status %q", t.ID, t.Status)
 }
 
 // resumeFromPlanDone forks a detached `j tasks orchestrate
@@ -224,11 +221,11 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, task store.Task
 // + agent.log path on the row, prints the standard `J: task <id>
 // resumed; tail -f <log>` line, and returns immediately.
 func resumeFromPlanDone(ctx context.Context, opts ContinueOptions, taskID string) error {
-	taskDir, err := store.EnsureTaskDir(taskID)
+	taskDir, err := tasks.EnsureDir(taskID)
 	if err != nil {
 		return fmt.Errorf("J: ensure task dir: %w", err)
 	}
-	agentLogPath := filepath.Join(taskDir, store.AgentLogFileName)
+	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
 		"tasks", "orchestrate",
 		"--id", taskID,
@@ -248,26 +245,22 @@ func resumeFromPlanDone(ctx context.Context, opts ContinueOptions, taskID string
 // — any read / write error surfaces as a single warning on stderr.
 // The detached child is already running, so we never roll back.
 func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
-	path, err := store.DefaultTasksDBPath()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks path: %v\n", err)
+		banner.DangerousBox(stderr, "J: tasks dir: %v", err)
 		return
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks db: %v\n", err)
-		return
-	}
+	s := tasks.Open(tasksDir)
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(taskID)
 	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks get %q: %v\n", taskID, err)
+		banner.DangerousBox(stderr, "J: tasks get %q: %v", taskID, err)
 		return
 	}
 	row.AgentLogPath = agentLogPath
 	row.BackgroundPID = pid
 	if err := s.PutTask(row); err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks put: %v\n", err)
+		banner.DangerousBox(stderr, "J: tasks put: %v", err)
 	}
 }
 
@@ -285,11 +278,11 @@ func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
 // helpers force Interactive=true on resume regardless of the bucket
 // value, so a help row whose first run went headless still lands in
 // the TUI here where the user can answer the clarification turn.
-func dispatchHelp(ctx context.Context, opts ContinueOptions, task store.Task) error {
-	switch latestPhase(task) {
+func dispatchHelp(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
+	switch latestPhase(t) {
 	case "verify":
 		return verify.RunResume(ctx, verify.ResumeOptions{
-			TaskID: task.ID,
+			TaskID: t.ID,
 			Stdin:  opts.Stdin,
 			Stdout: opts.Stdout,
 			Stderr: opts.Stderr,
@@ -297,7 +290,7 @@ func dispatchHelp(ctx context.Context, opts ContinueOptions, task store.Task) er
 		})
 	case "work":
 		return work.RunResume(ctx, work.ResumeOptions{
-			TaskID: task.ID,
+			TaskID: t.ID,
 			Stdin:  opts.Stdin,
 			Stdout: opts.Stdout,
 			Stderr: opts.Stderr,
@@ -305,30 +298,30 @@ func dispatchHelp(ctx context.Context, opts ContinueOptions, task store.Task) er
 		})
 	case "plan":
 		return plan.RunResume(ctx, plan.ResumeOptions{
-			TaskID: task.ID,
+			TaskID: t.ID,
 			Stdin:  opts.Stdin,
 			Stdout: opts.Stdout,
 			Stderr: opts.Stderr,
 			Agents: opts.Agents,
 		})
 	}
-	return fmt.Errorf("J: task %s in `help` has no resumable phase signal", task.ID)
+	return fmt.Errorf("J: task %s in `help` has no resumable phase signal", t.ID)
 }
 
 // latestPhase returns "verify", "work", "plan", or "" depending on
 // which phase has the freshest end timestamp (or, if none, which
 // resume cursor is non-empty). Pulled out of dispatchHelp so the
 // precedence is unit-testable in isolation.
-func latestPhase(task store.Task) string {
-	if t := latestEndAt(task); t != "" {
-		return t
+func latestPhase(t tasks.Task) string {
+	if v := latestEndAt(t); v != "" {
+		return v
 	}
 	switch {
-	case task.VerifyResumeCursor != "":
+	case t.VerifyResumeCursor != "":
 		return "verify"
-	case task.WorkResumeCursor != "":
+	case t.WorkResumeCursor != "":
 		return "work"
-	case task.PlanResumeCursor != "":
+	case t.PlanResumeCursor != "":
 		return "plan"
 	}
 	return ""
@@ -336,14 +329,14 @@ func latestPhase(task store.Task) string {
 
 // latestEndAt picks the phase whose *EndAt timestamp is the most
 // recent. Returns "" when every *EndAt is nil.
-func latestEndAt(task store.Task) string {
+func latestEndAt(t tasks.Task) string {
 	pairs := []struct {
 		name string
 		t    *time.Time
 	}{
-		{"verify", task.VerifyEndAt},
-		{"work", task.WorkEndAt},
-		{"plan", task.PlanEndAt},
+		{"verify", t.VerifyEndAt},
+		{"work", t.WorkEndAt},
+		{"plan", t.PlanEndAt},
 	}
 	var best string
 	var bestT time.Time

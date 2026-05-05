@@ -1,4 +1,4 @@
-package store
+package tasks
 
 import (
 	"bytes"
@@ -7,7 +7,8 @@ import (
 	"os"
 	"strings"
 	"testing"
-)
+
+	"github.com/spacelions/j/internal/store")
 
 // TestNewPlanTask_RecordsAndFinish drives the planning → plan-done
 // happy path: NewPlanTask writes the row at status `planning`, then
@@ -16,8 +17,8 @@ import (
 // the file basename.
 func TestNewPlanTask_RecordsAndFinish(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := NewTaskID()
 	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", id, "/tmp/x.md", "# heading\nbody", "plan-cursor")
@@ -51,8 +52,8 @@ func TestNewPlanTask_RecordsAndFinish(t *testing.T) {
 // when agent.Plan errored.
 func TestPlanLifecycle_Finish_ErrorPath(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	lc := NewPlanTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.md", "x", "")
 	lc.Finish(errors.New("boom"), "", "", "/tmp/x.md")
@@ -68,8 +69,8 @@ func TestPlanLifecycle_Finish_ErrorPath(t *testing.T) {
 // is a silent no-op thanks to the closed flag.
 func TestPlanLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "")
 	lc.RecordBackground(99887, "/tmp/agent.log")
@@ -91,8 +92,8 @@ func TestPlanLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 // subsequent RecordBackground does nothing.
 func TestPlanLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
@@ -113,8 +114,8 @@ func TestPlanLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 // circuit so a second Finish call is a silent no-op.
 func TestPlanLifecycle_FinishIdempotent(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
@@ -129,13 +130,13 @@ func TestPlanLifecycle_FinishIdempotent(t *testing.T) {
 // warning branch by feeding a task with no ID.
 func TestPlanLifecycle_FinishPutErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
 	lc := &PlanLifecycle{stderr: &stderr, task: Task{Status: StatusPlanning}}
 	lc.Finish(nil, "", "", "")
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
 	}
 }
@@ -145,8 +146,8 @@ func TestPlanLifecycle_FinishPutErrorWarns(t *testing.T) {
 // surfaces, and the begin call still returns a usable lifecycle.
 func TestNewPlanTask_PutErrorAtBegin(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
 	lc := NewPlanTask(&stderr, "cursor", "m", "", "", "", "")
@@ -154,27 +155,27 @@ func TestNewPlanTask_PutErrorAtBegin(t *testing.T) {
 		t.Fatal("NewPlanTask returned nil")
 	}
 	t.Cleanup(func() { lc.Finish(nil, "", "", "") })
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
 	}
 }
 
-// TestNewPlanTask_OpenFails forces bolt.Open to
-// fail by replacing the post-init list.db file with a directory.
+// TestNewPlanTask_OpenFails forces PutTask's mkdir of the per-task
+// directory to fail by replacing `.j/tasks` with a regular file.
 // Both NewPlanTask and Finish emit a warning and execution continues.
 func TestNewPlanTask_OpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	path, err := DefaultTasksDBPath()
+	path, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(path); err != nil {
+	if err := os.RemoveAll(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
@@ -192,8 +193,8 @@ func TestNewPlanTask_OpenFails(t *testing.T) {
 // row so callers can read it without poking at the unexported field.
 func TestPlanLifecycle_Task(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := NewTaskID()
 	lc := NewPlanTask(io.Discard, "cursor", "m", id, "", "", "")
@@ -207,18 +208,15 @@ func TestPlanLifecycle_Task(t *testing.T) {
 // the original PlanBeginAt while clearing PlanEndAt / DoneAt.
 func TestTask_BeginPlanReuse_PreservesLineage(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedPlanDoneTask(t, "seeded")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)

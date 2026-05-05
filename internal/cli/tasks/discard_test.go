@@ -11,13 +11,11 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	bolt "go.etcd.io/bbolt"
 
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -37,12 +35,12 @@ type fakeUI struct {
 	pickReturn     string
 	pickErr        error
 	pickCalls      int
-	lastPickedFrom []store.Task
+	lastPickedFrom []tasks.Task
 }
 
-func (u *fakeUI) ConfirmDiscard(_ context.Context, task store.Task) (bool, error) {
+func (u *fakeUI) ConfirmDiscard(_ context.Context, t tasks.Task) (bool, error) {
 	u.calls++
-	u.lastTaskID = task.ID
+	u.lastTaskID = t.ID
 	if u.confirmErr != nil {
 		return false, u.confirmErr
 	}
@@ -54,9 +52,9 @@ func (u *fakeUI) ConfirmDiscard(_ context.Context, task store.Task) (bool, error
 // pickReturn was set" so existing call sites that pre-date the
 // contract (which programmed the cancel case via an empty
 // pickReturn) continue to work without a parallel pickOk knob.
-func (u *fakeUI) PickTask(_ context.Context, tasks []store.Task) (string, bool, error) {
+func (u *fakeUI) PickTask(_ context.Context, rows []tasks.Task) (string, bool, error) {
 	u.pickCalls++
-	u.lastPickedFrom = tasks
+	u.lastPickedFrom = rows
 	if u.pickErr != nil {
 		return "", false, u.pickErr
 	}
@@ -72,17 +70,14 @@ func (u *fakeUI) PickTask(_ context.Context, tasks []store.Task) (string, bool, 
 func seedTask(t *testing.T, id, summary string) string {
 	t.Helper()
 	testutil.Init(t)
-	path, err := store.DefaultTasksDBPath()
+	path, err := tasks.DefaultDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	if err := s.PutTask(store.Task{
+	s := tasks.Open(path)
+	if err := s.PutTask(tasks.Task{
 		ID:           id,
-		Status:       store.StatusPlanDone,
+		Status:       tasks.StatusPlanDone,
 		InvokedTool:  "cursor",
 		InvokedModel: "sonnet-4",
 		Summary:      summary,
@@ -92,11 +87,11 @@ func seedTask(t *testing.T, id, summary string) string {
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	taskDir, err := store.EnsureTaskDir(id)
+	taskDir, err := tasks.EnsureDir(id)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, store.RequirementsFileName),
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.RequirementsFileName),
 		[]byte("# "+summary+"\nbody"), 0o644); err != nil {
 		t.Fatalf("write requirements: %v", err)
 	}
@@ -108,17 +103,14 @@ func seedTask(t *testing.T, id, summary string) string {
 func seedTaskWithWorktree(t *testing.T, id, summary, worktree string) string {
 	t.Helper()
 	testutil.Init(t)
-	path, err := store.DefaultTasksDBPath()
+	path, err := tasks.DefaultDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	if err := s.PutTask(store.Task{
+	s := tasks.Open(path)
+	if err := s.PutTask(tasks.Task{
 		ID:           id,
-		Status:       store.StatusPlanDone,
+		Status:       tasks.StatusPlanDone,
 		InvokedTool:  "cursor",
 		InvokedModel: "sonnet-4",
 		Summary:      summary,
@@ -129,11 +121,11 @@ func seedTaskWithWorktree(t *testing.T, id, summary, worktree string) string {
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	taskDir, err := store.EnsureTaskDir(id)
+	taskDir, err := tasks.EnsureDir(id)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, store.RequirementsFileName),
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.RequirementsFileName),
 		[]byte("# "+summary+"\nbody"), 0o644); err != nil {
 		t.Fatalf("write requirements: %v", err)
 	}
@@ -216,14 +208,11 @@ func readGitStubLogLines(t *testing.T, logFile string) []string {
 // row was either removed or left intact.
 func taskExists(t *testing.T, id string) bool {
 	t.Helper()
-	path, err := store.DefaultTasksDBPath()
+	path, err := tasks.DefaultDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	_, err = s.GetTask(id)
 	if err == nil {
@@ -378,27 +367,8 @@ func TestRunDiscard_UIErrorPropagates(t *testing.T) {
 func TestRunDiscard_GetTaskNonNotExistError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: time.Second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte(store.BucketTasks))
-		if err != nil {
-			return err
-		}
-		return b.Put([]byte("bad"), []byte("not-json"))
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	err = RunDiscard(context.Background(), DiscardOptions{
+	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "bad",
 		Yes:    true,
 		Stdout: io.Discard,
@@ -410,30 +380,8 @@ func TestRunDiscard_GetTaskNonNotExistError(t *testing.T) {
 	}
 }
 
-// TestRunDiscard_OpenError points the tasks DB path at an existing
-// directory so bolt.Open fails, exercising the open-error branch.
-func TestRunDiscard_OpenError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	err = RunDiscard(context.Background(), DiscardOptions{
-		TaskID: "x",
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		UI:     &fakeUI{},
-	})
-	if err == nil {
-		t.Fatal("expected open error when tasks path is a directory")
-	}
-}
-
 // TestRunDiscard_DefaultTasksPathError replaces cwd with one that we
-// remove so DefaultTasksDBPath -> os.Getwd fails. On macOS / FUSE
+// remove so DefaultTasksDir -> os.Getwd fails. On macOS / FUSE
 // getwd may succeed via cached inodes; in that case the test skips.
 func TestRunDiscard_DefaultTasksPathError(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -461,14 +409,14 @@ func TestRunDiscard_DefaultTasksPathError(t *testing.T) {
 		Stderr: io.Discard,
 		UI:     &fakeUI{},
 	}); err == nil {
-		t.Fatal("expected DefaultTasksDBPath to surface getwd error")
+		t.Fatal("expected DefaultTasksDir to surface getwd error")
 	}
 }
 
 // TestRunDiscard_RemoveTaskDirError exercises the on-disk teardown
 // failure branch: the per-task dir exists, the bbolt row is
 // successfully removed, but RemoveTaskDir cannot unlink the
-// directory because its parent (.j/tasks) is read-only. Skipped on
+// directory because its parent (.j/rows) is read-only. Skipped on
 // root and Windows.
 func TestRunDiscard_RemoveTaskDirError(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -480,7 +428,7 @@ func TestRunDiscard_RemoveTaskDirError(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	seedTask(t, "id-rm-fail", "won't remove")
-	tasksDir := filepath.Join(dir, ".j", store.TasksDirName)
+	tasksDir := filepath.Join(dir, ".j", tasks.DirName)
 	if err := os.Chmod(tasksDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -787,28 +735,9 @@ func TestRunDiscard_NoIDEmptyBucket(t *testing.T) {
 func TestRunDiscard_NoIDListDecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: time.Second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte(store.BucketTasks))
-		if err != nil {
-			return err
-		}
-		return b.Put([]byte("bad"), []byte("not-json"))
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
+	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
 	ui := &fakeUI{}
-	err = RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -865,13 +794,13 @@ func TestRunDiscard_RemovesWorktreeOnConfirm(t *testing.T) {
 	if !strings.Contains(stdout.String(), "J: discarded id-wt-ok") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	if strings.Contains(stderr.String(), "warning: worktree remove:") {
+	if strings.Contains(stderr.String(), "worktree remove:") {
 		t.Fatalf("unexpected stderr warning: %q", stderr.String())
 	}
 }
 
 // TestRunDiscard_EmptyWorktree_FallsBackToComputedName covers the
-// legacy-row path: task.Worktree is empty (e.g. row created before
+// legacy-row path: t.Worktree is empty (e.g. row created before
 // the persisted-worktree feature), but the on-disk worktree exists
 // under the deterministic slug WorktreeNameFor(project, task). The
 // fallback recomputes that slug from cwd basename + summary and the
@@ -927,13 +856,13 @@ func TestRunDiscard_EmptyWorktree_FallsBackToComputedName(t *testing.T) {
 	if !strings.Contains(stdout.String(), "J: discarded id-fallback") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	if strings.Contains(stderr.String(), "warning: worktree remove:") {
+	if strings.Contains(stderr.String(), "worktree remove:") {
 		t.Fatalf("unexpected stderr warning: %q", stderr.String())
 	}
 }
 
 // TestRunDiscard_EmptyWorktree_NoComputedMatch_NoRemove confirms that
-// when task.Worktree is empty AND the computed slug doesn't match any
+// when t.Worktree is empty AND the computed slug doesn't match any
 // listed worktree, the lookup runs but no `worktree remove` is
 // invoked. The row + dir are still discarded.
 func TestRunDiscard_EmptyWorktree_NoComputedMatch_NoRemove(t *testing.T) {
@@ -1054,7 +983,7 @@ func TestRunDiscard_MultipleMatches_PicksFirstAndWarns(t *testing.T) {
 	if want := "worktree|remove|--force|/alpha/dup-wt"; lines[1] != want {
 		t.Fatalf("remove argv = %q, want %q", lines[1], want)
 	}
-	if !strings.Contains(stderr.String(), "warning: worktree remove:") ||
+	if !strings.Contains(stderr.String(), "worktree remove:") ||
 		!strings.Contains(stderr.String(), "multiple worktrees matched") {
 		t.Fatalf("stderr = %q, want multiple-match warning", stderr.String())
 	}
@@ -1098,7 +1027,7 @@ func TestRunDiscard_ListFails_WarnsAndContinues(t *testing.T) {
 	if len(lines) != 1 || lines[0] != "worktree|list|--porcelain" {
 		t.Fatalf("git log = %v, want single list", lines)
 	}
-	if !strings.Contains(stderr.String(), "warning: worktree remove:") {
+	if !strings.Contains(stderr.String(), "worktree remove:") {
 		t.Fatalf("stderr = %q, want warning prefix", stderr.String())
 	}
 	if taskExists(t, "id-list-fail") {
@@ -1138,7 +1067,7 @@ func TestRunDiscard_RemoveFails_WarnsAndContinues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunDiscard: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "warning: worktree remove:") {
+	if !strings.Contains(stderr.String(), "worktree remove:") {
 		t.Fatalf("stderr = %q, want warning prefix", stderr.String())
 	}
 	if taskExists(t, "id-rm-git") {
@@ -1171,7 +1100,7 @@ func TestRunDiscard_GitMissing_WarnsAndContinues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunDiscard: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "warning: worktree remove:") {
+	if !strings.Contains(stderr.String(), "worktree remove:") {
 		t.Fatalf("stderr = %q, want warning prefix", stderr.String())
 	}
 	if taskExists(t, "id-no-git") {

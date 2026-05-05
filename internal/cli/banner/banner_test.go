@@ -2,6 +2,7 @@ package banner
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,7 @@ func TestText(t *testing.T) {
 }
 
 func TestDangerousText(t *testing.T) {
-	input := "J: warning: tasks put: nope\nJ: reset aborted\n"
+	input := "J: tasks put: nope\nJ: reset aborted\n"
 	got := DangerousText(input)
 	if stripped := ansi.Strip(got); stripped != input {
 		t.Fatalf("ansi.Strip(DangerousText(%q)) = %q, want %q", input, stripped, input)
@@ -47,10 +48,27 @@ func TestFprintAndFprintf(t *testing.T) {
 
 func TestDangerousFprintln(t *testing.T) {
 	var buf bytes.Buffer
-	DangerousFprintln(&buf, "J: warning: tasks put: nope")
-	if stripped := ansi.Strip(buf.String()); stripped != "J: warning: tasks put: nope\n" {
+	DangerousFprintln(&buf, "J: tasks put: nope")
+	if stripped := ansi.Strip(buf.String()); stripped != "J: tasks put: nope\n" {
 		t.Fatalf("ansi.Strip(DangerousFprintln output) = %q, want %q",
-			stripped, "J: warning: tasks put: nope\n")
+			stripped, "J: tasks put: nope\n")
+	}
+}
+
+func TestDangerousBox(t *testing.T) {
+	var buf bytes.Buffer
+	DangerousBox(&buf, "J: tasks db: %v", errors.New("boom"))
+	stripped := ansi.Strip(buf.String())
+	if !strings.Contains(stripped, "J: tasks db: boom") {
+		t.Fatalf("output missing the formatted body: %q", stripped)
+	}
+	// The box renderer adds NormalBorder() glyphs on every side; assert
+	// the corner characters are present so a regression that drops the
+	// border (e.g. swapping dangerBoxStyle for dangerStyle) fails fast.
+	for _, glyph := range []string{"┌", "┐", "└", "┘"} {
+		if !strings.Contains(stripped, glyph) {
+			t.Fatalf("output missing border glyph %q: %q", glyph, stripped)
+		}
 	}
 }
 
@@ -83,16 +101,16 @@ func TestDangerousTextWithColorDoesNotRenderBold(t *testing.T) {
 	restoreColorProfile(t)
 	lipgloss.SetColorProfile(termenv.TrueColor)
 
-	got := DangerousText("J: warning: tasks put: nope\n")
+	got := DangerousText("J: tasks put: nope\n")
 	if !strings.Contains(got, "\x1b[") {
 		t.Fatalf("DangerousText output should contain ANSI styling when color is enabled, got %q", got)
 	}
 	if hasBoldSGR(got) {
 		t.Fatalf("DangerousText output rendered bold SGR: %q", got)
 	}
-	if stripped := ansi.Strip(got); stripped != "J: warning: tasks put: nope\n" {
+	if stripped := ansi.Strip(got); stripped != "J: tasks put: nope\n" {
 		t.Fatalf("ansi.Strip(DangerousText output) = %q, want %q",
-			stripped, "J: warning: tasks put: nope\n")
+			stripped, "J: tasks put: nope\n")
 	}
 }
 

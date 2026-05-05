@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 func TestParseVerdict(t *testing.T) {
@@ -38,11 +38,11 @@ func TestParseVerdict(t *testing.T) {
 
 func TestReadVerdictForTask(t *testing.T) {
 	setupResolverProject(t)
-	dir, err := store.EnsureTaskDir("task")
+	dir, err := tasks.EnsureDir("task")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, store.VerifierFindingsFileName), []byte("VERDICT: PASS\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, tasks.VerifierFindingsFileName), []byte("VERDICT: PASS\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if got := ReadVerdictForTask("task"); got != "PASS" {

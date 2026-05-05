@@ -18,7 +18,7 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/resolver"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // ResumeOptions configures RunResume. Stdin/Stdout/Stderr default to
@@ -90,7 +90,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return errors.New("J: no coding agents configured")
 	}
 
-	task, ok, err := resolveResumeTask(ctx, opts)
+	t, ok, err := resolveResumeTask(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -99,22 +99,22 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return nil
 	}
 
-	agent, ok := lookupResumeAgent(opts.Agents, task.InvokedTool)
+	agent, ok := lookupResumeAgent(opts.Agents, t.InvokedTool)
 	if !ok {
-		return fmt.Errorf("J: unknown tool %q", task.InvokedTool)
+		return fmt.Errorf("J: unknown tool %q", t.InvokedTool)
 	}
 
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		return err
 	}
-	taskDir := filepath.Join(tasksDir, task.ID)
-	planPath := filepath.Join(taskDir, store.PlanFileName)
+	taskDir := filepath.Join(tasksDir, t.ID)
+	planPath := filepath.Join(taskDir, tasks.PlanFileName)
 
-	lc := task.BeginWorkResume(opts.Stderr)
+	lc := t.BeginWorkResume(opts.Stderr)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		banner.DangerousFprintf(opts.Stderr, "J: warning: %v\n", mustReadErr)
+		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	// Resume always runs interactive — clarification / iteration
 	// answers need a TUI, and the worker bucket's `interactive`
@@ -122,9 +122,9 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	// since resume never goes headless.
 	_, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:     planPath,
-		Model:        task.InvokedModel,
+		Model:        t.InvokedModel,
 		Interactive:  true,
-		ResumeChatID: task.WorkResumeCursor,
+		ResumeChatID: t.WorkResumeCursor,
 		Resume:       true,
 		MustRead:     mustReadFiles,
 	})
@@ -133,7 +133,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return workErr
 	}
 
-	banner.Fprintf(opts.Stdout, "J: work resume on task %s\n", task.ID)
+	banner.Fprintf(opts.Stdout, "J: work resume on task %s\n", t.ID)
 	return nil
 }
 
@@ -144,57 +144,57 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 //
 // The store is opened, queried, and closed inside this helper so
 // the agent invocation in the caller does not hold the bbolt lock.
-func resolveResumeTask(ctx context.Context, opts ResumeOptions) (store.Task, bool, error) {
+func resolveResumeTask(ctx context.Context, opts ResumeOptions) (tasks.Task, bool, error) {
 	if opts.TaskID != "" {
 		return resolveResumeByID(opts.TaskID)
 	}
-	tasks, err := listResumableTasks()
+	rows, err := listResumableTasks()
 	if err != nil {
-		return store.Task{}, false, err
+		return tasks.Task{}, false, err
 	}
-	switch len(tasks) {
+	switch len(rows) {
 	case 0:
-		return store.Task{}, false, nil
+		return tasks.Task{}, false, nil
 	case 1:
-		return tasks[0], true, nil
+		return rows[0], true, nil
 	}
-	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to resume", tasks)
+	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to resume", rows)
 	if err != nil {
-		return store.Task{}, false, err
+		return tasks.Task{}, false, err
 	}
 	if !ok {
-		return store.Task{}, false, nil
+		return tasks.Task{}, false, nil
 	}
-	for _, t := range tasks {
+	for _, t := range rows {
 		if t.ID == chosen {
 			return t, true, nil
 		}
 	}
-	return store.Task{}, false, fmt.Errorf("J: task %q not found", chosen)
+	return tasks.Task{}, false, fmt.Errorf("J: task %q not found", chosen)
 }
 
 // resolveResumeByID loads the named task and validates it has a
 // non-empty WorkResumeCursor. fs.ErrNotExist becomes the friendly
 // "task %q not found" wrapping the way callers expect; an empty
 // cursor becomes "task %q has no work session".
-func resolveResumeByID(id string) (store.Task, bool, error) {
-	task, err := resolver.TaskByID("work", id)
+func resolveResumeByID(id string) (tasks.Task, bool, error) {
+	t, err := resolver.TaskByID("work", id)
 	if err != nil {
-		return store.Task{}, false, err
+		return tasks.Task{}, false, err
 	}
-	if task.WorkResumeCursor == "" {
-		return store.Task{}, false, fmt.Errorf("J: task %q has no work session", id)
+	if t.WorkResumeCursor == "" {
+		return tasks.Task{}, false, fmt.Errorf("J: task %q has no work session", id)
 	}
-	return task, true, nil
+	return t, true, nil
 }
 
 // listResumableTasks returns every task with a non-empty
-// WorkResumeCursor regardless of status, sorted via store.SortTasks
+// WorkResumeCursor regardless of status, sorted via tasks.SortTasks
 // so the picker shows the active-then-most-recent order users see
 // in `j tasks`. validateForWork is intentionally NOT applied here:
 // resume is permissive by design, so `working` / `work-done` rows
 // are also resumable.
-func listResumableTasks() ([]store.Task, error) {
+func listResumableTasks() ([]tasks.Task, error) {
 	all, err := resolver.ListAllTasks()
 	if err != nil {
 		return nil, err

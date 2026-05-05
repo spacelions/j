@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // watchTickInterval drives the elapsed-time clock on active rows. A
@@ -23,7 +23,7 @@ type tickMsg time.Time
 
 // tasksMsg carries a fresh, reaped, sorted slice from the bbolt
 // store back into the model.
-type tasksMsg []store.Task
+type tasksMsg []tasks.Task
 
 // errMsg surfaces a reload failure into the View footer without
 // quitting the program — the next tick retries.
@@ -44,11 +44,11 @@ var (
 // current second on every paint. width is bumped by tea.WindowSizeMsg
 // so the table redraws to fit the user's terminal on resize.
 type model struct {
-	tasks  []store.Task
+	tasks  []tasks.Task
 	now    time.Time
 	width  int
 	err    error
-	reload func() ([]store.Task, error)
+	reload func() ([]tasks.Task, error)
 	tick   func() tea.Cmd
 }
 
@@ -62,7 +62,7 @@ func defaultTick() tea.Cmd {
 // reloadCmd wraps reload in a tea.Cmd so it runs off the Update
 // goroutine. A nil error path produces tasksMsg; an error becomes
 // errMsg without quitting so the user can recover.
-func reloadCmd(reload func() ([]store.Task, error)) tea.Cmd {
+func reloadCmd(reload func() ([]tasks.Task, error)) tea.Cmd {
 	return func() tea.Msg {
 		t, err := reload()
 		if err != nil {
@@ -120,7 +120,7 @@ func (m model) View() string {
 // surfaced (nil on a clean quit). in/out are real parameters: the
 // production caller wires them to os.Stdin/os.Stdout, tests pass a
 // pre-loaded reader so the loop quits deterministically.
-func runWatch(in io.Reader, out io.Writer, reload func() ([]store.Task, error)) error {
+func runWatch(in io.Reader, out io.Writer, reload func() ([]tasks.Task, error)) error {
 	m := model{
 		now:    time.Now(),
 		reload: reload,

@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 func TestFormatDuration(t *testing.T) {
@@ -40,18 +40,18 @@ func TestFormatStatus(t *testing.T) {
 
 	activeCases := []struct {
 		name   string
-		status store.TaskStatus
-		setter func(*store.Task, time.Time)
+		status tasks.TaskStatus
+		setter func(*tasks.Task, time.Time)
 	}{
-		{"planning", store.StatusPlanning, func(task *store.Task, t time.Time) { task.PlanBeginAt = &t }},
-		{"working", store.StatusWorking, func(task *store.Task, t time.Time) { task.WorkBeginAt = &t }},
-		{"verifying", store.StatusVerifying, func(task *store.Task, t time.Time) { task.VerifyBeginAt = &t }},
+		{"planning", tasks.StatusPlanning, func(row *tasks.Task, ts time.Time) { row.PlanBeginAt = &ts }},
+		{"working", tasks.StatusWorking, func(row *tasks.Task, ts time.Time) { row.WorkBeginAt = &ts }},
+		{"verifying", tasks.StatusVerifying, func(row *tasks.Task, ts time.Time) { row.VerifyBeginAt = &ts }},
 	}
 	for _, tc := range activeCases {
 		t.Run("active/"+tc.name, func(t *testing.T) {
-			task := store.Task{Status: tc.status}
-			tc.setter(&task, begin)
-			got := formatStatus(task, now)
+			row := tasks.Task{Status: tc.status}
+			tc.setter(&row, begin)
+			got := formatStatus(row, now)
 			want := string(tc.status) + "(1m:20s)"
 			if got != want {
 				t.Fatalf("formatStatus = %q, want %q", got, want)
@@ -59,13 +59,13 @@ func TestFormatStatus(t *testing.T) {
 		})
 	}
 
-	rawCases := []store.TaskStatus{
-		store.StatusPlanDone, store.StatusWorkDone, store.StatusVerifyDone,
-		store.StatusCompleted, store.StatusHelp,
+	rawCases := []tasks.TaskStatus{
+		tasks.StatusPlanDone, tasks.StatusWorkDone, tasks.StatusVerifyDone,
+		tasks.StatusCompleted, tasks.StatusHelp,
 	}
 	for _, s := range rawCases {
 		t.Run("raw/"+string(s), func(t *testing.T) {
-			got := formatStatus(store.Task{Status: s}, now)
+			got := formatStatus(tasks.Task{Status: s}, now)
 			if got != string(s) {
 				t.Fatalf("formatStatus(%s) = %q, want %q", s, got, string(s))
 			}
@@ -75,9 +75,9 @@ func TestFormatStatus(t *testing.T) {
 	// Active status with nil matching *BeginAt must fall back to the
 	// raw status string instead of panicking on a nil deref.
 	t.Run("active-without-begin-at", func(t *testing.T) {
-		got := formatStatus(store.Task{Status: store.StatusPlanning}, now)
-		if got != string(store.StatusPlanning) {
-			t.Fatalf("formatStatus = %q, want %q", got, string(store.StatusPlanning))
+		got := formatStatus(tasks.Task{Status: tasks.StatusPlanning}, now)
+		if got != string(tasks.StatusPlanning) {
+			t.Fatalf("formatStatus = %q, want %q", got, string(tasks.StatusPlanning))
 		}
 	})
 }
@@ -107,12 +107,12 @@ func TestRenderTable_EmptyHeaderOnly(t *testing.T) {
 // ruling.
 func TestRenderTable_GlyphTopology(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 5, 0, 0, time.UTC)
-	tasks := []store.Task{
-		{ID: "a", Status: store.StatusPlanDone, Summary: "first"},
-		{ID: "b", Status: store.StatusWorkDone, Summary: "second"},
+	rows := []tasks.Task{
+		{ID: "a", Status: tasks.StatusPlanDone, Summary: "first"},
+		{ID: "b", Status: tasks.StatusWorkDone, Summary: "second"},
 	}
 	var buf bytes.Buffer
-	if err := renderTable(&buf, tasks, now, 0); err != nil {
+	if err := renderTable(&buf, rows, now, 0); err != nil {
 		t.Fatalf("renderTable: %v", err)
 	}
 	out := ansi.Strip(buf.String())
@@ -127,10 +127,10 @@ func TestRenderTable_MixedActiveAndInactive(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 5, 0, 0, time.UTC)
 	begin := now.Add(-80 * time.Second)
 	end := now.Add(-time.Hour)
-	tasks := []store.Task{
+	rows := []tasks.Task{
 		{
 			ID:           "active-1",
-			Status:       store.StatusPlanning,
+			Status:       tasks.StatusPlanning,
 			InvokedTool:  "cursor",
 			InvokedModel: "sonnet-4",
 			Summary:      "draft idea",
@@ -138,7 +138,7 @@ func TestRenderTable_MixedActiveAndInactive(t *testing.T) {
 		},
 		{
 			ID:           "done-1",
-			Status:       store.StatusPlanDone,
+			Status:       tasks.StatusPlanDone,
 			InvokedTool:  "cursor",
 			InvokedModel: "gpt-5",
 			Summary:      "old one",
@@ -146,7 +146,7 @@ func TestRenderTable_MixedActiveAndInactive(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	if err := renderTable(&buf, tasks, now, 0); err != nil {
+	if err := renderTable(&buf, rows, now, 0); err != nil {
 		t.Fatalf("renderTable: %v", err)
 	}
 	out := buf.String()
@@ -174,14 +174,14 @@ func TestRenderTable_MixedActiveAndInactive(t *testing.T) {
 // status burns a palette slot.
 func TestRenderTable_RowColors(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	tasks := []store.Task{
-		{ID: "row-1", Status: store.StatusPlanDone, Summary: "first"},
-		{ID: "row-2", Status: store.StatusCompleted, Summary: "done"},
-		{ID: "row-3", Status: store.StatusHelp, Summary: "stuck"},
-		{ID: "row-4", Status: store.StatusWorkDone, Summary: "second"},
+	rows := []tasks.Task{
+		{ID: "row-1", Status: tasks.StatusPlanDone, Summary: "first"},
+		{ID: "row-2", Status: tasks.StatusCompleted, Summary: "done"},
+		{ID: "row-3", Status: tasks.StatusHelp, Summary: "stuck"},
+		{ID: "row-4", Status: tasks.StatusWorkDone, Summary: "second"},
 	}
 	var buf bytes.Buffer
-	if err := renderTable(&buf, tasks, now, 0); err != nil {
+	if err := renderTable(&buf, rows, now, 0); err != nil {
 		t.Fatalf("renderTable: %v", err)
 	}
 	raw := buf.String()
@@ -210,10 +210,10 @@ func TestRenderTable_RowColors(t *testing.T) {
 // truncates with `…` and every output line stays within the requested
 // terminal width.
 func TestRenderTable_FitsToWidth(t *testing.T) {
-	tasks := []store.Task{
+	rows := []tasks.Task{
 		{
 			ID:           "row-1",
-			Status:       store.StatusPlanDone,
+			Status:       tasks.StatusPlanDone,
 			InvokedTool:  "cursor",
 			InvokedModel: "sonnet-4",
 			Summary:      "this is a very long summary that absolutely should not fit",
@@ -221,7 +221,7 @@ func TestRenderTable_FitsToWidth(t *testing.T) {
 	}
 	const width = 50
 	var buf bytes.Buffer
-	if err := renderTable(&buf, tasks, time.Now(), width); err != nil {
+	if err := renderTable(&buf, rows, time.Now(), width); err != nil {
 		t.Fatalf("renderTable: %v", err)
 	}
 	stripped := ansi.Strip(buf.String())
@@ -236,8 +236,8 @@ func TestRenderTable_FitsToWidth(t *testing.T) {
 }
 
 func TestRenderTable_WriterError(t *testing.T) {
-	if err := renderTable(failingWriter{}, []store.Task{
-		{ID: "x", Status: store.StatusPlanDone},
+	if err := renderTable(failingWriter{}, []tasks.Task{
+		{ID: "x", Status: tasks.StatusPlanDone},
 	}, time.Now(), 0); err == nil {
 		t.Fatal("expected writer error from failingWriter")
 	}

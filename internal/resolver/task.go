@@ -8,38 +8,38 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 type StatusOverrideUI interface {
 	ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error)
 }
 
-func ConfirmStatusOverride(ctx context.Context, ui StatusOverrideUI, yes bool, cmd string, task store.Task, allowed func(store.Task) bool) (bool, error) {
-	if allowed(task) || yes {
+func ConfirmStatusOverride(ctx context.Context, ui StatusOverrideUI, yes bool, cmd string, t tasks.Task, allowed func(tasks.Task) bool) (bool, error) {
+	if allowed(t) || yes {
 		return true, nil
 	}
-	return ui.ConfirmStatusOverride(ctx, cmd, task.ID, string(task.Status))
+	return ui.ConfirmStatusOverride(ctx, cmd, t.ID, string(t.Status))
 }
 
-func ReplanAllowed(task store.Task) bool {
-	switch task.Status {
-	case store.StatusPlanDone, store.StatusHelp:
+func ReplanAllowed(t tasks.Task) bool {
+	switch t.Status {
+	case tasks.StatusPlanDone, tasks.StatusHelp:
 		return true
 	}
 	return false
 }
 
-func VerifyAllowed(task store.Task) bool {
-	switch task.Status {
-	case store.StatusWorkDone, store.StatusVerifyDone, store.StatusHelp:
+func VerifyAllowed(t tasks.Task) bool {
+	switch t.Status {
+	case tasks.StatusWorkDone, tasks.StatusVerifyDone, tasks.StatusHelp:
 		return true
 	}
 	return false
 }
 
 type WorkPlanUI interface {
-	PickTask(ctx context.Context, title string, tasks []store.Task) (string, bool, error)
+	PickTask(ctx context.Context, title string, tasks []tasks.Task) (string, bool, error)
 }
 
 type WorkPlanOptions struct {
@@ -48,7 +48,7 @@ type WorkPlanOptions struct {
 }
 
 type WorkPlan struct {
-	Task        store.Task
+	Task        tasks.Task
 	PlanPath    string
 	Body        string
 	Requirement string
@@ -60,18 +60,18 @@ func ResolveWorkPlan(ctx context.Context, opts WorkPlanOptions) (WorkPlan, bool,
 		r, err := resolveWorkByTaskID(opts.TaskID)
 		return r, err == nil, err
 	}
-	tasks, err := listResolvableTasks("work")
+	rows, err := listResolvableTasks("work")
 	if err != nil {
 		return WorkPlan{}, false, err
 	}
-	if len(tasks) == 0 {
+	if len(rows) == 0 {
 		return WorkPlan{}, false, errors.New("J: no tasks to work; run `j plan` first")
 	}
-	if id, ok := autoPickAllowed(tasks, ReplanAllowed); ok {
+	if id, ok := autoPickAllowed(rows, ReplanAllowed); ok {
 		r, err := resolveWorkByTaskID(id)
 		return r, err == nil, err
 	}
-	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to work", tasks)
+	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to work", rows)
 	if err != nil || !ok {
 		return WorkPlan{}, false, err
 	}
@@ -80,29 +80,29 @@ func ResolveWorkPlan(ctx context.Context, opts WorkPlanOptions) (WorkPlan, bool,
 }
 
 func resolveWorkByTaskID(id string) (WorkPlan, error) {
-	task, err := TaskByID("work", id)
+	row, err := TaskByID("work", id)
 	if err != nil {
 		return WorkPlan{}, err
 	}
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		return WorkPlan{}, err
 	}
 	taskDir := filepath.Join(tasksDir, id)
-	planPath := filepath.Join(taskDir, store.PlanFileName)
+	planPath := filepath.Join(taskDir, tasks.PlanFileName)
 	body, err := os.ReadFile(planPath)
 	if err != nil {
 		return WorkPlan{}, fmt.Errorf("work: read plan: %w", err)
 	}
 	var requirement string
-	if data, readErr := os.ReadFile(filepath.Join(taskDir, store.RequirementsFileName)); readErr == nil {
+	if data, readErr := os.ReadFile(filepath.Join(taskDir, tasks.RequirementsFileName)); readErr == nil {
 		requirement = string(data)
 	}
-	return WorkPlan{Task: task, PlanPath: planPath, Body: string(body), Requirement: requirement}, nil
+	return WorkPlan{Task: row, PlanPath: planPath, Body: string(body), Requirement: requirement}, nil
 }
 
 type VerifyTaskUI interface {
-	PickTask(ctx context.Context, title string, tasks []store.Task) (string, bool, error)
+	PickTask(ctx context.Context, title string, tasks []tasks.Task) (string, bool, error)
 }
 
 type VerifyTaskOptions struct {
@@ -111,7 +111,7 @@ type VerifyTaskOptions struct {
 }
 
 type VerifyTask struct {
-	Task             store.Task
+	Task             tasks.Task
 	TaskDir          string
 	RequirementsPath string
 	PlanPath         string
@@ -124,18 +124,18 @@ func ResolveVerifyTask(ctx context.Context, opts VerifyTaskOptions) (VerifyTask,
 		r, err := resolveVerifyByTaskID(opts.TaskID)
 		return r, err == nil, err
 	}
-	tasks, err := listResolvableTasks("verify")
+	rows, err := listResolvableTasks("verify")
 	if err != nil {
 		return VerifyTask{}, false, err
 	}
-	if len(tasks) == 0 {
+	if len(rows) == 0 {
 		return VerifyTask{}, false, errors.New("J: no tasks to verify; run `j plan` and `j work` first")
 	}
-	if id, ok := autoPickAllowed(tasks, VerifyAllowed); ok {
+	if id, ok := autoPickAllowed(rows, VerifyAllowed); ok {
 		r, err := resolveVerifyByTaskID(id)
 		return r, err == nil, err
 	}
-	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to verify", tasks)
+	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to verify", rows)
 	if err != nil || !ok {
 		return VerifyTask{}, false, err
 	}
@@ -144,54 +144,54 @@ func ResolveVerifyTask(ctx context.Context, opts VerifyTaskOptions) (VerifyTask,
 }
 
 func resolveVerifyByTaskID(id string) (VerifyTask, error) {
-	task, err := TaskByID("verify", id)
+	row, err := TaskByID("verify", id)
 	if err != nil {
 		return VerifyTask{}, err
 	}
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		return VerifyTask{}, err
 	}
 	taskDir := filepath.Join(tasksDir, id)
-	planPath := filepath.Join(taskDir, store.PlanFileName)
+	planPath := filepath.Join(taskDir, tasks.PlanFileName)
 	if _, err := os.Stat(planPath); err != nil {
 		return VerifyTask{}, fmt.Errorf("verify: read plan: %w", err)
 	}
 	return VerifyTask{
-		Task:             task,
+		Task:             row,
 		TaskDir:          taskDir,
-		RequirementsPath: filepath.Join(taskDir, store.RequirementsFileName),
+		RequirementsPath: filepath.Join(taskDir, tasks.RequirementsFileName),
 		PlanPath:         planPath,
-		VerifierPlanPath: filepath.Join(taskDir, store.VerifierPlanFileName),
-		FindingsPath:     filepath.Join(taskDir, store.VerifierFindingsFileName),
+		VerifierPlanPath: filepath.Join(taskDir, tasks.VerifierPlanFileName),
+		FindingsPath:     filepath.Join(taskDir, tasks.VerifierFindingsFileName),
 	}, nil
 }
 
-func ListAllTasks() ([]store.Task, error) {
+func ListAllTasks() ([]tasks.Task, error) {
 	return listResolvableTasks("tasks")
 }
 
-func ListTasks(prefix string) ([]store.Task, error) {
+func ListTasks(prefix string) ([]tasks.Task, error) {
 	return listResolvableTasks(prefix)
 }
 
-func TaskByID(prefix, id string) (store.Task, error) {
+func TaskByID(prefix, id string) (tasks.Task, error) {
 	s, err := openTaskStore(prefix)
 	if err != nil {
-		return store.Task{}, err
+		return tasks.Task{}, err
 	}
 	defer func() { _ = s.Close() }()
-	task, err := s.GetTask(id)
+	row, err := s.GetTask(id)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return store.Task{}, fmt.Errorf("%s: task %q not found", prefix, id)
+			return tasks.Task{}, fmt.Errorf("%s: task %q not found", prefix, id)
 		}
-		return store.Task{}, err
+		return tasks.Task{}, err
 	}
-	return task, nil
+	return row, nil
 }
 
-func listResolvableTasks(prefix string) ([]store.Task, error) {
+func listResolvableTasks(prefix string) ([]tasks.Task, error) {
 	s, err := openTaskStore(prefix)
 	if err != nil {
 		return nil, err
@@ -201,30 +201,26 @@ func listResolvableTasks(prefix string) ([]store.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	store.SortTasks(all)
+	tasks.SortTasks(all)
 	return all, nil
 }
 
-func autoPickAllowed(tasks []store.Task, allowed func(store.Task) bool) (string, bool) {
+func autoPickAllowed(rows []tasks.Task, allowed func(tasks.Task) bool) (string, bool) {
 	var picked string
 	count := 0
-	for _, task := range tasks {
-		if allowed(task) {
-			picked = task.ID
+	for _, row := range rows {
+		if allowed(row) {
+			picked = row.ID
 			count++
 		}
 	}
 	return picked, count == 1
 }
 
-func openTaskStore(prefix string) (*store.Store, error) {
-	path, err := store.DefaultTasksDBPath()
+func openTaskStore(prefix string) (*tasks.Store, error) {
+	dir, err := tasks.DefaultDir()
 	if err != nil {
-		return nil, fmt.Errorf("%s: tasks db: %w", prefix, err)
+		return nil, fmt.Errorf("%s: tasks dir: %w", prefix, err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("%s: tasks db: %w", prefix, err)
-	}
-	return s, nil
+	return tasks.Open(dir), nil
 }

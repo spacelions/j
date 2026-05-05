@@ -1,4 +1,4 @@
-package store
+package tasks
 
 import (
 	"bytes"
@@ -8,14 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-)
+
+	"github.com/spacelions/j/internal/store")
 
 // TestNewWorkTask_RecordsRow pins the fresh work-row write: a fresh
 // row at status=working, work fields populated, and no plan fields.
 func TestNewWorkTask_RecordsRow(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := NewTaskID()
 	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", id, "/tmp/spec.plan.md", "# req", "plan body", "work-cursor")
@@ -42,18 +43,15 @@ func TestNewWorkTask_RecordsRow(t *testing.T) {
 // reuse path: the existing plan-phase fields stay intact.
 func TestTask_BeginWorkReuse_PreservesPlanPhase(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedPlanDoneTask(t, "seeded")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -90,8 +88,8 @@ func TestTask_BeginWorkReuse_PreservesPlanPhase(t *testing.T) {
 // TestWorkLifecycle_FinishErrorPath drives the StatusHelp branch.
 func TestWorkLifecycle_FinishErrorPath(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	lc := NewWorkTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "", "body", "")
 	lc.Finish(errors.New("boom"))
@@ -108,8 +106,8 @@ func TestWorkLifecycle_FinishErrorPath(t *testing.T) {
 // happy path of RecordBackground for the work flow.
 func TestWorkLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.plan.md", "", "body", "")
 	lc.RecordBackground(54321, "/tmp/agent.log")
@@ -130,8 +128,8 @@ func TestWorkLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 // second-call no-op for the work flow.
 func TestWorkLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.plan.md", "", "body", "")
 	lc.Finish(nil)
@@ -148,8 +146,8 @@ func TestWorkLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 // TestWorkLifecycle_FinishIdempotent pins the second-Finish no-op.
 func TestWorkLifecycle_FinishIdempotent(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.plan.md", "", "body", "")
 	lc.Finish(nil)
@@ -160,21 +158,22 @@ func TestWorkLifecycle_FinishIdempotent(t *testing.T) {
 	}
 }
 
-// TestNewWorkTask_OpenFails forces bolt.Open to
-// fail. NewWorkTask and Finish each emit a warning and continue.
+// TestNewWorkTask_OpenFails forces PutTask's mkdir of the per-task
+// directory to fail by replacing `.j/tasks` with a regular file.
+// NewWorkTask and Finish each emit a warning and continue.
 func TestNewWorkTask_OpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	path, err := DefaultTasksDBPath()
+	path, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(path); err != nil {
+	if err := os.RemoveAll(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
@@ -192,13 +191,13 @@ func TestNewWorkTask_OpenFails(t *testing.T) {
 // handing Finish a task with no ID.
 func TestWorkLifecycle_FinishPutErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
 	lc := &WorkLifecycle{stderr: &stderr, task: Task{Status: StatusWorking}}
 	lc.Finish(nil)
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
@@ -211,8 +210,8 @@ func TestNewWorkTask_MintsWorktreeName(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	lc := NewWorkTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "# do the thing", "body", "")
 	lc.Finish(nil)
@@ -230,18 +229,15 @@ func TestTask_BeginWorkReuse_MintsWorktreeWhenEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedPlanDoneTask(t, "hello world")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -262,18 +258,15 @@ func TestTask_BeginWorkReuse_MintsWorktreeWhenEmpty(t *testing.T) {
 // preserve-existing-value branch of fillWorktree.
 func TestTask_BeginWorkReuse_PreservesPreExistingWorktree(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedPlanDoneTask(t, "hello")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -293,18 +286,15 @@ func TestTask_BeginWorkReuse_PreservesPreExistingWorktree(t *testing.T) {
 // back to the main checkout).
 func TestTask_BeginWorkResume_LeavesWorktreeAlone(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedPlanDoneTask(t, "hello")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -330,8 +320,8 @@ func TestWorkLifecycle_Task(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	lc := NewWorkTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.plan.md", "# do the thing", "body", "")
 	if got := lc.Task(); got.Worktree != "myproj-do-the-thing" {

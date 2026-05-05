@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/banner"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // Spawner is the subshell launcher used by `j tasks enter`. It is
@@ -105,20 +105,17 @@ func (o EnterOptions) withDefaults() EnterOptions {
 //     prefix on a non-zero shell.
 func RunEnter(ctx context.Context, opts EnterOptions) error {
 	opts = opts.withDefaults()
-	path, err := store.DefaultTasksDBPath()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		return err
 	}
 	if opts.TaskID == "" {
-		if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
+		if _, statErr := os.Stat(tasksDir); errors.Is(statErr, fs.ErrNotExist) {
 			banner.Fprintln(opts.Stdout, emptyMessage)
 			return nil
 		}
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		return err
-	}
+	s := tasks.Open(tasksDir)
 	id, ok, err := resolveEnterID(ctx, s, opts)
 	_ = s.Close()
 	if err != nil {
@@ -127,7 +124,7 @@ func RunEnter(ctx context.Context, opts EnterOptions) error {
 	if !ok {
 		return nil
 	}
-	taskDir, err := store.EnsureTaskDir(id)
+	taskDir, err := tasks.EnsureDir(id)
 	if err != nil {
 		return fmt.Errorf("tasks enter: %w", err)
 	}
@@ -149,7 +146,7 @@ func RunEnter(ctx context.Context, opts EnterOptions) error {
 // second open) so the bbolt lock is acquired exactly once per
 // invocation. The picker branch delegates to pickFromStore so the
 // same selector body backs both `tasks enter` and `tasks discard`.
-func resolveEnterID(ctx context.Context, s *store.Store, opts EnterOptions) (string, bool, error) {
+func resolveEnterID(ctx context.Context, s *tasks.Store, opts EnterOptions) (string, bool, error) {
 	if opts.TaskID != "" {
 		if _, err := s.GetTask(opts.TaskID); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {

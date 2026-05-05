@@ -18,6 +18,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
 
@@ -28,19 +29,16 @@ const testCursorChatID = "00000000-0000-4000-8000-000000000001"
 
 // readTasks lists every task in the per-cwd tasks DB. Tests call this
 // after Run to assert the lifecycle wrote what we expect.
-func readTasks(t *testing.T) []store.Task {
+func readTasks(t *testing.T) []tasks.Task {
 	t.Helper()
-	path, err := store.DefaultTasksDBPath()
+	path, err := tasks.DefaultDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	got, err := s.ListTasks()
 	if err != nil {
@@ -140,8 +138,8 @@ type scriptedUI struct {
 	pickResumeCalls int
 	confirmCalls    int
 
-	pickedTasks      []store.Task
-	pickResumedTasks []store.Task
+	pickedTasks      []tasks.Task
+	pickResumedTasks []tasks.Task
 	confirmCmd       string
 	confirmTaskID    string
 	confirmStatus    string
@@ -152,10 +150,10 @@ type scriptedUI struct {
 // / resumeErr (the resume.go flow); other titles honour pickedID /
 // pickErr (the work.go non-resume flow). Both branches use the
 // (id, ok, err) contract — empty id signals cancel.
-func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []store.Task) (string, bool, error) {
+func (s *scriptedUI) PickTask(_ context.Context, title string, rows []tasks.Task) (string, bool, error) {
 	if strings.Contains(title, "resume") {
 		s.pickResumeCalls++
-		s.pickResumedTasks = tasks
+		s.pickResumedTasks = rows
 		if s.resumeErr != nil {
 			return "", false, s.resumeErr
 		}
@@ -165,7 +163,7 @@ func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []store.Tas
 		return s.resumePicked, true, nil
 	}
 	s.pickCalls++
-	s.pickedTasks = tasks
+	s.pickedTasks = rows
 	if s.pickErr != nil {
 		return "", false, s.pickErr
 	}
@@ -269,13 +267,13 @@ func (s *scriptedAgent) Verify(context.Context, codingagents.VerifyRequest) (int
 }
 
 // taskFilePath returns the absolute path of a body file (e.g.
-// store.PlanFileName) for an existing task id under the current
+// tasks.PlanFileName) for an existing task id under the current
 // working directory's `.j/tasks/<id>/`. It mirrors the production
 // `filepath.Join(DefaultTasksDir(), id, name)` recipe so test
 // assertions stay aligned with the on-disk layout contract.
 func taskFilePath(t *testing.T, id, name string) string {
 	t.Helper()
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
@@ -288,34 +286,31 @@ func taskFilePath(t *testing.T, id, name string) string {
 // Options.TaskID. Use after t.Chdir(t.TempDir()).
 func seedPlanDoneTask(t *testing.T, summary, planBody, requirementBody string) string {
 	t.Helper()
-	id := store.NewTaskID()
-	if _, err := store.EnsureTaskDir(id); err != nil {
+	id := tasks.NewTaskID()
+	if _, err := tasks.EnsureDir(id); err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
-	planPath := taskFilePath(t, id, store.PlanFileName)
+	planPath := taskFilePath(t, id, tasks.PlanFileName)
 	if err := os.WriteFile(planPath, []byte(planBody), 0o644); err != nil {
 		t.Fatalf("write plan: %v", err)
 	}
 	if requirementBody != "" {
-		reqPath := taskFilePath(t, id, store.RequirementsFileName)
+		reqPath := taskFilePath(t, id, tasks.RequirementsFileName)
 		if err := os.WriteFile(reqPath, []byte(requirementBody), 0o644); err != nil {
 			t.Fatalf("write requirements: %v", err)
 		}
 	}
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := tasks.Open(dbPath)
 	defer func() { _ = s.Close() }()
 	begin := time.Now().UTC().Add(-time.Hour)
 	end := begin.Add(time.Minute)
-	task := store.Task{
+	task := tasks.Task{
 		ID:               id,
-		Status:           store.StatusPlanDone,
+		Status:           tasks.StatusPlanDone,
 		InvokedTool:      "cursor",
 		InvokedModel:     "sonnet-4",
 		PlanResumeCursor: "seed-plan-cursor",
@@ -371,15 +366,15 @@ func TestRun_ByTaskID_Success(t *testing.T) {
 	if !strings.Contains(stdout.String(), "J: coding on task "+id) {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 {
-		t.Fatalf("expected one task row (reuse): %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 {
+		t.Fatalf("expected one task row (reuse): %+v", rows)
 	}
-	got := tasks[0]
+	got := rows[0]
 	if got.ID != id {
 		t.Fatalf("task id = %q, want %q", got.ID, id)
 	}
-	if got.Status != store.StatusWorkDone {
+	if got.Status != tasks.StatusWorkDone {
 		t.Fatalf("Status = %q, want work-done", got.Status)
 	}
 	if got.PlanResumeCursor != "seed-plan-cursor" {
@@ -404,24 +399,11 @@ func TestRun_ByTaskID_Success(t *testing.T) {
 func TestRun_ByTaskID_NotFound(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	// Open the tasks log just to materialize the empty bucket.
-	if _, err := store.EnsureTaskDir("seed"); err != nil {
+	if _, err := tasks.EnsureDir("seed"); err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
-	dbPath, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.EnsureBucket(store.BucketTasks); err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
 	agent := newScriptedAgent()
-	err = Run(context.Background(), Options{
+	err := Run(context.Background(), Options{
 		TaskID: "missing-id",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -443,19 +425,16 @@ func TestRun_ByTaskID_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got.Status = store.StatusWorking
+	got.Status = tasks.StatusWorking
 	if err := s.PutTask(got); err != nil {
 		t.Fatal(err)
 	}
@@ -476,16 +455,16 @@ func TestRun_ByTaskID_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 	if ui.confirmCalls != 1 {
 		t.Fatalf("ConfirmStatusOverride calls = %d, want 1", ui.confirmCalls)
 	}
-	if ui.confirmCmd != "work" || ui.confirmStatus != string(store.StatusWorking) || ui.confirmTaskID != id {
+	if ui.confirmCmd != "work" || ui.confirmStatus != string(tasks.StatusWorking) || ui.confirmTaskID != id {
 		t.Fatalf("confirm args = (%q, %q, %q), want (work, %q, %q)",
-			ui.confirmCmd, ui.confirmTaskID, ui.confirmStatus, id, store.StatusWorking)
+			ui.confirmCmd, ui.confirmTaskID, ui.confirmStatus, id, tasks.StatusWorking)
 	}
 	if agent.worked != 0 {
 		t.Fatal("agent.Work should not run when the user declines the prompt")
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusWorking {
-		t.Fatalf("declined task should stay working: %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusWorking {
+		t.Fatalf("declined task should stay working: %+v", rows)
 	}
 }
 
@@ -496,19 +475,16 @@ func TestRun_ByTaskID_StatusMismatch_AcceptedRuns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got.Status = store.StatusCompleted
+	got.Status = tasks.StatusCompleted
 	if err := s.PutTask(got); err != nil {
 		t.Fatal(err)
 	}
@@ -532,9 +508,9 @@ func TestRun_ByTaskID_StatusMismatch_AcceptedRuns(t *testing.T) {
 	if agent.worked != 1 {
 		t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusWorkDone {
-		t.Fatalf("accepted task should flip to work-done: %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusWorkDone {
+		t.Fatalf("accepted task should flip to work-done: %+v", rows)
 	}
 }
 
@@ -545,19 +521,16 @@ func TestRun_ByTaskID_StatusMismatch_YesFlagSkipsPrompt(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got.Status = store.StatusVerifyDone
+	got.Status = tasks.StatusVerifyDone
 	if err := s.PutTask(got); err != nil {
 		t.Fatal(err)
 	}
@@ -590,19 +563,16 @@ func TestRun_ByTaskID_StatusMismatch_PromptError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got.Status = store.StatusWorking
+	got.Status = tasks.StatusWorking
 	if err := s.PutTask(got); err != nil {
 		t.Fatal(err)
 	}
@@ -632,19 +602,16 @@ func TestRun_ByTaskID_StatusMismatch_AbortExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got.Status = store.StatusWorking
+	got.Status = tasks.StatusWorking
 	if err := s.PutTask(got); err != nil {
 		t.Fatal(err)
 	}
@@ -689,9 +656,9 @@ func TestRun_AutoPicksLatestPlanDone(t *testing.T) {
 	if ui.pickCalls != 0 {
 		t.Fatalf("UI should be silent for single-task auto-pick: pick=%d", ui.pickCalls)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].ID != id || tasks[0].Status != store.StatusWorkDone {
-		t.Fatalf("tasks = %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].ID != id || rows[0].Status != tasks.StatusWorkDone {
+		t.Fatalf("tasks = %+v", rows)
 	}
 }
 
@@ -725,13 +692,13 @@ func TestRun_PickerOverMultipleTasks(t *testing.T) {
 	if !reflect.DeepEqual(gotIDs, wantIDs) {
 		t.Fatalf("picker tasks = %v, want %v", gotIDs, wantIDs)
 	}
-	tasks := readTasks(t)
-	for _, task := range tasks {
-		if task.ID == id2 && task.Status != store.StatusWorkDone {
-			t.Fatalf("picked task should be work-done: %+v", task)
+	rows := readTasks(t)
+	for _, row := range rows {
+		if row.ID == id2 && row.Status != tasks.StatusWorkDone {
+			t.Fatalf("picked task should be work-done: %+v", row)
 		}
-		if task.ID == id1 && task.Status != store.StatusPlanDone {
-			t.Fatalf("unpicked task should stay plan-done: %+v", task)
+		if row.ID == id1 && row.Status != tasks.StatusPlanDone {
+			t.Fatalf("unpicked task should stay plan-done: %+v", row)
 		}
 	}
 }
@@ -967,9 +934,9 @@ func TestRun_AgentWorkError(t *testing.T) {
 	if strings.Contains(stdout.String(), "J: coding on") {
 		t.Fatalf("stdout should not announce success on Work error: %q", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusHelp {
-		t.Fatalf("tasks = %+v, want one help task", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusHelp {
+		t.Fatalf("tasks = %+v, want one help task", rows)
 	}
 }
 
@@ -1138,7 +1105,7 @@ func TestRun_StoreWriteError_WarnsAndContinues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "warning: persist") {
+	if !strings.Contains(stderr.String(), "persist") {
 		t.Fatalf("stderr = %q, want warning", stderr.String())
 	}
 	if agent.worked != 1 {
@@ -1343,32 +1310,6 @@ func TestRun_StoreLazyDefault(t *testing.T) {
 	}
 }
 
-// TestRun_ByTaskID_TasksDBUnavailable forces store.Open to
-// return ok=false by parking a regular file at .j/tasks (the legacy
-// schema). resolveByTaskID then must surface a clean error.
-func TestRun_ByTaskID_TasksDBUnavailable(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
-		TaskID: "anything",
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestRun_ByTaskID_PlanReadError covers resolveByTaskID's read-plan
 // error branch: the bbolt row exists but the plan.md file was deleted
 // out from under it.
@@ -1376,7 +1317,7 @@ func TestRun_ByTaskID_PlanReadError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "plan body", "")
-	planPath := taskFilePath(t, id, store.PlanFileName)
+	planPath := taskFilePath(t, id, tasks.PlanFileName)
 	if err := os.Remove(planPath); err != nil {
 		t.Fatal(err)
 	}
@@ -1393,58 +1334,19 @@ func TestRun_ByTaskID_PlanReadError(t *testing.T) {
 	}
 }
 
-// TestRun_ListPlanDoneTasks_DBUnavailable ensures the auto-pick path
-// surfaces a clean error when the tasks DB cannot be opened (legacy
-// .j/tasks file blocks the new directory layout).
-func TestRun_ListPlanDoneTasks_DBUnavailable(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestRun_ListPlanDoneTasks_DecodeError plants a bad JSON payload in
 // the tasks bucket so ListTasks returns an error; resolvePlan must
 // propagate it instead of swallowing it.
 func TestRun_ListPlanDoneTasks_DecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	if _, err := store.EnsureTaskDir("seed"); err != nil {
+	if _, err := tasks.EnsureDir("seed"); err != nil {
 		t.Fatal(err)
 	}
-	dbPath, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.EnsureBucket(store.BucketTasks); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketTasks, "bad", "not-json"); err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
+	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
 
 	agent := newScriptedAgent()
-	err = Run(context.Background(), Options{
+	err := Run(context.Background(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
@@ -1458,21 +1360,21 @@ func TestRun_ListPlanDoneTasks_DecodeError(t *testing.T) {
 // TestOpenLifecycle_PutTaskErrorWarns drives the put-error branch
 // inside the work lifecycle helper by handing it a Task with an empty
 // ID, which store.PutTask rejects without ever reaching bbolt. The
-// warning surfaces on stderr and store.NewWorkTask still returns a
+// warning surfaces on stderr and tasks.NewWorkTask still returns a
 // usable lifecycle.
 func TestOpenLifecycle_PutTaskErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	if _, err := store.EnsureTaskDir("seed"); err != nil {
+	if _, err := tasks.EnsureDir("seed"); err != nil {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	lc := store.NewWorkTask(&stderr, "cursor", "m", "", "/tmp/x.plan.md", "", "body", "")
+	lc := tasks.NewWorkTask(&stderr, "cursor", "m", "", "/tmp/x.plan.md", "", "body", "")
 	if lc == nil {
-		t.Fatal("store.NewWorkTask returned nil lifecycle")
+		t.Fatal("tasks.NewWorkTask returned nil lifecycle")
 	}
 	t.Cleanup(func() { lc.Finish(nil) })
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
 	}
 }
@@ -1483,21 +1385,21 @@ func TestOpenLifecycle_PutTaskErrorWarns(t *testing.T) {
 // the confirm prompt unless --yes / WORK_YES skips it.
 func TestAllowedForWork(t *testing.T) {
 	cases := []struct {
-		status store.TaskStatus
+		status tasks.TaskStatus
 		want   bool
 	}{
-		{store.StatusPlanDone, true},
-		{store.StatusHelp, true},
-		{store.StatusPlanning, false},
-		{store.StatusWorking, false},
-		{store.StatusWorkDone, false},
-		{store.StatusVerifying, false},
-		{store.StatusVerifyDone, false},
-		{store.StatusCompleted, false},
-		{store.TaskStatus("nonsense"), false},
+		{tasks.StatusPlanDone, true},
+		{tasks.StatusHelp, true},
+		{tasks.StatusPlanning, false},
+		{tasks.StatusWorking, false},
+		{tasks.StatusWorkDone, false},
+		{tasks.StatusVerifying, false},
+		{tasks.StatusVerifyDone, false},
+		{tasks.StatusCompleted, false},
+		{tasks.TaskStatus("nonsense"), false},
 	}
 	for _, c := range cases {
-		got := resolver.ReplanAllowed(store.Task{ID: "x", Status: c.status})
+		got := resolver.ReplanAllowed(tasks.Task{ID: "x", Status: c.status})
 		if got != c.want {
 			t.Errorf("allowedForWork(%q) = %v, want %v", c.status, got, c.want)
 		}
@@ -1541,12 +1443,12 @@ func TestRun_BackgroundSpawn_RecordsPID(t *testing.T) {
 	if !strings.Contains(stdout.String(), "┌") || !strings.Contains(stdout.String(), "└") {
 		t.Fatalf("stdout = %q, want bordered box (┌ / └)", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 {
-		t.Fatalf("len(tasks) = %d, want 1", len(tasks))
+	rows := readTasks(t)
+	if len(rows) != 1 {
+		t.Fatalf("len(rows) = %d, want 1", len(rows))
 	}
-	got := tasks[0]
-	if got.Status != store.StatusWorking {
+	got := rows[0]
+	if got.Status != tasks.StatusWorking {
 		t.Fatalf("Status = %q, want working", got.Status)
 	}
 	if got.BackgroundPID != 31415 {
@@ -1577,9 +1479,9 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentWork(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DefaultPath: %v", err)
 		}
-		tasksPath, err := store.DefaultTasksDBPath()
+		tasksPath, err := tasks.DefaultDir()
 		if err != nil {
-			t.Fatalf("DefaultTasksDBPath: %v", err)
+			t.Fatalf("DefaultTasksDir: %v", err)
 		}
 
 		id := seedPlanDoneTask(t, "x", "plan body", "# req\nbody")
@@ -1597,11 +1499,11 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentWork(t *testing.T) {
 			if err := s.Close(); err != nil {
 				return fmt.Errorf("close settings: %w", err)
 			}
-			s, err = store.Open(tasksPath)
-			if err != nil {
-				return fmt.Errorf("tasks db should not be locked: %w", err)
+			ts := tasks.Open(tasksPath)
+			if _, err := ts.ListTasks(); err != nil {
+				return fmt.Errorf("tasks store should be readable: %w", err)
 			}
-			if err := s.Close(); err != nil {
+			if err := ts.Close(); err != nil {
 				return fmt.Errorf("close tasks: %w", err)
 			}
 			return nil
@@ -1614,9 +1516,9 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentWork(t *testing.T) {
 		if agent.worked != 1 {
 			t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
 		}
-		tasks := readTasks(t)
-		if len(tasks) != 1 || tasks[0].Status != store.StatusWorkDone {
-			t.Fatalf("tasks = %+v, want one work-done task", tasks)
+		rows := readTasks(t)
+		if len(rows) != 1 || rows[0].Status != tasks.StatusWorkDone {
+			t.Fatalf("tasks = %+v, want one work-done task", rows)
 		}
 	})
 }

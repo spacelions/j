@@ -1,4 +1,4 @@
-package store
+package tasks
 
 import (
 	"bytes"
@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
-)
+
+	"github.com/spacelions/j/internal/store")
 
 // TestTask_BeginVerify_FlipsStatusAndStampsResume pins the begin
 // helper: status flips to verifying, the new resume cursor lands on
@@ -16,18 +17,15 @@ import (
 // done-at timestamps are cleared.
 func TestTask_BeginVerify_FlipsStatusAndStampsResume(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -70,18 +68,15 @@ func TestTask_BeginVerify_FlipsStatusAndStampsResume(t *testing.T) {
 // TestVerifyLifecycle_FinishNoRetries pins the verify-done branch.
 func TestVerifyLifecycle_FinishNoRetries(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -101,18 +96,15 @@ func TestVerifyLifecycle_FinishNoRetries(t *testing.T) {
 // TestVerifyLifecycle_FinishErrorPath drives the StatusHelp branch.
 func TestVerifyLifecycle_FinishErrorPath(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -130,18 +122,15 @@ func TestVerifyLifecycle_FinishErrorPath(t *testing.T) {
 // happy path of RecordBackground for the verify flow.
 func TestVerifyLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -166,18 +155,15 @@ func TestVerifyLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 // second-call no-op for the verify flow.
 func TestVerifyLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -198,18 +184,15 @@ func TestVerifyLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 // TestVerifyLifecycle_FinishIdempotent pins the second-Finish no-op.
 func TestVerifyLifecycle_FinishIdempotent(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -224,21 +207,22 @@ func TestVerifyLifecycle_FinishIdempotent(t *testing.T) {
 	}
 }
 
-// TestBeginVerify_OpenFails forces bolt.Open to
-// fail. BeginVerify and Finish each emit a warning and continue.
+// TestBeginVerify_OpenFails forces PutTask's mkdir of the per-task
+// directory to fail by replacing `.j/tasks` with a regular file.
+// BeginVerify and Finish each emit a warning and continue.
 func TestBeginVerify_OpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	path, err := DefaultTasksDBPath()
+	path, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(path); err != nil {
+	if err := os.RemoveAll(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
@@ -256,8 +240,8 @@ func TestBeginVerify_OpenFails(t *testing.T) {
 // handing a Task with an empty ID.
 func TestBeginVerify_PutTaskErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
 	lc := Task{Status: StatusWorkDone}.BeginVerify(&stderr, "cursor", "m", "")
@@ -265,7 +249,7 @@ func TestBeginVerify_PutTaskErrorWarns(t *testing.T) {
 		t.Fatal("BeginVerify returned nil")
 	}
 	t.Cleanup(func() { lc.Finish(VerifyOutcomeSuccess, nil) })
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
 	}
 }
@@ -274,13 +258,13 @@ func TestBeginVerify_PutTaskErrorWarns(t *testing.T) {
 // put warning by handing Finish a task with no ID.
 func TestVerifyLifecycle_FinishPutErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
 	lc := &VerifyLifecycle{stderr: &stderr, task: Task{Status: StatusVerifying}}
 	lc.Finish(VerifyOutcomeSuccess, nil)
-	if !strings.Contains(stderr.String(), "warning: tasks put") {
+	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 }
@@ -290,8 +274,8 @@ func TestVerifyLifecycle_FinishPutErrorWarns(t *testing.T) {
 // preserved when present, status flipped to verifying.
 func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	begin := time.Now().UTC().Add(-time.Hour)
 	existing := Task{
@@ -302,7 +286,7 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 		VerifyResumeCursor: "v-cursor",
 		VerifyBeginAt:      &begin,
 	}
-	if err := EnsureProject(); err != nil {
+	if err := store.EnsureProject(); err != nil {
 		t.Fatal(err)
 	}
 	PersistWarn(io.Discard, existing)

@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 type planAgent struct {
@@ -100,9 +100,9 @@ func TestRunPlanMarkdown(t *testing.T) {
 	if !strings.Contains(stdout.String(), "requirements.md and plan.md") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	tasks, err := ListAllTasks()
-	if err != nil || len(tasks) != 1 || tasks[0].Status != store.StatusPlanDone {
-		t.Fatalf("tasks = %+v, %v", tasks, err)
+	rows, err := ListAllTasks()
+	if err != nil || len(rows) != 1 || rows[0].Status != tasks.StatusPlanDone {
+		t.Fatalf("tasks = %+v, %v", rows, err)
 	}
 }
 
@@ -157,15 +157,15 @@ func TestStartTargetFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PrepareStartTaskFiles: %v", err)
 	}
-	if filepath.Base(logPath) != store.AgentLogFileName {
+	if filepath.Base(logPath) != tasks.AgentLogFileName {
 		t.Fatalf("log path = %q", logPath)
 	}
-	data, err := os.ReadFile(filepath.Join(filepath.Dir(logPath), store.RequirementsFileName))
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(logPath), tasks.RequirementsFileName))
 	if err != nil || string(data) != "body" {
 		t.Fatalf("requirements = %q, %v", string(data), err)
 	}
 	logPath, err = PrepareStartTaskFiles(StartTarget{TaskID: "existing"})
-	if err != nil || filepath.Base(logPath) != store.AgentLogFileName {
+	if err != nil || filepath.Base(logPath) != tasks.AgentLogFileName {
 		t.Fatalf("existing log path = %q, %v", logPath, err)
 	}
 }

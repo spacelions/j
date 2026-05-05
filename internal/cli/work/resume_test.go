@@ -17,33 +17,35 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // seedResumableWork creates a task row plus the matching plan.md
 // so RunResume's best-effort read does not warn. The default row
 // is `work-done` with a non-empty WorkResumeCursor; tests override
 // fields via mutate.
-func seedResumableWork(t *testing.T, mutate func(*store.Task)) (string, *time.Time) {
+func seedResumableWork(t *testing.T, mutate func(*tasks.Task)) (string, *time.Time) {
 	t.Helper()
-	id := store.NewTaskID()
-	if _, err := store.EnsureTaskDir(id); err != nil {
+	id := tasks.NewTaskID()
+	if _, err := tasks.EnsureDir(id); err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 	taskDir := filepath.Join(tasksDir, id)
-	if err := os.WriteFile(filepath.Join(taskDir, store.PlanFileName), []byte("1. step\n2. step\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.PlanFileName), []byte("1. step\n2. step\n"), 0o644); err != nil {
 		t.Fatalf("write plan: %v", err)
 	}
 	planBegin := time.Now().UTC().Add(-3 * time.Hour)
 	planEnd := planBegin.Add(time.Hour)
 	workBegin := planEnd.Add(time.Minute)
 	workEnd := workBegin.Add(30 * time.Minute)
-	task := store.Task{
+	row := tasks.Task{
 		ID:               id,
-		Status:           store.StatusWorkDone,
+		Status:           tasks.StatusWorkDone,
 		InvokedTool:      "cursor",
 		InvokedModel:     "sonnet-4",
 		PlanResumeCursor: "plan-cursor",
@@ -55,21 +57,18 @@ func seedResumableWork(t *testing.T, mutate func(*store.Task)) (string, *time.Ti
 		WorkEndAt:        &workEnd,
 	}
 	if mutate != nil {
-		mutate(&task)
+		mutate(&row)
 	}
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := tasks.Open(dbPath)
 	defer func() { _ = s.Close() }()
-	if err := s.PutTask(task); err != nil {
+	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
 	}
-	return id, task.WorkBeginAt
+	return id, row.WorkBeginAt
 }
 
 func TestRunResume_Work_EmptySelector(t *testing.T) {
@@ -141,12 +140,12 @@ func TestRunResume_Work_FromTaskHappyPath(t *testing.T) {
 	if agent.resumeIDed != 0 {
 		t.Fatalf("NewResumeID should not be invoked on resume; calls=%d", agent.resumeIDed)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].ID != id {
-		t.Fatalf("tasks = %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].ID != id {
+		t.Fatalf("tasks = %+v", rows)
 	}
-	got := tasks[0]
-	if got.Status != store.StatusWorkDone {
+	got := rows[0]
+	if got.Status != tasks.StatusWorkDone {
 		t.Fatalf("Status = %q, want work-done", got.Status)
 	}
 	if got.WorkBeginAt == nil || !got.WorkBeginAt.Equal(*originalBegin) {
@@ -179,7 +178,7 @@ func TestRunResume_Work_FromTaskMissing(t *testing.T) {
 func TestRunResume_Work_FromTaskNoSession(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableWork(t, func(task *store.Task) { task.WorkResumeCursor = "" })
+	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkResumeCursor = "" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -199,8 +198,8 @@ func TestRunResume_Work_FromTaskNoSession(t *testing.T) {
 func TestRunResume_Work_SelectorPicksSecond(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id1, _ := seedResumableWork(t, func(task *store.Task) { task.WorkResumeCursor = "first-cursor" })
-	id2, _ := seedResumableWork(t, func(task *store.Task) { task.WorkResumeCursor = "second-cursor" })
+	id1, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkResumeCursor = "first-cursor" })
+	id2, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkResumeCursor = "second-cursor" })
 	agent := newScriptedAgent()
 	ui := &scriptedUI{resumePicked: id2}
 
@@ -248,7 +247,7 @@ func TestRunResume_Work_PickerReturnsUnknownID(t *testing.T) {
 func TestRunResume_Work_UnknownTool(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableWork(t, func(task *store.Task) { task.InvokedTool = "ghost" })
+	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.InvokedTool = "ghost" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -279,15 +278,15 @@ func TestRunResume_Work_AgentError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "work boom") {
 		t.Fatalf("err = %v", err)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != store.StatusHelp {
-		t.Fatalf("tasks = %+v, want one help-status row", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusHelp {
+		t.Fatalf("tasks = %+v, want one help-status row", rows)
 	}
-	if tasks[0].WorkEndAt == nil {
-		t.Fatalf("WorkEndAt should be bumped on failure: %+v", tasks[0])
+	if rows[0].WorkEndAt == nil {
+		t.Fatalf("WorkEndAt should be bumped on failure: %+v", rows[0])
 	}
-	if tasks[0].DoneAt != nil {
-		t.Fatalf("DoneAt should remain nil: %v", tasks[0].DoneAt)
+	if rows[0].DoneAt != nil {
+		t.Fatalf("DoneAt should remain nil: %v", rows[0].DoneAt)
 	}
 }
 
@@ -298,7 +297,7 @@ func TestRunResume_Work_AgentError(t *testing.T) {
 func TestRunResume_Work_StatusWorkingIsResumable(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableWork(t, func(task *store.Task) { task.Status = store.StatusWorking })
+	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.Status = tasks.StatusWorking })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -325,11 +324,11 @@ func TestRunResume_Work_AutoPicksSingle(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id, _ := seedResumableWork(t, nil)
-	tasksDir, err := store.DefaultTasksDir()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	if err := os.Remove(filepath.Join(tasksDir, id, store.PlanFileName)); err != nil {
+	if err := os.Remove(filepath.Join(tasksDir, id, tasks.PlanFileName)); err != nil {
 		t.Fatalf("Remove plan.md: %v", err)
 	}
 	agent := newScriptedAgent()
@@ -420,74 +419,22 @@ func TestRunResume_Work_AppliesDefaults(t *testing.T) {
 	}
 }
 
-// TestRunResume_Work_ListUnavailable forces openTaskLog to fail by
-// parking a regular file at .j/tasks. The list helper must surface
-// the wrapped error.
-func TestRunResume_Work_ListUnavailable(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	err := RunResume(context.Background(), ResumeOptions{
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{newScriptedAgent()},
-		UI:     &scriptedUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-// TestRunResume_Work_FromTaskUnavailable forces resolveResumeByID
-// to see openTaskLog fail. Symmetric to the list variant.
-func TestRunResume_Work_FromTaskUnavailable(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	err := RunResume(context.Background(), ResumeOptions{
-		TaskID: "anything",
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{newScriptedAgent()},
-		UI:     &scriptedUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-// TestRunResume_Work_ListDecodeError plants a bad JSON payload in
-// the tasks bucket so listResumableTasks returns a decode error.
+// TestRunResume_Work_ListDecodeError plants a malformed task.toml
+// so listResumableTasks returns a decode error.
 func TestRunResume_Work_ListDecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
+	badDir := filepath.Join(dbPath, "bad")
+	if err := os.MkdirAll(badDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.EnsureBucket(store.BucketTasks); err != nil {
+	if err := os.WriteFile(filepath.Join(badDir, "task.toml"), []byte("not = valid = toml"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Put(store.BucketTasks, "bad", "not-json"); err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
 	err = RunResume(context.Background(), ResumeOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -506,22 +453,8 @@ func TestRunResume_Work_ListDecodeError(t *testing.T) {
 func TestRunResume_Work_FromTaskDecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	dbPath, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.EnsureBucket(store.BucketTasks); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketTasks, "broken", "not-json"); err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
-	err = RunResume(context.Background(), ResumeOptions{
+	testutil.SeedRawTaskFile(t, "broken", []byte("not = valid = toml"))
+	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: "broken",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -626,14 +559,11 @@ func TestBeginWorkTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id, _ := seedResumableWork(t, nil)
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -645,11 +575,11 @@ func TestBeginWorkTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	lc := existing.BeginWorkResume(io.Discard)
 	lc.Finish(nil)
 
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].ID != id {
-		t.Fatalf("tasks = %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].ID != id {
+		t.Fatalf("tasks = %+v", rows)
 	}
-	got := tasks[0]
+	got := rows[0]
 	if got.WorkResumeCursor != preCursor {
 		t.Fatalf("WorkResumeCursor changed: got %q, want %q", got.WorkResumeCursor, preCursor)
 	}
@@ -804,15 +734,12 @@ func seedWorkerInteractive(t *testing.T, value string) {
 func TestBeginWorkTaskResume_NilWorkBeginAtStampsFreshOne(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableWork(t, func(task *store.Task) { task.WorkBeginAt = nil })
-	dbPath, err := store.DefaultTasksDBPath()
+	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkBeginAt = nil })
+	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -822,8 +749,8 @@ func TestBeginWorkTaskResume_NilWorkBeginAtStampsFreshOne(t *testing.T) {
 	lc := existing.BeginWorkResume(io.Discard)
 	lc.Finish(nil)
 
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].WorkBeginAt == nil {
-		t.Fatalf("WorkBeginAt should be stamped: %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].WorkBeginAt == nil {
+		t.Fatalf("WorkBeginAt should be stamped: %+v", rows)
 	}
 }

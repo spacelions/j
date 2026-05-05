@@ -72,7 +72,7 @@ func TestOpenSettings_OpenFailure(t *testing.T) {
 	if s != nil {
 		t.Fatal("OpenSettings should return nil on failure")
 	}
-	if !strings.Contains(stderr.String(), "warning: settings") {
+	if !strings.Contains(stderr.String(), "settings") {
 		t.Fatalf("stderr should warn about settings open: %q", stderr.String())
 	}
 }
@@ -435,10 +435,10 @@ func TestPersistAgentSelection_StopsOnFirstError(t *testing.T) {
 	}
 	var stderr bytes.Buffer
 	PersistAgentSelection(s, &stderr, BucketPlanner, "cursor", "sonnet-4", true)
-	if !strings.Contains(stderr.String(), "warning: persist tool") {
+	if !strings.Contains(stderr.String(), "persist tool") {
 		t.Fatalf("stderr = %q, want warning naming the failing key", stderr.String())
 	}
-	if got := strings.Count(stderr.String(), "warning: persist"); got != 1 {
+	if got := strings.Count(stderr.String(), "persist"); got != 1 {
 		t.Fatalf("warning count = %d, want 1 (loop must short-circuit); stderr=%q", got, stderr.String())
 	}
 }

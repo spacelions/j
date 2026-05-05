@@ -19,7 +19,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/banner"
 	"github.com/spacelions/j/internal/cli/preflight"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 // emptyMessage is the single line printed to stdout when no task log
@@ -64,7 +64,7 @@ func New() *cobra.Command {
 }
 
 // listTasks resolves the default tasks DB path, opens it, decodes
-// every Task, sorts them via store.SortTasks, and dispatches to one
+// every Task, sorts them via tasks.SortTasks, and dispatches to one
 // of three renderers: the plain tabwriter output (--simple), the
 // bubbletea TUI (default on a TTY), or a single bordered one-shot
 // render (default off a TTY). Pre-flight guarantees the file exists
@@ -78,41 +78,34 @@ func New() *cobra.Command {
 // (best-effort: PutTask errors are warned on stderr) and is opt-in
 // per row: only entries with a non-zero BackgroundPID are touched.
 func listTasks(stdout io.Writer, simple bool) error {
-	path, err := store.DefaultTasksDBPath()
+	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		return err
 	}
-	if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
+	if _, statErr := os.Stat(tasksDir); errors.Is(statErr, fs.ErrNotExist) {
 		banner.Fprintln(stdout, emptyMessage)
 		return nil
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		return err
-	}
+	s := tasks.Open(tasksDir)
 	defer func() { _ = s.Close() }()
 
-	tasks, err := s.ListTasks()
+	rows, err := s.ListTasks()
 	if err != nil {
 		return err
 	}
-	if len(tasks) == 0 {
+	if len(rows) == 0 {
 		banner.Fprintln(stdout, emptyMessage)
 		return nil
 	}
-	tasksDir, err := store.DefaultTasksDir()
-	if err != nil {
-		return err
-	}
-	tasks = reapBackgroundTasks(s, os.Stderr, tasksDir, tasks)
-	store.SortTasks(tasks)
+	rows = reapBackgroundTasks(s, os.Stderr, tasksDir, rows)
+	tasks.SortTasks(rows)
 	if simple {
-		return writeTasks(stdout, tasks)
+		return writeTasks(stdout, rows)
 	}
 	if isTerminal(stdout) {
 		return runWatch(os.Stdin, stdout, storeReloader(s, tasksDir))
 	}
-	return renderTable(stdout, tasks, time.Now(), terminalWidth(stdout))
+	return renderTable(stdout, rows, time.Now(), terminalWidth(stdout))
 }
 
 // terminalWidth returns the column count of the terminal w is
@@ -137,14 +130,14 @@ func terminalWidth(w io.Writer) int {
 // its task slice on every tick. It re-runs ListTasks, reaps any
 // background children that have since exited, and sorts the result so
 // the rendered table reflects the latest state of the bbolt store.
-func storeReloader(s *store.Store, tasksDir string) func() ([]store.Task, error) {
-	return func() ([]store.Task, error) {
+func storeReloader(s *tasks.Store, tasksDir string) func() ([]tasks.Task, error) {
+	return func() ([]tasks.Task, error) {
 		t, err := s.ListTasks()
 		if err != nil {
 			return nil, err
 		}
 		t = reapBackgroundTasks(s, os.Stderr, tasksDir, t)
-		store.SortTasks(t)
+		tasks.SortTasks(t)
 		return t, nil
 	}
 }
@@ -170,7 +163,7 @@ func isTerminal(w io.Writer) bool {
 // tabwriter buffers writes internally and only surfaces underlying
 // writer errors on Flush, so per-line Fprintln returns are
 // intentionally not checked: they cannot fail in isolation.
-func writeTasks(out io.Writer, tasks []store.Task) error {
+func writeTasks(out io.Writer, tasks []tasks.Task) error {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSTATUS\tTOOL\tMODEL\tSUMMARY")
 	for _, t := range tasks {
