@@ -18,11 +18,11 @@ type taskUI struct {
 	err    error
 
 	confirm bool
-	tasks   []tasks.Task
+	rows   []tasks.Task
 }
 
-func (u *taskUI) PickTask(_ context.Context, _ string, tasks []tasks.Task) (string, bool, error) {
-	u.tasks = tasks
+func (u *taskUI) PickTask(_ context.Context, _ string, rows []tasks.Task) (string, bool, error) {
+	u.rows = rows
 	if u.err != nil {
 		return "", false, u.err
 	}
@@ -41,12 +41,12 @@ func setupResolverProject(t *testing.T) {
 	}
 }
 
-func seedResolverTask(t *testing.T, t tasks.Task, plan, req string) {
+func seedResolverTask(t *testing.T, row tasks.Task, plan, req string) {
 	t.Helper()
-	if t.ID == "" {
+	if row.ID == "" {
 		t.Fatal("task id required")
 	}
-	dir, err := tasks.EnsureDir(t.ID)
+	dir, err := tasks.EnsureDir(row.ID)
 	if err != nil {
 		t.Fatalf("EnsureTaskDir: %v", err)
 	}
@@ -66,7 +66,7 @@ func seedResolverTask(t *testing.T, t tasks.Task, plan, req string) {
 	}
 	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
-	if err := s.PutTask(task); err != nil {
+	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
 	}
 }
@@ -233,19 +233,19 @@ func TestResolveVerifyTaskEmptyAndMissing(t *testing.T) {
 func TestTaskStoreHelpers(t *testing.T) {
 	setupResolverProject(t)
 	seedResolverTask(t, tasks.Task{ID: "a", Status: tasks.StatusPlanDone}, "plan", "")
-	t, err := TaskByID("test", "a")
-	if err != nil || t.ID != "a" {
-		t.Fatalf("TaskByID = %+v, %v", task, err)
+	row, err := TaskByID("test", "a")
+	if err != nil || row.ID != "a" {
+		t.Fatalf("TaskByID = %+v, %v", row, err)
 	}
-	tasks, err := ListTasks("test")
-	if err != nil || len(tasks) != 1 {
-		t.Fatalf("ListTasks = %+v, %v", tasks, err)
+	rows, err := ListTasks("test")
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("ListTasks = %+v, %v", rows, err)
 	}
-	tasks, err = ListAllTasks()
-	if err != nil || len(tasks) != 1 {
-		t.Fatalf("ListAllTasks = %+v, %v", tasks, err)
+	rows, err = ListAllTasks()
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("ListAllTasks = %+v, %v", rows, err)
 	}
-	if id, ok := autoPickAllowed(tasks, ReplanAllowed); !ok || id != "a" {
+	if id, ok := autoPickAllowed(rows, ReplanAllowed); !ok || id != "a" {
 		t.Fatalf("autoPickAllowed = %q, %v", id, ok)
 	}
 }

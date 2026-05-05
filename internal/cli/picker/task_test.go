@@ -14,7 +14,7 @@ func TestFormatTaskLabels_StatusAndSummary(t *testing.T) {
 		{ID: "01A", Status: tasks.StatusPlanDone, Summary: "first"},
 		{ID: "01B", Status: tasks.StatusWorking, Summary: "second"},
 	}
-	labels, byLabel := formatTaskLabels(tasks)
+	labels, byLabel := formatTaskLabels(rows)
 	want := []string{
 		"01A — plan-done — first",
 		"01B — working — second",
@@ -32,8 +32,8 @@ func TestFormatTaskLabels_StatusAndSummary(t *testing.T) {
 		if !ok {
 			t.Fatalf("byLabel[%q] missing", label)
 		}
-		if id != tasks[i].ID {
-			t.Fatalf("byLabel[%q] = %q, want %q", label, id, tasks[i].ID)
+		if id != rows[i].ID {
+			t.Fatalf("byLabel[%q] = %q, want %q", label, id, rows[i].ID)
 		}
 	}
 }
@@ -43,7 +43,7 @@ func TestFormatTaskLabels_EmptySummaryFallback(t *testing.T) {
 		{ID: "01A", Status: tasks.StatusPlanning, Summary: ""},
 		{ID: "01B", Status: tasks.StatusHelp, Summary: "   \t\n"},
 	}
-	labels, _ := formatTaskLabels(tasks)
+	labels, _ := formatTaskLabels(rows)
 	for _, got := range labels {
 		if !strings.HasSuffix(got, "(no summary)") {
 			t.Fatalf("label = %q, want trailing (no summary)", got)

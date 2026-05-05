@@ -142,11 +142,11 @@ func TestRunResume_FromTaskHappyPath(t *testing.T) {
 	if agent.resumeIDed != 0 {
 		t.Fatalf("NewResumeID should not be invoked on resume; calls=%d", agent.resumeIDed)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].ID != id {
-		t.Fatalf("tasks = %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].ID != id {
+		t.Fatalf("tasks = %+v", rows)
 	}
-	got := tasks[0]
+	got := rows[0]
 	if got.Status != tasks.StatusPlanDone {
 		t.Fatalf("Status = %q, want plan-done", got.Status)
 	}
@@ -184,7 +184,7 @@ func TestRunResume_FromTaskMissing(t *testing.T) {
 func TestRunResume_FromTaskNoSession(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableTask(t, func(task *tasks.Task) { t.PlanResumeCursor = "" })
+	id, _ := seedResumableTask(t, func(row *tasks.Task) { row.PlanResumeCursor = "" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -199,13 +199,13 @@ func TestRunResume_FromTaskNoSession(t *testing.T) {
 }
 
 // TestRunResume_SelectorPicksSecond pins the multi-task path: two
-// eligible tasks, scripted UI picks the second, and the agent
+// eligible rows, scripted UI picks the second, and the agent
 // receives that task's cursor.
 func TestRunResume_SelectorPicksSecond(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id1, _ := seedResumableTask(t, func(task *tasks.Task) { t.PlanResumeCursor = "first-cursor" })
-	id2, _ := seedResumableTask(t, func(task *tasks.Task) { t.PlanResumeCursor = "second-cursor" })
+	id1, _ := seedResumableTask(t, func(row *tasks.Task) { row.PlanResumeCursor = "first-cursor" })
+	id2, _ := seedResumableTask(t, func(row *tasks.Task) { row.PlanResumeCursor = "second-cursor" })
 	agent := newScriptedAgent()
 	ui := &scriptedUI{pickedID: id2}
 
@@ -224,8 +224,8 @@ func TestRunResume_SelectorPicksSecond(t *testing.T) {
 	if agent.lastReq.ResumeChatID != "second-cursor" {
 		t.Fatalf("ResumeChatID = %q, want second-cursor", agent.lastReq.ResumeChatID)
 	}
-	tasks := readTasks(t)
-	for _, t := range tasks {
+	rows := readTasks(t)
+	for _, t := range rows {
 		if t.ID == id2 && t.Status != tasks.StatusPlanDone {
 			t.Fatalf("picked task should be plan-done: %+v", task)
 		}
@@ -262,7 +262,7 @@ func TestRunResume_PickerReturnsUnknownID(t *testing.T) {
 func TestRunResume_UnknownTool(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableTask(t, func(task *tasks.Task) { t.InvokedTool = "ghost" })
+	id, _ := seedResumableTask(t, func(row *tasks.Task) { row.InvokedTool = "ghost" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -298,12 +298,12 @@ func TestRunResume_AgentError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "plan boom") {
 		t.Fatalf("err = %v", err)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != tasks.StatusHelp {
-		t.Fatalf("tasks = %+v, want one help-status row", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusHelp {
+		t.Fatalf("tasks = %+v, want one help-status row", rows)
 	}
-	if tasks[0].PlanEndAt == nil {
-		t.Fatalf("PlanEndAt should be bumped on failure too: %+v", tasks[0])
+	if rows[0].PlanEndAt == nil {
+		t.Fatalf("PlanEndAt should be bumped on failure too: %+v", rows[0])
 	}
 }
 

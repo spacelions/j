@@ -43,7 +43,7 @@ func seedResumableWork(t *testing.T, mutate func(*tasks.Task)) (string, *time.Ti
 	planEnd := planBegin.Add(time.Hour)
 	workBegin := planEnd.Add(time.Minute)
 	workEnd := workBegin.Add(30 * time.Minute)
-	task := tasks.Task{
+	row := tasks.Task{
 		ID:               id,
 		Status:           tasks.StatusWorkDone,
 		InvokedTool:      "cursor",
@@ -57,7 +57,7 @@ func seedResumableWork(t *testing.T, mutate func(*tasks.Task)) (string, *time.Ti
 		WorkEndAt:        &workEnd,
 	}
 	if mutate != nil {
-		mutate(&task)
+		mutate(&row)
 	}
 	dbPath, err := tasks.DefaultDir()
 	if err != nil {
@@ -65,10 +65,10 @@ func seedResumableWork(t *testing.T, mutate func(*tasks.Task)) (string, *time.Ti
 	}
 	s := tasks.Open(dbPath)
 	defer func() { _ = s.Close() }()
-	if err := s.PutTask(task); err != nil {
+	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
 	}
-	return id, t.WorkBeginAt
+	return id, row.WorkBeginAt
 }
 
 func TestRunResume_Work_EmptySelector(t *testing.T) {
@@ -140,11 +140,11 @@ func TestRunResume_Work_FromTaskHappyPath(t *testing.T) {
 	if agent.resumeIDed != 0 {
 		t.Fatalf("NewResumeID should not be invoked on resume; calls=%d", agent.resumeIDed)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].ID != id {
-		t.Fatalf("tasks = %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].ID != id {
+		t.Fatalf("tasks = %+v", rows)
 	}
-	got := tasks[0]
+	got := rows[0]
 	if got.Status != tasks.StatusWorkDone {
 		t.Fatalf("Status = %q, want work-done", got.Status)
 	}
@@ -178,7 +178,7 @@ func TestRunResume_Work_FromTaskMissing(t *testing.T) {
 func TestRunResume_Work_FromTaskNoSession(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableWork(t, func(task *tasks.Task) { t.WorkResumeCursor = "" })
+	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkResumeCursor = "" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -198,8 +198,8 @@ func TestRunResume_Work_FromTaskNoSession(t *testing.T) {
 func TestRunResume_Work_SelectorPicksSecond(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id1, _ := seedResumableWork(t, func(task *tasks.Task) { t.WorkResumeCursor = "first-cursor" })
-	id2, _ := seedResumableWork(t, func(task *tasks.Task) { t.WorkResumeCursor = "second-cursor" })
+	id1, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkResumeCursor = "first-cursor" })
+	id2, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkResumeCursor = "second-cursor" })
 	agent := newScriptedAgent()
 	ui := &scriptedUI{resumePicked: id2}
 
@@ -247,7 +247,7 @@ func TestRunResume_Work_PickerReturnsUnknownID(t *testing.T) {
 func TestRunResume_Work_UnknownTool(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableWork(t, func(task *tasks.Task) { t.InvokedTool = "ghost" })
+	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.InvokedTool = "ghost" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -278,15 +278,15 @@ func TestRunResume_Work_AgentError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "work boom") {
 		t.Fatalf("err = %v", err)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != tasks.StatusHelp {
-		t.Fatalf("tasks = %+v, want one help-status row", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusHelp {
+		t.Fatalf("tasks = %+v, want one help-status row", rows)
 	}
-	if tasks[0].WorkEndAt == nil {
-		t.Fatalf("WorkEndAt should be bumped on failure: %+v", tasks[0])
+	if rows[0].WorkEndAt == nil {
+		t.Fatalf("WorkEndAt should be bumped on failure: %+v", rows[0])
 	}
-	if tasks[0].DoneAt != nil {
-		t.Fatalf("DoneAt should remain nil: %v", tasks[0].DoneAt)
+	if rows[0].DoneAt != nil {
+		t.Fatalf("DoneAt should remain nil: %v", rows[0].DoneAt)
 	}
 }
 
@@ -297,7 +297,7 @@ func TestRunResume_Work_AgentError(t *testing.T) {
 func TestRunResume_Work_StatusWorkingIsResumable(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableWork(t, func(task *tasks.Task) { t.Status = tasks.StatusWorking })
+	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.Status = tasks.StatusWorking })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -575,11 +575,11 @@ func TestBeginWorkTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	lc := existing.BeginWorkResume(io.Discard)
 	lc.Finish(nil)
 
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].ID != id {
-		t.Fatalf("tasks = %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].ID != id {
+		t.Fatalf("tasks = %+v", rows)
 	}
-	got := tasks[0]
+	got := rows[0]
 	if got.WorkResumeCursor != preCursor {
 		t.Fatalf("WorkResumeCursor changed: got %q, want %q", got.WorkResumeCursor, preCursor)
 	}
@@ -734,7 +734,7 @@ func seedWorkerInteractive(t *testing.T, value string) {
 func TestBeginWorkTaskResume_NilWorkBeginAtStampsFreshOne(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableWork(t, func(task *tasks.Task) { t.WorkBeginAt = nil })
+	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkBeginAt = nil })
 	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
@@ -749,8 +749,8 @@ func TestBeginWorkTaskResume_NilWorkBeginAtStampsFreshOne(t *testing.T) {
 	lc := existing.BeginWorkResume(io.Discard)
 	lc.Finish(nil)
 
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].WorkBeginAt == nil {
-		t.Fatalf("WorkBeginAt should be stamped: %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].WorkBeginAt == nil {
+		t.Fatalf("WorkBeginAt should be stamped: %+v", rows)
 	}
 }

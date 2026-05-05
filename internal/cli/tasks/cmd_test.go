@@ -185,7 +185,7 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 			Summary:          "draft idea",
 		},
 	}
-	for _, t := range tasks {
+	for _, t := range rows {
 		if err := s.PutTask(task); err != nil {
 			t.Fatalf("PutTask: %v", err)
 		}

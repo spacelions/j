@@ -68,7 +68,7 @@ func DefaultDir() (string, error) {
 
 // EnsureDir creates `<cwd>/.j/tasks/<id>/` (with mkdir -p) and
 // returns its absolute path. The parent `.j/tasks/` directory must
-// already exist (created by `j init` via store.EnsureProject); a
+// already exist (created by `j init` via store.store.EnsureProject); a
 // missing parent surfaces a wrapped fs.ErrNotExist so callers can
 // prompt the user to run init.
 func EnsureDir(id string) (string, error) {
@@ -94,7 +94,7 @@ func EnsureDir(id string) (string, error) {
 
 // RemoveDir removes `<cwd>/.j/tasks/<id>/` and every artifact inside
 // it. The parent `.j/tasks/` directory must already exist (created by
-// `j init` via store.EnsureProject); a missing parent surfaces a
+// `j init` via store.store.EnsureProject); a missing parent surfaces a
 // wrapped fs.ErrNotExist so callers can prompt the user to run init
 // (mirroring EnsureDir). The helper is idempotent: a missing per-task
 // directory is treated as a no-op because os.RemoveAll returns nil

@@ -146,10 +146,10 @@ type scriptedUI struct {
 // resumePicked / resumeErr (the resume.go flow); other titles honour
 // pickedID / pickErr (the verify.go non-resume flow). Both branches
 // use the (id, ok, err) contract — empty id signals cancel.
-func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []tasks.Task) (string, bool, error) {
+func (s *scriptedUI) PickTask(_ context.Context, title string, rows []tasks.Task) (string, bool, error) {
 	if strings.Contains(title, "resume") {
 		s.pickResumeCalls++
-		s.pickResumedTasks = tasks
+		s.pickResumedTasks = rows
 		if s.resumeErr != nil {
 			return "", false, s.resumeErr
 		}
@@ -159,7 +159,7 @@ func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []tasks.Tas
 		return s.resumePicked, true, nil
 	}
 	s.pickCalls++
-	s.pickedTasks = tasks
+	s.pickedTasks = rows
 	if s.pickErr != nil {
 		return "", false, s.pickErr
 	}
@@ -365,11 +365,11 @@ func TestRun_PassOnFirstIteration(t *testing.T) {
 	if !strings.Contains(stdout.String(), "verified task "+id) {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != tasks.StatusCompleted {
-		t.Fatalf("tasks = %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusCompleted {
+		t.Fatalf("tasks = %+v", rows)
 	}
-	got := tasks[0]
+	got := rows[0]
 	if got.DoneAt == nil {
 		t.Fatalf("DoneAt should be stamped on completed: %+v", got)
 	}
@@ -431,9 +431,9 @@ func TestRun_FailThenPass(t *testing.T) {
 	if !agent.verifiedReqs[1].Resume {
 		t.Fatalf("second verify turn should set Resume=true: %+v", agent.verifiedReqs[1])
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != tasks.StatusCompleted {
-		t.Fatalf("tasks = %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusCompleted {
+		t.Fatalf("tasks = %+v", rows)
 	}
 }
 
@@ -521,12 +521,12 @@ func TestRun_LoopExhausted(t *testing.T) {
 	if !strings.Contains(stdout.String(), "exhausted retries") {
 		t.Fatalf("stdout should mention exhausted retries: %q", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != tasks.StatusVerifyDone {
-		t.Fatalf("tasks = %+v, want one verify-done", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusVerifyDone {
+		t.Fatalf("tasks = %+v, want one verify-done", rows)
 	}
-	if tasks[0].DoneAt != nil {
-		t.Fatalf("DoneAt must remain nil on verify-done: %v", tasks[0].DoneAt)
+	if rows[0].DoneAt != nil {
+		t.Fatalf("DoneAt must remain nil on verify-done: %v", rows[0].DoneAt)
 	}
 }
 
@@ -558,9 +558,9 @@ func TestRun_MaxIterations1(t *testing.T) {
 	if len(agent.workedReqs) != 0 {
 		t.Fatalf("work calls = %d, want 0 with max-iterations=1", len(agent.workedReqs))
 	}
-	tasks := readTasks(t)
-	if tasks[0].Status != tasks.StatusVerifyDone {
-		t.Fatalf("Status = %q", tasks[0].Status)
+	rows := readTasks(t)
+	if rows[0].Status != tasks.StatusVerifyDone {
+		t.Fatalf("Status = %q", rows[0].Status)
 	}
 }
 
@@ -585,9 +585,9 @@ func TestRun_VerifierError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "verify boom") {
 		t.Fatalf("err = %v", err)
 	}
-	tasks := readTasks(t)
-	if tasks[0].Status != tasks.StatusHelp {
-		t.Fatalf("Status = %q, want help", tasks[0].Status)
+	rows := readTasks(t)
+	if rows[0].Status != tasks.StatusHelp {
+		t.Fatalf("Status = %q, want help", rows[0].Status)
 	}
 }
 
@@ -614,9 +614,9 @@ func TestRun_WorkerFixError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "worker boom") {
 		t.Fatalf("err = %v", err)
 	}
-	tasks := readTasks(t)
-	if tasks[0].Status != tasks.StatusHelp {
-		t.Fatalf("Status = %q, want help", tasks[0].Status)
+	rows := readTasks(t)
+	if rows[0].Status != tasks.StatusHelp {
+		t.Fatalf("Status = %q, want help", rows[0].Status)
 	}
 }
 
@@ -643,9 +643,9 @@ func TestRun_MalformedVerdictTreatedAsFail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	tasks := readTasks(t)
-	if tasks[0].Status != tasks.StatusVerifyDone {
-		t.Fatalf("Status = %q", tasks[0].Status)
+	rows := readTasks(t)
+	if rows[0].Status != tasks.StatusVerifyDone {
+		t.Fatalf("Status = %q", rows[0].Status)
 	}
 }
 
@@ -1000,9 +1000,9 @@ func TestRun_AutoPicksLatestWorkDone(t *testing.T) {
 	if ui.pickCalls != 0 {
 		t.Fatalf("PickWorkDoneTask = %d, want 0 for single-task auto-pick", ui.pickCalls)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].ID != id || tasks[0].Status != tasks.StatusCompleted {
-		t.Fatalf("tasks = %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].ID != id || rows[0].Status != tasks.StatusCompleted {
+		t.Fatalf("tasks = %+v", rows)
 	}
 }
 
@@ -1038,8 +1038,8 @@ func TestRun_PickerOverMultipleTasks(t *testing.T) {
 			t.Fatalf("picker tasks contain unexpected id %q (want %v)", id, want)
 		}
 	}
-	tasks := readTasks(t)
-	for _, t := range tasks {
+	rows := readTasks(t)
+	for _, t := range rows {
 		if t.ID == id2 && t.Status != tasks.StatusCompleted {
 			t.Fatalf("picked task should be completed: %+v", task)
 		}
@@ -1534,9 +1534,9 @@ func TestRunVerifyLoop_WaitsForSpawnedChild(t *testing.T) {
 	if !strings.Contains(stdout.String(), "verified task "+id) {
 		t.Fatalf("stdout = %q, want PASS line", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != tasks.StatusCompleted {
-		t.Fatalf("tasks = %+v, want completed", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusCompleted {
+		t.Fatalf("tasks = %+v, want completed", rows)
 	}
 	findings := taskFilePath(t, id, tasks.VerifierFindingsFileName)
 	data, readErr := os.ReadFile(findings)

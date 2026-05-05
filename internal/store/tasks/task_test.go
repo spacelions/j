@@ -234,7 +234,7 @@ func TestPutTask_MkdirFails(t *testing.T) {
 	if err := os.WriteFile(parent, []byte("blocker"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := OpenTasks(parent)
+	s := Open(parent)
 	if err := s.PutTask(Task{ID: "x", Status: StatusPlanDone}); err == nil {
 		t.Fatal("PutTask should error when tasksDir is not a directory")
 	}
@@ -301,7 +301,7 @@ func TestGetTask_DecodeError(t *testing.T) {
 // tasks directory yields an empty slice and a nil error so callers
 // can treat "no tasks yet" the same as "no project yet".
 func TestListTasks_MissingTasksDir(t *testing.T) {
-	s := OpenTasks(filepath.Join(t.TempDir(), "does-not-exist"))
+	s := Open(filepath.Join(t.TempDir(), "does-not-exist"))
 	got, err := s.ListTasks()
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)

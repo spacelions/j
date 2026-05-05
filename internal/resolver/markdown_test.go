@@ -100,9 +100,9 @@ func TestRunPlanMarkdown(t *testing.T) {
 	if !strings.Contains(stdout.String(), "requirements.md and plan.md") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	tasks, err := ListAllTasks()
-	if err != nil || len(tasks) != 1 || tasks[0].Status != tasks.StatusPlanDone {
-		t.Fatalf("tasks = %+v, %v", tasks, err)
+	rows, err := ListAllTasks()
+	if err != nil || len(rows) != 1 || rows[0].Status != tasks.StatusPlanDone {
+		t.Fatalf("tasks = %+v, %v", rows, err)
 	}
 }
 

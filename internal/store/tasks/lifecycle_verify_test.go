@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
-)
+
+	"github.com/spacelions/j/internal/store")
 
 // TestTask_BeginVerify_FlipsStatusAndStampsResume pins the begin
 // helper: status flips to verifying, the new resume cursor lands on
@@ -16,15 +17,15 @@ import (
 // done-at timestamps are cleared.
 func TestTask_BeginVerify_FlipsStatusAndStampsResume(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDir()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := OpenTasks(dbPath)
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -67,15 +68,15 @@ func TestTask_BeginVerify_FlipsStatusAndStampsResume(t *testing.T) {
 // TestVerifyLifecycle_FinishNoRetries pins the verify-done branch.
 func TestVerifyLifecycle_FinishNoRetries(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDir()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := OpenTasks(dbPath)
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -95,15 +96,15 @@ func TestVerifyLifecycle_FinishNoRetries(t *testing.T) {
 // TestVerifyLifecycle_FinishErrorPath drives the StatusHelp branch.
 func TestVerifyLifecycle_FinishErrorPath(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDir()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := OpenTasks(dbPath)
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -121,15 +122,15 @@ func TestVerifyLifecycle_FinishErrorPath(t *testing.T) {
 // happy path of RecordBackground for the verify flow.
 func TestVerifyLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDir()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := OpenTasks(dbPath)
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -154,15 +155,15 @@ func TestVerifyLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 // second-call no-op for the verify flow.
 func TestVerifyLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDir()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := OpenTasks(dbPath)
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -183,15 +184,15 @@ func TestVerifyLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 // TestVerifyLifecycle_FinishIdempotent pins the second-Finish no-op.
 func TestVerifyLifecycle_FinishIdempotent(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDir()
+	dbPath, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := OpenTasks(dbPath)
+	s := Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -211,10 +212,10 @@ func TestVerifyLifecycle_FinishIdempotent(t *testing.T) {
 // BeginVerify and Finish each emit a warning and continue.
 func TestBeginVerify_OpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	path, err := DefaultTasksDir()
+	path, err := DefaultDir()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,8 +240,8 @@ func TestBeginVerify_OpenFails(t *testing.T) {
 // handing a Task with an empty ID.
 func TestBeginVerify_PutTaskErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
 	lc := Task{Status: StatusWorkDone}.BeginVerify(&stderr, "cursor", "m", "")
@@ -257,8 +258,8 @@ func TestBeginVerify_PutTaskErrorWarns(t *testing.T) {
 // put warning by handing Finish a task with no ID.
 func TestVerifyLifecycle_FinishPutErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
 	lc := &VerifyLifecycle{stderr: &stderr, task: Task{Status: StatusVerifying}}
@@ -273,8 +274,8 @@ func TestVerifyLifecycle_FinishPutErrorWarns(t *testing.T) {
 // preserved when present, status flipped to verifying.
 func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	begin := time.Now().UTC().Add(-time.Hour)
 	existing := Task{
@@ -285,7 +286,7 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 		VerifyResumeCursor: "v-cursor",
 		VerifyBeginAt:      &begin,
 	}
-	if err := EnsureProject(); err != nil {
+	if err := store.EnsureProject(); err != nil {
 		t.Fatal(err)
 	}
 	PersistWarn(io.Discard, existing)

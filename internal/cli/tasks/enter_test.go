@@ -152,7 +152,7 @@ func TestRunEnter_PickerSubshell(t *testing.T) {
 		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
 	}
 	if len(ui.lastPickedFrom) != 2 {
-		t.Fatalf("PickTask received %d tasks, want 2", len(ui.lastPickedFrom))
+		t.Fatalf("PickTask received %d rows, want 2", len(ui.lastPickedFrom))
 	}
 	if spawner.calls != 1 {
 		t.Fatalf("Spawner calls = %d, want 1", spawner.calls)

@@ -1,7 +1,6 @@
 package store
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -510,48 +509,6 @@ func TestIsEmpty_NonEmpty(t *testing.T) {
 	}
 }
 
-// TestDefaultTasksDir_RootedInCwd pins the per-task layout:
-// `<cwd>/.j/tasks/` with one subdirectory per task carrying its
-// `task.toml` (no central DB file).
-func TestDefaultTasksDir_RootedInCwd(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	gotDir, err := DefaultTasksDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
-	if filepath.Base(gotDir) != TasksDirName {
-		t.Fatalf("DefaultTasksDir base = %q, want %q", filepath.Base(gotDir), TasksDirName)
-	}
-	if filepath.Base(filepath.Dir(gotDir)) != ".j" {
-		t.Fatalf("DefaultTasksDir parent = %q, want .j", filepath.Base(filepath.Dir(gotDir)))
-	}
-}
-
-func TestDefaultTasksDir_PropagatesCwdError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("cwd cannot be removed while in use on windows")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root may bypass relevant FS errors")
-	}
-	parent := t.TempDir()
-	gone := filepath.Join(parent, "gone")
-	if err := os.Mkdir(gone, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(gone)
-	t.Setenv("PWD", "")
-	if err := os.Remove(gone); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
-	if _, err := DefaultDir(); err == nil {
-		t.Skip("os.Getwd unexpectedly succeeded")
-	}
-	if _, err := DefaultTasksDir(); err == nil {
-		t.Fatal("DefaultTasksDir should propagate DefaultDir error")
-	}
-}
 
 // TestEnsureProject_FreshDirCreatesAllArtifacts pins the
 // initialisation contract: a brand-new directory becomes a fully-
@@ -570,7 +527,7 @@ func TestEnsureProject_FreshDirCreatesAllArtifacts(t *testing.T) {
 	if info, err := os.Stat(jdir); err != nil || !info.IsDir() {
 		t.Fatalf(".j dir missing: err=%v", err)
 	}
-	tasksDir := filepath.Join(jdir, TasksDirName)
+	tasksDir := filepath.Join(jdir, tasksDirName)
 	if info, err := os.Stat(tasksDir); err != nil || !info.IsDir() {
 		t.Fatalf(".j/tasks dir missing: err=%v", err)
 	}
@@ -858,7 +815,7 @@ func TestProjectInitialized_MissingArtifacts(t *testing.T) {
 		remove string
 	}{
 		{"settings", "settings"},
-		{"tasksDir", filepath.Join(TasksDirName, "")},
+		{"tasksDir", filepath.Join(tasksDirName, "")},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -906,7 +863,7 @@ func TestProjectInitialized_WrongTypeArtifacts(t *testing.T) {
 		if err := os.MkdirAll(jdir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(jdir, TasksDirName), []byte("legacy"), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(jdir, tasksDirName), []byte("legacy"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		ok, err := ProjectInitialized()
@@ -969,155 +926,6 @@ func TestProjectInitialized_PropagatesCwdError(t *testing.T) {
 		t.Fatal("ProjectInitialized should propagate DefaultDir error")
 	}
 }
-
-// TestEnsureTaskDir_RequiresInitialisedTasksDir pins the new contract:
-// EnsureTaskDir no longer creates the parent .j/tasks/ folder; the
-// caller is expected to have run EnsureProject first.
-func TestEnsureTaskDir_RequiresInitialisedTasksDir(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if _, err := EnsureTaskDir("abc"); err == nil {
-		t.Fatal("EnsureTaskDir should fail when .j/tasks is missing")
-	} else if !strings.Contains(err.Error(), "missing") {
-		t.Fatalf("err = %v, want missing-prereq error", err)
-	}
-}
-
-// TestEnsureTaskDir_CreatesNested verifies the per-task directory is
-// created inside an already-initialized .j/tasks/, that the helper
-// is idempotent, and that the parent .j/ exists.
-func TestEnsureTaskDir_CreatesNested(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
-	taskDir, err := EnsureTaskDir("abc")
-	if err != nil {
-		t.Fatalf("EnsureTaskDir: %v", err)
-	}
-	if filepath.Base(taskDir) != "abc" {
-		t.Fatalf("EnsureTaskDir base = %q", filepath.Base(taskDir))
-	}
-	info, err := os.Stat(taskDir)
-	if err != nil {
-		t.Fatalf("stat: %v", err)
-	}
-	if !info.IsDir() {
-		t.Fatal("EnsureTaskDir did not create a directory")
-	}
-	jdir := filepath.Join(dir, ".j")
-	if info, err := os.Stat(jdir); err != nil || !info.IsDir() {
-		t.Fatalf(".j parent should exist, got err=%v", err)
-	}
-	tasksDir := filepath.Join(jdir, TasksDirName)
-	if info, err := os.Stat(tasksDir); err != nil || !info.IsDir() {
-		t.Fatalf(".j/tasks should exist, got err=%v", err)
-	}
-	// Idempotent.
-	if _, err := EnsureTaskDir("abc"); err != nil {
-		t.Fatalf("second EnsureTaskDir: %v", err)
-	}
-}
-
-func TestEnsureTaskDir_RejectsEmptyID(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if _, err := EnsureTaskDir(""); err == nil {
-		t.Fatal("expected error for empty id")
-	}
-}
-
-// TestEnsureTaskDir_ParentMkdirReadOnly covers the os.MkdirAll error
-// for the per-task subdirectory when its parent (.j/tasks) is
-// read-only. The helper must surface a wrapped mkdir error.
-func TestEnsureTaskDir_ParentMkdirReadOnly(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix file-mode semantics required")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root bypasses file-mode permissions")
-	}
-	dir := t.TempDir()
-	t.Chdir(dir)
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
-	tasksDir := filepath.Join(dir, ".j", TasksDirName)
-	if err := os.Chmod(tasksDir, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(tasksDir, 0o755) })
-
-	if _, err := EnsureTaskDir("locked"); err == nil {
-		t.Fatal("expected mkdir error inside read-only parent")
-	} else if !strings.Contains(err.Error(), "mkdir") {
-		t.Fatalf("err = %v, want wrapped mkdir error", err)
-	}
-}
-
-// TestEnsureTaskDir_StatError forces a non-NotExist stat error on the
-// .j/tasks path so the wrapped-error branch is covered.
-func TestEnsureTaskDir_StatError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix file-mode semantics required")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root bypasses file-mode permissions")
-	}
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(jdir, 0o000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(jdir, 0o755) })
-	if _, err := EnsureTaskDir("x"); err == nil {
-		t.Fatal("expected stat error")
-	}
-}
-
-// TestEnsureTaskDir_PropagatesCwdError exercises the DefaultDir
-// propagation branch.
-func TestEnsureTaskDir_PropagatesCwdError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("cwd cannot be removed while in use on windows")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root may bypass relevant FS errors")
-	}
-	parent := t.TempDir()
-	gone := filepath.Join(parent, "gone")
-	if err := os.Mkdir(gone, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(gone)
-	t.Setenv("PWD", "")
-	if err := os.Remove(gone); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
-	if _, err := DefaultDir(); err == nil {
-		t.Skip("os.Getwd unexpectedly succeeded")
-	}
-	if _, err := EnsureTaskDir("x"); err == nil {
-		t.Fatal("EnsureTaskDir should propagate DefaultDir error")
-	}
-}
-
-// TestTaskFileNameConstants pins the package-level filename constants
-// that callers use with filepath.Join(DefaultTasksDir(), id, name) to
-// build per-task body paths. The values are part of the on-disk
-// layout contract, so changing them requires a migration.
-func TestTaskFileNameConstants(t *testing.T) {
-	if PlanFileName != "plan.md" {
-		t.Fatalf("PlanFileName = %q, want %q", PlanFileName, "plan.md")
-	}
-	if RequirementsFileName != "requirements.md" {
-		t.Fatalf("RequirementsFileName = %q, want %q", RequirementsFileName, "requirements.md")
-	}
-}
-
 // TestTouchBoltFile_BoltOpenFails exercises the bolt.Open failure
 // branch of the unexported touchBoltFile helper by pointing it at a
 // path whose parent directory does not exist. EnsureProject never
@@ -1178,171 +986,6 @@ func TestEnsureProject_MkdirTasksDirFails(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(jdir, 0o755) })
 	if err := EnsureProject(); err == nil {
 		t.Fatal("expected mkdir to fail on read-only .j")
-	}
-}
-
-// TestRemoveTaskDir_RejectsEmptyID pins the empty-id guard: callers
-// must pass a real id, not "" (otherwise os.RemoveAll would happily
-// delete the entire .j/tasks/ directory).
-func TestRemoveTaskDir_RejectsEmptyID(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if err := RemoveTaskDir(""); err == nil || !strings.Contains(err.Error(), "empty task id") {
-		t.Fatalf("err = %v, want empty task id error", err)
-	}
-}
-
-// TestRemoveTaskDir_RequiresInitialisedTasksDir pins the
-// missing-parent contract: a fresh cwd (no `.j/tasks/`) yields a
-// wrapped fs.ErrNotExist with the run-init hint.
-func TestRemoveTaskDir_RequiresInitialisedTasksDir(t *testing.T) {
-	t.Chdir(t.TempDir())
-	err := RemoveTaskDir("abc")
-	if !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("err = %v, want fs.ErrNotExist", err)
-	}
-	if !strings.Contains(err.Error(), "missing") {
-		t.Fatalf("err = %v, want missing-prereq hint", err)
-	}
-}
-
-// TestRemoveTaskDir_RemovesNestedTree seeds a per-task directory
-// with sub-files, runs RemoveTaskDir, and asserts the entire tree
-// is gone (the helper must be a recursive RemoveAll, not a single
-// Remove).
-func TestRemoveTaskDir_RemovesNestedTree(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
-	taskDir, err := EnsureTaskDir("nested")
-	if err != nil {
-		t.Fatalf("EnsureTaskDir: %v", err)
-	}
-	for _, name := range []string{RequirementsFileName, PlanFileName, "extra.txt"} {
-		if err := os.WriteFile(filepath.Join(taskDir, name), []byte("x"), 0o644); err != nil {
-			t.Fatalf("write %s: %v", name, err)
-		}
-	}
-	if err := os.MkdirAll(filepath.Join(taskDir, "sub"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := RemoveTaskDir("nested"); err != nil {
-		t.Fatalf("RemoveTaskDir: %v", err)
-	}
-	if _, err := os.Stat(taskDir); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("task dir should be gone, stat err = %v", err)
-	}
-	tasksDir, err := DefaultTasksDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
-	if info, err := os.Stat(tasksDir); err != nil || !info.IsDir() {
-		t.Fatalf(".j/tasks parent should remain a dir: err=%v", err)
-	}
-}
-
-// TestRemoveTaskDir_IdempotentSecondCall pins the os.RemoveAll
-// nil-on-missing contract: a second call after a successful delete
-// is a no-op (returns nil) so the cmd layer can re-run safely.
-func TestRemoveTaskDir_IdempotentSecondCall(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
-	if _, err := EnsureTaskDir("once"); err != nil {
-		t.Fatalf("EnsureTaskDir: %v", err)
-	}
-	if err := RemoveTaskDir("once"); err != nil {
-		t.Fatalf("first RemoveTaskDir: %v", err)
-	}
-	if err := RemoveTaskDir("once"); err != nil {
-		t.Fatalf("second RemoveTaskDir: %v", err)
-	}
-}
-
-// TestRemoveTaskDir_StatError forces a non-NotExist stat error on
-// the .j/tasks path so the wrapped-error branch is covered.
-func TestRemoveTaskDir_StatError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix file-mode semantics required")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root bypasses file-mode permissions")
-	}
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(jdir, 0o000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(jdir, 0o755) })
-	if err := RemoveTaskDir("x"); err == nil {
-		t.Fatal("expected stat error")
-	}
-}
-
-// TestRemoveTaskDir_PropagatesCwdError exercises the DefaultDir
-// propagation branch by removing cwd out from under the helper.
-func TestRemoveTaskDir_PropagatesCwdError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("cwd cannot be removed while in use on windows")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root may bypass relevant FS errors")
-	}
-	parent := t.TempDir()
-	gone := filepath.Join(parent, "gone")
-	if err := os.Mkdir(gone, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(gone)
-	t.Setenv("PWD", "")
-	if err := os.Remove(gone); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
-	if _, err := DefaultDir(); err == nil {
-		t.Skip("os.Getwd unexpectedly succeeded")
-	}
-	if err := RemoveTaskDir("x"); err == nil {
-		t.Fatal("RemoveTaskDir should propagate DefaultDir error")
-	}
-}
-
-// TestRemoveTaskDir_RemoveAllFailure forces os.RemoveAll to fail by
-// chmod'ing the tasks parent to read-only after seeding the per-task
-// directory: removeall cannot unlink children inside an unwritable
-// parent. Skipped on root and Windows (where the chmod has no
-// effect).
-func TestRemoveTaskDir_RemoveAllFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix file-mode semantics required")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root bypasses file-mode permissions")
-	}
-	dir := t.TempDir()
-	t.Chdir(dir)
-	if err := EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
-	if _, err := EnsureTaskDir("locked"); err != nil {
-		t.Fatalf("EnsureTaskDir: %v", err)
-	}
-	tasksDir := filepath.Join(dir, ".j", TasksDirName)
-	if err := os.Chmod(tasksDir, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(tasksDir, 0o755) })
-	err := RemoveTaskDir("locked")
-	if err == nil {
-		t.Fatal("expected RemoveAll to fail under read-only parent")
-	}
-	if !strings.Contains(err.Error(), "remove") {
-		t.Fatalf("err = %v, want remove failure", err)
 	}
 }
 

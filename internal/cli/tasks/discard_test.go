@@ -53,7 +53,7 @@ func (u *fakeUI) ConfirmDiscard(_ context.Context, t tasks.Task) (bool, error) {
 // pickReturn was set" so existing call sites that pre-date the
 // contract (which programmed the cancel case via an empty
 // pickReturn) continue to work without a parallel pickOk knob.
-func (u *fakeUI) PickTask(_ context.Context, tasks []tasks.Task) (string, bool, error) {
+func (u *fakeUI) PickTask(_ context.Context, rows []tasks.Task) (string, bool, error) {
 	u.pickCalls++
 	u.lastPickedFrom = tasks
 	if u.pickErr != nil {
@@ -417,7 +417,7 @@ func TestRunDiscard_DefaultTasksPathError(t *testing.T) {
 // TestRunDiscard_RemoveTaskDirError exercises the on-disk teardown
 // failure branch: the per-task dir exists, the bbolt row is
 // successfully removed, but RemoveTaskDir cannot unlink the
-// directory because its parent (.j/tasks) is read-only. Skipped on
+// directory because its parent (.j/rows) is read-only. Skipped on
 // root and Windows.
 func TestRunDiscard_RemoveTaskDirError(t *testing.T) {
 	if runtime.GOOS == "windows" {

@@ -187,10 +187,10 @@ func (s *scriptedUI) PickMarkdownInCwd(_ context.Context) (string, error) {
 // (id, ok, err) contract: ok=false collapses the user-abort path and
 // the "no selection programmed" case so leaving the matching id
 // field empty signals cancel.
-func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []tasks.Task) (string, bool, error) {
+func (s *scriptedUI) PickTask(_ context.Context, title string, rows []tasks.Task) (string, bool, error) {
 	if strings.Contains(title, "existing task") {
 		s.replanCalls++
-		s.replanTasks = tasks
+		s.replanTasks = rows
 		if s.replanErr != nil {
 			return "", false, s.replanErr
 		}
@@ -200,7 +200,7 @@ func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []tasks.Tas
 		return s.replanID, true, nil
 	}
 	s.pickCalls++
-	s.pickedTasks = tasks
+	s.pickedTasks = rows
 	if s.pickErr != nil {
 		return "", false, s.pickErr
 	}
@@ -1327,11 +1327,11 @@ func TestRun_BackgroundSpawn_RecordsPID(t *testing.T) {
 	if !strings.Contains(stdout.String(), "┌") || !strings.Contains(stdout.String(), "└") {
 		t.Fatalf("stdout = %q, want bordered box (┌ / └)", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 {
-		t.Fatalf("len(tasks) = %d, want 1", len(tasks))
+	rows := readTasks(t)
+	if len(rows) != 1 {
+		t.Fatalf("len(rows) = %d, want 1", len(rows))
 	}
-	got := tasks[0]
+	got := rows[0]
 	if got.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", got.Status)
 	}
@@ -1406,8 +1406,8 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentPlan(t *testing.T) {
 	if agent.planned != 1 {
 		t.Fatalf("agent.Plan calls = %d, want 1", agent.planned)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != tasks.StatusPlanDone {
-		t.Fatalf("tasks = %+v, want one plan-done task", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusPlanDone {
+		t.Fatalf("tasks = %+v, want one plan-done task", rows)
 	}
 }

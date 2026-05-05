@@ -150,10 +150,10 @@ type scriptedUI struct {
 // / resumeErr (the resume.go flow); other titles honour pickedID /
 // pickErr (the work.go non-resume flow). Both branches use the
 // (id, ok, err) contract — empty id signals cancel.
-func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []tasks.Task) (string, bool, error) {
+func (s *scriptedUI) PickTask(_ context.Context, title string, rows []tasks.Task) (string, bool, error) {
 	if strings.Contains(title, "resume") {
 		s.pickResumeCalls++
-		s.pickResumedTasks = tasks
+		s.pickResumedTasks = rows
 		if s.resumeErr != nil {
 			return "", false, s.resumeErr
 		}
@@ -163,7 +163,7 @@ func (s *scriptedUI) PickTask(_ context.Context, title string, tasks []tasks.Tas
 		return s.resumePicked, true, nil
 	}
 	s.pickCalls++
-	s.pickedTasks = tasks
+	s.pickedTasks = rows
 	if s.pickErr != nil {
 		return "", false, s.pickErr
 	}
@@ -366,11 +366,11 @@ func TestRun_ByTaskID_Success(t *testing.T) {
 	if !strings.Contains(stdout.String(), "J: coding on task "+id) {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 {
-		t.Fatalf("expected one task row (reuse): %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 {
+		t.Fatalf("expected one task row (reuse): %+v", rows)
 	}
-	got := tasks[0]
+	got := rows[0]
 	if got.ID != id {
 		t.Fatalf("task id = %q, want %q", got.ID, id)
 	}
@@ -462,9 +462,9 @@ func TestRun_ByTaskID_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 	if agent.worked != 0 {
 		t.Fatal("agent.Work should not run when the user declines the prompt")
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != tasks.StatusWorking {
-		t.Fatalf("declined task should stay working: %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusWorking {
+		t.Fatalf("declined task should stay working: %+v", rows)
 	}
 }
 
@@ -508,9 +508,9 @@ func TestRun_ByTaskID_StatusMismatch_AcceptedRuns(t *testing.T) {
 	if agent.worked != 1 {
 		t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != tasks.StatusWorkDone {
-		t.Fatalf("accepted task should flip to work-done: %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusWorkDone {
+		t.Fatalf("accepted task should flip to work-done: %+v", rows)
 	}
 }
 
@@ -656,9 +656,9 @@ func TestRun_AutoPicksLatestPlanDone(t *testing.T) {
 	if ui.pickCalls != 0 {
 		t.Fatalf("UI should be silent for single-task auto-pick: pick=%d", ui.pickCalls)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].ID != id || tasks[0].Status != tasks.StatusWorkDone {
-		t.Fatalf("tasks = %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].ID != id || rows[0].Status != tasks.StatusWorkDone {
+		t.Fatalf("tasks = %+v", rows)
 	}
 }
 
@@ -692,8 +692,8 @@ func TestRun_PickerOverMultipleTasks(t *testing.T) {
 	if !reflect.DeepEqual(gotIDs, wantIDs) {
 		t.Fatalf("picker tasks = %v, want %v", gotIDs, wantIDs)
 	}
-	tasks := readTasks(t)
-	for _, t := range tasks {
+	rows := readTasks(t)
+	for _, t := range rows {
 		if t.ID == id2 && t.Status != tasks.StatusWorkDone {
 			t.Fatalf("picked task should be work-done: %+v", task)
 		}
@@ -934,9 +934,9 @@ func TestRun_AgentWorkError(t *testing.T) {
 	if strings.Contains(stdout.String(), "J: coding on") {
 		t.Fatalf("stdout should not announce success on Work error: %q", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != tasks.StatusHelp {
-		t.Fatalf("tasks = %+v, want one help task", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusHelp {
+		t.Fatalf("tasks = %+v, want one help task", rows)
 	}
 }
 
@@ -1443,11 +1443,11 @@ func TestRun_BackgroundSpawn_RecordsPID(t *testing.T) {
 	if !strings.Contains(stdout.String(), "┌") || !strings.Contains(stdout.String(), "└") {
 		t.Fatalf("stdout = %q, want bordered box (┌ / └)", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 {
-		t.Fatalf("len(tasks) = %d, want 1", len(tasks))
+	rows := readTasks(t)
+	if len(rows) != 1 {
+		t.Fatalf("len(rows) = %d, want 1", len(rows))
 	}
-	got := tasks[0]
+	got := rows[0]
 	if got.Status != tasks.StatusWorking {
 		t.Fatalf("Status = %q, want working", got.Status)
 	}
@@ -1516,9 +1516,9 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentWork(t *testing.T) {
 		if agent.worked != 1 {
 			t.Fatalf("agent.Work calls = %d, want 1", agent.worked)
 		}
-		tasks := readTasks(t)
-		if len(tasks) != 1 || tasks[0].Status != tasks.StatusWorkDone {
-			t.Fatalf("tasks = %+v, want one work-done task", tasks)
+		rows := readTasks(t)
+		if len(rows) != 1 || rows[0].Status != tasks.StatusWorkDone {
+			t.Fatalf("tasks = %+v, want one work-done task", rows)
 		}
 	})
 }

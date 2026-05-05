@@ -112,7 +112,7 @@ func TestRenderTable_GlyphTopology(t *testing.T) {
 		{ID: "b", Status: tasks.StatusWorkDone, Summary: "second"},
 	}
 	var buf bytes.Buffer
-	if err := renderTable(&buf, tasks, now, 0); err != nil {
+	if err := renderTable(&buf, rows, now, 0); err != nil {
 		t.Fatalf("renderTable: %v", err)
 	}
 	out := ansi.Strip(buf.String())
@@ -146,7 +146,7 @@ func TestRenderTable_MixedActiveAndInactive(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	if err := renderTable(&buf, tasks, now, 0); err != nil {
+	if err := renderTable(&buf, rows, now, 0); err != nil {
 		t.Fatalf("renderTable: %v", err)
 	}
 	out := buf.String()
@@ -181,7 +181,7 @@ func TestRenderTable_RowColors(t *testing.T) {
 		{ID: "row-4", Status: tasks.StatusWorkDone, Summary: "second"},
 	}
 	var buf bytes.Buffer
-	if err := renderTable(&buf, tasks, now, 0); err != nil {
+	if err := renderTable(&buf, rows, now, 0); err != nil {
 		t.Fatalf("renderTable: %v", err)
 	}
 	raw := buf.String()
@@ -221,7 +221,7 @@ func TestRenderTable_FitsToWidth(t *testing.T) {
 	}
 	const width = 50
 	var buf bytes.Buffer
-	if err := renderTable(&buf, tasks, time.Now(), width); err != nil {
+	if err := renderTable(&buf, rows, time.Now(), width); err != nil {
 		t.Fatalf("renderTable: %v", err)
 	}
 	stripped := ansi.Strip(buf.String())

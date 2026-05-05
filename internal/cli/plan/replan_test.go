@@ -318,9 +318,9 @@ func TestRun_FromTask_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 	if agent.planned != 0 {
 		t.Fatal("agent.Plan should not run when the user declines")
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != tasks.StatusWorking {
-		t.Fatalf("declined task should stay working: %+v", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusWorking {
+		t.Fatalf("declined task should stay working: %+v", rows)
 	}
 }
 
@@ -348,9 +348,9 @@ func TestRun_FromTask_StatusMismatch_AcceptedRuns(t *testing.T) {
 	if agent.planned != 1 {
 		t.Fatalf("agent.planned = %d, want 1", agent.planned)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != tasks.StatusPlanDone {
-		t.Fatalf("tasks = %+v, want one plan-done row", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusPlanDone {
+		t.Fatalf("tasks = %+v, want one plan-done row", rows)
 	}
 }
 
@@ -450,11 +450,11 @@ func TestRun_FromTask_PreservesPlanBeginAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 {
-		t.Fatalf("len = %d, want 1", len(tasks))
+	rows := readTasks(t)
+	if len(rows) != 1 {
+		t.Fatalf("len = %d, want 1", len(rows))
 	}
-	got := tasks[0]
+	got := rows[0]
 	if got.Status != tasks.StatusPlanDone {
 		t.Fatalf("Status = %q, want plan-done", got.Status)
 	}
@@ -491,9 +491,9 @@ func TestRun_FromTask_AgentError_LogsHelp(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("err = %v", err)
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != tasks.StatusHelp {
-		t.Fatalf("tasks = %+v, want one help-status row", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusHelp {
+		t.Fatalf("tasks = %+v, want one help-status row", rows)
 	}
 }
 
@@ -528,11 +528,11 @@ func TestRun_FromTask_BackgroundSpawn_RecordsPID(t *testing.T) {
 	if !strings.Contains(stdout.String(), "┌") || !strings.Contains(stdout.String(), "└") {
 		t.Fatalf("stdout = %q, want bordered box (┌ / └)", stdout.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 {
-		t.Fatalf("len = %d, want 1", len(tasks))
+	rows := readTasks(t)
+	if len(rows) != 1 {
+		t.Fatalf("len = %d, want 1", len(rows))
 	}
-	got := tasks[0]
+	got := rows[0]
 	if got.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning (background row)", got.Status)
 	}
@@ -573,9 +573,9 @@ func TestRun_FromTask_AgentSkipsRequirementsRead(t *testing.T) {
 	if !strings.Contains(stderr.String(), "plan.md") {
 		t.Fatalf("stderr should warn about plan.md: %q", stderr.String())
 	}
-	tasks := readTasks(t)
-	if len(tasks) != 1 || tasks[0].Status != tasks.StatusPlanDone {
-		t.Fatalf("tasks = %+v, want one plan-done row", tasks)
+	rows := readTasks(t)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusPlanDone {
+		t.Fatalf("tasks = %+v, want one plan-done row", rows)
 	}
 }
 

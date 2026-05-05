@@ -48,7 +48,7 @@ func seedResumableVerify(t *testing.T, mutate func(*tasks.Task)) (string, *time.
 	workEnd := workBegin.Add(30 * time.Minute)
 	verifyBegin := workEnd.Add(time.Minute)
 	verifyEnd := verifyBegin.Add(time.Minute)
-	task := tasks.Task{
+	row := tasks.Task{
 		ID:                 id,
 		Status:             tasks.StatusVerifyDone,
 		InvokedTool:        "cursor",
@@ -65,7 +65,7 @@ func seedResumableVerify(t *testing.T, mutate func(*tasks.Task)) (string, *time.
 		VerifyEndAt:        &verifyEnd,
 	}
 	if mutate != nil {
-		mutate(&task)
+		mutate(&row)
 	}
 	dbPath, err := tasks.DefaultDir()
 	if err != nil {
@@ -73,10 +73,10 @@ func seedResumableVerify(t *testing.T, mutate func(*tasks.Task)) (string, *time.
 	}
 	s := tasks.Open(dbPath)
 	defer func() { _ = s.Close() }()
-	if err := s.PutTask(task); err != nil {
+	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
 	}
-	return id, t.VerifyBeginAt
+	return id, row.VerifyBeginAt
 }
 
 func mustTasksDir(t *testing.T) string {
@@ -159,12 +159,12 @@ func TestRunResume_FromTaskHappyPath(t *testing.T) {
 	if agent.resumeIDed != 0 {
 		t.Fatalf("NewResumeID should not be invoked on resume; calls=%d", agent.resumeIDed)
 	}
-	tasks := readTasks(t)
-	if tasks[0].Status != tasks.StatusCompleted {
-		t.Fatalf("Status = %q, want completed (PASS verdict)", tasks[0].Status)
+	rows := readTasks(t)
+	if rows[0].Status != tasks.StatusCompleted {
+		t.Fatalf("Status = %q, want completed (PASS verdict)", rows[0].Status)
 	}
-	if tasks[0].VerifyBeginAt == nil || !tasks[0].VerifyBeginAt.Equal(*originalBegin) {
-		t.Fatalf("VerifyBeginAt should be preserved: %v vs %v", tasks[0].VerifyBeginAt, originalBegin)
+	if rows[0].VerifyBeginAt == nil || !rows[0].VerifyBeginAt.Equal(*originalBegin) {
+		t.Fatalf("VerifyBeginAt should be preserved: %v vs %v", rows[0].VerifyBeginAt, originalBegin)
 	}
 }
 
@@ -189,7 +189,7 @@ func TestRunResume_FromTaskMissing(t *testing.T) {
 func TestRunResume_FromTaskNoSession(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableVerify(t, func(task *tasks.Task) { t.VerifyResumeCursor = "" })
+	id, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyResumeCursor = "" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -207,8 +207,8 @@ func TestRunResume_FromTaskNoSession(t *testing.T) {
 func TestRunResume_SelectorPicksSecond(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id1, _ := seedResumableVerify(t, func(task *tasks.Task) { t.VerifyResumeCursor = "first-cursor" })
-	id2, _ := seedResumableVerify(t, func(task *tasks.Task) { t.VerifyResumeCursor = "second-cursor" })
+	id1, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyResumeCursor = "first-cursor" })
+	id2, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyResumeCursor = "second-cursor" })
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
 	ui := &scriptedUI{resumePicked: id2}
@@ -252,7 +252,7 @@ func TestRunResume_PickerReturnsUnknownID(t *testing.T) {
 func TestRunResume_UnknownTool(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableVerify(t, func(task *tasks.Task) { t.InvokedTool = "ghost" })
+	id, _ := seedResumableVerify(t, func(row *tasks.Task) { row.InvokedTool = "ghost" })
 	agent := newScriptedAgent()
 	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: id,
@@ -284,9 +284,9 @@ func TestRunResume_AgentError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "verify boom") {
 		t.Fatalf("err = %v", err)
 	}
-	tasks := readTasks(t)
-	if tasks[0].Status != tasks.StatusHelp {
-		t.Fatalf("Status = %q, want help", tasks[0].Status)
+	rows := readTasks(t)
+	if rows[0].Status != tasks.StatusHelp {
+		t.Fatalf("Status = %q, want help", rows[0].Status)
 	}
 }
 
@@ -295,7 +295,7 @@ func TestRunResume_AgentError(t *testing.T) {
 func TestRunResume_StatusCompletedIsResumable(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableVerify(t, func(task *tasks.Task) { t.Status = tasks.StatusCompleted })
+	id, _ := seedResumableVerify(t, func(row *tasks.Task) { row.Status = tasks.StatusCompleted })
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
 	err := RunResume(context.Background(), ResumeOptions{
@@ -475,12 +475,12 @@ func TestRunResume_StampsCompletedOnPass(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunResume: %v", err)
 	}
-	tasks := readTasks(t)
-	if tasks[0].Status != tasks.StatusCompleted {
-		t.Fatalf("Status = %q, want completed (PASS verdict on resume)", tasks[0].Status)
+	rows := readTasks(t)
+	if rows[0].Status != tasks.StatusCompleted {
+		t.Fatalf("Status = %q, want completed (PASS verdict on resume)", rows[0].Status)
 	}
-	if tasks[0].DoneAt == nil {
-		t.Fatalf("DoneAt should be stamped: %+v", tasks[0])
+	if rows[0].DoneAt == nil {
+		t.Fatalf("DoneAt should be stamped: %+v", rows[0])
 	}
 }
 
@@ -505,12 +505,12 @@ func TestRunResume_FailLeavesVerifyDone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunResume: %v", err)
 	}
-	tasks := readTasks(t)
-	if tasks[0].Status != tasks.StatusVerifyDone {
-		t.Fatalf("Status = %q, want verify-done", tasks[0].Status)
+	rows := readTasks(t)
+	if rows[0].Status != tasks.StatusVerifyDone {
+		t.Fatalf("Status = %q, want verify-done", rows[0].Status)
 	}
-	if tasks[0].DoneAt != nil {
-		t.Fatalf("DoneAt should remain nil: %v", tasks[0].DoneAt)
+	if rows[0].DoneAt != nil {
+		t.Fatalf("DoneAt should remain nil: %v", rows[0].DoneAt)
 	}
 }
 
@@ -617,12 +617,12 @@ func TestBeginVerifyTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	lc := existing.BeginVerifyResume(io.Discard)
 	lc.Finish(tasks.VerifyOutcomeNoRetries, nil)
 
-	tasks := readTasks(t)
-	if tasks[0].VerifyResumeCursor != preCursor {
-		t.Fatalf("VerifyResumeCursor changed: got %q, want %q", tasks[0].VerifyResumeCursor, preCursor)
+	rows := readTasks(t)
+	if rows[0].VerifyResumeCursor != preCursor {
+		t.Fatalf("VerifyResumeCursor changed: got %q, want %q", rows[0].VerifyResumeCursor, preCursor)
 	}
-	if tasks[0].VerifyBeginAt == nil || !tasks[0].VerifyBeginAt.Equal(*preBegin) {
-		t.Fatalf("VerifyBeginAt = %v, want preserved %v", tasks[0].VerifyBeginAt, preBegin)
+	if rows[0].VerifyBeginAt == nil || !rows[0].VerifyBeginAt.Equal(*preBegin) {
+		t.Fatalf("VerifyBeginAt = %v, want preserved %v", rows[0].VerifyBeginAt, preBegin)
 	}
 }
 
@@ -631,7 +631,7 @@ func TestBeginVerifyTaskResume_PreservesCursorAndBegin(t *testing.T) {
 func TestBeginVerifyTaskResume_NilBeginAtStampsFresh(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	id, _ := seedResumableVerify(t, func(task *tasks.Task) { t.VerifyBeginAt = nil })
+	id, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyBeginAt = nil })
 	dbPath, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatal(err)
@@ -646,9 +646,9 @@ func TestBeginVerifyTaskResume_NilBeginAtStampsFresh(t *testing.T) {
 	lc := existing.BeginVerifyResume(io.Discard)
 	lc.Finish(tasks.VerifyOutcomeNoRetries, nil)
 
-	tasks := readTasks(t)
-	if tasks[0].VerifyBeginAt == nil {
-		t.Fatalf("VerifyBeginAt should be stamped: %+v", tasks)
+	rows := readTasks(t)
+	if rows[0].VerifyBeginAt == nil {
+		t.Fatalf("VerifyBeginAt should be stamped: %+v", rows)
 	}
 }
 
@@ -730,9 +730,9 @@ func TestRunResume_WaitsForSpawnedChild(t *testing.T) {
 	if !strings.Contains(stdout.String(), "verify resume on task "+id) {
 		t.Fatalf("stdout = %q, want resume line", stdout.String())
 	}
-	tasks := readTasks(t)
-	if tasks[0].Status != tasks.StatusCompleted {
-		t.Fatalf("Status = %q, want completed (PASS verdict from spawned child)", tasks[0].Status)
+	rows := readTasks(t)
+	if rows[0].Status != tasks.StatusCompleted {
+		t.Fatalf("Status = %q, want completed (PASS verdict from spawned child)", rows[0].Status)
 	}
 	findings := filepath.Join(mustTasksDir(t), id, tasks.VerifierFindingsFileName)
 	data, readErr := os.ReadFile(findings)
@@ -770,9 +770,9 @@ func TestRunResume_VerifierWaitCtxCancelled(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
-	tasks := readTasks(t)
-	if tasks[0].Status != tasks.StatusHelp {
-		t.Fatalf("Status = %q, want help", tasks[0].Status)
+	rows := readTasks(t)
+	if rows[0].Status != tasks.StatusHelp {
+		t.Fatalf("Status = %q, want help", rows[0].Status)
 	}
 }
 

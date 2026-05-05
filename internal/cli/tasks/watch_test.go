@@ -20,11 +20,11 @@ func noopTick() tea.Cmd {
 	return func() tea.Msg { return nil }
 }
 
-func newTestModel(tasks []tasks.Task, now time.Time) model {
+func newTestModel(rows []tasks.Task, now time.Time) model {
 	return model{
-		tasks:  tasks,
+		tasks:  rows,
 		now:    now,
-		reload: func() ([]tasks.Task, error) { return tasks, nil },
+		reload: func() ([]tasks.Task, error) { return rows, nil },
 		tick:   noopTick,
 	}
 }
@@ -56,8 +56,8 @@ func TestModel_TasksMsgReplacesAndClearsErr(t *testing.T) {
 	fresh := []tasks.Task{{ID: "abc", Status: tasks.StatusPlanDone}}
 	updated, cmd := m.Update(tasksMsg(fresh))
 	mm := updated.(model)
-	if !reflect.DeepEqual(mm.tasks, fresh) {
-		t.Fatalf("tasks = %#v, want %#v", mm.tasks, fresh)
+	if !reflect.DeepEqual(mm.rows, fresh) {
+		t.Fatalf("tasks = %#v, want %#v", mm.rows, fresh)
 	}
 	if mm.err != nil {
 		t.Fatalf("err should clear, got %v", mm.err)
@@ -137,7 +137,7 @@ func TestModel_View_WithTasksAndQuitHint(t *testing.T) {
 		Summary:      "draft idea",
 		PlanBeginAt:  &begin,
 	}}
-	m := newTestModel(tasks, now)
+	m := newTestModel(rows, now)
 	out := m.View()
 	if !strings.Contains(out, "planning(1m:20s)") {
 		t.Fatalf("expected ticking status row: %q", out)
