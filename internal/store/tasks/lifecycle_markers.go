@@ -41,3 +41,28 @@ func emitPhaseEnd(agentLogPath, phase string, beginAt *time.Time, t Task, outcom
 	}
 	_ = agentlog.EmitTo(agentLogPath, "phase_end", fields)
 }
+
+func emitVerifyIterationBegin(agentLogPath, taskID string, iteration, max int) {
+	_ = agentlog.EmitTo(agentLogPath, "verify_iteration_begin", map[string]any{
+		"task":           taskID,
+		"iteration":      iteration,
+		"max_iterations": max,
+	})
+}
+
+func emitVerdict(agentLogPath, taskID string, iteration int, verdict, findingsPath string) {
+	_ = agentlog.EmitTo(agentLogPath, "verdict", map[string]any{
+		"task":          taskID,
+		"iteration":     iteration,
+		"verdict":       verdict,
+		"findings_path": findingsPath,
+	})
+}
+
+func emitVerifyIterationEnd(agentLogPath, taskID string, iteration int, verdict string) {
+	_ = agentlog.EmitTo(agentLogPath, "verify_iteration_end", map[string]any{
+		"task":      taskID,
+		"iteration": iteration,
+		"verdict":   verdict,
+	})
+}

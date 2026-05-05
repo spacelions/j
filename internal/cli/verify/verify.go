@@ -136,7 +136,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 
 	agentLogPath := filepath.Join(res.TaskDir, tasks.AgentLogFileName)
 	lc := res.Task.BeginVerify(opts.Stderr, verifierAgent.Name(), model, resumeID, agentLogPath)
-	outcome, runErr := runVerifyLoop(ctx, opts, verifierAgent, workerAgent, model, resumeID, res, agentLogPath)
+	outcome, runErr := runVerifyLoop(ctx, opts, lc, verifierAgent, workerAgent, model, resumeID, res, agentLogPath)
 	lc.Finish(outcome, runErr)
 	if runErr != nil {
 		return runErr
@@ -170,13 +170,13 @@ func Run(ctx context.Context, opts Options) (err error) {
 // the contract documented on agent.go without binding child
 // lifetime to ctx — see run.Spawn's commentary on why a true
 // fire-and-forget child cannot be safely killed by ctx cancellation.
-func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent codingagents.Agent, model, resumeID string, res resolved, agentLogPath string) (tasks.VerifyOutcome, error) {
+func runVerifyLoop(ctx context.Context, opts Options, lc *tasks.VerifyLifecycle, verifierAgent, workerAgent codingagents.Agent, model, resumeID string, res resolved, agentLogPath string) (tasks.VerifyOutcome, error) {
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		banner.DangerousBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	for i := 0; i < opts.MaxIterations; i++ {
-		emitIterationBegin(opts.Stderr, res.Task.ID, i, opts.MaxIterations)
+		lc.IterationBegin(i, opts.MaxIterations)
 		req := codingagents.VerifyRequest{
 			RequirementsPath:           res.RequirementsPath,
 			PlanPath:                   res.PlanPath,
@@ -198,8 +198,8 @@ func runVerifyLoop(ctx context.Context, opts Options, verifierAgent, workerAgent
 			return tasks.VerifyOutcomeNoRetries, err
 		}
 		verdict := resolver.ParseVerdict(res.FindingsPath)
-		emitVerdict(opts.Stderr, res.Task.ID, i, verdict, res.FindingsPath)
-		emitIterationEnd(opts.Stderr, res.Task.ID, i, verdict)
+		lc.Verdict(i, verdict, res.FindingsPath)
+		lc.IterationEnd(i, verdict)
 		if verdict == "PASS" {
 			return tasks.VerifyOutcomeSuccess, nil
 		}

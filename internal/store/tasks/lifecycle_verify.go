@@ -134,3 +134,23 @@ func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
 	PersistWarn(lc.stderr, lc.task)
 	emitPhaseEnd(lc.agentLogPath, "verify", lc.task.VerifyBeginAt, lc.task, markerOutcome)
 }
+
+// IterationBegin writes one verify_iteration_begin marker to the
+// per-task agent.log at the start of each fix-loop turn. An empty
+// agentLogPath (test paths) is a silent no-op. Does not interact with
+// the closed flag — iteration markers fire many times mid-run.
+func (lc *VerifyLifecycle) IterationBegin(iteration, max int) {
+	emitVerifyIterationBegin(lc.agentLogPath, lc.task.ID, iteration, max)
+}
+
+// Verdict writes one verdict marker carrying the parsed PASS/FAIL
+// plus the findings path so a tailer can correlate without re-reading
+// verifier_findings.md.
+func (lc *VerifyLifecycle) Verdict(iteration int, verdict, findingsPath string) {
+	emitVerdict(lc.agentLogPath, lc.task.ID, iteration, verdict, findingsPath)
+}
+
+// IterationEnd closes the iteration_begin/end pairing per loop turn.
+func (lc *VerifyLifecycle) IterationEnd(iteration int, verdict string) {
+	emitVerifyIterationEnd(lc.agentLogPath, lc.task.ID, iteration, verdict)
+}
