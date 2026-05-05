@@ -134,26 +134,22 @@ func setupContinueEnv(t *testing.T) {
 	}
 }
 
-// TestRunContinue_PlanningSpawnsDetachedReplan pins planning ->
-// detached `j tasks orchestrate --plan-requires-approval=true`.
-// StatusPlanning now delegates to replanAsDetachedOrchestrator, which
-// spawns a child and returns immediately; no in-process agent call fires.
-func TestRunContinue_PlanningSpawnsDetachedReplan(t *testing.T) {
+// TestRunContinue_PlanningShowsTooltip pins planning -> tooltip message
+// suggesting `j tasks re-plan` or `j tasks resume-plan`.
+func TestRunContinue_PlanningShowsTooltip(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusPlanning
 	})
-	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
 	err := RunContinue(context.Background(), ContinueOptions{
-		TaskID:  id,
-		Stdin:   strings.NewReader(""),
-		Stdout:  &stdout,
-		Stderr:  io.Discard,
-		Agents:  []codingagents.Agent{agent},
-		UI:      &fakeUI{},
-		JBinary: argvJBinary(t, argvPath),
+		TaskID: id,
+		Stdin:  strings.NewReader(""),
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &fakeUI{},
 	})
 	if err != nil {
 		t.Fatalf("RunContinue: %v", err)
@@ -162,21 +158,9 @@ func TestRunContinue_PlanningSpawnsDetachedReplan(t *testing.T) {
 		t.Fatalf("no in-process agent call should fire for planning status: planned=%d worked=%d verified=%d",
 			agent.planned, agent.worked, agent.verified)
 	}
-	args := readSpawnedArgv(t, argvPath)
-	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--plan-requires-approval=true"}
-	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
-		t.Fatalf("argv = %v, want %v", args, wantArgs)
-	}
-	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID == 0 {
-		t.Fatalf("BackgroundPID = 0; want non-zero detached child PID")
-	}
-	wantLog := filepath.Join(".j/tasks", id, tasks.AgentLogFileName)
-	if !strings.HasSuffix(row.AgentLogPath, wantLog) {
-		t.Fatalf("AgentLogPath = %q, want suffix %q", row.AgentLogPath, wantLog)
-	}
-	if !strings.Contains(stdout.String(), "task "+id+" running in background") || !strings.Contains(stdout.String(), "tail -f") {
-		t.Fatalf("stdout = %q, want background-fork announcement", stdout.String())
+	want := "use `j tasks re-plan` or `j tasks resume-plan`"
+	if !strings.Contains(stdout.String(), want) {
+		t.Fatalf("stdout = %q, want substring %q", stdout.String(), want)
 	}
 }
 
@@ -228,18 +212,20 @@ func TestRunContinue_PlanDoneFailsWhenToolNotInAgents(t *testing.T) {
 	}
 }
 
-// TestRunContinue_WorkingDispatchesToWorkResume pins working -> work.RunResume.
-func TestRunContinue_WorkingDispatchesToWorkResume(t *testing.T) {
+// TestRunContinue_WorkingShowsTooltip pins working -> tooltip message
+// suggesting `j tasks re-work` or `j tasks resume-work`.
+func TestRunContinue_WorkingShowsTooltip(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorking
 		task.WorkResumeSession = "work-cursor"
 	})
 	agent := newContinueAgent()
+	var stdout bytes.Buffer
 	err := RunContinue(context.Background(), ContinueOptions{
 		TaskID: id,
 		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
+		Stdout: &stdout,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
 		UI:     &fakeUI{},
@@ -247,11 +233,13 @@ func TestRunContinue_WorkingDispatchesToWorkResume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunContinue: %v", err)
 	}
-	if agent.worked != 1 {
-		t.Fatalf("worked = %d, want 1", agent.worked)
+	if agent.planned+agent.worked+agent.verified != 0 {
+		t.Fatalf("no agent call should fire for working status: planned=%d worked=%d verified=%d",
+			agent.planned, agent.worked, agent.verified)
 	}
-	if !agent.workReq.Resume {
-		t.Fatalf("workReq.Resume = false, want true")
+	want := "use `j tasks re-work` or `j tasks resume-work`"
+	if !strings.Contains(stdout.String(), want) {
+		t.Fatalf("stdout = %q, want substring %q", stdout.String(), want)
 	}
 }
 
@@ -761,26 +749,29 @@ func TestDispatchByStatus_UnknownStatus(t *testing.T) {
 	}
 }
 
-// TestRunContinue_PlanningSpawnFails pins the spawn-error path for
-// StatusPlanning: pointing JBinary at a missing path surfaces the
-// error verbatim.
+// TestRunContinue_PlanningSpawnFails verifies that planning status no
+// longer attempts a spawn — it prints a tooltip and returns nil.
 func TestRunContinue_PlanningSpawnFails(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusPlanning
 	})
 	agent := newContinueAgent()
+	var stdout bytes.Buffer
 	err := RunContinue(context.Background(), ContinueOptions{
-		TaskID:  id,
-		Stdin:   strings.NewReader(""),
-		Stdout:  io.Discard,
-		Stderr:  io.Discard,
-		Agents:  []codingagents.Agent{agent},
-		UI:      &fakeUI{},
-		JBinary: "/no/such/binary-xyzzy",
+		TaskID: id,
+		Stdin:  strings.NewReader(""),
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &fakeUI{},
 	})
-	if err == nil {
-		t.Fatal("expected spawn failure")
+	if err != nil {
+		t.Fatalf("RunContinue: %v", err)
+	}
+	want := "use `j tasks re-plan`"
+	if !strings.Contains(stdout.String(), want) {
+		t.Fatalf("stdout = %q, want substring %q", stdout.String(), want)
 	}
 }
 

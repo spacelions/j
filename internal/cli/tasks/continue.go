@@ -19,7 +19,6 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
-	"github.com/spacelions/j/internal/workflow/agents/worker"
 )
 
 // ContinueOptions configures RunContinue. Stdin/Stdout/Stderr default
@@ -134,33 +133,18 @@ func resolveContinueTaskFromStore(ctx context.Context, s *tasks.Store, opts Cont
 }
 
 // dispatchByStatus routes a task to the right phase based on its
-// Status. The mapping is:
-//
-//	planning     -> detached re-plan orchestrator
-//	plan-done    -> worker.Run (in-process, no bucket persist)
-//	working      -> worker.RunResume
-//	work-done    -> verify.Run (--from-task <id>)
-//	verifying    -> verify.RunResume
-//	verify-done  -> "task already finished" (no-op)
-//	completed    -> "task already finished" (no-op)
-//	help         -> dispatchHelp (timestamps + cursors)
-//
-// Any unknown status surfaces a user-facing error so a future state
-// addition cannot silently drop into a no-op.
+// Status. For planning and working statuses it prints a tooltip
+// directing the user to use the specific subcommand.
 func dispatchByStatus(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
 	switch t.Status {
 	case tasks.StatusPlanning:
-		return replanAsDetachedOrchestrator(ctx, opts, t)
+		uitheme.NormalFprintf(opts.Stdout, "J: task %s is planning; use `j tasks re-plan` or `j tasks resume-plan`\n", t.ID)
+		return nil
 	case tasks.StatusPlanDone:
 		return runPlanDoneWork(ctx, opts, t)
 	case tasks.StatusWorking:
-		return worker.RunResume(ctx, worker.ResumeOptions{
-			TaskID: t.ID,
-			Stdin:  opts.Stdin,
-			Stdout: opts.Stdout,
-			Stderr: opts.Stderr,
-			Agents: opts.Agents,
-		})
+		uitheme.NormalFprintf(opts.Stdout, "J: task %s is working; use `j tasks re-work` or `j tasks resume-work`\n", t.ID)
+		return nil
 	case tasks.StatusWorkDone:
 		return verify.Run(ctx, verify.Options{
 			TaskID: t.ID,
