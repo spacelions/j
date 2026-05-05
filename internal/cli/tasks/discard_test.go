@@ -36,6 +36,13 @@ type fakeUI struct {
 	pickErr        error
 	pickCalls      int
 	lastPickedFrom []tasks.Task
+
+	statusReturn bool
+	statusErr    error
+	statusCalls  int
+	statusCmd    string
+	statusTaskID string
+	statusStatus string
 }
 
 func (u *fakeUI) ConfirmDiscard(_ context.Context, t tasks.Task) (bool, error) {
@@ -59,6 +66,17 @@ func (u *fakeUI) PickTask(_ context.Context, rows []tasks.Task) (string, bool, e
 		return "", false, u.pickErr
 	}
 	return u.pickReturn, u.pickReturn != "", nil
+}
+
+// ConfirmStatusOverride satisfies RePlanUI so the same fake drives
+// `j tasks re-plan` tests when the resolved task is in a status
+// outside the re-plan allowlist.
+func (u *fakeUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, status string) (bool, error) {
+	u.statusCalls++
+	u.statusCmd = cmd
+	u.statusTaskID = taskID
+	u.statusStatus = status
+	return u.statusReturn, u.statusErr
 }
 
 // seedTask writes a Task row into the freshly-initialised tasks DB
