@@ -7,7 +7,6 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -165,11 +164,7 @@ func newStartCmd() *cobra.Command {
 // `j tasks orchestrate --id <id>` subprocess. RunStart records the
 // child's PID and returns immediately.
 func RunStart(ctx context.Context, opts StartOptions) (err error) {
-	defer func() {
-		if errors.Is(err, huh.ErrUserAborted) {
-			err = nil
-		}
-	}()
+	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
 		return errors.New("J: no coding agents configured")
