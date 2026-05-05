@@ -6,10 +6,8 @@
 package tasks
 
 import (
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"text/tabwriter"
 	"time"
@@ -67,26 +65,20 @@ func New() *cobra.Command {
 // every Task, sorts them via tasks.SortTasks, and dispatches to one
 // of three renderers: the plain tabwriter output (--simple), the
 // bubbletea TUI (default on a TTY), or a single bordered one-shot
-// render (default off a TTY). Pre-flight guarantees the file exists
-// before listTasks runs, but the missing-DB short-circuit is kept
-// for defense in depth (e.g. a unit test that drives the function
-// without going through the cobra wiring).
+// render (default off a TTY). ListTasks treats a missing tasks dir
+// as an empty list, so the same len(rows)==0 branch handles both
+// "no project yet" and "project exists, no tasks".
 //
 // Between ListTasks and SortTasks the helper reaps any background
 // runs whose detached cursor-agent child has exited so the printed
-// rows reflect fresh state. Reaping mutates the bbolt store
-// (best-effort: PutTask errors are warned on stderr) and is opt-in
-// per row: only entries with a non-zero BackgroundPID are touched.
+// rows reflect fresh state. Reaping mutates the store (best-effort:
+// PutTask errors are warned on stderr) and is opt-in per row: only
+// entries with a non-zero BackgroundPID are touched.
 func listTasks(stdout io.Writer, simple bool) error {
-	tasksDir, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		return err
 	}
-	if _, statErr := os.Stat(tasksDir); errors.Is(statErr, fs.ErrNotExist) {
-		banner.Fprintln(stdout, emptyMessage)
-		return nil
-	}
-	s := tasks.Open(tasksDir)
 	defer func() { _ = s.Close() }()
 
 	rows, err := s.ListTasks()
@@ -97,13 +89,13 @@ func listTasks(stdout io.Writer, simple bool) error {
 		banner.Fprintln(stdout, emptyMessage)
 		return nil
 	}
-	rows = reapBackgroundTasks(s, os.Stderr, tasksDir, rows)
+	rows = reapBackgroundTasks(s, os.Stderr, s.Dir(), rows)
 	tasks.SortTasks(rows)
 	if simple {
 		return writeTasks(stdout, rows)
 	}
 	if isTerminal(stdout) {
-		return runWatch(os.Stdin, stdout, storeReloader(s, tasksDir))
+		return runWatch(os.Stdin, stdout, storeReloader(s, s.Dir()))
 	}
 	return renderTable(stdout, rows, time.Now(), terminalWidth(stdout))
 }

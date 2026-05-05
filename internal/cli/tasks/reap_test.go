@@ -2,6 +2,8 @@ package tasks
 
 import (
 	"bytes"
+	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/testutil"
 	"io"
 	"os"
 	"os/exec"
@@ -9,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"github.com/spacelions/j/internal/store/tasks"
-	"github.com/spacelions/j/internal/testutil"
 )
 
 // spawnSleepingChild forks a `sleep 10` and returns its PID so a
@@ -38,11 +38,10 @@ func openTestStore(t *testing.T) *tasks.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
-	path, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := tasks.Open(path)
 	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
@@ -338,11 +337,10 @@ func TestReap_ListTasksWiresThroughCommand(t *testing.T) {
 	if !strings.Contains(out, id) || !strings.Contains(out, "plan-done") {
 		t.Fatalf("output should reflect reaped row: %q", out)
 	}
-	dbPath, err := tasks.DefaultDir()
+	s2, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s2 := tasks.Open(dbPath)
 	defer func() { _ = s2.Close() }()
 	persisted, err := s2.GetTask(id)
 	if err != nil {

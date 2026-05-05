@@ -94,11 +94,10 @@ func readSpawnedArgv(t *testing.T, path string) []string {
 // task row for id (or fails the test if missing).
 func readTaskFromBolt(t *testing.T, id string) tasks.Task {
 	t.Helper()
-	path, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {
@@ -138,11 +137,10 @@ func firstSeededTaskID(t *testing.T) string {
 // source-picker tests that need to assert "no new row created."
 func allTaskRows(t *testing.T) []tasks.Task {
 	t.Helper()
-	path, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	rows, err := s.ListTasks()
 	if err != nil {
@@ -945,11 +943,10 @@ func TestRunStart_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
 // without going through any phase lifecycle.
 func seedTaskRowDirect(t *testing.T, row tasks.Task) {
 	t.Helper()
-	path, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)

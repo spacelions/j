@@ -70,11 +70,10 @@ func (u *fakeUI) PickTask(_ context.Context, rows []tasks.Task) (string, bool, e
 func seedTask(t *testing.T, id, summary string) string {
 	t.Helper()
 	testutil.Init(t)
-	path, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := tasks.Open(path)
 	if err := s.PutTask(tasks.Task{
 		ID:           id,
 		Status:       tasks.StatusPlanDone,
@@ -103,11 +102,10 @@ func seedTask(t *testing.T, id, summary string) string {
 func seedTaskWithWorktree(t *testing.T, id, summary, worktree string) string {
 	t.Helper()
 	testutil.Init(t)
-	path, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := tasks.Open(path)
 	if err := s.PutTask(tasks.Task{
 		ID:           id,
 		Status:       tasks.StatusPlanDone,
@@ -208,11 +206,10 @@ func readGitStubLogLines(t *testing.T, logFile string) []string {
 // row was either removed or left intact.
 func taskExists(t *testing.T, id string) bool {
 	t.Helper()
-	path, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	_, err = s.GetTask(id)
 	if err == nil {

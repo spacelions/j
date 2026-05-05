@@ -31,14 +31,10 @@ const testCursorChatID = "00000000-0000-4000-8000-000000000001"
 // after Run to assert the lifecycle wrote what we expect.
 func readTasks(t *testing.T) []tasks.Task {
 	t.Helper()
-	path, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	s := tasks.Open(path)
 	defer func() { _ = s.Close() }()
 	got, err := s.ListTasks()
 	if err != nil {
@@ -300,11 +296,10 @@ func seedPlanDoneTask(t *testing.T, summary, planBody, requirementBody string) s
 			t.Fatalf("write requirements: %v", err)
 		}
 	}
-	dbPath, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := tasks.Open(dbPath)
 	defer func() { _ = s.Close() }()
 	begin := time.Now().UTC().Add(-time.Hour)
 	end := begin.Add(time.Minute)
@@ -425,11 +420,10 @@ func TestRun_ByTaskID_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "plan", "")
-	dbPath, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -475,11 +469,10 @@ func TestRun_ByTaskID_StatusMismatch_AcceptedRuns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "plan", "")
-	dbPath, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -521,11 +514,10 @@ func TestRun_ByTaskID_StatusMismatch_YesFlagSkipsPrompt(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "plan", "")
-	dbPath, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -563,11 +555,10 @@ func TestRun_ByTaskID_StatusMismatch_PromptError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "plan", "")
-	dbPath, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -602,11 +593,10 @@ func TestRun_ByTaskID_StatusMismatch_AbortExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedPlanDoneTask(t, "x", "plan", "")
-	dbPath, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := tasks.Open(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -1479,11 +1469,6 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentWork(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DefaultPath: %v", err)
 		}
-		tasksPath, err := tasks.DefaultDir()
-		if err != nil {
-			t.Fatalf("DefaultTasksDir: %v", err)
-		}
-
 		id := seedPlanDoneTask(t, "x", "plan body", "# req\nbody")
 		opts := Options{TaskID: id}
 		opts.Interactive = true
@@ -1499,7 +1484,10 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentWork(t *testing.T) {
 			if err := s.Close(); err != nil {
 				return fmt.Errorf("close settings: %w", err)
 			}
-			ts := tasks.Open(tasksPath)
+			ts, err := tasks.OpenDefault()
+			if err != nil {
+				return fmt.Errorf("tasks dir: %w", err)
+			}
 			if _, err := ts.ListTasks(); err != nil {
 				return fmt.Errorf("tasks store should be readable: %w", err)
 			}

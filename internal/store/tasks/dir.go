@@ -48,6 +48,25 @@ func Open(tasksDir string) *Store {
 	return &Store{tasksDir: tasksDir}
 }
 
+// OpenDefault is the common shorthand for DefaultDir + Open. The
+// returned Store is rooted at `<cwd>/.j/tasks`; the only failure mode
+// is DefaultDir's (missing cwd / store root). Per-method file ops
+// surface fs.ErrNotExist when the dir itself is missing — callers
+// that care about that case should branch on those errors rather
+// than stat-checking the dir up front.
+func OpenDefault() (*Store, error) {
+	dir, err := DefaultDir()
+	if err != nil {
+		return nil, err
+	}
+	return Open(dir), nil
+}
+
+// Dir returns the absolute path the Store is rooted at. Useful for
+// callers that need to construct per-task paths (e.g.
+// `<dir>/<id>/agent.log`) without re-deriving the root.
+func (s *Store) Dir() string { return s.tasksDir }
+
 // Close releases any per-Store resources. Files are opened/closed
 // inside each method so this is a no-op today; it stays in the API
 // for symmetry with store.Store and so callers can pair Open with a

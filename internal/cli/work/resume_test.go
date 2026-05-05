@@ -59,11 +59,10 @@ func seedResumableWork(t *testing.T, mutate func(*tasks.Task)) (string, *time.Ti
 	if mutate != nil {
 		mutate(&row)
 	}
-	dbPath, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := tasks.Open(dbPath)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -559,11 +558,10 @@ func TestBeginWorkTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id, _ := seedResumableWork(t, nil)
-	dbPath, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -735,11 +733,10 @@ func TestBeginWorkTaskResume_NilWorkBeginAtStampsFreshOne(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id, _ := seedResumableWork(t, func(row *tasks.Task) { row.WorkBeginAt = nil })
-	dbPath, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)

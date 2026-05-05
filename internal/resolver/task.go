@@ -218,9 +218,9 @@ func autoPickAllowed(rows []tasks.Task, allowed func(tasks.Task) bool) (string, 
 }
 
 func openTaskStore(prefix string) (*tasks.Store, error) {
-	dir, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		return nil, fmt.Errorf("%s: tasks dir: %w", prefix, err)
 	}
-	return tasks.Open(dir), nil
+	return s, nil
 }

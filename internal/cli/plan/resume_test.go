@@ -58,11 +58,10 @@ func seedResumableTask(t *testing.T, mutate func(*tasks.Task)) (string, *time.Ti
 	if mutate != nil {
 		mutate(&row)
 	}
-	dbPath, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := tasks.Open(dbPath)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)

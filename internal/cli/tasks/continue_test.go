@@ -112,11 +112,10 @@ func seedTaskFull(t *testing.T, mutate func(*tasks.Task)) string {
 	if mutate != nil {
 		mutate(&task)
 	}
-	dbPath, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := tasks.Open(dbPath)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(task); err != nil {
 		t.Fatal(err)

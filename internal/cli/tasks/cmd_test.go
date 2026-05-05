@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -50,11 +49,10 @@ func openTasksDB(t *testing.T) *tasks.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	path, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s := tasks.Open(path)
 	return s
 }
 
@@ -420,17 +418,12 @@ func TestStoreReloader_PropagatesListErr(t *testing.T) {
 	if err := writeRawTaskBytes(t, "bad", []byte("not-json")); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	path, err := tasks.DefaultDir()
+	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := tasks.Open(path)
 	t.Cleanup(func() { _ = s.Close() })
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := storeReloader(s, tasksDir)(); err == nil {
+	if _, err := storeReloader(s, s.Dir())(); err == nil {
 		t.Fatal("expected decode error to propagate from reloader")
 	}
 }
