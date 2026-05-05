@@ -74,10 +74,6 @@ func Emit(w io.Writer, event string, fields map[string]any) error {
 // path is a silent no-op: the foreground (interactive) flows do not
 // share a per-task log, so callers that don't know whether they are
 // foreground or detached can hand the empty string and not branch.
-//
-// The file handle is closed before EmitTo returns so a long-lived
-// caller (the SpawnIn reap goroutine) does not pin the inode after
-// the parent finalises the task.
 func EmitTo(path string, event string, fields map[string]any) error {
 	if path == "" {
 		return nil

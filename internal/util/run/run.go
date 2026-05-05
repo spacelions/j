@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -96,6 +97,14 @@ func RunIn(ctx context.Context, dir, name string, args ...string) error {
 // it does not bind the child to ctx and does not signal it. In the
 // fire-and-forget case the parent exits before the goroutine can run
 // and the OS re-parents the orphan to init, which then reaps it.
+// SpawnIn hands the open `agent.log` file descriptor to that goroutine
+// (rather than reopening by path after Wait) and the goroutine closes
+// it once the `child_exit` marker is appended. Holding the fd across
+// Wait means a concurrent `os.RemoveAll` of the task directory unlinks
+// the file but the post-exit write still goes through the open
+// descriptor — no new directory entry is created underneath RemoveAll,
+// which would otherwise resurrect the file and cause the parent
+// `rmdir` to fail with "directory not empty".
 //
 // ctx is consulted only by exec.CommandContext for the brief window
 // before Start returns; once the child has been started Spawn does
@@ -119,10 +128,10 @@ func SpawnIn(ctx context.Context, dir, logPath, name string, args ...string) (in
 	if err != nil {
 		return 0, fmt.Errorf("run: open log %q: %w", logPath, err)
 	}
-	defer func() { _ = logFile.Close() }()
 
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDONLY, 0)
 	if err != nil {
+		_ = logFile.Close()
 		return 0, fmt.Errorf("run: open /dev/null: %w", err)
 	}
 	defer func() { _ = devNull.Close() }()
@@ -135,6 +144,7 @@ func SpawnIn(ctx context.Context, dir, logPath, name string, args ...string) (in
 	applyDetachAttrs(cmd)
 	started := time.Now()
 	if err := cmd.Start(); err != nil {
+		_ = logFile.Close()
 		return 0, fmt.Errorf("%s: %w", name, err)
 	}
 	pid := cmd.Process.Pid
@@ -152,16 +162,18 @@ func SpawnIn(ctx context.Context, dir, logPath, name string, args ...string) (in
 	// child's exit code without opening bbolt.
 	go func() {
 		_ = cmd.Wait()
-		emitChildExit(logPath, name, pid, cmd.ProcessState, started)
+		emitChildExit(logFile, name, pid, cmd.ProcessState, started)
+		_ = logFile.Close()
 	}()
 	return pid, nil
 }
 
-// emitChildExit appends one `child_exit` marker line to logPath.
+// emitChildExit appends one `child_exit` marker line through w (the
+// open `agent.log` handle owned by the SpawnIn reap goroutine).
 // Errors are intentionally swallowed: the child has already exited
 // and the parent is already reaping; a missing marker is strictly
 // less harmful than a noisy logger goroutine.
-func emitChildExit(logPath, name string, pid int, state *os.ProcessState, started time.Time) {
+func emitChildExit(w io.Writer, name string, pid int, state *os.ProcessState, started time.Time) {
 	fields := map[string]any{
 		"name":        name,
 		"pid":         pid,
@@ -170,7 +182,7 @@ func emitChildExit(logPath, name string, pid int, state *os.ProcessState, starte
 	if state != nil {
 		fields["exit_code"] = state.ExitCode()
 	}
-	_ = agentlog.EmitTo(logPath, "child_exit", fields)
+	_ = agentlog.Emit(w, "child_exit", fields)
 }
 
 // WaitForExit blocks until the OS process identified by pid is no
