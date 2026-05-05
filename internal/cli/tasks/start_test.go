@@ -1148,6 +1148,63 @@ func TestRunStart_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
 	}
 }
 
+// TestRunStart_InteractiveRunsInline pins the foreground path:
+// --interactive=true re-execs `j tasks orchestrate` inline (blocking,
+// terminal-attached). The fork dialog must not fire and the seeded
+// row must not carry a BackgroundPID — the orchestrator owns its own
+// PID and the parent never spawns a detached child.
+func TestRunStart_InteractiveRunsInline(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
+	}
+	target := writeStartFile(t, "# task\nbody")
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	yes := true
+	var stdout bytes.Buffer
+	if err := RunStart(context.Background(), StartOptions{
+		FromFile:    target,
+		Interactive: &yes,
+		Stdin:       strings.NewReader(""),
+		Stdout:      &stdout,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{testutil.NewScriptedAgent()},
+		UI:          &scriptedStartUI{},
+		JBinary:     argvJBinary(t, argvPath),
+	}); err != nil {
+		t.Fatalf("RunStart: %v", err)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	if len(args) == 0 || args[0] != "tasks" || args[1] != "orchestrate" {
+		t.Fatalf("argv = %v, want leading `tasks orchestrate`", args)
+	}
+	if !containsArg(args, "--interactive=true") {
+		t.Fatalf("argv = %v, want --interactive=true", args)
+	}
+	if strings.Contains(stdout.String(), "running in background") || strings.Contains(stdout.String(), "tail -f") {
+		t.Fatalf("stdout = %q, want no fork dialog (inline exec)", stdout.String())
+	}
+	id := firstSeededTaskID(t)
+	row := readTaskFromBolt(t, id)
+	if row.BackgroundPID != 0 {
+		t.Fatalf("BackgroundPID = %d, want 0 (inline exec leaves the row's pid untouched)", row.BackgroundPID)
+	}
+}
+
+// containsArg reports whether want appears in args. Tiny helper for
+// the inline-exec test, which only cares that --interactive=true is
+// present somewhere in the forwarded argv (its position relative to
+// the other one-off overrides is not load-bearing).
+func containsArg(args []string, want string) bool {
+	for _, a := range args {
+		if a == want {
+			return true
+		}
+	}
+	return false
+}
+
 // seedTaskRowDirect inserts a Task row via the per-project tasks
 // bbolt DB. Used by the re-plan tests to pre-seed an existing task
 // without going through any phase lifecycle.

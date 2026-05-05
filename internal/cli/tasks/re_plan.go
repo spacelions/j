@@ -79,10 +79,13 @@ func (o RePlanOptions) withDefaults() RePlanOptions {
 }
 
 // RunRePlan implements `j tasks re-plan`. It resolves a task (via
-// --from-task or the shared picker), prompts for confirmation when
-// the status is outside the re-plan allowlist, and forks a detached
-// `j tasks orchestrate --id <id> --plan-requires-approval=true`
-// child so the planner re-runs without the user waiting in-process.
+// --from-task or the shared picker) and prompts for confirmation when
+// the status is outside the re-plan allowlist. With
+// `--interactive=true` it re-execs `j tasks orchestrate` inline so the
+// TUI can render and blocks until the child exits. Without
+// `--interactive` it forks a detached `j tasks orchestrate --id <id>
+// --plan-requires-approval=true` child so the planner re-runs without
+// the user waiting in-process.
 func RunRePlan(ctx context.Context, opts RePlanOptions) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
@@ -122,6 +125,11 @@ func RunRePlan(ctx context.Context, opts RePlanOptions) (err error) {
 	}
 	if opts.Interactive != nil {
 		args = append(args, "--interactive="+strconv.FormatBool(*opts.Interactive))
+	}
+
+	if opts.Interactive != nil && *opts.Interactive {
+		stampSpawnOnRow(opts.Stderr, task.ID, "", 0)
+		return runInlineOrchestrator(ctx, opts.JBinary, args)
 	}
 
 	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, args)
@@ -174,14 +182,15 @@ func newRePlanCmd() *cobra.Command {
 	agents := []codingagents.Agent{cursor.New(), claude.New()}
 	cmd := &cobra.Command{
 		Use:   "re-plan",
-		Short: "Re-plan an existing task: fork a detached planner with --plan-requires-approval=true",
-		Long: "Resolves a task (via --from-task or the shared picker) and forks " +
-			"a detached `j tasks orchestrate --plan-requires-approval=true` child " +
-			"so the planner re-runs without the user waiting in-process. Tasks in " +
-			"plan-done or help skip the status-override prompt; any other status " +
-			"renders a yes/no confirm before the spawn fires. --tool / --model / " +
-			"--interactive forward into the orchestrate argv as one-off planner " +
-			"overrides; the stored bucket values are left untouched.",
+		Short: "Re-plan an existing task: run the planner inline (--interactive) or detached",
+		Long: "Resolves a task (via --from-task or the shared picker) and either " +
+			"re-execs `j tasks orchestrate --plan-requires-approval=true` inline " +
+			"(with --interactive=true so the TUI can render in the parent's terminal) " +
+			"or forks it as a detached child so the planner re-runs without the user " +
+			"waiting in-process. Tasks in plan-done or help skip the status-override " +
+			"prompt; any other status renders a yes/no confirm before the orchestrator " +
+			"runs. --tool / --model / --interactive forward into the orchestrate argv " +
+			"as one-off planner overrides; the stored bucket values are left untouched.",
 		PersistentPreRunE: preflight.PreRunE,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
 			return preflight.EnsureAgentSelections(cmd.Context(), preflight.AgentCheckOptions{
