@@ -18,6 +18,7 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/resolver"
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/run"
 )
@@ -218,10 +219,13 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 		return err
 	}
 
+	interactive := resolver.Interactive(nil, opts.Stderr, store.BucketPlanner, opts.Interactive)
+
 	orchestrateArgs := []string{
 		"tasks", "orchestrate",
 		"--id", target.TaskID,
 		"--plan-requires-approval=" + strconv.FormatBool(planRequiresApproval),
+		"--interactive=" + strconv.FormatBool(interactive),
 	}
 	if opts.Tool != "" {
 		orchestrateArgs = append(orchestrateArgs, "--tool="+opts.Tool)
@@ -229,14 +233,11 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	if opts.Model != "" {
 		orchestrateArgs = append(orchestrateArgs, "--model="+opts.Model)
 	}
-	if opts.Interactive != nil {
-		orchestrateArgs = append(orchestrateArgs, "--interactive="+strconv.FormatBool(*opts.Interactive))
-	}
 	if opts.Yes {
 		orchestrateArgs = append(orchestrateArgs, "--yes")
 	}
 
-	if opts.Interactive != nil && *opts.Interactive {
+	if interactive {
 		persistStartRow(opts.Stderr, target, "", 0)
 		return runInlineOrchestrator(ctx, opts.JBinary, orchestrateArgs)
 	}

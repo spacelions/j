@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
@@ -118,9 +117,11 @@ func TestRunResumePlan_PickerAbort(t *testing.T) {
 	}
 }
 
-// TestRunResumePlan_HappyPath pins the Interactive=true inline path:
-// the argv must include --interactive=true, the call blocks until
-// the child exits, and no fork dialog fires.
+// TestRunResumePlan_HappyPath pins the inline-exec path: a row with
+// PlanResumeSession set, a stub J binary recording its argv. The
+// argv must be `tasks orchestrate --id <id> --plan-requires-approval=true
+// --interactive=true` (resume-plan always runs inline with a TUI),
+// and no fork dialog fires.
 func TestRunResumePlan_HappyPath(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
@@ -130,13 +131,12 @@ func TestRunResumePlan_HappyPath(t *testing.T) {
 	ui := &fakeUI{pickReturn: id}
 	var stdout bytes.Buffer
 	if err := RunResumePlan(context.Background(), ResumePlanOptions{
-		Interactive: true,
-		Stdin:       strings.NewReader(""),
-		Stdout:      &stdout,
-		Stderr:      io.Discard,
-		Agents:      []codingagents.Agent{newContinueAgent()},
-		UI:          ui,
-		JBinary:     argvJBinary(t, argvPath),
+		Stdin:   strings.NewReader(""),
+		Stdout:  &stdout,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{newContinueAgent()},
+		UI:      ui,
+		JBinary: argvJBinary(t, argvPath),
 	}); err != nil {
 		t.Fatalf("RunResumePlan: %v", err)
 	}
@@ -154,83 +154,24 @@ func TestRunResumePlan_HappyPath(t *testing.T) {
 	}
 }
 
-// TestRunResumePlan_DetachedHappyPath pins the Interactive=false
-// detached path: the orchestrator spawns in the background, the fork
-// dialog is printed, and the row carries a non-zero PID.
-func TestRunResumePlan_DetachedHappyPath(t *testing.T) {
-	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
-		task.PlanResumeSession = "active-cursor"
-	})
-	ui := &fakeUI{pickReturn: id}
-	var stdout bytes.Buffer
-	if err := RunResumePlan(context.Background(), ResumePlanOptions{
-		Interactive: false,
-		Stdin:       strings.NewReader(""),
-		Stdout:      &stdout,
-		Stderr:      io.Discard,
-		Agents:      []codingagents.Agent{newContinueAgent()},
-		UI:          ui,
-		JBinary:     noopJBinary(t),
-	}); err != nil {
-		t.Fatalf("RunResumePlan: %v", err)
-	}
-	if !strings.Contains(stdout.String(), "running in background") {
-		t.Fatalf("stdout should print fork dialog when interactive=false: %q", stdout.String())
-	}
-	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID == 0 {
-		t.Fatalf("BackgroundPID = 0, want non-zero detached child PID")
-	}
-}
-
-// TestRunResumePlan_InlineSpawnFails pins the Interactive=true error
-// branch: pointing JBinary at a missing path surfaces the
-// runInlineOrchestrator error.
-func TestRunResumePlan_InlineSpawnFails(t *testing.T) {
+// TestRunResumePlan_SpawnFails pins the inline-exec error branch:
+// pointing JBinary at a missing path surfaces the run.RunIn error.
+func TestRunResumePlan_SpawnFails(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.PlanResumeSession = "active-cursor"
 	})
 	ui := &fakeUI{pickReturn: id}
 	err := RunResumePlan(context.Background(), ResumePlanOptions{
-		Interactive: true,
-		Stdin:       strings.NewReader(""),
-		Stdout:      io.Discard,
-		Stderr:      io.Discard,
-		Agents:      []codingagents.Agent{newContinueAgent()},
-		UI:          ui,
-		JBinary:     "/no/such/binary-xyzzy",
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{newContinueAgent()},
+		UI:      ui,
+		JBinary: "/no/such/binary-xyzzy",
 	})
 	if err == nil {
-		t.Fatal("expected exec failure in interactive mode")
-	}
-}
-
-// TestRunResumePlan_DetachedSpawnFails pins the Interactive=false
-// error branch: pointing JBinary at a missing path surfaces the
-// SpawnIn error.
-func TestRunResumePlan_DetachedSpawnFails(t *testing.T) {
-	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
-		task.PlanResumeSession = "active-cursor"
-	})
-	ui := &fakeUI{pickReturn: id}
-	err := RunResumePlan(context.Background(), ResumePlanOptions{
-		Interactive: false,
-		Stdin:       strings.NewReader(""),
-		Stdout:      io.Discard,
-		Stderr:      io.Discard,
-		Agents:      []codingagents.Agent{newContinueAgent()},
-		UI:          ui,
-		JBinary:     "/no/such/binary-xyzzy",
-	})
-	if err == nil {
-		t.Fatal("expected spawn failure in detached mode")
-	}
-	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0 (no row mutation on spawn failure)", row.BackgroundPID)
+		t.Fatal("expected exec failure")
 	}
 }
 
@@ -301,7 +242,7 @@ func TestRunResumePlan_AppliesDefaults(t *testing.T) {
 }
 
 // TestNewResumePlanCmd_FlagDefaults pins the registered flag set
-// (--interactive with default true).
+// (none — picker-only interface).
 func TestNewResumePlanCmd_FlagDefaults(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
@@ -309,18 +250,8 @@ func TestNewResumePlanCmd_FlagDefaults(t *testing.T) {
 	if cmd.Use != "resume-plan" {
 		t.Fatalf("Use = %q, want resume-plan", cmd.Use)
 	}
-	var names []string
-	cmd.Flags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
-	want := []string{"interactive"}
-	if strings.Join(names, ",") != strings.Join(want, ",") {
-		t.Fatalf("flags = %v, want %v", names, want)
-	}
-	interactive, err := cmd.Flags().GetBool("interactive")
-	if err != nil {
-		t.Fatalf("GetBool interactive: %v", err)
-	}
-	if !interactive {
-		t.Fatal("--interactive default should be true")
+	if cmd.Flags().HasFlags() {
+		t.Fatal("resume-plan should not register any flags")
 	}
 }
 
@@ -341,41 +272,6 @@ func TestNewResumePlanCmd_RunE_EmptyStore(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), noActivePlanSessionMessage) {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), noActivePlanSessionMessage)
-	}
-}
-
-// TestNewResumePlanCmd_RunE_InteractiveFlag drives the RunE closure
-// with --interactive=false, exercising the flag wire to
-// ResumePlanOptions.Interactive.
-func TestNewResumePlanCmd_RunE_InteractiveFlag(t *testing.T) {
-	viper.Reset()
-	t.Cleanup(viper.Reset)
-	t.Chdir(t.TempDir())
-	cmd := newResumePlanCmd()
-	if err := cmd.Flags().Set("interactive", "false"); err != nil {
-		t.Fatalf("Flags().Set interactive: %v", err)
-	}
-	cmd.SetContext(context.Background())
-	var stdout bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(io.Discard)
-	if err := cmd.RunE(cmd, nil); err != nil {
-		t.Fatalf("RunE: %v", err)
-	}
-	if !strings.Contains(stdout.String(), noActivePlanSessionMessage) {
-		t.Fatalf("stdout = %q, want %q", stdout.String(), noActivePlanSessionMessage)
-	}
-}
-
-// TestNewResumePlanCmd_EnvBindings covers env-var→viper binding for
-// the --interactive flag.
-func TestNewResumePlanCmd_EnvBindings(t *testing.T) {
-	viper.Reset()
-	t.Cleanup(viper.Reset)
-	t.Setenv("TASKS_RESUME_PLAN_INTERACTIVE", "false")
-	_ = newResumePlanCmd()
-	if viper.GetBool("tasks.resume-plan.interactive") {
-		t.Error("tasks.resume-plan.interactive = true, want false from env")
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/resolver"
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -112,10 +113,13 @@ func RunRePlan(ctx context.Context, opts RePlanOptions) (err error) {
 	}
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 
+	interactive := resolver.Interactive(nil, opts.Stderr, store.BucketPlanner, opts.Interactive)
+
 	args := []string{
 		"tasks", "orchestrate",
 		"--id", task.ID,
 		"--plan-requires-approval=true",
+		"--interactive=" + strconv.FormatBool(interactive),
 	}
 	if opts.Tool != "" {
 		args = append(args, "--tool="+opts.Tool)
@@ -123,11 +127,8 @@ func RunRePlan(ctx context.Context, opts RePlanOptions) (err error) {
 	if opts.Model != "" {
 		args = append(args, "--model="+opts.Model)
 	}
-	if opts.Interactive != nil {
-		args = append(args, "--interactive="+strconv.FormatBool(*opts.Interactive))
-	}
 
-	if opts.Interactive != nil && *opts.Interactive {
+	if interactive {
 		stampSpawnOnRow(opts.Stderr, task.ID, "", 0)
 		return runInlineOrchestrator(ctx, opts.JBinary, args)
 	}
