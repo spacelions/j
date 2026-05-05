@@ -105,20 +105,17 @@ func (o DiscardOptions) withDefaults() DiscardOptions {
 // re-acquire it.
 func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 	opts = opts.withDefaults()
-	path, err := store.DefaultTasksDBPath()
+	tasksDir, err := store.DefaultTasksDir()
 	if err != nil {
 		return err
 	}
 	if opts.TaskID == "" {
-		if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
+		if _, statErr := os.Stat(tasksDir); errors.Is(statErr, fs.ErrNotExist) {
 			banner.Fprintln(opts.Stdout, emptyMessage)
 			return nil
 		}
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		return err
-	}
+	s := store.OpenTasks(tasksDir)
 	defer func() { _ = s.Close() }()
 
 	if opts.TaskID == "" {

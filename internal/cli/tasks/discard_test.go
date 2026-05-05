@@ -11,11 +11,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	bolt "go.etcd.io/bbolt"
 
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/testutil"
@@ -72,14 +70,11 @@ func (u *fakeUI) PickTask(_ context.Context, tasks []store.Task) (string, bool, 
 func seedTask(t *testing.T, id, summary string) string {
 	t.Helper()
 	testutil.Init(t)
-	path, err := store.DefaultTasksDBPath()
+	path, err := store.DefaultTasksDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := store.OpenTasks(path)
 	if err := s.PutTask(store.Task{
 		ID:           id,
 		Status:       store.StatusPlanDone,
@@ -108,14 +103,11 @@ func seedTask(t *testing.T, id, summary string) string {
 func seedTaskWithWorktree(t *testing.T, id, summary, worktree string) string {
 	t.Helper()
 	testutil.Init(t)
-	path, err := store.DefaultTasksDBPath()
+	path, err := store.DefaultTasksDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := store.OpenTasks(path)
 	if err := s.PutTask(store.Task{
 		ID:           id,
 		Status:       store.StatusPlanDone,
@@ -216,14 +208,11 @@ func readGitStubLogLines(t *testing.T, logFile string) []string {
 // row was either removed or left intact.
 func taskExists(t *testing.T, id string) bool {
 	t.Helper()
-	path, err := store.DefaultTasksDBPath()
+	path, err := store.DefaultTasksDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := store.OpenTasks(path)
 	defer func() { _ = s.Close() }()
 	_, err = s.GetTask(id)
 	if err == nil {
@@ -378,27 +367,8 @@ func TestRunDiscard_UIErrorPropagates(t *testing.T) {
 func TestRunDiscard_GetTaskNonNotExistError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: time.Second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte(store.BucketTasks))
-		if err != nil {
-			return err
-		}
-		return b.Put([]byte("bad"), []byte("not-json"))
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	err = RunDiscard(context.Background(), DiscardOptions{
+	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
+	err := RunDiscard(context.Background(), DiscardOptions{
 		TaskID: "bad",
 		Yes:    true,
 		Stdout: io.Discard,
@@ -410,30 +380,8 @@ func TestRunDiscard_GetTaskNonNotExistError(t *testing.T) {
 	}
 }
 
-// TestRunDiscard_OpenError points the tasks DB path at an existing
-// directory so bolt.Open fails, exercising the open-error branch.
-func TestRunDiscard_OpenError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	err = RunDiscard(context.Background(), DiscardOptions{
-		TaskID: "x",
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		UI:     &fakeUI{},
-	})
-	if err == nil {
-		t.Fatal("expected open error when tasks path is a directory")
-	}
-}
-
 // TestRunDiscard_DefaultTasksPathError replaces cwd with one that we
-// remove so DefaultTasksDBPath -> os.Getwd fails. On macOS / FUSE
+// remove so DefaultTasksDir -> os.Getwd fails. On macOS / FUSE
 // getwd may succeed via cached inodes; in that case the test skips.
 func TestRunDiscard_DefaultTasksPathError(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -461,7 +409,7 @@ func TestRunDiscard_DefaultTasksPathError(t *testing.T) {
 		Stderr: io.Discard,
 		UI:     &fakeUI{},
 	}); err == nil {
-		t.Fatal("expected DefaultTasksDBPath to surface getwd error")
+		t.Fatal("expected DefaultTasksDir to surface getwd error")
 	}
 }
 
@@ -787,28 +735,9 @@ func TestRunDiscard_NoIDEmptyBucket(t *testing.T) {
 func TestRunDiscard_NoIDListDecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: time.Second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte(store.BucketTasks))
-		if err != nil {
-			return err
-		}
-		return b.Put([]byte("bad"), []byte("not-json"))
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
+	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
 	ui := &fakeUI{}
-	err = RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(context.Background(), DiscardOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     ui,

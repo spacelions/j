@@ -57,17 +57,14 @@ func mustInit(t *testing.T) {
 // cases can distinguish "file missing" from a real bbolt error.
 func readTasks(t *testing.T) []store.Task {
 	t.Helper()
-	path, err := store.DefaultTasksDBPath()
+	path, err := store.DefaultTasksDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
 		return nil
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := store.OpenTasks(path)
 	defer func() { _ = s.Close() }()
 	got, err := s.ListTasks()
 	if err != nil {
@@ -1370,9 +1367,9 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DefaultPath: %v", err)
 	}
-	tasksPath, err := store.DefaultTasksDBPath()
+	tasksPath, err := store.DefaultTasksDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 
 	agent := newScriptedAgent()
@@ -1384,11 +1381,11 @@ func TestRun_DoesNotHoldFileLocks_DuringAgentPlan(t *testing.T) {
 		if err := s.Close(); err != nil {
 			return fmt.Errorf("close settings: %w", err)
 		}
-		s, err = store.Open(tasksPath)
-		if err != nil {
-			return fmt.Errorf("tasks db should not be locked: %w", err)
+		ts := store.OpenTasks(tasksPath)
+		if _, err := ts.ListTasks(); err != nil {
+			return fmt.Errorf("tasks store should be readable: %w", err)
 		}
-		if err := s.Close(); err != nil {
+		if err := ts.Close(); err != nil {
 			return fmt.Errorf("close tasks: %w", err)
 		}
 		return nil

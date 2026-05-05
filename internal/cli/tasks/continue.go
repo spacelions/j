@@ -112,20 +112,17 @@ func RunContinue(ctx context.Context, opts ContinueOptions) (err error) {
 // before returning so the file lock is released ahead of the agent
 // invocation downstream.
 func resolveContinueTask(ctx context.Context, opts ContinueOptions) (store.Task, bool, error) {
-	path, err := store.DefaultTasksDBPath()
+	tasksDir, err := store.DefaultTasksDir()
 	if err != nil {
 		return store.Task{}, false, err
 	}
 	if opts.TaskID == "" {
-		if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
+		if _, statErr := os.Stat(tasksDir); errors.Is(statErr, fs.ErrNotExist) {
 			banner.Fprintln(opts.Stdout, emptyMessage)
 			return store.Task{}, false, nil
 		}
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		return store.Task{}, false, err
-	}
+	s := store.OpenTasks(tasksDir)
 	task, ok, err := resolveContinueTaskFromStore(ctx, s, opts)
 	_ = s.Close()
 	return task, ok, err
@@ -248,16 +245,12 @@ func resumeFromPlanDone(ctx context.Context, opts ContinueOptions, taskID string
 // — any read / write error surfaces as a single warning on stderr.
 // The detached child is already running, so we never roll back.
 func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
-	path, err := store.DefaultTasksDBPath()
+	tasksDir, err := store.DefaultTasksDir()
 	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks path: %v\n", err)
+		banner.DangerousFprintf(stderr, "J: warning: tasks dir: %v\n", err)
 		return
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		banner.DangerousFprintf(stderr, "J: warning: tasks db: %v\n", err)
-		return
-	}
+	s := store.OpenTasks(tasksDir)
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(taskID)
 	if err != nil {

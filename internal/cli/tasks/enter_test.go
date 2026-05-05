@@ -11,10 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/spf13/viper"
-	bolt "go.etcd.io/bbolt"
 
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/testutil"
@@ -427,157 +425,6 @@ func TestRunEnter_SpawnerErrorPropagates(t *testing.T) {
 	}
 }
 
-// TestRunEnter_EnsureTaskDirError_DirectID exercises the
-// EnsureTaskDir failure branch on the --id direct path: chmod the
-// parent .j/tasks read-only so MkdirAll fails. Skipped on root and
-// Windows.
-func TestRunEnter_EnsureTaskDirError_DirectID(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix file-mode semantics required")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root bypasses file-mode permissions")
-	}
-	dir := t.TempDir()
-	t.Chdir(dir)
-	testutil.Init(t)
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.PutTask(store.Task{
-		ID:           "id-mk-fail",
-		Status:       store.StatusPlanDone,
-		InvokedTool:  "cursor",
-		InvokedModel: "sonnet-4",
-		Summary:      "no mkdir",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	tasksDir := filepath.Join(dir, ".j", store.TasksDirName)
-	if err := os.Chmod(tasksDir, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(tasksDir, 0o755) })
-	spawner := &fakeSpawner{}
-	err = RunEnter(context.Background(), EnterOptions{
-		TaskID:  "id-mk-fail",
-		Stdout:  io.Discard,
-		Stderr:  io.Discard,
-		UI:      &fakeUI{},
-		Spawner: withFakeSpawner(spawner),
-	})
-	if err == nil {
-		t.Fatal("expected EnsureTaskDir to fail under read-only parent")
-	}
-	if !strings.Contains(err.Error(), "tasks enter") {
-		t.Fatalf("err = %v, want wrapped 'tasks enter' prefix", err)
-	}
-	if spawner.calls != 0 {
-		t.Fatalf("Spawner calls = %d, want 0 on EnsureTaskDir error", spawner.calls)
-	}
-}
-
-// TestRunEnter_EnsureTaskDirError_Picker mirrors
-// TestRunEnter_EnsureTaskDirError_DirectID on the picker branch:
-// the chosen id is a freshly-seeded row whose per-task directory
-// is removed before the parent .j/tasks is chmod'd read-only so
-// EnsureTaskDir's MkdirAll fails.
-func TestRunEnter_EnsureTaskDirError_Picker(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix file-mode semantics required")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root bypasses file-mode permissions")
-	}
-	dir := t.TempDir()
-	t.Chdir(dir)
-	taskDir := seedTask(t, "id-pick-mk", "no mkdir")
-	if err := os.RemoveAll(taskDir); err != nil {
-		t.Fatal(err)
-	}
-	tasksDir := filepath.Join(dir, ".j", store.TasksDirName)
-	t.Cleanup(func() { _ = os.Chmod(tasksDir, 0o755) })
-	if err := os.Chmod(tasksDir, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	ui := &fakeUI{pickReturn: "id-pick-mk"}
-	spawner := &fakeSpawner{}
-	err := RunEnter(context.Background(), EnterOptions{
-		Stdout:  io.Discard,
-		Stderr:  io.Discard,
-		UI:      ui,
-		Spawner: withFakeSpawner(spawner),
-	})
-	_ = os.Chmod(tasksDir, 0o755)
-	if err == nil {
-		t.Fatal("expected EnsureTaskDir to fail under read-only parent")
-	}
-	if !strings.Contains(err.Error(), "tasks enter") {
-		t.Fatalf("err = %v, want wrapped 'tasks enter' prefix", err)
-	}
-	if spawner.calls != 0 {
-		t.Fatalf("Spawner calls = %d, want 0", spawner.calls)
-	}
-}
-
-// TestRunEnter_OpenError_DirectID points the tasks DB path at an
-// existing directory so bolt.Open fails on the --id branch.
-func TestRunEnter_OpenError_DirectID(t *testing.T) {
-	t.Chdir(t.TempDir())
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	err = RunEnter(context.Background(), EnterOptions{
-		TaskID:  "x",
-		Stdout:  io.Discard,
-		Stderr:  io.Discard,
-		UI:      &fakeUI{},
-		Spawner: withFakeSpawner(&fakeSpawner{}),
-	})
-	if err == nil {
-		t.Fatal("expected open error when tasks path is a directory")
-	}
-}
-
-// TestRunEnter_OpenError_Picker forces bolt.Open to fail on the
-// picker branch by pointing list.db at a directory that contains a
-// blocker file (so os.Stat sees a present path but bolt.Open
-// rejects it).
-func TestRunEnter_OpenError_Picker(t *testing.T) {
-	t.Chdir(t.TempDir())
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(path, "blocker"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	err = RunEnter(context.Background(), EnterOptions{
-		Stdout:  io.Discard,
-		Stderr:  io.Discard,
-		UI:      &fakeUI{},
-		Spawner: withFakeSpawner(&fakeSpawner{}),
-	})
-	if err == nil {
-		t.Fatal("expected open error when list.db is a non-empty directory")
-	}
-}
-
 // TestRunEnter_GetTaskNonNotExistError exercises the propagate
 // branch on the --id direct path: a non-NotExist GetTask error
 // (here, a JSON decode error from a corrupted bucket value) must
@@ -585,27 +432,8 @@ func TestRunEnter_OpenError_Picker(t *testing.T) {
 func TestRunEnter_GetTaskNonNotExistError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: time.Second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte(store.BucketTasks))
-		if err != nil {
-			return err
-		}
-		return b.Put([]byte("bad"), []byte("not-json"))
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	err = RunEnter(context.Background(), EnterOptions{
+	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
+	err := RunEnter(context.Background(), EnterOptions{
 		TaskID:  "bad",
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -622,28 +450,9 @@ func TestRunEnter_GetTaskNonNotExistError(t *testing.T) {
 func TestRunEnter_ListDecodeError_Picker(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: time.Second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte(store.BucketTasks))
-		if err != nil {
-			return err
-		}
-		return b.Put([]byte("bad"), []byte("not-json"))
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
+	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
 	ui := &fakeUI{}
-	err = RunEnter(context.Background(), EnterOptions{
+	err := RunEnter(context.Background(), EnterOptions{
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
 		UI:      ui,
@@ -659,7 +468,7 @@ func TestRunEnter_ListDecodeError_Picker(t *testing.T) {
 
 // TestRunEnter_DefaultTasksPathError mirrors the same-named test in
 // delete_test.go: replace cwd with one that is then removed so
-// DefaultTasksDBPath -> os.Getwd fails. Skipped on root / windows /
+// DefaultTasksDir -> os.Getwd fails. Skipped on root / windows /
 // macOS-FUSE-cached-inode environments where getwd still succeeds.
 func TestRunEnter_DefaultTasksPathError(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -688,7 +497,7 @@ func TestRunEnter_DefaultTasksPathError(t *testing.T) {
 		UI:      &fakeUI{},
 		Spawner: withFakeSpawner(&fakeSpawner{}),
 	}); err == nil {
-		t.Fatal("expected DefaultTasksDBPath to surface getwd error on direct branch")
+		t.Fatal("expected DefaultTasksDir to surface getwd error on direct branch")
 	}
 }
 
@@ -720,7 +529,7 @@ func TestRunEnter_DefaultTasksPathError_Picker(t *testing.T) {
 		UI:      &fakeUI{},
 		Spawner: withFakeSpawner(&fakeSpawner{}),
 	}); err == nil {
-		t.Fatal("expected DefaultTasksDBPath to surface getwd error on picker branch")
+		t.Fatal("expected DefaultTasksDir to surface getwd error on picker branch")
 	}
 }
 

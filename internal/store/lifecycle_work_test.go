@@ -46,14 +46,11 @@ func TestTask_BeginWorkReuse_PreservesPlanPhase(t *testing.T) {
 		t.Fatalf("EnsureProject: %v", err)
 	}
 	id := seedPlanDoneTask(t, "seeded")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := OpenTasks(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -160,21 +157,22 @@ func TestWorkLifecycle_FinishIdempotent(t *testing.T) {
 	}
 }
 
-// TestNewWorkTask_OpenFails forces bolt.Open to
-// fail. NewWorkTask and Finish each emit a warning and continue.
+// TestNewWorkTask_OpenFails forces PutTask's mkdir of the per-task
+// directory to fail by replacing `.j/tasks` with a regular file.
+// NewWorkTask and Finish each emit a warning and continue.
 func TestNewWorkTask_OpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	path, err := DefaultTasksDBPath()
+	path, err := DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(path); err != nil {
+	if err := os.RemoveAll(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
@@ -234,14 +232,11 @@ func TestTask_BeginWorkReuse_MintsWorktreeWhenEmpty(t *testing.T) {
 		t.Fatalf("EnsureProject: %v", err)
 	}
 	id := seedPlanDoneTask(t, "hello world")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := OpenTasks(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -266,14 +261,11 @@ func TestTask_BeginWorkReuse_PreservesPreExistingWorktree(t *testing.T) {
 		t.Fatalf("EnsureProject: %v", err)
 	}
 	id := seedPlanDoneTask(t, "hello")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := OpenTasks(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -297,14 +289,11 @@ func TestTask_BeginWorkResume_LeavesWorktreeAlone(t *testing.T) {
 		t.Fatalf("EnsureProject: %v", err)
 	}
 	id := seedPlanDoneTask(t, "hello")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := OpenTasks(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)

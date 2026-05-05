@@ -322,14 +322,11 @@ func seedAgentBucketWithInteractive(t *testing.T, bucket, tool, model, interacti
 
 func writeChainTaskRow(t *testing.T, row store.Task) {
 	t.Helper()
-	path, err := store.DefaultTasksDBPath()
+	path, err := store.DefaultTasksDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open tasks: %v", err)
-	}
+	s := store.OpenTasks(path)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -338,14 +335,11 @@ func writeChainTaskRow(t *testing.T, row store.Task) {
 
 func readChainTaskRow(t *testing.T, id string) store.Task {
 	t.Helper()
-	path, err := store.DefaultTasksDBPath()
+	path, err := store.DefaultTasksDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open tasks: %v", err)
-	}
+	s := store.OpenTasks(path)
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {

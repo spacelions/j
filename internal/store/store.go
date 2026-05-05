@@ -52,15 +52,10 @@ const dirName = ".j"
 const fileName = "settings"
 
 // TasksDirName is the per-project tasks directory inside dirName. The
-// directory holds both the bbolt metadata file (TasksDBName) and one
-// subdirectory per task (`<id>/`) with `requirements.md` and
-// `plan.md`.
+// directory holds one subdirectory per task (`<id>/`) with
+// `requirements.md`, `plan.md`, `agent.log`, and `task.toml` (the
+// row metadata).
 const TasksDirName = "tasks"
-
-// TasksDBName is the bbolt filename inside <cwd>/.j/<TasksDirName>/.
-// It carries task metadata only; the body markdown lives in the
-// per-task subdirectories.
-const TasksDBName = "list.db"
 
 // PlanFileName is the filename of the plan markdown stored under
 // <cwd>/.j/tasks/<id>/. j plan writes it; j work reads it.
@@ -82,10 +77,26 @@ type KV struct {
 	Value string
 }
 
-// Store wraps a *bbolt.DB. Construct one with Open and call Close when
-// done. The zero value is not usable.
+// Store wraps either a *bbolt.DB (settings mode, opened with Open)
+// or a tasks directory path (tasks mode, opened with OpenTasks).
+// Settings mode keeps using bbolt because settings has no
+// concurrent-writer pressure; tasks mode is filesystem-backed
+// (per-task TOML files) so the bbolt file lock no longer blocks
+// `j tasks` from running while other `j` invocations write rows.
+// Construct via Open / OpenTasks and call Close when done. Close is
+// a no-op for tasks-mode stores. The zero value is not usable.
 type Store struct {
-	db *bolt.DB
+	db       *bolt.DB
+	tasksDir string
+}
+
+// OpenTasks returns a tasks-mode *Store rooted at tasksDir
+// (typically `<cwd>/.j/tasks`). Unlike Open, this never returns an
+// error — there is no file to lock and no bucket to validate; the
+// per-method file ops surface failures (e.g. fs.ErrNotExist when the
+// dir is missing) instead. Close on the returned store is a no-op.
+func OpenTasks(tasksDir string) *Store {
+	return &Store{tasksDir: tasksDir}
 }
 
 // DefaultDir returns the absolute path to the per-project settings
@@ -130,8 +141,9 @@ func DefaultPath() (string, error) {
 }
 
 // DefaultTasksDir returns the absolute path to the per-project tasks
-// directory (`<cwd>/.j/tasks`). The directory holds the bbolt metadata
-// file (DefaultTasksDBPath) plus one subdirectory per task.
+// directory (`<cwd>/.j/tasks`). The directory holds one subdirectory
+// per task; each holds `requirements.md`, `plan.md`, `agent.log`,
+// and `task.toml` (the row metadata).
 func DefaultTasksDir() (string, error) {
 	dir, err := DefaultDir()
 	if err != nil {
@@ -140,26 +152,20 @@ func DefaultTasksDir() (string, error) {
 	return filepath.Join(dir, TasksDirName), nil
 }
 
-// DefaultTasksDBPath returns the absolute path to the bbolt task
-// metadata file at `<cwd>/.j/tasks/list.db`.
-func DefaultTasksDBPath() (string, error) {
-	tasksDir, err := DefaultTasksDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(tasksDir, TasksDBName), nil
-}
-
 // EnsureProject creates the per-project state layout under <cwd>/:
 //   - .j/                   (0o755)
 //   - .j/tasks/             (0o755)
 //   - .j/settings           (empty bbolt file with no buckets)
-//   - .j/tasks/list.db      (empty bbolt file with no buckets)
 //
 // It also appends `.j` to <cwd>/.gitignore when one already exists
 // and does not yet carry the entry. The helper is idempotent: a
 // re-run on a fully-initialized layout creates nothing new but is
 // not an error.
+//
+// Tasks are stored as per-task TOML files at
+// `<cwd>/.j/tasks/<id>/task.toml` — there is no central tasks DB
+// file to pre-create here; per-task directories are created on
+// demand by EnsureTaskDir.
 //
 // EnsureProject is the only write-side helper in this package: every
 // other Open / EnsureTaskDir call assumes the layout exists and
@@ -178,9 +184,6 @@ func EnsureProject() error {
 		return fmt.Errorf("store: mkdir %q: %w", tasksDir, err)
 	}
 	if err := touchBoltFile(filepath.Join(jDir, fileName)); err != nil {
-		return err
-	}
-	if err := touchBoltFile(filepath.Join(tasksDir, TasksDBName)); err != nil {
 		return err
 	}
 	return ensureGitignoreEntry(jDir)
@@ -213,12 +216,15 @@ func touchBoltFile(path string) error {
 	return nil
 }
 
-// ProjectInitialized reports whether the four artifacts written by
-// EnsureProject (the two directories and the two bbolt files) are
-// all present in the current working directory. It returns
-// (true, nil) only when every artifact exists with the expected
-// type; missing artifacts yield (false, nil) so callers can
-// distinguish "needs init" from "stat error".
+// ProjectInitialized reports whether the three artifacts written by
+// EnsureProject (the .j directory, the settings bbolt file, the
+// tasks subdirectory) are all present in the current working
+// directory. It returns (true, nil) only when every artifact exists
+// with the expected type; missing artifacts yield (false, nil) so
+// callers can distinguish "needs init" from "stat error". Per-task
+// directories under `.j/tasks/<id>/` are not part of the
+// initialisation contract — they are created on demand by
+// EnsureTaskDir as tasks are minted.
 func ProjectInitialized() (bool, error) {
 	jDir, err := DefaultDir()
 	if err != nil {
@@ -231,7 +237,6 @@ func ProjectInitialized() (bool, error) {
 		{jDir, true},
 		{filepath.Join(jDir, fileName), false},
 		{filepath.Join(jDir, TasksDirName), true},
-		{filepath.Join(jDir, TasksDirName, TasksDBName), false},
 	}
 	for _, c := range checks {
 		ok, err := pathHasKind(c.path, c.isDir)

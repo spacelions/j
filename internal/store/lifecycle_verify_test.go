@@ -20,14 +20,11 @@ func TestTask_BeginVerify_FlipsStatusAndStampsResume(t *testing.T) {
 		t.Fatalf("EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := OpenTasks(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -74,14 +71,11 @@ func TestVerifyLifecycle_FinishNoRetries(t *testing.T) {
 		t.Fatalf("EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := OpenTasks(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -105,14 +99,11 @@ func TestVerifyLifecycle_FinishErrorPath(t *testing.T) {
 		t.Fatalf("EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := OpenTasks(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -134,14 +125,11 @@ func TestVerifyLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 		t.Fatalf("EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := OpenTasks(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -170,14 +158,11 @@ func TestVerifyLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 		t.Fatalf("EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := OpenTasks(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -202,14 +187,11 @@ func TestVerifyLifecycle_FinishIdempotent(t *testing.T) {
 		t.Fatalf("EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := DefaultTasksDBPath()
+	dbPath, err := DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := OpenTasks(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -224,21 +206,22 @@ func TestVerifyLifecycle_FinishIdempotent(t *testing.T) {
 	}
 }
 
-// TestBeginVerify_OpenFails forces bolt.Open to
-// fail. BeginVerify and Finish each emit a warning and continue.
+// TestBeginVerify_OpenFails forces PutTask's mkdir of the per-task
+// directory to fail by replacing `.j/tasks` with a regular file.
+// BeginVerify and Finish each emit a warning and continue.
 func TestBeginVerify_OpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	path, err := DefaultTasksDBPath()
+	path, err := DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(path); err != nil {
+	if err := os.RemoveAll(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer

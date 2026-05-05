@@ -510,8 +510,9 @@ func TestIsEmpty_NonEmpty(t *testing.T) {
 	}
 }
 
-// TestDefaultTasksDir_RootedInCwd pins the new tasks-folder layout:
-// <cwd>/.j/tasks/ with the bbolt file at list.db inside it.
+// TestDefaultTasksDir_RootedInCwd pins the per-task layout:
+// `<cwd>/.j/tasks/` with one subdirectory per task carrying its
+// `task.toml` (no central DB file).
 func TestDefaultTasksDir_RootedInCwd(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -525,23 +526,14 @@ func TestDefaultTasksDir_RootedInCwd(t *testing.T) {
 	if filepath.Base(filepath.Dir(gotDir)) != ".j" {
 		t.Fatalf("DefaultTasksDir parent = %q, want .j", filepath.Base(filepath.Dir(gotDir)))
 	}
-	gotDB, err := DefaultTasksDBPath()
-	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
-	}
-	if filepath.Base(gotDB) != TasksDBName {
-		t.Fatalf("DefaultTasksDBPath base = %q, want %q", filepath.Base(gotDB), TasksDBName)
-	}
-	if filepath.Dir(gotDB) != gotDir {
-		t.Fatalf("DefaultTasksDBPath dir = %q, want %q", filepath.Dir(gotDB), gotDir)
-	}
 }
 
-// TestTasksDBName_IsListDB pins the renamed bbolt filename so the
-// rename from index.db -> list.db cannot regress silently.
-func TestTasksDBName_IsListDB(t *testing.T) {
-	if TasksDBName != "list.db" {
-		t.Fatalf("TasksDBName = %q, want %q", TasksDBName, "list.db")
+// TestTaskFileName_IsTaskTOML pins the per-task metadata filename so
+// downstream tooling that lists `.j/tasks/<id>/task.toml` cannot
+// silently regress.
+func TestTaskFileName_IsTaskTOML(t *testing.T) {
+	if TaskFileName != "task.toml" {
+		t.Fatalf("TaskFileName = %q, want %q", TaskFileName, "task.toml")
 	}
 }
 
@@ -568,15 +560,14 @@ func TestDefaultTasksDir_PropagatesCwdError(t *testing.T) {
 	if _, err := DefaultTasksDir(); err == nil {
 		t.Fatal("DefaultTasksDir should propagate DefaultDir error")
 	}
-	if _, err := DefaultTasksDBPath(); err == nil {
-		t.Fatal("DefaultTasksDBPath should propagate DefaultDir error")
-	}
 }
 
-// TestEnsureProject_FreshDirCreatesAllArtifacts pins AC #1: a brand-
-// new directory becomes a fully-initialized project after a single
-// EnsureProject call. All four artifacts (.j, .j/tasks, .j/settings,
-// .j/tasks/list.db) must exist with the right type.
+// TestEnsureProject_FreshDirCreatesAllArtifacts pins the
+// initialisation contract: a brand-new directory becomes a fully-
+// initialized project after a single EnsureProject call. The three
+// artifacts (`.j`, `.j/settings`, `.j/tasks/`) must exist with the
+// right type. Per-task `<id>/task.toml` files are NOT pre-created;
+// they appear on demand as `j tasks start` mints rows.
 func TestEnsureProject_FreshDirCreatesAllArtifacts(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -595,10 +586,6 @@ func TestEnsureProject_FreshDirCreatesAllArtifacts(t *testing.T) {
 	settingsPath := filepath.Join(jdir, "settings")
 	if info, err := os.Stat(settingsPath); err != nil || info.IsDir() {
 		t.Fatalf(".j/settings file missing: err=%v", err)
-	}
-	listPath := filepath.Join(tasksDir, TasksDBName)
-	if info, err := os.Stat(listPath); err != nil || info.IsDir() {
-		t.Fatalf(".j/tasks/list.db file missing: err=%v", err)
 	}
 }
 
@@ -804,19 +791,6 @@ func TestEnsureProject_TouchSettingsFails(t *testing.T) {
 	}
 }
 
-// TestEnsureProject_TouchListDBFails is the same idea but at the
-// tasks-DB path so the second touchBoltFile call errors.
-func TestEnsureProject_TouchListDBFails(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	tasksDir := filepath.Join(dir, ".j", TasksDirName)
-	if err := os.MkdirAll(filepath.Join(tasksDir, TasksDBName), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := EnsureProject(); err == nil {
-		t.Fatal("expected touchBoltFile to fail for list.db")
-	}
-}
 
 // TestEnsureProject_MkdirJDirFails forces the first os.MkdirAll error
 // by parking a regular file at the .j path.
@@ -894,7 +868,6 @@ func TestProjectInitialized_MissingArtifacts(t *testing.T) {
 	}{
 		{"settings", "settings"},
 		{"tasksDir", filepath.Join(TasksDirName, "")},
-		{"listDB", filepath.Join(TasksDirName, TasksDBName)},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1159,7 +1132,7 @@ func TestTaskFileNameConstants(t *testing.T) {
 // path whose parent directory does not exist. EnsureProject never
 // hits this case (it pre-creates parents) so we drive it directly.
 func TestTouchBoltFile_BoltOpenFails(t *testing.T) {
-	missing := filepath.Join(t.TempDir(), "no", "such", "parent", "list.db")
+	missing := filepath.Join(t.TempDir(), "no", "such", "parent", "settings")
 	if err := touchBoltFile(missing); err == nil {
 		t.Fatal("expected bolt.Open to fail when parent does not exist")
 	} else if !strings.Contains(err.Error(), "open") {
@@ -1181,7 +1154,7 @@ func TestTouchBoltFile_StatNonENOENT(t *testing.T) {
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(parent, "list.db")
+	target := filepath.Join(parent, "settings")
 	if err := os.WriteFile(target, []byte("seed"), 0o600); err != nil {
 		t.Fatal(err)
 	}

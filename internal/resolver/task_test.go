@@ -59,14 +59,11 @@ func seedResolverTask(t *testing.T, task store.Task, plan, req string) {
 			t.Fatalf("write requirements: %v", err)
 		}
 	}
-	path, err := store.DefaultTasksDBPath()
+	path, err := store.DefaultTasksDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open tasks: %v", err)
-	}
+	s := store.OpenTasks(path)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(task); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -252,18 +249,3 @@ func TestTaskStoreHelpers(t *testing.T) {
 	}
 }
 
-func TestTaskStoreOpenError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	_, err := TaskByID("test", "missing")
-	if err == nil || !strings.Contains(err.Error(), "tasks db") {
-		t.Fatalf("TaskByID err = %v", err)
-	}
-	_, _, err = ResolveWorkPlan(context.Background(), WorkPlanOptions{UI: &taskUI{}})
-	if err == nil || !strings.Contains(err.Error(), "tasks db") {
-		t.Fatalf("ResolveWorkPlan err = %v", err)
-	}
-	_, _, err = ResolveVerifyTask(context.Background(), VerifyTaskOptions{UI: &taskUI{}})
-	if err == nil || !strings.Contains(err.Error(), "tasks db") {
-		t.Fatalf("ResolveVerifyTask err = %v", err)
-	}
-}

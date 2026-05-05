@@ -124,7 +124,6 @@ func TestEnsure_MissingArtifacts(t *testing.T) {
 		{"jdir", ""},
 		{"settings", "settings"},
 		{"tasksDir", store.TasksDirName},
-		{"listDB", filepath.Join(store.TasksDirName, store.TasksDBName)},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

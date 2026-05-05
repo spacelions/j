@@ -218,13 +218,9 @@ func autoPickAllowed(tasks []store.Task, allowed func(store.Task) bool) (string,
 }
 
 func openTaskStore(prefix string) (*store.Store, error) {
-	path, err := store.DefaultTasksDBPath()
+	dir, err := store.DefaultTasksDir()
 	if err != nil {
-		return nil, fmt.Errorf("%s: tasks db: %w", prefix, err)
+		return nil, fmt.Errorf("%s: tasks dir: %w", prefix, err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("%s: tasks db: %w", prefix, err)
-	}
-	return s, nil
+	return store.OpenTasks(dir), nil
 }

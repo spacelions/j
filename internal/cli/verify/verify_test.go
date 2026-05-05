@@ -100,17 +100,14 @@ func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
 // this after Run to assert the lifecycle wrote what we expect.
 func readTasks(t *testing.T) []store.Task {
 	t.Helper()
-	path, err := store.DefaultTasksDBPath()
+	path, err := store.DefaultTasksDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := store.OpenTasks(path)
 	defer func() { _ = s.Close() }()
 	got, err := s.ListTasks()
 	if err != nil {
@@ -305,14 +302,11 @@ func seedWorkDoneTask(t *testing.T, summary, planBody, requirementBody string) s
 			t.Fatalf("write requirements: %v", err)
 		}
 	}
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := store.OpenTasks(dbPath)
 	defer func() { _ = s.Close() }()
 	planBegin := time.Now().UTC().Add(-2 * time.Hour)
 	planEnd := planBegin.Add(time.Minute)
@@ -451,14 +445,11 @@ func TestRun_ThreadsWorktreeIntoRequests(t *testing.T) {
 	mustInit(t)
 	id := seedWorkDoneTask(t, "summary", "plan body", "# req")
 	// Overwrite the seeded row to add a Worktree value.
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := store.OpenTasks(dbPath)
 	task, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -782,14 +773,11 @@ func TestRun_FromTask_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "body", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := store.OpenTasks(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -831,14 +819,11 @@ func TestRun_FromTask_StatusMismatch_AcceptedRuns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := store.OpenTasks(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -879,14 +864,11 @@ func TestRun_FromTask_StatusMismatch_YesFlagSkipsPrompt(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := store.OpenTasks(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -926,14 +908,11 @@ func TestRun_FromTask_StatusMismatch_PromptError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := store.OpenTasks(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -967,14 +946,11 @@ func TestRun_FromTask_StatusMismatch_AbortExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := store.OpenTasks(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -1170,14 +1146,11 @@ func TestRun_UnknownTool_OnTaskRow(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := store.OpenTasks(dbPath)
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -1442,74 +1415,15 @@ func TestRun_ByTaskID_PlanReadError(t *testing.T) {
 }
 
 // TestRun_ByTaskID_TasksDBUnavailable forces openTaskLog to fail.
-func TestRun_ByTaskID_TasksDBUnavailable(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
-		TaskID: "anything",
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestRun_List_DBUnavailable forces listVerifiableTasks to fail.
-func TestRun_List_DBUnavailable(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &scriptedUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestRun_List_DecodeError pins the bbolt decode-error branch.
 func TestRun_List_DecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	dbPath, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.EnsureBucket(store.BucketTasks); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketTasks, "bad", "not-json"); err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
+	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
 
 	agent := newScriptedAgent()
-	err = Run(context.Background(), Options{
+	err := Run(context.Background(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},

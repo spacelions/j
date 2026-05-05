@@ -67,7 +67,6 @@ func TestRun_FreshInitCreatesAllArtifacts(t *testing.T) {
 	dirExists(t, filepath.Join(dir, ".j"))
 	dirExists(t, filepath.Join(dir, ".j", store.TasksDirName))
 	fileExists(t, filepath.Join(dir, ".j", "settings"))
-	fileExists(t, filepath.Join(dir, ".j", store.TasksDirName, store.TasksDBName))
 	if !strings.Contains(stdout.String(), "initialized ") {
 		t.Fatalf("stdout = %q, want initialized", stdout.String())
 	}
@@ -189,7 +188,6 @@ func TestRun_PartialState_FillsMissingArtifacts(t *testing.T) {
 		t.Fatalf("UI calls = %d, want 0 (partial state should not prompt)", ui.calls)
 	}
 	fileExists(t, filepath.Join(dir, ".j", "settings"))
-	fileExists(t, filepath.Join(dir, ".j", store.TasksDirName, store.TasksDBName))
 }
 
 func TestRun_UIError(t *testing.T) {

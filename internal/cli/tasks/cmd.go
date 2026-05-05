@@ -78,18 +78,15 @@ func New() *cobra.Command {
 // (best-effort: PutTask errors are warned on stderr) and is opt-in
 // per row: only entries with a non-zero BackgroundPID are touched.
 func listTasks(stdout io.Writer, simple bool) error {
-	path, err := store.DefaultTasksDBPath()
+	tasksDir, err := store.DefaultTasksDir()
 	if err != nil {
 		return err
 	}
-	if _, statErr := os.Stat(path); errors.Is(statErr, fs.ErrNotExist) {
+	if _, statErr := os.Stat(tasksDir); errors.Is(statErr, fs.ErrNotExist) {
 		banner.Fprintln(stdout, emptyMessage)
 		return nil
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		return err
-	}
+	s := store.OpenTasks(tasksDir)
 	defer func() { _ = s.Close() }()
 
 	tasks, err := s.ListTasks()
@@ -99,10 +96,6 @@ func listTasks(stdout io.Writer, simple bool) error {
 	if len(tasks) == 0 {
 		banner.Fprintln(stdout, emptyMessage)
 		return nil
-	}
-	tasksDir, err := store.DefaultTasksDir()
-	if err != nil {
-		return err
 	}
 	tasks = reapBackgroundTasks(s, os.Stderr, tasksDir, tasks)
 	store.SortTasks(tasks)

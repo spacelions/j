@@ -111,14 +111,11 @@ func seedTaskFull(t *testing.T, mutate func(*store.Task)) string {
 	if mutate != nil {
 		mutate(&task)
 	}
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := store.OpenTasks(dbPath)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(task); err != nil {
 		t.Fatal(err)
@@ -753,56 +750,13 @@ func TestRunContinue_RegisteredAsChild(t *testing.T) {
 	t.Fatal("`j tasks continue` should be registered as a child of `j tasks`")
 }
 
-// TestRunContinue_StoreOpenError covers the store-open failure branch
-// in resolveContinueTask.
-func TestRunContinue_StoreOpenError(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	path, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.RemoveAll(path); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	agent := newContinueAgent()
-	err = RunContinue(context.Background(), ContinueOptions{
-		TaskID: "any",
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &fakeUI{},
-	})
-	if err == nil {
-		t.Fatal("expected error when store path is a directory")
-	}
-}
-
 // TestRunContinue_GetTaskDecodeError plants malformed JSON under an id
 // so resolveContinueTaskFromStore -> GetTask returns a non-fs.ErrNotExist
 // error.
 func TestRunContinue_GetTaskDecodeError(t *testing.T) {
 	setupContinueEnv(t)
-	dbPath, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.EnsureBucket(store.BucketTasks); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketTasks, "broken", "not-json"); err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
-	err = RunContinue(context.Background(), ContinueOptions{
+	testutil.SeedRawTaskFile(t, "broken", []byte("not = valid = toml"))
+	err := RunContinue(context.Background(), ContinueOptions{
 		TaskID: "broken",
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,

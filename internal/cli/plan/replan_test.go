@@ -45,14 +45,11 @@ func seedReplanTask(t *testing.T, status store.TaskStatus, requirement string, p
 			t.Fatalf("write requirements: %v", err)
 		}
 	}
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := store.OpenTasks(dbPath)
 	defer func() { _ = s.Close() }()
 	task := store.Task{
 		ID:               id,
@@ -223,47 +220,7 @@ func TestLoadTaskByID_Success(t *testing.T) {
 	}
 }
 
-// TestLoadTaskByID_OpenFails covers the open-failure branch by
-// replacing list.db with a directory before the call.
-func TestLoadTaskByID_OpenFails(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	dbPath, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(dbPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(dbPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	_, err = loadTaskByID("anything")
-	if err == nil || !strings.Contains(err.Error(), "plan: tasks db") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestListAllTasks_OpenFails covers the open-failure branch.
-func TestListAllTasks_OpenFails(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	dbPath, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(dbPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(dbPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	_, err = listAllTasks()
-	if err == nil || !strings.Contains(err.Error(), "plan: tasks db") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestListAllTasks_SortsAndReturns confirms the helper returns every
 // row sorted by store.SortTasks (active-first ordering).
 func TestListAllTasks_SortsAndReturns(t *testing.T) {

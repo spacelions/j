@@ -32,25 +32,18 @@ func spawnSleepingChild(t *testing.T) int {
 	return cmd.Process.Pid
 }
 
-// openTestStore mints a fresh `<cwd>/.j/tasks/list.db` rooted in
-// t.TempDir() and pre-creates the tasks bucket so PutTask succeeds.
+// openTestStore returns a tasks-mode *Store rooted in t.TempDir().
 // The store is closed by t.Cleanup; tests that need the underlying
-// path call DefaultTasksDBPath after.
+// path call DefaultTasksDir after.
 func openTestStore(t *testing.T) *store.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
-	path, err := store.DefaultTasksDBPath()
+	path, err := store.DefaultTasksDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	if err := s.EnsureBucket(store.BucketTasks); err != nil {
-		t.Fatalf("EnsureBucket: %v", err)
-	}
+	s := store.OpenTasks(path)
 	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
@@ -290,28 +283,25 @@ func TestReap_ZeroPIDUntouched(t *testing.T) {
 	}
 }
 
-// TestReap_PutErrorWarns exercises the put-error branch: a closed
-// store rejects the write, the warning surfaces on stderr, and the
-// reaper still returns the in-memory transition for the printer.
+// TestReap_PutErrorWarns exercises the put-error branch: a store
+// rooted at a path whose parent is unwritable rejects PutTask, the
+// warning surfaces on stderr, and the reaper still returns the
+// in-memory transition for the printer.
 func TestReap_PutErrorWarns(t *testing.T) {
-	s := openTestStore(t)
-	tasksDir, err := store.DefaultTasksDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
 	id := "put-error"
-	seedTaskDir(t, id, "# heading\nbody", "1. step")
-	if err := s.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
+	parent := filepath.Join(t.TempDir(), "parent")
+	if err := os.WriteFile(parent, []byte("blocker"), 0o644); err != nil {
+		t.Fatal(err)
 	}
+	s := store.OpenTasks(parent)
 	var stderr bytes.Buffer
 	in := []store.Task{{
 		ID:            id,
 		Status:        store.StatusPlanning,
 		BackgroundPID: deadPID(t),
 	}}
-	out := reapBackgroundTasks(s, &stderr, tasksDir, in)
-	if out[0].Status != store.StatusPlanDone {
+	out := reapBackgroundTasks(s, &stderr, parent, in)
+	if out[0].Status != store.StatusHelp {
 		t.Fatalf("in-memory row should still transition: %q", out[0].Status)
 	}
 	if !strings.Contains(stderr.String(), "warning: tasks put") {
@@ -349,14 +339,11 @@ func TestReap_ListTasksWiresThroughCommand(t *testing.T) {
 	if !strings.Contains(out, id) || !strings.Contains(out, "plan-done") {
 		t.Fatalf("output should reflect reaped row: %q", out)
 	}
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s2, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatalf("reopen: %v", err)
-	}
+	s2 := store.OpenTasks(dbPath)
 	defer func() { _ = s2.Close() }()
 	persisted, err := s2.GetTask(id)
 	if err != nil {

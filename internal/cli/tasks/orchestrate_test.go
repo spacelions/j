@@ -100,14 +100,11 @@ func seedOrchestrateTask(t *testing.T, tool string) string {
 		InvokedTool: tool,
 		Summary:     "task",
 	}
-	path, err := store.DefaultTasksDBPath()
+	path, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := store.OpenTasks(path)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -137,14 +134,11 @@ func writeBucketKey(t *testing.T, bucket, key, value string) {
 
 func readOrchestrateTaskRow(t *testing.T, id string) store.Task {
 	t.Helper()
-	path, err := store.DefaultTasksDBPath()
+	path, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := store.OpenTasks(path)
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {

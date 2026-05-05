@@ -18,6 +18,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // seedResumableVerify creates a task row plus the matching
@@ -65,14 +66,11 @@ func seedResumableVerify(t *testing.T, mutate func(*store.Task)) (string, *time.
 	if mutate != nil {
 		mutate(&task)
 	}
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
-		t.Fatalf("DefaultTasksDBPath: %v", err)
+		t.Fatalf("DefaultTasksDir: %v", err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	s := store.OpenTasks(dbPath)
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(task); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -410,72 +408,23 @@ func TestRunResume_AppliesDefaults(t *testing.T) {
 	}
 }
 
-// TestRunResume_ListUnavailable forces openTaskLog to fail for the
-// list helper.
-func TestRunResume_ListUnavailable(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	err := RunResume(context.Background(), ResumeOptions{
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{newScriptedAgent()},
-		UI:     &scriptedUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestRunResume_FromTaskUnavailable is symmetric to the list case.
-func TestRunResume_FromTaskUnavailable(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	jdir := filepath.Join(dir, ".j")
-	if err := os.MkdirAll(jdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(jdir, "tasks"), []byte("legacy"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	err := RunResume(context.Background(), ResumeOptions{
-		TaskID: "anything",
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{newScriptedAgent()},
-		UI:     &scriptedUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "tasks db") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestRunResume_ListDecodeError plants a bad JSON payload in the
 // tasks bucket so listResumableTasks returns a decode error.
 func TestRunResume_ListDecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
+	badDir := filepath.Join(dbPath, "bad")
+	if err := os.MkdirAll(badDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.EnsureBucket(store.BucketTasks); err != nil {
+	if err := os.WriteFile(filepath.Join(badDir, "task.toml"), []byte("not = valid = toml"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Put(store.BucketTasks, "bad", "not-json"); err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
 	err = RunResume(context.Background(), ResumeOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -493,22 +442,8 @@ func TestRunResume_ListDecodeError(t *testing.T) {
 func TestRunResume_FromTaskDecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	dbPath, err := store.DefaultTasksDBPath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.EnsureBucket(store.BucketTasks); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Put(store.BucketTasks, "broken", "not-json"); err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
-	err = RunResume(context.Background(), ResumeOptions{
+	testutil.SeedRawTaskFile(t, "broken", []byte("not = valid = toml"))
+	err := RunResume(context.Background(), ResumeOptions{
 		TaskID: "broken",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -665,14 +600,11 @@ func TestBeginVerifyTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id, _ := seedResumableVerify(t, nil)
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := store.OpenTasks(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -699,14 +631,11 @@ func TestBeginVerifyTaskResume_NilBeginAtStampsFresh(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id, _ := seedResumableVerify(t, func(task *store.Task) { task.VerifyBeginAt = nil })
-	dbPath, err := store.DefaultTasksDBPath()
+	dbPath, err := store.DefaultTasksDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := store.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := store.OpenTasks(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)

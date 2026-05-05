@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	bolt "go.etcd.io/bbolt"
 )
 
 func TestTaskStatus_Valid_AllAllowlist(t *testing.T) {
@@ -226,16 +226,17 @@ func TestPutTask_RejectsInvalidStatus(t *testing.T) {
 	}
 }
 
-// TestPutTask_BoltError exercises the bolt update error path: a closed
-// DB makes the underlying transaction fail, so PutTask must surface
-// that error instead of silently dropping the write.
-func TestPutTask_BoltError(t *testing.T) {
-	s := openTaskStore(t)
-	if err := s.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
+// TestPutTask_MkdirFails forces the per-task mkdir to fail by
+// pointing the store at a path whose parent is a regular file. This
+// covers the wrapped mkdir error branch in PutTask.
+func TestPutTask_MkdirFails(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "tasks-as-file")
+	if err := os.WriteFile(parent, []byte("blocker"), 0o644); err != nil {
+		t.Fatal(err)
 	}
+	s := OpenTasks(parent)
 	if err := s.PutTask(Task{ID: "x", Status: StatusPlanDone}); err == nil {
-		t.Fatal("PutTask on closed db should error")
+		t.Fatal("PutTask should error when tasksDir is not a directory")
 	}
 }
 
@@ -279,33 +280,40 @@ func TestGetTask_MissingKey(t *testing.T) {
 	}
 }
 
-func TestGetTask_BoltError(t *testing.T) {
-	s := openTaskStore(t)
-	if err := s.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-	if _, err := s.GetTask("x"); err == nil {
-		t.Fatal("GetTask on closed db should error")
-	}
-}
-
+// TestGetTask_DecodeError plants a non-TOML body at the per-task
+// path so the toml.Unmarshal branch in GetTask fires; the wrapped
+// error must surface.
 func TestGetTask_DecodeError(t *testing.T) {
 	s := openTaskStore(t)
-	if err := s.db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte(BucketTasks))
-		if err != nil {
-			return err
-		}
-		return b.Put([]byte("bad"), []byte("not-json"))
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
+	taskDir := filepath.Join(s.tasksDir, "bad")
+	if err := os.MkdirAll(taskDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(taskDir, TaskFileName), []byte("not = valid = toml"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := s.GetTask("bad"); err == nil || !strings.Contains(err.Error(), `decode task "bad"`) {
 		t.Fatalf("err = %v", err)
 	}
 }
 
-func TestListTasks_MissingBucket(t *testing.T) {
+// TestListTasks_MissingTasksDir pins the contract that a missing
+// tasks directory yields an empty slice and a nil error so callers
+// can treat "no tasks yet" the same as "no project yet".
+func TestListTasks_MissingTasksDir(t *testing.T) {
+	s := OpenTasks(filepath.Join(t.TempDir(), "does-not-exist"))
+	got, err := s.ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("ListTasks = %v, want []", got)
+	}
+}
+
+// TestListTasks_EmptyTasksDir pins the empty-directory case: the
+// per-cwd tasks dir exists but holds no per-task subdirectories.
+func TestListTasks_EmptyTasksDir(t *testing.T) {
 	s := openTaskStore(t)
 	got, err := s.ListTasks()
 	if err != nil {
@@ -316,33 +324,20 @@ func TestListTasks_MissingBucket(t *testing.T) {
 	}
 }
 
-// TestListTasks_DecodeError plants a non-JSON value under
-// BucketTasks so the decode branch in ListTasks fires; the wrapped
+// TestListTasks_DecodeError plants a non-TOML body at one task's
+// path so the toml.Unmarshal branch in ListTasks fires; the wrapped
 // error must surface.
 func TestListTasks_DecodeError(t *testing.T) {
 	s := openTaskStore(t)
-	if err := s.db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte(BucketTasks))
-		if err != nil {
-			return err
-		}
-		return b.Put([]byte("bad"), []byte("not-json"))
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
+	taskDir := filepath.Join(s.tasksDir, "bad")
+	if err := os.MkdirAll(taskDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(taskDir, TaskFileName), []byte("not = valid = toml"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := s.ListTasks(); err == nil || !strings.Contains(err.Error(), `decode task "bad"`) {
 		t.Fatalf("err = %v", err)
-	}
-}
-
-// TestListTasks_BoltError exercises the View error branch.
-func TestListTasks_BoltError(t *testing.T) {
-	s := openTaskStore(t)
-	if err := s.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-	if _, err := s.ListTasks(); err == nil {
-		t.Fatal("ListTasks on closed db should error")
 	}
 }
 
