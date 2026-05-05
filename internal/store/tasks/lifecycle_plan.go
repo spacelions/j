@@ -35,7 +35,7 @@ type PlanLifecycle struct {
 //
 // Best effort: failure to open the task log or to write the initial
 // row warns once on stderr and execution continues.
-func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement, resumeID, agentLogPath string) *PlanLifecycle {
+func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement, resumeID, agentLogPath, linearIssue string) *PlanLifecycle {
 	begin := time.Now().UTC()
 	task := Task{
 		ID:               taskID,
@@ -45,6 +45,7 @@ func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement
 		PlanResumeCursor: resumeID,
 		Summary:          Summary(requirement, target),
 		PlanBeginAt:      &begin,
+		LinearIssue:      linearIssue,
 	}
 	lc := &PlanLifecycle{stderr: stderr, agentLogPath: agentLogPath, task: task}
 	PersistWarn(stderr, task)

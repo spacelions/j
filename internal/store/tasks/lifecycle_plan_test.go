@@ -24,7 +24,7 @@ func TestNewPlanTask_RecordsAndFinish(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := NewTaskID()
-	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", id, "/tmp/x.md", "# heading\nbody", "plan-cursor", "")
+	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", id, "/tmp/x.md", "# heading\nbody", "plan-cursor", "", "")
 	lc.Finish(nil, "# heading\nbody", "## plan", "/tmp/x.md")
 	tasks := listAllTasks(t)
 	if len(tasks) != 1 || tasks[0].ID != id {
@@ -58,7 +58,7 @@ func TestPlanLifecycle_Finish_ErrorPath(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewPlanTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.md", "x", "", "")
+	lc := NewPlanTask(io.Discard, "cursor", "m", NewTaskID(), "/tmp/x.md", "x", "", "", "")
 	lc.Finish(errors.New("boom"), "", "", "/tmp/x.md")
 	tasks := listAllTasks(t)
 	if len(tasks) != 1 || tasks[0].Status != StatusHelp {
@@ -75,7 +75,7 @@ func TestPlanLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "", "")
+	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
 	lc.RecordBackground(99887, "/tmp/agent.log")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 	got := listAllTasks(t)[0]
@@ -98,7 +98,7 @@ func TestPlanLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "", "")
+	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 	lc.RecordBackground(11111, "/tmp/should-not-stick.log")
 	got := listAllTasks(t)[0]
@@ -120,7 +120,7 @@ func TestPlanLifecycle_FinishIdempotent(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "", "")
+	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 	lc.Finish(errors.New("boom"), "should not", "change", "anything")
 	tasks := listAllTasks(t)
@@ -153,7 +153,7 @@ func TestNewPlanTask_PutErrorAtBegin(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
-	lc := NewPlanTask(&stderr, "cursor", "m", "", "", "", "", "")
+	lc := NewPlanTask(&stderr, "cursor", "m", "", "", "", "", "", "")
 	if lc == nil {
 		t.Fatal("NewPlanTask returned nil")
 	}
@@ -182,7 +182,7 @@ func TestNewPlanTask_OpenFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	lc := NewPlanTask(&stderr, "cursor", "m", NewTaskID(), "", "", "", "")
+	lc := NewPlanTask(&stderr, "cursor", "m", NewTaskID(), "", "", "", "", "")
 	if lc == nil {
 		t.Fatal("NewPlanTask returned nil")
 	}
@@ -200,7 +200,7 @@ func TestPlanLifecycle_Task(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := NewTaskID()
-	lc := NewPlanTask(io.Discard, "cursor", "m", id, "", "", "", "")
+	lc := NewPlanTask(io.Discard, "cursor", "m", id, "", "", "", "", "")
 	if got := lc.Task(); got.ID != id {
 		t.Fatalf("Task().ID = %q, want %q", got.ID, id)
 	}
@@ -259,7 +259,7 @@ func TestPlanLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 	}
 	logPath := filepath.Join(t.TempDir(), "agent.log")
 	var stderr bytes.Buffer
-	lc := NewPlanTask(&stderr, "cursor", "m", NewTaskID(), "/tmp/x.md", "# heading", "", logPath)
+	lc := NewPlanTask(&stderr, "cursor", "m", NewTaskID(), "/tmp/x.md", "# heading", "", logPath, "")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 
 	data, err := os.ReadFile(logPath)

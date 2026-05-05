@@ -35,6 +35,15 @@ coverage:
 		-e 'internal/cli/web/web\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
 		-e 'internal/cli/uitheme/dialog_box\.go:[0-9]+:[[:space:]]+displayLogPath[[:space:]]' \
 		-e 'internal/cli/picker/.*\.go:[0-9]+:[[:space:]]+' \
+		-e 'internal/linear/browser\.go:[0-9]+:[[:space:]]+openURL[[:space:]]' \
+		-e 'internal/linear/client\.go:[0-9]+:[[:space:]]+do[[:space:]]' \
+		-e 'internal/linear/config\.go:[0-9]+:[[:space:]]+loadKey[[:space:]]' \
+		-e 'internal/linear/config\.go:[0-9]+:[[:space:]]+saveKey[[:space:]]' \
+		-e 'internal/cli/plan/linear\.go:[0-9]+:[[:space:]]+runLinear[[:space:]]' \
+		-e 'internal/resolver/markdown\.go:[0-9]+:[[:space:]]+RunPlanFromBody[[:space:]]' \
+		-e 'internal/resolver/markdown\.go:[0-9]+:[[:space:]]+runPlanInTaskDir[[:space:]]' \
+		-e 'internal/resolver/source\.go:[0-9]+:[[:space:]]+FetchLinearBody[[:space:]]' \
+		-e 'internal/resolver/source\.go:[0-9]+:[[:space:]]+StartTargetFromLinear[[:space:]]' \
 		-e 'internal/util/mdfile/mdfile\.go:[0-9]+:[[:space:]]+Resolve[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+AskTarget[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+AskFromFile[[:space:]]' \
@@ -102,7 +111,7 @@ coverage:
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+openSettingsStore[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+pickMarkdownTarget[[:space:]]' \
 		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
-		-e 'internal/cli/plan/plan\.go:[0-9]+:[[:space:]]+runReplanTask[[:space:]]' \
+		-e 'internal/cli/plan/replan\.go:[0-9]+:[[:space:]]+runReplanTask[[:space:]]' \
 		-e 'internal/cli/plan/cmd\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
 		-e 'internal/cli/plan/resume\.go:[0-9]+:[[:space:]]+RunResume[[:space:]]' \
 		-e 'internal/cli/plan/ui\.go:[0-9]+:[[:space:]]+PickPlanTask[[:space:]]' \

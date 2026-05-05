@@ -206,6 +206,69 @@ func TestSet_MultipleParseErrorBeforeWrites(t *testing.T) {
 	}
 }
 
+// TestSet_Linear_APIKey_RoundTripBothForms confirms that the user
+// can type either `linear.api_key` or `linear.api-key` and the
+// value lands under the camelCase storage key. Reads back via the
+// same kebab/snake form (rendered as `api_key` in `j settings`).
+func TestSet_Linear_APIKey_RoundTripBothForms(t *testing.T) {
+	cases := []string{"linear.api_key=lin_api_xx", "linear.api-key=lin_api_yy"}
+	for _, arg := range cases {
+		t.Run(arg, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			mustInit(t)
+			if _, err := runSetArgs(t, "set", arg); err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			path, err := store.DefaultPath()
+			if err != nil {
+				t.Fatal(err)
+			}
+			s, err := store.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = s.Close() })
+			got, ok, err := s.Get(store.BucketLinear, store.KeyLinearAPIKey)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if !ok {
+				t.Fatalf("Get(%s.%s): missing", store.BucketLinear, store.KeyLinearAPIKey)
+			}
+			want := strings.SplitN(arg, "=", 2)[1]
+			if got != want {
+				t.Fatalf("stored value = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// TestSet_Linear_ProjectIsIdentityMapped confirms that
+// `linear.project=...` writes to the identity-mapped storage key.
+func TestSet_Linear_ProjectIsIdentityMapped(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	if _, err := runSetArgs(t, "set", "linear.project=p123"); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	got, ok, err := s.Get(store.BucketLinear, store.KeyLinearProject)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !ok || got != "p123" {
+		t.Fatalf("Get(linear.project) = %q, ok=%v", got, ok)
+	}
+}
+
 // TestSet_DuplicateKeyLastWins confirms that when the same key is
 // listed twice, the second assignment overwrites the first.
 func TestSet_DuplicateKeyLastWins(t *testing.T) {

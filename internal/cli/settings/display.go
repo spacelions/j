@@ -1,5 +1,7 @@
 package settings
 
+import "github.com/spacelions/j/internal/store"
+
 // displayKey maps a bbolt storage key to the form users see in
 // `j settings`. Centralising the mapping here means callers can keep
 // using storage keys while this package handles any future divergence
@@ -39,7 +41,28 @@ type keyMap struct {
 	toStorage map[string]string
 }
 
+// isSecretKey reports whether the (bucket, storedKey) pair carries a
+// user-secret that should be masked in `j settings` output. The
+// project's Gemini API key and the Linear personal token both qualify.
+func isSecretKey(bucket, storedKey string) bool {
+	switch bucket {
+	case store.BucketProject:
+		return storedKey == store.KeyProjectAPIKey
+	case store.BucketLinear:
+		return storedKey == store.KeyLinearAPIKey
+	}
+	return false
+}
+
 // keyTable lists every bucket whose display form differs from its
-// storage form. Current keys are identity-mapped; future divergent
-// keys can register here without changing list/set/reset callers.
-var keyTable = map[string]*keyMap{}
+// storage form. The Linear bucket stores `api_key` identity-mapped
+// (matching project.api_key) and only registers the kebab-case
+// alias `api-key` → `api_key` so users can type either form on the
+// `j settings set` line.
+var keyTable = map[string]*keyMap{
+	store.BucketLinear: {
+		toStorage: map[string]string{
+			"api-key": store.KeyLinearAPIKey,
+		},
+	},
+}

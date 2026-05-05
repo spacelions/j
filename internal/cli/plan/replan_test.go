@@ -15,8 +15,10 @@ import (
 
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // taskFilePath returns the expected absolute location of `<id>/<name>`
@@ -242,6 +244,58 @@ func TestListAllTasks_SortsAndReturns(t *testing.T) {
 
 // TestRun_FromTask_BypassesSourceSelector pins the rule that
 // --from-task takes the re-plan path without prompting for a source.
+// TestRun_FromTask_RefreshesLinearBody pins the Linear-aware re-plan
+// branch: a row whose LinearIssue is non-empty should re-fetch the
+// current Linear body before agent.Plan runs, overwriting the stale
+// requirements.md.
+func TestRun_FromTask_RefreshesLinearBody(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedReplanTask(t, tasks.StatusPlanDone, "# stale\n", nil)
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row.LinearIssue = "ENG-77"
+	if err := s.PutTask(row); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+
+	if err := linear.SaveAPIKey("lin_api_test"); err != nil {
+		t.Fatal(err)
+	}
+	srv := testutil.NewLinearStubServer(testutil.LinearStubResponses{
+		Issue: &testutil.LinearIssueStub{Identifier: "ENG-77", Title: "fresh", URL: "https://linear.app/eng/issue/ENG-77"},
+	})
+	t.Cleanup(srv.Close)
+	prev := linear.TestEndpoint
+	linear.TestEndpoint = srv.URL
+	t.Cleanup(func() { linear.TestEndpoint = prev })
+
+	agent := newScriptedAgent()
+	if err := Run(context.Background(), Options{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	body, err := os.ReadFile(taskFilePath(t, id, tasks.RequirementsFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(body), "# fresh") {
+		t.Fatalf("requirements.md = %q, want fresh Linear body", body)
+	}
+}
+
 func TestRun_FromTask_BypassesSourceSelector(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)

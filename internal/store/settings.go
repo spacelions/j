@@ -110,7 +110,7 @@ func LoadProjectConfig() (ProjectConfig, error) {
 	}
 	defer func() { _ = s.Close() }()
 
-	apiKey, err := readSetting(s, "api_key")
+	apiKey, err := readSetting(s, KeyProjectAPIKey)
 	if err != nil {
 		return ProjectConfig{}, err
 	}
