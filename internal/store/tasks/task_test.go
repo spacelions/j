@@ -3,6 +3,7 @@ package tasks
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/spacelions/j/internal/store"
 )
 
 func TestTaskStatus_Valid_AllAllowlist(t *testing.T) {
@@ -388,6 +391,75 @@ func TestDeleteTask_BoltError(t *testing.T) {
 	}
 	if err := s.DeleteTask("x"); err == nil {
 		t.Fatal("DeleteTask on closed db should error")
+	}
+}
+
+// TestPutTask_LinearIssueRoundTrip pins the TOML round-trip for the
+// linear_issue field: a row stamped with a Linear identifier on
+// PutTask reads back identical via GetTask + ListTasks.
+func TestPutTask_LinearIssueRoundTrip(t *testing.T) {
+	s := openTaskStore(t)
+	in := Task{ID: "id-linear", Status: StatusPlanning, LinearIssue: "ENG-123"}
+	if err := s.PutTask(in); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	got, err := s.GetTask("id-linear")
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.LinearIssue != "ENG-123" {
+		t.Fatalf("LinearIssue = %q, want ENG-123", got.LinearIssue)
+	}
+	rows, err := s.ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(rows) != 1 || rows[0].LinearIssue != "ENG-123" {
+		t.Fatalf("ListTasks = %+v, want one row with LinearIssue ENG-123", rows)
+	}
+}
+
+// TestPutTask_LinearIssueEmptyOmitted asserts that an empty
+// LinearIssue is preserved as the empty string after round-trip and
+// the on-disk TOML is decoded back without surprise (existing tasks
+// authored before the field land here).
+func TestPutTask_LinearIssueEmptyOmitted(t *testing.T) {
+	s := openTaskStore(t)
+	in := Task{ID: "id-no-linear", Status: StatusPlanDone}
+	if err := s.PutTask(in); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	got, err := s.GetTask("id-no-linear")
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.LinearIssue != "" {
+		t.Fatalf("LinearIssue = %q, want empty", got.LinearIssue)
+	}
+}
+
+// TestBeginPlanReuse_PreservesLinearIssue pins the re-plan round-trip
+// for the Linear identifier: a row whose original plan stamped a
+// LinearIssue keeps it after BeginPlanReuse mutates the row for a
+// re-plan invocation.
+func TestBeginPlanReuse_PreservesLinearIssue(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	begin := time.Now().UTC()
+	original := Task{
+		ID:           "id-reuse",
+		Status:       StatusPlanDone,
+		LinearIssue:  "ENG-9",
+		PlanBeginAt:  &begin,
+		InvokedTool:  "cursor",
+		InvokedModel: "sonnet-4",
+	}
+	lc := original.BeginPlanReuse(io.Discard, "claude", "opus-4", "resume-id", "")
+	got := lc.Task()
+	if got.LinearIssue != "ENG-9" {
+		t.Fatalf("LinearIssue lost across BeginPlanReuse: got %q", got.LinearIssue)
 	}
 }
 

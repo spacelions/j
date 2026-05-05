@@ -632,6 +632,48 @@ func TestRunStart_FromLinearFlag(t *testing.T) {
 	}
 }
 
+// TestRunStart_FromLinearFlag_RecordsLinearIssue pins the
+// `linear_issue` round-trip on the task row when --from-linear seeds
+// a fresh task: the upstream identifier flows through
+// StartTargetFromLinear → StartTarget → persistStartRow into
+// task.toml so `j tasks` can keep linking back to Linear.
+func TestRunStart_FromLinearFlag_RecordsLinearIssue(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
+	}
+	if err := linear.SaveAPIKey("lin_api_test"); err != nil {
+		t.Fatal(err)
+	}
+	srv := testutil.NewLinearStubServer(testutil.LinearStubResponses{
+		Issue: &testutil.LinearIssueStub{Identifier: "ENG-42", Title: "linked", URL: "https://linear.app/eng/issue/ENG-42"},
+	})
+	t.Cleanup(srv.Close)
+	prev := linear.TestEndpoint
+	linear.TestEndpoint = srv.URL
+	t.Cleanup(func() { linear.TestEndpoint = prev })
+
+	err := RunStart(context.Background(), StartOptions{
+		FromLinear: "ENG-42",
+		Stdin:      strings.NewReader(""),
+		Stdout:     io.Discard,
+		Stderr:     io.Discard,
+		Agents:     []codingagents.Agent{testutil.NewScriptedAgent()},
+		Selector:   &testutil.SelectorFake{},
+		UI:         &scriptedStartUI{},
+		JBinary:    noopJBinary(t),
+	})
+	if err != nil {
+		t.Fatalf("RunStart: %v", err)
+	}
+	id := firstSeededTaskID(t)
+	row := readTaskFromBolt(t, id)
+	if row.LinearIssue != "ENG-42" {
+		t.Fatalf("LinearIssue = %q, want ENG-42", row.LinearIssue)
+	}
+}
+
 // TestRunStart_FromLinearFlag_MissingKey pins the explicit error
 // when --from-linear is supplied but no API key is stored: no task
 // is created.

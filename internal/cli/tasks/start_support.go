@@ -24,6 +24,7 @@ func persistStartRow(stderr io.Writer, target startTarget, agentLogPath string, 
 			PlanBeginAt:   &begin,
 			AgentLogPath:  agentLogPath,
 			BackgroundPID: pid,
+			LinearIssue:   target.LinearIssue,
 		})
 		return
 	}
