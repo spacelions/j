@@ -75,14 +75,19 @@ func NewClient(apiKey string, opts ...Option) *Client {
 	return c
 }
 
-// Issue is the shape returned by GetIssue. Identifier is the upstream
-// `ENG-123` form; URL is the public web link the markdown footer
-// echoes back.
+// Issue is the shape returned by GetIssue and ListAssignedIssues.
+// Identifier is the upstream `ENG-123` form; URL is the public web
+// link the markdown footer echoes back. State is the human-readable
+// workflow state name (e.g. "In Progress"), populated by the
+// list-issues path; GetIssue does not fetch it and leaves it empty.
+// Description is set by GetIssue and empty on list responses (the
+// list view doesn't fetch bodies).
 type Issue struct {
 	Identifier  string `json:"identifier"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	URL         string `json:"url"`
+	State       string `json:"-"`
 }
 
 // Project is the shape returned by ListProjects. ID is the GraphQL
@@ -106,6 +111,10 @@ const issueQuery = `query($id:String!){issue(id:$id){identifier title descriptio
 
 const projectsQuery = `query{projects{nodes{id name}}}`
 
+const assignedIssuesQuery = `query{viewer{assignedIssues(filter:{state:{type:{nin:["completed","canceled"]}}},orderBy:updatedAt,first:50){nodes{identifier title url state{name}}}}}`
+
+const assignedIssuesByProjectQuery = `query($projectId:String!){viewer{assignedIssues(filter:{state:{type:{nin:["completed","canceled"]}},project:{id:{eq:$projectId}}},orderBy:updatedAt,first:50){nodes{identifier title url state{name}}}}}`
+
 type issueResponse struct {
 	Data struct {
 		Issue *Issue `json:"issue"`
@@ -120,6 +129,37 @@ type projectsResponse struct {
 		} `json:"projects"`
 	} `json:"data"`
 	Errors []graphQLError `json:"errors"`
+}
+
+// assignedIssueNode mirrors the `nodes` shape inside
+// viewer.assignedIssues. State arrives nested as `state.name` so the
+// node has its own struct; ListAssignedIssues flattens each node
+// into an Issue before returning.
+type assignedIssueNode struct {
+	Identifier string `json:"identifier"`
+	Title      string `json:"title"`
+	URL        string `json:"url"`
+	State      struct {
+		Name string `json:"name"`
+	} `json:"state"`
+}
+
+type assignedIssuesResponse struct {
+	Data struct {
+		Viewer struct {
+			AssignedIssues struct {
+				Nodes []assignedIssueNode `json:"nodes"`
+			} `json:"assignedIssues"`
+		} `json:"viewer"`
+	} `json:"data"`
+	Errors []graphQLError `json:"errors"`
+}
+
+// ListIssuesOpts narrows ListAssignedIssues. ProjectID, when set,
+// limits the result to issues whose project.id equals it; empty
+// means "any project (or none)".
+type ListIssuesOpts struct {
+	ProjectID string
 }
 
 // GetIssue fetches a single issue by its `<TEAM>-<NUM>` identifier.
@@ -157,6 +197,44 @@ func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
 		return nil, fmt.Errorf("linear: %s", msg)
 	}
 	return resp.Data.Projects.Nodes, nil
+}
+
+// ListAssignedIssues returns the API-key-owner's assigned, open
+// issues — at most 50, ordered by `updatedAt desc`. Issues in
+// completed/canceled states are filtered server-side via Linear's
+// `state.type` enum so closed work never reaches the picker. When
+// opts.ProjectID is non-empty, the query additionally restricts
+// results to issues whose project.id equals it.
+//
+// Description is intentionally not requested; the list view is for
+// picking, and the per-issue body is fetched on demand by GetIssue
+// once the user picks one.
+func (c *Client) ListAssignedIssues(ctx context.Context, opts ListIssuesOpts) ([]Issue, error) {
+	req := graphQLRequest{Query: assignedIssuesQuery}
+	if opts.ProjectID != "" {
+		req = graphQLRequest{
+			Query:     assignedIssuesByProjectQuery,
+			Variables: map[string]any{"projectId": opts.ProjectID},
+		}
+	}
+	var resp assignedIssuesResponse
+	if err := c.do(ctx, req, &resp); err != nil {
+		return nil, err
+	}
+	if msg := firstGraphQLError(resp.Errors); msg != "" {
+		return nil, fmt.Errorf("linear: %s", msg)
+	}
+	nodes := resp.Data.Viewer.AssignedIssues.Nodes
+	out := make([]Issue, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, Issue{
+			Identifier: n.Identifier,
+			Title:      n.Title,
+			URL:        n.URL,
+			State:      n.State.Name,
+		})
+	}
+	return out, nil
 }
 
 // do is the shared transport: marshals req, POSTs to the endpoint

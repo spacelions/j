@@ -2,7 +2,10 @@ package picker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -36,10 +39,11 @@ type scriptedSourceUI struct {
 	pickedProjectErr   error
 	pickedProjectCalls int
 	pickedProjectsSeen []linear.Project
-	linearIdentifier   string
-	linearIDOK         bool
-	linearIDErr        error
-	linearIDCalls      int
+	pickedIssue        linear.Issue
+	pickedIssueOK      bool
+	pickedIssueErr     error
+	pickedIssueCalls   int
+	pickedIssuesSeen   []linear.Issue
 }
 
 func (s *scriptedSourceUI) SelectSource(_ context.Context, allowed []Source) (Source, error) {
@@ -83,12 +87,43 @@ func (s *scriptedSourceUI) PickLinearProject(_ context.Context, projects []linea
 	return s.pickedProject, s.pickedProjectOK, nil
 }
 
-func (s *scriptedSourceUI) PromptLinearIdentifier(_ context.Context) (string, bool, error) {
-	s.linearIDCalls++
-	if s.linearIDErr != nil {
-		return "", false, s.linearIDErr
+func (s *scriptedSourceUI) PickLinearIssue(_ context.Context, issues []linear.Issue) (linear.Issue, bool, error) {
+	s.pickedIssueCalls++
+	s.pickedIssuesSeen = append([]linear.Issue(nil), issues...)
+	if s.pickedIssueErr != nil {
+		return linear.Issue{}, false, s.pickedIssueErr
 	}
-	return s.linearIdentifier, s.linearIDOK, nil
+	return s.pickedIssue, s.pickedIssueOK, nil
+}
+
+// stubAssignedIssuesServer points linear.TestEndpoint at an
+// httptest.Server that returns the supplied issues for any
+// viewer.assignedIssues query and an empty payload for everything
+// else. The endpoint override is reset on t.Cleanup.
+func stubAssignedIssuesServer(t *testing.T, issues ...linear.Issue) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		nodes := make([]map[string]any, 0, len(issues))
+		for _, iss := range issues {
+			nodes = append(nodes, map[string]any{
+				"identifier": iss.Identifier,
+				"title":      iss.Title,
+				"url":        iss.URL,
+				"state":      map[string]string{"name": iss.State},
+			})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"viewer": map[string]any{
+					"assignedIssues": map[string]any{"nodes": nodes},
+				},
+			},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	prev := linear.TestEndpoint
+	linear.TestEndpoint = srv.URL
+	t.Cleanup(func() { linear.TestEndpoint = prev })
 }
 
 func TestPickSource_Markdown(t *testing.T) {
@@ -113,7 +148,19 @@ func TestPickSource_Linear_TokenAndProjectStored(t *testing.T) {
 	if err := linear.SaveProject("project-1"); err != nil {
 		t.Fatal(err)
 	}
-	ui := &scriptedSourceUI{source: SourceLinear, linearIdentifier: "ENG-12", linearIDOK: true}
+	stubAssignedIssuesServer(t,
+		linear.Issue{Identifier: "ENG-12", Title: "do the thing", State: "In Progress", URL: "https://linear.app/eng/issue/ENG-12"},
+	)
+	ui := &scriptedSourceUI{
+		source: SourceLinear,
+		pickedIssue: linear.Issue{
+			Identifier: "ENG-12",
+			Title:      "do the thing",
+			State:      "In Progress",
+			URL:        "https://linear.app/eng/issue/ENG-12",
+		},
+		pickedIssueOK: true,
+	}
 	res, err := PickSource(context.Background(), ui, []Source{SourceMarkdown, SourceLinear}, nil, nil)
 	if err != nil {
 		t.Fatalf("err = %v", err)
@@ -127,12 +174,15 @@ func TestPickSource_Linear_TokenAndProjectStored(t *testing.T) {
 	if ui.pickedProjectCalls != 0 {
 		t.Fatalf("PickLinearProject should not fire when project is stored: calls=%d", ui.pickedProjectCalls)
 	}
-	if ui.linearIDCalls != 1 {
-		t.Fatalf("PromptLinearIdentifier should fire once: calls=%d", ui.linearIDCalls)
+	if ui.pickedIssueCalls != 1 {
+		t.Fatalf("PickLinearIssue should fire once: calls=%d", ui.pickedIssueCalls)
+	}
+	if len(ui.pickedIssuesSeen) != 1 || ui.pickedIssuesSeen[0].Identifier != "ENG-12" {
+		t.Fatalf("PickLinearIssue saw %+v, want one issue (ENG-12)", ui.pickedIssuesSeen)
 	}
 }
 
-func TestPickSource_Linear_AllPromptsCancelCleanly(t *testing.T) {
+func TestPickSource_Linear_IssuePickerCancelled(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatal(err)
@@ -143,13 +193,38 @@ func TestPickSource_Linear_AllPromptsCancelCleanly(t *testing.T) {
 	if err := linear.SaveProject("p"); err != nil {
 		t.Fatal(err)
 	}
-	ui := &scriptedSourceUI{source: SourceLinear, linearIDOK: false}
+	stubAssignedIssuesServer(t,
+		linear.Issue{Identifier: "ENG-1", Title: "x", State: "Todo"},
+	)
+	ui := &scriptedSourceUI{source: SourceLinear, pickedIssueOK: false}
 	res, err := PickSource(context.Background(), ui, []Source{SourceLinear}, nil, nil)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
 	if res.Source != SourceLinear || !res.Cancelled || res.LinearIdentifier != "" {
 		t.Fatalf("res = %+v", res)
+	}
+}
+
+func TestPickSource_Linear_EmptyIssueList(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveAPIKey("lin_api_test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveProject("p"); err != nil {
+		t.Fatal(err)
+	}
+	stubAssignedIssuesServer(t)
+	ui := &scriptedSourceUI{source: SourceLinear}
+	_, err := PickSource(context.Background(), ui, []Source{SourceLinear}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "no Linear issues assigned") {
+		t.Fatalf("err = %v, want empty-list error", err)
+	}
+	if ui.pickedIssueCalls != 0 {
+		t.Fatalf("PickLinearIssue should not fire on empty list: calls=%d", ui.pickedIssueCalls)
 	}
 }
 

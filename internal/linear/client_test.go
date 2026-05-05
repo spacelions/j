@@ -221,3 +221,128 @@ func TestListProjects_TransportError(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestListAssignedIssues_Success(t *testing.T) {
+	var seenBody string
+	srv := issueServer(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		seenBody = string(body)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"viewer": map[string]any{
+					"assignedIssues": map[string]any{
+						"nodes": []map[string]any{
+							{
+								"identifier": "ENG-1",
+								"title":      "first issue",
+								"url":        "https://linear.app/eng/issue/ENG-1",
+								"state":      map[string]string{"name": "In Progress"},
+							},
+							{
+								"identifier": "ENG-2",
+								"title":      "second issue",
+								"url":        "https://linear.app/eng/issue/ENG-2",
+								"state":      map[string]string{"name": "Todo"},
+							},
+						},
+					},
+				},
+			},
+		})
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	got, err := c.ListAssignedIssues(context.Background(), ListIssuesOpts{})
+	if err != nil {
+		t.Fatalf("ListAssignedIssues: %v", err)
+	}
+	if !strings.Contains(seenBody, "viewer{assignedIssues") {
+		t.Fatalf("query body missing viewer.assignedIssues: %s", seenBody)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d issues, want 2: %+v", len(got), got)
+	}
+	if got[0].Identifier != "ENG-1" || got[0].State != "In Progress" || got[0].Title != "first issue" {
+		t.Fatalf("got[0] = %+v", got[0])
+	}
+	if got[1].Identifier != "ENG-2" || got[1].State != "Todo" {
+		t.Fatalf("got[1] = %+v", got[1])
+	}
+}
+
+func TestListAssignedIssues_EmptyList(t *testing.T) {
+	srv := issueServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"viewer": map[string]any{
+					"assignedIssues": map[string]any{"nodes": []any{}},
+				},
+			},
+		})
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	got, err := c.ListAssignedIssues(context.Background(), ListIssuesOpts{})
+	if err != nil {
+		t.Fatalf("ListAssignedIssues: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("got = %+v, want empty", got)
+	}
+}
+
+func TestListAssignedIssues_ProjectFilterForwarded(t *testing.T) {
+	var seenBody string
+	srv := issueServer(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		seenBody = string(body)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"viewer": map[string]any{
+					"assignedIssues": map[string]any{"nodes": []any{}},
+				},
+			},
+		})
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	if _, err := c.ListAssignedIssues(context.Background(), ListIssuesOpts{ProjectID: "proj-uuid"}); err != nil {
+		t.Fatalf("ListAssignedIssues: %v", err)
+	}
+	if !strings.Contains(seenBody, "project:{id:{eq:$projectId}}") {
+		t.Fatalf("query body missing project filter: %s", seenBody)
+	}
+	if !strings.Contains(seenBody, `"projectId":"proj-uuid"`) {
+		t.Fatalf("query body missing projectId variable: %s", seenBody)
+	}
+}
+
+func TestListAssignedIssues_GraphQLErrors(t *testing.T) {
+	srv := issueServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data":   map[string]any{"viewer": map[string]any{"assignedIssues": map[string]any{"nodes": []any{}}}},
+			"errors": []map[string]string{{"message": "no scope"}},
+		})
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	_, err := c.ListAssignedIssues(context.Background(), ListIssuesOpts{})
+	if err == nil || !strings.Contains(err.Error(), "no scope") {
+		t.Fatalf("err = %v, want graphql 'no scope'", err)
+	}
+}
+
+func TestListAssignedIssues_Unauthorized(t *testing.T) {
+	srv := issueServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	_, err := c.ListAssignedIssues(context.Background(), ListIssuesOpts{})
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("err = %v, want ErrUnauthorized", err)
+	}
+}
+
+func TestListAssignedIssues_TransportError(t *testing.T) {
+	c := NewClient("k", WithEndpoint("http://127.0.0.1:1"))
+	_, err := c.ListAssignedIssues(context.Background(), ListIssuesOpts{})
+	if err == nil || !strings.Contains(err.Error(), "linear: http") {
+		t.Fatalf("err = %v", err)
+	}
+}

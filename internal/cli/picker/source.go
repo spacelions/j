@@ -40,15 +40,16 @@ type SourceResult struct {
 // satisfies it; cli commands' narrow UI interfaces (plan.UI,
 // task.StartUI) include the same methods so their scripted
 // fakes satisfy it too. The Linear* methods drive the first-use
-// link flow (browser-paste API key + project select + identifier
-// prompt) and are only invoked when the user picks SourceLinear.
+// link flow (browser-paste API key + project select) and the
+// per-run issue picker; they are only invoked when the user picks
+// SourceLinear.
 type SourceUI interface {
 	SelectSource(ctx context.Context, allowed []Source) (Source, error)
 	PickMarkdownInCwd(ctx context.Context) (string, error)
 	PickTask(ctx context.Context, title string, tasks []tasks.Task) (string, bool, error)
 	PromptLinearAPIKey(ctx context.Context, openURL string) (string, bool, error)
 	PickLinearProject(ctx context.Context, projects []linear.Project) (linear.Project, bool, error)
-	PromptLinearIdentifier(ctx context.Context) (string, bool, error)
+	PickLinearIssue(ctx context.Context, issues []linear.Issue) (linear.Issue, bool, error)
 }
 
 // SelectSource renders the top-level source widget over the supplied
@@ -129,15 +130,24 @@ func PickSource(ctx context.Context, ui SourceUI, allowed []Source, listTasks fu
 	return SourceResult{}, fmt.Errorf("picker: unsupported source %s", src)
 }
 
-// pickLinearSource walks the first-use link flow for SourceLinear:
-// (1) prompt for an API key when none is stored — opening the
-// browser to Linear's API-keys page and saving the pasted token; (2)
-// prompt for a default project when none is stored — fetching the
-// project list with the captured token and saving the selection;
-// (3) prompt for the issue identifier. Each prompt honours
-// cancellation (ok=false) by returning a Cancelled SourceResult so
-// the caller exits cleanly without creating a task. Token / project
-// values are only persisted after the user confirms each prompt.
+// pickLinearSource walks the SourceLinear flow:
+//
+//  1. First-time link: when no API key is stored, open the browser
+//     to Linear's API-keys page and prompt for the pasted token,
+//     then save it.
+//  2. Default project link: when no project is stored, fetch the
+//     project list with the captured token and prompt for one;
+//     save the selection. (Skipped silently when the API key has
+//     no projects in scope.)
+//  3. Issue list: fetch the viewer's open assigned issues — scoped
+//     by the saved project when set — and let the user pick one.
+//     Empty-list short-circuits with a clear error pointing at
+//     `--from-linear` for non-interactive use.
+//
+// Each prompt honours cancellation (ok=false) by returning a
+// Cancelled SourceResult so the caller exits cleanly without
+// creating a task. Token / project values are only persisted after
+// the user confirms each prompt.
 func pickLinearSource(ctx context.Context, ui SourceUI) (SourceResult, error) {
 	token, err := linear.LoadAPIKey()
 	if err != nil {
@@ -160,8 +170,8 @@ func pickLinearSource(ctx context.Context, ui SourceUI) (SourceResult, error) {
 	if err != nil {
 		return SourceResult{}, err
 	}
+	client := linear.NewClient(token)
 	if project == "" {
-		client := linear.NewClient(token)
 		projects, err := client.ListProjects(ctx)
 		if err != nil {
 			return SourceResult{}, err
@@ -177,14 +187,22 @@ func pickLinearSource(ctx context.Context, ui SourceUI) (SourceResult, error) {
 			if err := linear.SaveProject(p.ID); err != nil {
 				return SourceResult{}, err
 			}
+			project = p.ID
 		}
 	}
-	id, ok, err := ui.PromptLinearIdentifier(ctx)
+	issues, err := client.ListAssignedIssues(ctx, linear.ListIssuesOpts{ProjectID: project})
+	if err != nil {
+		return SourceResult{}, err
+	}
+	if len(issues) == 0 {
+		return SourceResult{}, errors.New("picker: no Linear issues assigned to you (use --from-linear ENG-123 to specify directly, or assign yourself to an issue in Linear)")
+	}
+	chosen, ok, err := ui.PickLinearIssue(ctx, issues)
 	if err != nil {
 		return SourceResult{}, err
 	}
 	if !ok {
 		return SourceResult{Source: SourceLinear, Cancelled: true}, nil
 	}
-	return SourceResult{Source: SourceLinear, LinearIdentifier: id}, nil
+	return SourceResult{Source: SourceLinear, LinearIdentifier: chosen.Identifier}, nil
 }

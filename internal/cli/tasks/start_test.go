@@ -175,10 +175,11 @@ type scriptedStartUI struct {
 	linearProjectErr   error
 	linearProjectCalls int
 	linearProjectsSeen []linear.Project
-	linearIdentifier   string
-	linearIDOK         bool
-	linearIDErr        error
-	linearIDCalls      int
+	pickedIssue        linear.Issue
+	pickedIssueOK      bool
+	pickedIssueErr     error
+	pickedIssueCalls   int
+	pickedIssuesSeen   []linear.Issue
 }
 
 func (u *scriptedStartUI) SelectSource(_ context.Context, _ []picker.Source) (picker.Source, error) {
@@ -220,12 +221,13 @@ func (u *scriptedStartUI) PickLinearProject(_ context.Context, projects []linear
 	return u.linearProject, u.linearProjectOK, nil
 }
 
-func (u *scriptedStartUI) PromptLinearIdentifier(_ context.Context) (string, bool, error) {
-	u.linearIDCalls++
-	if u.linearIDErr != nil {
-		return "", false, u.linearIDErr
+func (u *scriptedStartUI) PickLinearIssue(_ context.Context, issues []linear.Issue) (linear.Issue, bool, error) {
+	u.pickedIssueCalls++
+	u.pickedIssuesSeen = append([]linear.Issue(nil), issues...)
+	if u.pickedIssueErr != nil {
+		return linear.Issue{}, false, u.pickedIssueErr
 	}
-	return u.linearIdentifier, u.linearIDOK, nil
+	return u.pickedIssue, u.pickedIssueOK, nil
 }
 
 // TestRunStart_HappyPath_FromFile pins the --from-file shortcut.
@@ -528,6 +530,9 @@ func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
 	}
 	srv := testutil.NewLinearStubServer(testutil.LinearStubResponses{
 		Issue: &testutil.LinearIssueStub{Identifier: "ENG-7", Title: "picker", Description: "body", URL: "https://linear.app/eng/issue/ENG-7"},
+		AssignedIssues: []testutil.LinearIssueStub{
+			{Identifier: "ENG-7", Title: "picker", URL: "https://linear.app/eng/issue/ENG-7", State: "Todo"},
+		},
 	})
 	t.Cleanup(srv.Close)
 	prev := linear.TestEndpoint
@@ -535,9 +540,9 @@ func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
 	t.Cleanup(func() { linear.TestEndpoint = prev })
 
 	ui := &scriptedStartUI{
-		source:           picker.SourceLinear,
-		linearIdentifier: "ENG-7",
-		linearIDOK:       true,
+		source:        picker.SourceLinear,
+		pickedIssue:   linear.Issue{Identifier: "ENG-7", Title: "picker", State: "Todo"},
+		pickedIssueOK: true,
 	}
 
 	err := RunStart(context.Background(), StartOptions{

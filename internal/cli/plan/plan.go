@@ -24,10 +24,6 @@ import (
 // streams. UI defaults to the huh implementation. Agents must be
 // supplied by the caller (the CLI wires the Cursor agent; tests inject
 // scripted ones). Interactive selects the agent's TUI when true and the
-// headless capture path when false. Stdin/Stdout/Stderr default to the process
-// streams. UI defaults to the huh implementation. Agents must be
-// supplied by the caller (the CLI wires the Cursor agent; tests inject
-// scripted ones). Interactive selects the agent's TUI when true and the
 // headless capture path when false.
 type Options struct {
 	// FromFile is the markdown task description path (from --from-file
