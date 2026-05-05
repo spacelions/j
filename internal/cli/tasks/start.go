@@ -33,7 +33,7 @@ type StartUI interface {
 	PickTask(ctx context.Context, title string, tasks []store.Task) (string, bool, error)
 	PromptLinearAPIKey(ctx context.Context, openURL string) (string, bool, error)
 	PickLinearProject(ctx context.Context, projects []linear.Project) (linear.Project, bool, error)
-	PromptLinearIdentifier(ctx context.Context) (string, bool, error)
+	PickLinearIssue(ctx context.Context, issues []linear.Issue) (linear.Issue, bool, error)
 }
 
 // StartOptions configures RunStart. Stdin/Stdout/Stderr default to the

@@ -71,24 +71,47 @@ func (p *Picker) PickLinearProject(ctx context.Context, projects []linear.Projec
 	return prj, true, nil
 }
 
-// PromptLinearIdentifier prompts for the issue identifier (e.g.
-// `ENG-123`). The huh.Validate hook calls linear.ValidateIdentifier
-// so a typo surfaces inside the form instead of after the round-trip.
-// Abort returns ok=false with nil error.
-func (p *Picker) PromptLinearIdentifier(ctx context.Context) (string, bool, error) {
-	var id string
-	err := p.run(ctx, huh.NewInput().
-		Title("Linear issue identifier").
-		Description("e.g. ENG-123").
-		Validate(func(s string) error {
-			return linear.ValidateIdentifier(strings.TrimSpace(s))
-		}).
-		Value(&id))
+// PickLinearIssue renders a single-select widget over the supplied
+// issues and returns the chosen entry. The label format —
+// `ENG-123 — <state> — <title>` — mirrors PickTask
+// (internal/cli/picker/task.go:46) so the source picker reads
+// consistently across markdown / linear / existing-task branches.
+//
+// Empty list short-circuits with ok=false (no UI driven); the
+// caller (pickLinearSource) catches that earlier and surfaces a
+// clear error.
+//
+// Abort (Ctrl-C / Esc) returns ok=false with a nil error so the
+// caller exits the source flow cleanly without minting a task.
+func (p *Picker) PickLinearIssue(ctx context.Context, issues []linear.Issue) (linear.Issue, bool, error) {
+	if len(issues) == 0 {
+		return linear.Issue{}, false, nil
+	}
+	labels := make([]string, len(issues))
+	byLabel := make(map[string]linear.Issue, len(issues))
+	for i, iss := range issues {
+		title := strings.TrimSpace(iss.Title)
+		if title == "" {
+			title = "(no title)"
+		}
+		state := strings.TrimSpace(iss.State)
+		if state == "" {
+			state = "(no state)"
+		}
+		label := fmt.Sprintf("%s — %s — %s", iss.Identifier, state, title)
+		labels[i] = label
+		byLabel[label] = iss
+	}
+	chosen, err := p.choose(ctx, "Select a Linear issue", labels)
 	if errors.Is(err, huh.ErrUserAborted) {
-		return "", false, nil
+		return linear.Issue{}, false, nil
 	}
 	if err != nil {
-		return "", false, err
+		return linear.Issue{}, false, err
 	}
-	return strings.TrimSpace(id), true, nil
+	iss, ok := byLabel[chosen]
+	if !ok {
+		return linear.Issue{}, false, fmt.Errorf("picker: unknown issue selection %q", chosen)
+	}
+	return iss, true, nil
 }

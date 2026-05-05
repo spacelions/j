@@ -175,10 +175,11 @@ type scriptedUI struct {
 	linearProjectErr   error
 	linearProjectCalls int
 	linearProjectsSeen []linear.Project
-	linearIdentifier   string
-	linearIDOK         bool
-	linearIDErr        error
-	linearIDCalls      int
+	pickedIssue        linear.Issue
+	pickedIssueOK      bool
+	pickedIssueErr     error
+	pickedIssueCalls   int
+	pickedIssuesSeen   []linear.Issue
 }
 
 func (s *scriptedUI) SelectSource(_ context.Context, _ []picker.Source) (picker.Source, error) {
@@ -257,12 +258,13 @@ func (s *scriptedUI) PickLinearProject(_ context.Context, projects []linear.Proj
 	return s.linearProject, s.linearProjectOK, nil
 }
 
-func (s *scriptedUI) PromptLinearIdentifier(_ context.Context) (string, bool, error) {
-	s.linearIDCalls++
-	if s.linearIDErr != nil {
-		return "", false, s.linearIDErr
+func (s *scriptedUI) PickLinearIssue(_ context.Context, issues []linear.Issue) (linear.Issue, bool, error) {
+	s.pickedIssueCalls++
+	s.pickedIssuesSeen = append([]linear.Issue(nil), issues...)
+	if s.pickedIssueErr != nil {
+		return linear.Issue{}, false, s.pickedIssueErr
 	}
-	return s.linearIdentifier, s.linearIDOK, nil
+	return s.pickedIssue, s.pickedIssueOK, nil
 }
 
 
@@ -598,6 +600,9 @@ func TestRun_Linear_PicksAndPlans(t *testing.T) {
 			Description: "the body",
 			URL:         "https://linear.app/eng/issue/ENG-9",
 		},
+		AssignedIssues: []testutil.LinearIssueStub{
+			{Identifier: "ENG-9", Title: "wire it", URL: "https://linear.app/eng/issue/ENG-9", State: "In Progress"},
+		},
 	})
 	t.Cleanup(srv.Close)
 	prev := linear.TestEndpoint
@@ -606,9 +611,9 @@ func TestRun_Linear_PicksAndPlans(t *testing.T) {
 
 	agent := newScriptedAgent()
 	ui := &scriptedUI{
-		source:           picker.SourceLinear,
-		linearIdentifier: "ENG-9",
-		linearIDOK:       true,
+		source:        picker.SourceLinear,
+		pickedIssue:   linear.Issue{Identifier: "ENG-9", Title: "wire it", State: "In Progress"},
+		pickedIssueOK: true,
 	}
 	err := Run(context.Background(), Options{
 		Stdout: io.Discard,

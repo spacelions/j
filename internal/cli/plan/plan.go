@@ -33,7 +33,7 @@ type UI interface {
 	ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error)
 	PromptLinearAPIKey(ctx context.Context, openURL string) (string, bool, error)
 	PickLinearProject(ctx context.Context, projects []linear.Project) (linear.Project, bool, error)
-	PromptLinearIdentifier(ctx context.Context) (string, bool, error)
+	PickLinearIssue(ctx context.Context, issues []linear.Issue) (linear.Issue, bool, error)
 }
 
 // Options configures Run. Stdin/Stdout/Stderr default to the process

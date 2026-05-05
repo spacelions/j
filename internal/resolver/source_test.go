@@ -19,17 +19,17 @@ import (
 )
 
 type sourceUI struct {
-	source           picker.Source
-	md               string
-	taskID           string
-	ok               bool
-	err              error
-	linearAPIKey     string
-	linearAPIKeyOK   bool
-	pickedProject    linear.Project
-	pickedProjectOK  bool
-	linearIdentifier string
-	linearIDOK       bool
+	source          picker.Source
+	md              string
+	taskID          string
+	ok              bool
+	err             error
+	linearAPIKey    string
+	linearAPIKeyOK  bool
+	pickedProject   linear.Project
+	pickedProjectOK bool
+	pickedIssue     linear.Issue
+	pickedIssueOK   bool
 }
 
 func (u sourceUI) SelectSource(context.Context, []picker.Source) (picker.Source, error) {
@@ -52,8 +52,8 @@ func (u sourceUI) PickLinearProject(context.Context, []linear.Project) (linear.P
 	return u.pickedProject, u.pickedProjectOK, u.err
 }
 
-func (u sourceUI) PromptLinearIdentifier(context.Context) (string, bool, error) {
-	return u.linearIdentifier, u.linearIDOK, u.err
+func (u sourceUI) PickLinearIssue(context.Context, []linear.Issue) (linear.Issue, bool, error) {
+	return u.pickedIssue, u.pickedIssueOK, u.err
 }
 
 func TestResolveStartTargetFromFile(t *testing.T) {
@@ -98,7 +98,14 @@ func TestResolveStartTargetSources(t *testing.T) {
 	if err := linear.SaveProject("project-x"); err != nil {
 		t.Fatal(err)
 	}
-	srv := newLinearStubIssueServer("ENG-1", "from picker", "body", "https://linear.app/eng/issue/ENG-1")
+	srv := newLinearStubServer(stubLinearResponses{
+		issueByID: map[string]stubLinearIssue{
+			"ENG-1": {Identifier: "ENG-1", Title: "from picker", Description: "body", URL: "https://linear.app/eng/issue/ENG-1"},
+		},
+		assignedIssues: []stubLinearIssue{
+			{Identifier: "ENG-1", Title: "from picker", URL: "https://linear.app/eng/issue/ENG-1", State: "In Progress"},
+		},
+	})
 	t.Cleanup(srv.Close)
 	prev := linear.TestEndpoint
 	linear.TestEndpoint = srv.URL
@@ -106,7 +113,11 @@ func TestResolveStartTargetSources(t *testing.T) {
 
 	target, err = ResolveStartTarget(
 		context.Background(),
-		sourceUI{source: picker.SourceLinear, linearIdentifier: "ENG-1", linearIDOK: true},
+		sourceUI{
+			source:        picker.SourceLinear,
+			pickedIssue:   linear.Issue{Identifier: "ENG-1", Title: "from picker", State: "In Progress"},
+			pickedIssueOK: true,
+		},
 		bytes.NewBuffer(nil),
 		"",
 	)
@@ -159,7 +170,11 @@ func TestStartTargetFromLinear_Success(t *testing.T) {
 	if err := linear.SaveAPIKey("lin_api_test"); err != nil {
 		t.Fatal(err)
 	}
-	srv := newLinearStubIssueServer("ENG-2", "the title", "the description", "https://linear.app/eng/issue/ENG-2")
+	srv := newLinearStubServer(stubLinearResponses{
+		issueByID: map[string]stubLinearIssue{
+			"ENG-2": {Identifier: "ENG-2", Title: "the title", Description: "the description", URL: "https://linear.app/eng/issue/ENG-2"},
+		},
+	})
 	t.Cleanup(srv.Close)
 	prev := linear.TestEndpoint
 	linear.TestEndpoint = srv.URL
@@ -190,20 +205,71 @@ func TestStartTargetFromLinear_PropagatesError(t *testing.T) {
 	}
 }
 
-func newLinearStubIssueServer(identifier, title, description, url string) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		payload := map[string]any{
-			"data": map[string]any{
-				"issue": map[string]string{
-					"identifier":  identifier,
-					"title":       title,
-					"description": description,
-					"url":         url,
-				},
-			},
+type stubLinearIssue struct {
+	Identifier  string
+	Title       string
+	Description string
+	URL         string
+	State       string
+}
+
+type stubLinearResponses struct {
+	issueByID      map[string]stubLinearIssue
+	assignedIssues []stubLinearIssue
+}
+
+// newLinearStubServer returns a test GraphQL endpoint that
+// dispatches by query content: viewer.assignedIssues queries
+// receive responses.assignedIssues, and issue(id:...) queries get
+// the matching entry from responses.issueByID. Anything else is a
+// 400 so a typo in production code is loud.
+func newLinearStubServer(responses stubLinearResponses) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Query     string         `json:"query"`
+			Variables map[string]any `json:"variables"`
 		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(payload)
+		if strings.Contains(req.Query, "viewer{assignedIssues") {
+			nodes := make([]map[string]any, 0, len(responses.assignedIssues))
+			for _, iss := range responses.assignedIssues {
+				nodes = append(nodes, map[string]any{
+					"identifier": iss.Identifier,
+					"title":      iss.Title,
+					"url":        iss.URL,
+					"state":      map[string]string{"name": iss.State},
+				})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"viewer": map[string]any{
+						"assignedIssues": map[string]any{"nodes": nodes},
+					},
+				},
+			})
+			return
+		}
+		if strings.Contains(req.Query, "issue(id:$id)") {
+			id, _ := req.Variables["id"].(string)
+			iss, ok := responses.issueByID[id]
+			if !ok {
+				_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"issue": nil}})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"issue": map[string]string{
+						"identifier":  iss.Identifier,
+						"title":       iss.Title,
+						"description": iss.Description,
+						"url":         iss.URL,
+					},
+				},
+			})
+			return
+		}
+		http.Error(w, "stub: unknown query", http.StatusBadRequest)
 	}))
 }
 

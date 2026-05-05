@@ -11,12 +11,15 @@ import (
 // LinearIssueStub mirrors linear.Issue's JSON shape for fixture
 // data. Pure data, so testutil does not import internal/linear and
 // the linear package's own tests stay free to define their own
-// fixtures inline.
+// fixtures inline. State is rendered as the nested `state.name`
+// shape on the wire when the stub responds to viewer.assignedIssues
+// queries.
 type LinearIssueStub struct {
 	Identifier  string `json:"identifier"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	URL         string `json:"url"`
+	State       string `json:"-"`
 }
 
 // LinearProjectStub mirrors linear.Project's JSON shape. Same
@@ -29,12 +32,16 @@ type LinearProjectStub struct {
 // LinearStubResponses bundles the canned data a LinearStubServer
 // returns. Issue may be nil to simulate a "issue not found"
 // response (the GraphQL endpoint returns `data.issue: null`).
+// AssignedIssues populates the viewer.assignedIssues response so
+// picker tests can drive the issue-list flow without hand-rolling a
+// second handler.
 type LinearStubResponses struct {
-	Issue        *LinearIssueStub
-	Projects     []LinearProjectStub
-	IssueErrors  []string
-	HTTPStatus   int
-	BodyOverride string
+	Issue          *LinearIssueStub
+	AssignedIssues []LinearIssueStub
+	Projects       []LinearProjectStub
+	IssueErrors    []string
+	HTTPStatus     int
+	BodyOverride   string
 }
 
 // NewLinearStubServer returns a *httptest.Server that mimics the
@@ -58,6 +65,25 @@ func NewLinearStubServer(responses LinearStubResponses) *httptest.Server {
 			return
 		}
 		query := string(body)
+		if strings.Contains(query, "viewer{assignedIssues") {
+			nodes := make([]map[string]any, 0, len(responses.AssignedIssues))
+			for _, iss := range responses.AssignedIssues {
+				nodes = append(nodes, map[string]any{
+					"identifier": iss.Identifier,
+					"title":      iss.Title,
+					"url":        iss.URL,
+					"state":      map[string]string{"name": iss.State},
+				})
+			}
+			writeJSON(w, map[string]any{
+				"data": map[string]any{
+					"viewer": map[string]any{
+						"assignedIssues": map[string]any{"nodes": nodes},
+					},
+				},
+			})
+			return
+		}
 		if strings.Contains(query, "issue(id:") {
 			payload := map[string]any{
 				"data": map[string]any{"issue": responses.Issue},
