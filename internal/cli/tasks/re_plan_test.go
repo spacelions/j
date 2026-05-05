@@ -127,13 +127,14 @@ func TestRunRePlan_PlanDoneSkipsConfirm(t *testing.T) {
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
 	if err := RunRePlan(context.Background(), RePlanOptions{
-		FromTask: id,
-		Stdin:    strings.NewReader(""),
-		Stdout:   &stdout,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{newContinueAgent()},
-		UI:       ui,
-		JBinary:  argvJBinary(t, argvPath),
+		FromTask:    id,
+		Interactive: boolPtr(false),
+		Stdin:       strings.NewReader(""),
+		Stdout:      &stdout,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{newContinueAgent()},
+		UI:          ui,
+		JBinary:     argvJBinary(t, argvPath),
 	}); err != nil {
 		t.Fatalf("RunRePlan: %v", err)
 	}
@@ -141,7 +142,7 @@ func TestRunRePlan_PlanDoneSkipsConfirm(t *testing.T) {
 		t.Fatalf("ConfirmStatusOverride should be skipped for plan-done: calls=%d", ui.statusCalls)
 	}
 	args := readSpawnedArgv(t, argvPath)
-	want := []string{"tasks", "orchestrate", "--id", id, "--plan-requires-approval=true"}
+	want := []string{"tasks", "orchestrate", "--id", id, "--plan-requires-approval=true", "--interactive=false"}
 	if strings.Join(args, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", args, want)
 	}
@@ -212,9 +213,9 @@ func TestRunRePlan_ForwardsAllOverrides(t *testing.T) {
 		"tasks", "orchestrate",
 		"--id", id,
 		"--plan-requires-approval=true",
+		"--interactive=true",
 		"--tool=claude",
 		"--model=opus",
-		"--interactive=true",
 	}
 	if strings.Join(args, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", args, want)

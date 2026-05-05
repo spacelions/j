@@ -252,13 +252,14 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 
 	start := time.Now()
 	err := RunStart(context.Background(), StartOptions{
-		FromFile: target,
-		Stdin:    strings.NewReader(""),
-		Stdout:   &stdout,
-		Stderr:   &stderr,
-		Agents:   []codingagents.Agent{stub},
-		UI:       &scriptedStartUI{},
-		JBinary:  binary,
+		FromFile:    target,
+		Interactive: boolPtr(false),
+		Stdin:       strings.NewReader(""),
+		Stdout:      &stdout,
+		Stderr:      &stderr,
+		Agents:      []codingagents.Agent{stub},
+		UI:          &scriptedStartUI{},
+		JBinary:     binary,
 	})
 	elapsed := time.Since(start)
 	if err != nil {
@@ -346,9 +347,17 @@ func TestRunStart_ForwardsResolvedPlanApproval(t *testing.T) {
 			if len(args) < 5 {
 				t.Fatalf("argv = %v, want orchestrate args plus plan approval flag", args)
 			}
-			want := "--plan-requires-approval=" + tc.want
-			if got := args[len(args)-1]; got != want {
-				t.Fatalf("approval flag = %q, want %q; argv=%v", got, want, args)
+			// --interactive=true is always appended after the approval flag
+			wantApproval := "--plan-requires-approval=" + tc.want
+			found := false
+			for _, a := range args {
+				if a == wantApproval {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("approval flag %q not found in argv=%v", wantApproval, args)
 			}
 		})
 	}
@@ -366,6 +375,7 @@ func TestRunStart_PrePopulatedSkipsPrompts(t *testing.T) {
 	binary := noopJBinary(t)
 
 	err := RunStart(context.Background(), StartOptions{
+			Interactive: boolPtr(false),
 		FromFile: target,
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -413,6 +423,7 @@ func TestRunStart_NoFromFile_PicksMarkdown(t *testing.T) {
 	}
 
 	err = RunStart(context.Background(), StartOptions{
+			Interactive: boolPtr(false),
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
@@ -472,6 +483,7 @@ func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 	}
 
 	err = RunStart(context.Background(), StartOptions{
+			Interactive: boolPtr(false),
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
@@ -544,6 +556,7 @@ func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
 	}
 
 	err := RunStart(context.Background(), StartOptions{
+			Interactive: boolPtr(false),
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
@@ -601,6 +614,7 @@ func TestRunStart_FromLinearFlag(t *testing.T) {
 
 	ui := &scriptedStartUI{}
 	err := RunStart(context.Background(), StartOptions{
+			Interactive: boolPtr(false),
 		FromLinear: "ENG-2",
 		Stdin:      strings.NewReader(""),
 		Stdout:     io.Discard,
@@ -653,6 +667,7 @@ func TestRunStart_FromLinearFlag_RecordsLinearIssue(t *testing.T) {
 	t.Cleanup(func() { linear.TestEndpoint = prev })
 
 	err := RunStart(context.Background(), StartOptions{
+			Interactive: boolPtr(false),
 		FromLinear: "ENG-42",
 		Stdin:      strings.NewReader(""),
 		Stdout:     io.Discard,
@@ -825,6 +840,7 @@ func TestRunStart_AppliesDefaults(t *testing.T) {
 	}
 	target := writeStartFile(t, "# task\nbody")
 	if err := RunStart(context.Background(), StartOptions{
+			Interactive: boolPtr(false),
 		FromFile: target,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 		JBinary:  noopJBinary(t),
@@ -857,6 +873,7 @@ func TestRunStart_BucketInteractiveUntouched(t *testing.T) {
 	}
 	target := writeStartFile(t, "# task\nbody")
 	if err := RunStart(context.Background(), StartOptions{
+			Interactive: boolPtr(false),
 		FromFile: target,
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -1063,6 +1080,7 @@ func TestRunStart_ContextCancellable(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	err := RunStart(ctx, StartOptions{
+			Interactive: boolPtr(false),
 		FromFile: target,
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -1112,6 +1130,7 @@ func TestRunStart_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
 			target := writeStartFile(t, "# task\nbody")
 			argvPath := filepath.Join(t.TempDir(), "argv.txt")
 			if err := RunStart(context.Background(), StartOptions{
+			Interactive: boolPtr(false),
 				FromFile:             target,
 				PlanRequiresApproval: tc.override,
 				Stdin:                strings.NewReader(""),
