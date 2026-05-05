@@ -4,13 +4,14 @@
 package cli
 
 import (
+	"errors"
 	"os"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/initcmd"
-	"github.com/spacelions/j/internal/cli/plan"
 	"github.com/spacelions/j/internal/cli/run"
 	"github.com/spacelions/j/internal/cli/settings"
 	"github.com/spacelions/j/internal/cli/tasks"
@@ -33,7 +34,6 @@ func Execute() int {
 	root.AddCommand(
 		run.New(),
 		web.New(),
-		plan.New(),
 		work.New(),
 		verify.New(),
 		settings.New(),
@@ -42,6 +42,9 @@ func Execute() int {
 	)
 	root.SetArgs(os.Args[1:])
 	if err := root.Execute(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return 0
+		}
 		_, _ = uitheme.DangerousFprintf(os.Stderr, "J: %v\n", err)
 		return 1
 	}

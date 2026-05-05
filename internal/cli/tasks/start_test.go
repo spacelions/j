@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
@@ -180,6 +179,10 @@ type scriptedStartUI struct {
 	pickedIssueErr     error
 	pickedIssueCalls   int
 	pickedIssuesSeen   []linear.Issue
+
+	confirmOverride      bool
+	confirmOverrideErr   error
+	confirmOverrideCalls int
 }
 
 func (u *scriptedStartUI) SelectSource(_ context.Context, _ []picker.Source) (picker.Source, error) {
@@ -230,13 +233,20 @@ func (u *scriptedStartUI) PickLinearIssue(_ context.Context, issues []linear.Iss
 	return u.pickedIssue, u.pickedIssueOK, nil
 }
 
+func (u *scriptedStartUI) ConfirmStatusOverride(_ context.Context, _, _, _ string) (bool, error) {
+	u.confirmOverrideCalls++
+	return u.confirmOverride, u.confirmOverrideErr
+}
+
 // TestRunStart_HappyPath_FromFile pins the --from-file shortcut.
 func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
+	}
 	target := writeStartFile(t, "# task\nbody line")
 	stub := testutil.NewScriptedAgent()
-	sel := &testutil.SelectorFake{Tool: "cursor", Model: "sonnet-4"}
 	binary := noopJBinary(t)
 	var stdout, stderr bytes.Buffer
 
@@ -247,7 +257,6 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 		Stdout:   &stdout,
 		Stderr:   &stderr,
 		Agents:   []codingagents.Agent{stub},
-		Selector: sel,
 		UI:       &scriptedStartUI{},
 		JBinary:  binary,
 	})
@@ -257,9 +266,6 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	}
 	if elapsed > 2*time.Second {
 		t.Fatalf("RunStart took %v, want <2s for the detached spawn", elapsed)
-	}
-	if sel.ToolCalls != 3 || sel.ModelCalls != 3 {
-		t.Fatalf("selector calls = (%d, %d), want (3, 3)", sel.ToolCalls, sel.ModelCalls)
 	}
 	if !strings.Contains(stdout.String(), "running in background (PID=") {
 		t.Fatalf("stdout should announce the task PID: %q", stdout.String())
@@ -299,13 +305,6 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	if !strings.Contains(string(body), "body line") {
 		t.Fatalf("requirements.md missing user body: %q", body)
 	}
-
-	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		tool, model, _ := testutil.ReadAgentBucket(t, bucket)
-		if tool != "cursor" || model != "sonnet-4" {
-			t.Fatalf("bucket %q = (%q, %q)", bucket, tool, model)
-		}
-	}
 }
 
 func TestRunStart_ForwardsResolvedPlanApproval(t *testing.T) {
@@ -337,7 +336,7 @@ func TestRunStart_ForwardsResolvedPlanApproval(t *testing.T) {
 				Stdout:               io.Discard,
 				Stderr:               io.Discard,
 				Agents:               []codingagents.Agent{testutil.NewScriptedAgent()},
-				Selector:             &testutil.SelectorFake{},
+	
 				UI:                   &scriptedStartUI{},
 				JBinary:              argvJBinary(t, argvPath),
 			}); err != nil {
@@ -364,7 +363,6 @@ func TestRunStart_PrePopulatedSkipsPrompts(t *testing.T) {
 		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	target := writeStartFile(t, "# task\nbody")
-	sel := &testutil.SelectorFake{}
 	binary := noopJBinary(t)
 
 	err := RunStart(context.Background(), StartOptions{
@@ -373,15 +371,11 @@ func TestRunStart_PrePopulatedSkipsPrompts(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: sel,
 		UI:       &scriptedStartUI{},
 		JBinary:  binary,
 	})
 	if err != nil {
 		t.Fatalf("RunStart: %v", err)
-	}
-	if sel.ToolCalls != 0 || sel.ModelCalls != 0 {
-		t.Fatalf("selector calls = (%d, %d), want (0, 0) when buckets are populated", sel.ToolCalls, sel.ModelCalls)
 	}
 }
 
@@ -423,7 +417,7 @@ func TestRunStart_NoFromFile_PicksMarkdown(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -458,7 +452,11 @@ func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	existingID := tasks.NewTaskID()
-	if _, err := tasks.EnsureDir(existingID); err != nil {
+	taskDir, err := tasks.EnsureDir(existingID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(taskDir, tasks.RequirementsFileName), []byte("# existing\nbody"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	seedTaskRowDirect(t, tasks.Task{
@@ -473,12 +471,12 @@ func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 		pickedTaskOK: true,
 	}
 
-	err := RunStart(context.Background(), StartOptions{
+	err = RunStart(context.Background(), StartOptions{
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -550,7 +548,7 @@ func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -608,7 +606,7 @@ func TestRunStart_FromLinearFlag(t *testing.T) {
 		Stdout:     io.Discard,
 		Stderr:     io.Discard,
 		Agents:     []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector:   &testutil.SelectorFake{},
+
 		UI:         ui,
 		JBinary:    noopJBinary(t),
 	})
@@ -660,7 +658,7 @@ func TestRunStart_FromLinearFlag_RecordsLinearIssue(t *testing.T) {
 		Stdout:     io.Discard,
 		Stderr:     io.Discard,
 		Agents:     []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector:   &testutil.SelectorFake{},
+
 		UI:         &scriptedStartUI{},
 		JBinary:    noopJBinary(t),
 	})
@@ -689,7 +687,7 @@ func TestRunStart_FromLinearFlag_MissingKey(t *testing.T) {
 		Stdout:     io.Discard,
 		Stderr:     io.Discard,
 		Agents:     []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector:   &testutil.SelectorFake{},
+
 		UI:         &scriptedStartUI{},
 		JBinary:    noopJBinary(t),
 	})
@@ -721,7 +719,7 @@ func TestRunStart_NoFromFile_NoExistingTasks(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -756,7 +754,7 @@ func TestRunStart_NoFromFile_TaskPickerCancelled(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       ui,
 		JBinary:  noopJBinary(t),
 	})
@@ -766,30 +764,6 @@ func TestRunStart_NoFromFile_TaskPickerCancelled(t *testing.T) {
 	row := readTaskFromBolt(t, existingID)
 	if row.BackgroundPID != 0 {
 		t.Fatalf("existing row's BackgroundPID = %d, want 0 (picker cancel must not fire spawn)", row.BackgroundPID)
-	}
-}
-
-// TestRunStart_SelectorAbortIsClean pins the deferred huh.ErrUserAborted
-// guard for the agent-pick prompt.
-func TestRunStart_SelectorAbortIsClean(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	target := writeStartFile(t, "# task\nbody")
-	sel := &testutil.SelectorFake{ToolErr: huh.ErrUserAborted}
-	if err := RunStart(context.Background(), StartOptions{
-		FromFile: target,
-		Stdin:    strings.NewReader(""),
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: sel,
-		UI:       &scriptedStartUI{},
-		JBinary:  noopJBinary(t),
-	}); err != nil {
-		t.Fatalf("err = %v, want nil (abort exits cleanly)", err)
-	}
-	if rows := allTaskRows(t); len(rows) != 0 {
-		t.Fatalf("ListTasks = %d, want 0 after abort", len(rows))
 	}
 }
 
@@ -808,7 +782,7 @@ func TestRunStart_ResolveSourceFails(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
 	})
@@ -831,7 +805,7 @@ func TestRunStart_SpawnFails(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       &scriptedStartUI{},
 		JBinary:  "/no/such/binary-xyzzy",
 	})
@@ -841,9 +815,8 @@ func TestRunStart_SpawnFails(t *testing.T) {
 }
 
 // TestRunStart_AppliesDefaults exercises StartOptions.withDefaults
-// (the nil-stdin / nil-stdout / nil-stderr / nil-Selector / nil-UI
-// branches) by running with populated buckets so the selector + UI
-// are never invoked.
+// (the nil-stdin / nil-stdout / nil-stderr / nil-UI branches) by
+// running with populated buckets so the UI is never invoked.
 func TestRunStart_AppliesDefaults(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -889,7 +862,7 @@ func TestRunStart_BucketInteractiveUntouched(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
 	}); err != nil {
@@ -913,45 +886,79 @@ func TestNewStartCmd_FlagDefaults(t *testing.T) {
 	}
 	var names []string
 	cmd.Flags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
-	want := []string{"from-file", "from-linear", "plan-requires-approval"}
+	// pflag visits flags in lexicographic order.
+	want := []string{"from-file", "from-linear", "from-task", "interactive", "model", "plan-requires-approval", "tool", "yes"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("flags = %v, want %v", names, want)
 	}
-	if cmd.Flags().Lookup("interactive") != nil {
-		t.Fatal("--interactive should not be registered on `j tasks start`")
-	}
 }
 
-// TestNewStartCmd_FlagsBindToViper covers --from-file piping
-// through viper.
+// TestNewStartCmd_FlagsBindToViper covers flag→viper bindings.
 func TestNewStartCmd_FlagsBindToViper(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	cmd := newStartCmd()
-	if err := cmd.Flags().Set("from-file", "/tmp/foo.md"); err != nil {
-		t.Fatalf("Flags().Set from-file: %v", err)
+	for flag, key := range map[string]string{
+		"from-file":   "tasks.start.from_file",
+		"from-linear": "tasks.start.from_linear",
+		"from-task":   "tasks.start.from_task",
+		"tool":        "tasks.start.tool",
+		"model":       "tasks.start.model",
+	} {
+		if err := cmd.Flags().Set(flag, "testval"); err != nil {
+			t.Fatalf("Flags().Set %s: %v", flag, err)
+		}
+		if got := viper.GetString(key); got != "testval" {
+			t.Errorf("%s = %q, want testval", key, got)
+		}
 	}
-	if got := viper.GetString("tasks.start.from_file"); got != "/tmp/foo.md" {
-		t.Errorf("tasks.start.from_file = %q", got)
-	}
-	if err := cmd.Flags().Set("plan-requires-approval", "true"); err != nil {
-		t.Fatalf("Flags().Set plan-requires-approval: %v", err)
-	}
-	if got := viper.GetBool("tasks.start.plan_requires_approval"); !got {
-		t.Errorf("tasks.start.plan_requires_approval = false, want true")
+	for flag, key := range map[string]string{
+		"plan-requires-approval": "tasks.start.plan_requires_approval",
+		"interactive":            "tasks.start.interactive",
+		"yes":                    "tasks.start.yes",
+	} {
+		if err := cmd.Flags().Set(flag, "true"); err != nil {
+			t.Fatalf("Flags().Set %s: %v", flag, err)
+		}
+		if got := viper.GetBool(key); !got {
+			t.Errorf("%s = false, want true", key)
+		}
 	}
 }
 
-// TestNewStartCmd_EnvBindings covers TASKS_START_FROM_FILE and
-// TASKS_START_PLAN_REQUIRES_APPROVAL.
+// TestNewStartCmd_EnvBindings covers env-var→viper bindings.
 func TestNewStartCmd_EnvBindings(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	t.Setenv("TASKS_START_FROM_FILE", "/env/foo.md")
+	t.Setenv("TASKS_START_FROM_LINEAR", "ENG-1")
+	t.Setenv("TASKS_START_FROM_TASK", "task-id")
+	t.Setenv("TASKS_START_TOOL", "claude")
+	t.Setenv("TASKS_START_MODEL", "opus")
+	t.Setenv("TASKS_START_INTERACTIVE", "true")
+	t.Setenv("TASKS_START_YES", "true")
 	t.Setenv("TASKS_START_PLAN_REQUIRES_APPROVAL", "true")
 	_ = newStartCmd()
 	if got := viper.GetString("tasks.start.from_file"); got != "/env/foo.md" {
 		t.Errorf("tasks.start.from_file = %q", got)
+	}
+	if got := viper.GetString("tasks.start.from_linear"); got != "ENG-1" {
+		t.Errorf("tasks.start.from_linear = %q", got)
+	}
+	if got := viper.GetString("tasks.start.from_task"); got != "task-id" {
+		t.Errorf("tasks.start.from_task = %q", got)
+	}
+	if got := viper.GetString("tasks.start.tool"); got != "claude" {
+		t.Errorf("tasks.start.tool = %q", got)
+	}
+	if got := viper.GetString("tasks.start.model"); got != "opus" {
+		t.Errorf("tasks.start.model = %q", got)
+	}
+	if got := viper.GetBool("tasks.start.interactive"); !got {
+		t.Errorf("tasks.start.interactive = false, want true")
+	}
+	if got := viper.GetBool("tasks.start.yes"); !got {
+		t.Errorf("tasks.start.yes = false, want true")
 	}
 	if got := viper.GetBool("tasks.start.plan_requires_approval"); !got {
 		t.Errorf("tasks.start.plan_requires_approval = false, want true")
@@ -1061,7 +1068,7 @@ func TestRunStart_ContextCancellable(t *testing.T) {
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		Selector: &testutil.SelectorFake{},
+
 		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
 	})
@@ -1111,7 +1118,7 @@ func TestRunStart_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
 				Stdout:               io.Discard,
 				Stderr:               io.Discard,
 				Agents:               []codingagents.Agent{testutil.NewScriptedAgent()},
-				Selector:             &testutil.SelectorFake{},
+	
 				UI:                   &scriptedStartUI{},
 				JBinary:              argvJBinary(t, argvPath),
 			}); err != nil {

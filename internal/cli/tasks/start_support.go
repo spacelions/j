@@ -58,9 +58,6 @@ func (o StartOptions) withDefaults() StartOptions {
 	if o.Stderr == nil {
 		o.Stderr = os.Stderr
 	}
-	if o.Selector == nil {
-		o.Selector = picker.New(o.Stdin, o.Stderr)
-	}
 	if o.UI == nil {
 		o.UI = picker.New(o.Stdin, o.Stderr)
 	}

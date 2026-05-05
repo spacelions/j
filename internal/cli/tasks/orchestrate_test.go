@@ -371,7 +371,8 @@ func TestNewOrchestrateCmd_FlagDefaults(t *testing.T) {
 	}
 	var names []string
 	cmd.Flags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
-	want := []string{"id", "plan-requires-approval", "skip-planning"}
+	// pflag visits flags in lexicographic order.
+	want := []string{"id", "interactive", "model", "plan-requires-approval", "skip-planning", "tool", "yes"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("flags = %v, want %v", names, want)
 	}

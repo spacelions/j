@@ -1,6 +1,6 @@
 // Package planner exposes a single New(Config) constructor that
 // returns either an LLMAgent (Config.LLM set) or a shell-out custom
-// agent (Config.TaskID + Agents set) whose Run blocks on cli/plan.Run.
+// agent (Config.TaskID + Agents set) whose Run blocks on Execute.
 // The same shape covers `j run` / `j web` (LLM) and `j tasks
 // orchestrate` (shell-out) so a future LLM-backed orchestrator is
 // a Config field away.
@@ -18,8 +18,9 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
-	"github.com/spacelions/j/internal/cli/plan"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/resolver"
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/workflow/instructions"
 )
 
@@ -32,7 +33,7 @@ const (
 // of agent to return. Exactly one of LLM and TaskID should be set; the
 // constructor errors if both / neither are populated.
 type Config struct {
-	// LLM, when non-nil, switches New to the today-LLMAgent flavour
+	// LLM, when non-nil, switches New to the LLMAgent flavour
 	// used by `j run` / `j web`. The model is forwarded verbatim to
 	// llmagent.Config.
 	LLM model.LLM
@@ -43,6 +44,20 @@ type Config struct {
 	TaskID string
 	Agents []codingagents.Agent
 	Stderr io.Writer
+
+	// Tool and Model are one-off overrides forwarded from
+	// `j tasks orchestrate --tool/--model`. When non-empty, resolver.Agent
+	// uses them instead of (or to supplement) the stored bucket values.
+	Tool  string
+	Model string
+
+	// Interactive controls whether the planner runs in interactive (TUI)
+	// mode. Defaults to false for the headless orchestrator path.
+	Interactive bool
+
+	// Yes, when true, is forwarded into resolver.Agent so any
+	// status-mismatch confirmation is skipped automatically.
+	Yes bool
 }
 
 // New returns the configured planner agent. The empty / ambiguous
@@ -74,20 +89,33 @@ func New(cfg Config) (agent.Agent, error) {
 	}
 	taskID := cfg.TaskID
 	agents := cfg.Agents
+	tool := cfg.Tool
+	agentModel := cfg.Model
+	interactive := cfg.Interactive
 	return agent.New(agent.Config{
 		Name:        Name,
-		Description: "Runs the planner phase by shelling out to `j plan` against the seeded task.",
+		Description: "Runs the planner phase via Execute against the seeded task.",
 		Run: func(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
 			return func(yield func(*session.Event, error) bool) {
-				interactive := false
-				if err := plan.Run(ctx, plan.Options{
+				resolvedAgent, resolvedModel, err := resolver.Agent(ctx, resolver.AgentOptions{
+					Bucket:        store.BucketPlanner,
+					Agents:        agents,
+					ExplicitTool:  tool,
+					ExplicitModel: agentModel,
+					Stderr:        stderr,
+					Interactive:   interactive,
+				})
+				if err != nil {
+					yield(nil, fmt.Errorf("%s: %w", Name, err))
+					return
+				}
+				if err := Execute(ctx, ExecuteOptions{
 					TaskID:            taskID,
-					Yes:               true,
+					Agent:             resolvedAgent,
+					Model:             resolvedModel,
 					Interactive:       interactive,
-					Stdout:            stderr,
-					Stderr:            stderr,
-					Agents:            agents,
 					WaitForCompletion: true,
+					Stderr:            stderr,
 				}); err != nil {
 					yield(nil, fmt.Errorf("%s: %w", Name, err))
 					return
