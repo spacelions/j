@@ -55,18 +55,13 @@ func isSecretKey(bucket, storedKey string) bool {
 }
 
 // keyTable lists every bucket whose display form differs from its
-// storage form. The Linear bucket stores the API token under the
-// camelCase "apiKey" key but accepts both `linear.api_key` and
-// `linear.api-key` from the user; the inverse maps the stored
-// "apiKey" back to the kebab-friendly "api_key" line in
-// `j settings`.
+// storage form. The Linear bucket stores `api_key` identity-mapped
+// (matching project.api_key) and only registers the kebab-case
+// alias `api-key` → `api_key` so users can type either form on the
+// `j settings set` line.
 var keyTable = map[string]*keyMap{
 	store.BucketLinear: {
-		toDisplay: map[string]string{
-			store.KeyLinearAPIKey: "api_key",
-		},
 		toStorage: map[string]string{
-			"api_key": store.KeyLinearAPIKey,
 			"api-key": store.KeyLinearAPIKey,
 		},
 	},
