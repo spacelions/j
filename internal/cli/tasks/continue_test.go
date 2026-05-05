@@ -422,7 +422,7 @@ func TestRunContinue_HelpFromWorkEnd(t *testing.T) {
 }
 
 // TestRunContinue_HelpFromPlanEnd: help with only PlanEndAt set ->
-// detached replan (same as StatusPlanning dispatch).
+// inline orchestrator with --plan-requires-approval=true --interactive=true.
 func TestRunContinue_HelpFromPlanEnd(t *testing.T) {
 	setupContinueEnv(t)
 	t1 := time.Now().UTC().Add(-2 * time.Hour)
@@ -449,7 +449,7 @@ func TestRunContinue_HelpFromPlanEnd(t *testing.T) {
 			agent.planned, agent.worked, agent.verified)
 	}
 	args := readSpawnedArgv(t, argvPath)
-	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--plan-requires-approval=true"}
+	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--plan-requires-approval=true", "--interactive=true"}
 	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
 		t.Fatalf("argv = %v, want %v", args, wantArgs)
 	}

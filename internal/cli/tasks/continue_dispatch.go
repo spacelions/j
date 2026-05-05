@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
 	"time"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
@@ -15,55 +14,19 @@ import (
 	"github.com/spacelions/j/internal/workflow/agents/worker"
 )
 
-// replanAsDetachedOrchestrator fires a detached `j tasks orchestrate
-// --plan-requires-approval=true` child for the supplied task so it
-// gets re-planned without the user waiting in-process. Used for both
-// the `planning` status (interrupted first run) and the `help` status
-// plan-phase case. Requirements.md is refreshed from Linear if needed
-// before the spawn.
-func replanAsDetachedOrchestrator(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
-	if _, err := resolver.StartTargetFromExistingTask(ctx, t.ID); err != nil {
-		return err
-	}
-	taskDir, err := tasks.EnsureDir(t.ID)
-	if err != nil {
+// resumeWorkInlineOrchestrator re-execs `j tasks orchestrate
+// --skip-planning=true --interactive=true` inline so the worker
+// resumes its session in the foreground.
+func resumeWorkInlineOrchestrator(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
+	if _, err := tasks.EnsureDir(t.ID); err != nil {
 		return fmt.Errorf("J: ensure task dir: %w", err)
 	}
-	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
-	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
-		"tasks", "orchestrate",
-		"--id", t.ID,
-		"--plan-requires-approval=true",
-	})
-	if err != nil {
-		return err
-	}
-	stampSpawnOnRow(opts.Stderr, t.ID, agentLogPath, pid)
-	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", t.ID), pid, agentLogPath)
-	return nil
-}
-
-// resumeWorkAsDetachedOrchestrator forks a detached `j tasks orchestrate
-// --skip-planning=true --interactive=true` child for the supplied task
-// so the worker resumes its session in the foreground.
-func resumeWorkAsDetachedOrchestrator(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
-	taskDir, err := tasks.EnsureDir(t.ID)
-	if err != nil {
-		return fmt.Errorf("J: ensure task dir: %w", err)
-	}
-	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
-	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
+	return runInlineOrchestrator(ctx, opts.JBinary, []string{
 		"tasks", "orchestrate",
 		"--id", t.ID,
 		"--skip-planning=true",
 		"--interactive=true",
 	})
-	if err != nil {
-		return err
-	}
-	stampSpawnOnRow(opts.Stderr, t.ID, agentLogPath, pid)
-	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", t.ID), pid, agentLogPath)
-	return nil
 }
 
 // stampSpawnOnRow records BackgroundPID + AgentLogPath on the
@@ -112,9 +75,20 @@ func dispatchHelp(ctx context.Context, opts ContinueOptions, t tasks.Task) error
 			Agents: opts.Agents,
 		})
 	case "work":
-		return resumeWorkAsDetachedOrchestrator(ctx, opts, t)
+		return resumeWorkInlineOrchestrator(ctx, opts, t)
 	case "plan":
-		return replanAsDetachedOrchestrator(ctx, opts, t)
+		if _, err := resolver.StartTargetFromExistingTask(ctx, t.ID); err != nil {
+			return err
+		}
+		if _, err := tasks.EnsureDir(t.ID); err != nil {
+			return fmt.Errorf("J: ensure task dir: %w", err)
+		}
+		return runInlineOrchestrator(ctx, opts.JBinary, []string{
+			"tasks", "orchestrate",
+			"--id", t.ID,
+			"--plan-requires-approval=true",
+			"--interactive=true",
+		})
 	}
 	return fmt.Errorf("J: task %s in `help` has no resumable phase signal", t.ID)
 }
