@@ -14,10 +14,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/plan"
 	"github.com/spacelions/j/internal/cli/preflight"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/verify"
 	"github.com/spacelions/j/internal/cli/work"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
@@ -48,10 +48,10 @@ type ContinueOptions struct {
 	// enter` so the on-disk widget is shared.
 	UI UI
 	// Selector drives the agent-pick prompt(s) when
-	// EnsureAgentSelections finds an empty bucket. Mirrors the
+	// preflight.EnsureAgentSelections finds an empty bucket. Mirrors the
 	// surface of plan/work UIs but stays minimal since the
 	// markdown / source pickers are not relevant on continue.
-	Selector AgentSelector
+	Selector preflight.AgentSelector
 
 	// JBinary is the absolute path to the j binary re-executed by
 	// the plan-done branch as `j tasks orchestrate --skip-planning ...`.
@@ -68,7 +68,7 @@ type ContinueOptions struct {
 //     same picker `j tasks enter` uses). An empty store prints
 //     the standard `J: no tasks` message and returns nil; a
 //     user-cancel in the picker also returns nil.
-//  3. Validate agent selections via EnsureAgentSelections so any
+//  3. Validate agent selections via preflight.EnsureAgentSelections so any
 //     missing bucket prompts once before the dispatch fires.
 //  4. Dispatch by Task.Status onto the matching phase Run /
 //     RunResume. Already-finished tasks (verify-done / completed)
@@ -92,7 +92,7 @@ func RunContinue(ctx context.Context, opts ContinueOptions) (err error) {
 		return nil
 	}
 
-	if err := EnsureAgentSelections(ctx, AgentCheckOptions{
+	if err := preflight.EnsureAgentSelections(ctx, preflight.AgentCheckOptions{
 		Stdin:  opts.Stdin,
 		Stdout: opts.Stdout,
 		Stderr: opts.Stderr,

@@ -28,7 +28,7 @@ import (
 // files real agents would (requirements.md / plan.md / verifier_*)
 // so the orchestration helpers downstream succeed.
 type continueAgent struct {
-	scriptedAgent
+	testutil.ScriptedAgent
 
 	planned   int
 	worked    int
@@ -39,9 +39,9 @@ type continueAgent struct {
 }
 
 func newContinueAgent() *continueAgent {
-	return &continueAgent{scriptedAgent: scriptedAgent{
-		name:   "cursor",
-		models: []string{"sonnet-4"},
+	return &continueAgent{ScriptedAgent: testutil.ScriptedAgent{
+		AgentName: "cursor",
+		Models:    []string{"sonnet-4"},
 	}}
 }
 
@@ -128,7 +128,7 @@ func setupContinueEnv(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 }
 

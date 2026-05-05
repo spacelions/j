@@ -4,7 +4,8 @@ import "context"
 
 // SelectorFake satisfies picker.Selector (SelectTool + SelectModel)
 // for cli tests. plan / work / verify embed it inside their own
-// scriptedUI; tasks/agentcheck uses it directly. The zero value
+// scriptedUI; preflight EnsureAgentSelections and testutil.ScriptedAgent-based
+// tests use it directly. The zero value
 // returns the first option for both prompts so most tests need
 // only set the fields they assert on.
 type SelectorFake struct {

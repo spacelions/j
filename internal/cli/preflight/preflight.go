@@ -1,9 +1,9 @@
-// Package preflight is the shared pre-flight check used by every
-// j subcommand that touches per-project state on disk. The exported
-// helper Ensure verifies the .j layout is present, prompts the user
-// to run `j init` when something is missing, and returns one of two
-// sentinel errors so callers can distinguish "decline -> not
-// initialized" from "accept -> please re-run your command".
+// Package preflight is the shared pre-flight surface used by j subcommands
+// that touch per-project state on disk. Ensure verifies the .j layout is
+// present, prompts the user to run `j init` when something is missing, and
+// returns sentinel errors for decline vs accept-and-retry. EnsureAgentSelections
+// fills missing planner/worker/verifier tool+model buckets before commands
+// that spawn coding agents (e.g. `j tasks start` / `j tasks continue`).
 //
 // PreRunE wires Ensure into a cobra PersistentPreRunE so j plan,
 // j work, j tasks, and j settings inherit the same behavior with

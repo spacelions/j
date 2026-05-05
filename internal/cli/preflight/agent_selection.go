@@ -1,12 +1,12 @@
-package tasks
+package preflight
 
 import (
 	"context"
 	"errors"
 	"io"
 
-	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
@@ -25,9 +25,9 @@ type AgentCheckOptions struct {
 	UI     AgentSelector
 }
 
-// AgentSelector aliases picker.Selector so existing callers
-// (start.go's StartOptions, continue.go) keep their tasks-package type
-// reference without the extra hop through picker.
+// AgentSelector aliases picker.Selector so call sites (e.g. tasks
+// start/continue options) can name a narrow interface without
+// embedding picker in their public struct docs.
 type AgentSelector = picker.Selector
 
 // EnsureAgentSelections walks the planner / worker / verifier buckets
@@ -38,12 +38,12 @@ type AgentSelector = picker.Selector
 // The bbolt file lock is released between buckets so concurrent
 // `j tasks` / `j settings` calls in another shell never block.
 // huh.ErrUserAborted from the Selector propagates verbatim so the
-// caller (RunStart / RunContinue) can treat a Ctrl-C as a clean
-// cancel via its existing deferred guard.
+// caller (tasks.RunStart / tasks.RunContinue) can treat a Ctrl-C as a
+// clean cancel via its existing deferred guard.
 func EnsureAgentSelections(ctx context.Context, opts AgentCheckOptions) error {
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
-		return errors.New("tasks: no coding agents configured")
+		return errors.New("preflight: no coding agents configured")
 	}
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		if err := ensureBucketSelection(ctx, opts, bucket); err != nil {
@@ -70,9 +70,6 @@ func ensureBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket s
 	return nil
 }
 
-// readBucketSelection opens settings, calls resolver.AgentFromStore,
-// closes settings before returning. A settings-open failure surfaces
-// as ErrNoStoredSelection so callers fall through to the prompt path.
 func readBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket string) (codingagents.Agent, string, error) {
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
@@ -82,10 +79,6 @@ func readBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket str
 	return resolver.AgentFromStore(ctx, s, bucket, opts.Agents)
 }
 
-// persistBucketSelection writes the prompt result into the bucket
-// with interactive=true. Persistence is best-effort: a settings open
-// failure is warned to stderr and otherwise swallowed so the user's
-// pick is not lost on a transient lock error.
 func persistBucketSelection(opts AgentCheckOptions, bucket, tool, model string) {
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {

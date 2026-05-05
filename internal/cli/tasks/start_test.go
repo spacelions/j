@@ -191,7 +191,7 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	target := writeStartFile(t, "# task\nbody line")
-	stub := newScriptedAgent()
+	stub := testutil.NewScriptedAgent()
 	sel := &testutil.SelectorFake{Tool: "cursor", Model: "sonnet-4"}
 	binary := noopJBinary(t)
 	var stdout, stderr bytes.Buffer
@@ -257,7 +257,7 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	}
 
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		tool, model, _ := readAgentBucket(t, bucket)
+		tool, model, _ := testutil.ReadAgentBucket(t, bucket)
 		if tool != "cursor" || model != "sonnet-4" {
 			t.Fatalf("bucket %q = (%q, %q)", bucket, tool, model)
 		}
@@ -282,7 +282,7 @@ func TestRunStart_ForwardsResolvedPlanApproval(t *testing.T) {
 			mustInit(t)
 			putProjectPlanRequiresApproval(t, tc.setting)
 			for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-				seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+				testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 			}
 			target := writeStartFile(t, "# task\nbody")
 			argvPath := filepath.Join(t.TempDir(), "argv.txt")
@@ -292,7 +292,7 @@ func TestRunStart_ForwardsResolvedPlanApproval(t *testing.T) {
 				Stdin:                strings.NewReader(""),
 				Stdout:               io.Discard,
 				Stderr:               io.Discard,
-				Agents:               []codingagents.Agent{newScriptedAgent()},
+				Agents:               []codingagents.Agent{testutil.NewScriptedAgent()},
 				Selector:             &testutil.SelectorFake{},
 				UI:                   &scriptedStartUI{},
 				JBinary:              argvJBinary(t, argvPath),
@@ -317,7 +317,7 @@ func TestRunStart_PrePopulatedSkipsPrompts(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	target := writeStartFile(t, "# task\nbody")
 	sel := &testutil.SelectorFake{}
@@ -328,7 +328,7 @@ func TestRunStart_PrePopulatedSkipsPrompts(t *testing.T) {
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 		Selector: sel,
 		UI:       &scriptedStartUI{},
 		JBinary:  binary,
@@ -362,7 +362,7 @@ func TestRunStart_NoFromFile_PicksMarkdown(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	writeStartFileInCwd(t, "spec.md", "# task\nbody line")
 	cwd, err := os.Getwd()
@@ -378,7 +378,7 @@ func TestRunStart_NoFromFile_PicksMarkdown(t *testing.T) {
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 		Selector: &testutil.SelectorFake{},
 		UI:       ui,
 		JBinary:  noopJBinary(t),
@@ -411,7 +411,7 @@ func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	existingID := tasks.NewTaskID()
 	if _, err := tasks.EnsureDir(existingID); err != nil {
@@ -433,7 +433,7 @@ func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 		Selector: &testutil.SelectorFake{},
 		UI:       ui,
 		JBinary:  noopJBinary(t),
@@ -473,7 +473,7 @@ func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	ui := &scriptedStartUI{source: picker.SourceLinear}
 	var stdout bytes.Buffer
@@ -482,7 +482,7 @@ func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
 		Stdin:    strings.NewReader(""),
 		Stdout:   &stdout,
 		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 		Selector: &testutil.SelectorFake{},
 		UI:       ui,
 		JBinary:  noopJBinary(t),
@@ -509,7 +509,7 @@ func TestRunStart_NoFromFile_NoExistingTasks(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	ui := &scriptedStartUI{source: picker.SourceTask}
 
@@ -517,7 +517,7 @@ func TestRunStart_NoFromFile_NoExistingTasks(t *testing.T) {
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 		Selector: &testutil.SelectorFake{},
 		UI:       ui,
 		JBinary:  noopJBinary(t),
@@ -534,7 +534,7 @@ func TestRunStart_NoFromFile_TaskPickerCancelled(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	existingID := tasks.NewTaskID()
 	if _, err := tasks.EnsureDir(existingID); err != nil {
@@ -552,7 +552,7 @@ func TestRunStart_NoFromFile_TaskPickerCancelled(t *testing.T) {
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 		Selector: &testutil.SelectorFake{},
 		UI:       ui,
 		JBinary:  noopJBinary(t),
@@ -578,7 +578,7 @@ func TestRunStart_SelectorAbortIsClean(t *testing.T) {
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 		Selector: sel,
 		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
@@ -597,14 +597,14 @@ func TestRunStart_ResolveSourceFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	err := RunStart(context.Background(), StartOptions{
 		FromFile: "/definitely/does/not/exist.md",
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 		Selector: &testutil.SelectorFake{},
 		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
@@ -619,7 +619,7 @@ func TestRunStart_SpawnFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	target := writeStartFile(t, "# task\nbody")
 	err := RunStart(context.Background(), StartOptions{
@@ -627,7 +627,7 @@ func TestRunStart_SpawnFails(t *testing.T) {
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 		Selector: &testutil.SelectorFake{},
 		UI:       &scriptedStartUI{},
 		JBinary:  "/no/such/binary-xyzzy",
@@ -645,12 +645,12 @@ func TestRunStart_AppliesDefaults(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	target := writeStartFile(t, "# task\nbody")
 	if err := RunStart(context.Background(), StartOptions{
 		FromFile: target,
-		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 		JBinary:  noopJBinary(t),
 	}); err != nil {
 		t.Fatalf("RunStart: %v", err)
@@ -665,7 +665,7 @@ func TestRunStart_BucketInteractiveUntouched(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 		path, err := store.DefaultPath()
 		if err != nil {
 			t.Fatal(err)
@@ -685,7 +685,7 @@ func TestRunStart_BucketInteractiveUntouched(t *testing.T) {
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 		Selector: &testutil.SelectorFake{},
 		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
@@ -693,7 +693,7 @@ func TestRunStart_BucketInteractiveUntouched(t *testing.T) {
 		t.Fatalf("RunStart: %v", err)
 	}
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		_, _, interactive := readAgentBucket(t, bucket)
+		_, _, interactive := testutil.ReadAgentBucket(t, bucket)
 		if interactive != "true" {
 			t.Fatalf("bucket %q interactive = %q, want unchanged \"true\"", bucket, interactive)
 		}
@@ -792,7 +792,7 @@ func TestNewStartCmd_RunE_PropagatesError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	cmd := newStartCmd()
 	if err := cmd.Flags().Set("from-file", "/does/not/exist.md"); err != nil {
@@ -847,7 +847,7 @@ func TestRunStart_ContextCancellable(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	target := writeStartFile(t, "# task\nbody")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -857,7 +857,7 @@ func TestRunStart_ContextCancellable(t *testing.T) {
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{newScriptedAgent()},
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 		Selector: &testutil.SelectorFake{},
 		UI:       &scriptedStartUI{},
 		JBinary:  noopJBinary(t),
@@ -897,7 +897,7 @@ func TestRunStart_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
 			mustInit(t)
 			putProjectPlanRequiresApproval(t, tc.setting)
 			for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-				seedAgentBucket(t, bucket, "cursor", "sonnet-4")
+				testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 			}
 			target := writeStartFile(t, "# task\nbody")
 			argvPath := filepath.Join(t.TempDir(), "argv.txt")
@@ -907,7 +907,7 @@ func TestRunStart_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
 				Stdin:                strings.NewReader(""),
 				Stdout:               io.Discard,
 				Stderr:               io.Discard,
-				Agents:               []codingagents.Agent{newScriptedAgent()},
+				Agents:               []codingagents.Agent{testutil.NewScriptedAgent()},
 				Selector:             &testutil.SelectorFake{},
 				UI:                   &scriptedStartUI{},
 				JBinary:              argvJBinary(t, argvPath),

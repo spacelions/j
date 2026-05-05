@@ -11,9 +11,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/preflight"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
@@ -51,9 +51,9 @@ type StartOptions struct {
 	Stderr io.Writer
 
 	Agents []codingagents.Agent
-	// Selector is the agent-pick UI used by EnsureAgentSelections to
+	// Selector is the agent-pick UI used by preflight.EnsureAgentSelections to
 	// prompt for any missing planner / worker / verifier bucket.
-	Selector AgentSelector
+	Selector preflight.AgentSelector
 	// UI drives the source / file / re-plan pickers when FromFile is
 	// empty. Defaults to picker.New.
 	UI StartUI
@@ -117,7 +117,7 @@ func newStartCmd() *cobra.Command {
 // Steps:
 //  1. Defer a huh.ErrUserAborted → nil guard so a Ctrl-C in any
 //     prompt exits cleanly.
-//  2. Call EnsureAgentSelections so every bucket has a tool/model
+//  2. Call preflight.EnsureAgentSelections so every bucket has a tool/model
 //     pair before the orchestrator fires.
 //  3. resolveStartTarget: branch on FromFile (markdown new) or
 //     UI.SelectSource (markdown new | task re-plan | linear no-op).
@@ -138,7 +138,7 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	if len(opts.Agents) == 0 {
 		return errors.New("J: no coding agents configured")
 	}
-	if err := EnsureAgentSelections(ctx, AgentCheckOptions{
+	if err := preflight.EnsureAgentSelections(ctx, preflight.AgentCheckOptions{
 		Stdin:  opts.Stdin,
 		Stdout: opts.Stdout,
 		Stderr: opts.Stderr,

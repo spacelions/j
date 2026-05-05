@@ -40,6 +40,49 @@ func SeedAgentBucket(t *testing.T, bucket, tool, model string) {
 	}
 }
 
+// SeedAgentBucketToolModel writes only tool and model (no interactive
+// key). Used when tests assert an absent interactive entry, e.g.
+// preflight EnsureAgentSelections coverage.
+func SeedAgentBucketToolModel(t *testing.T, bucket, tool, model string) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("testutil: DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("testutil: Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	if err := s.EnsureBucket(bucket); err != nil {
+		t.Fatalf("testutil: EnsureBucket: %v", err)
+	}
+	if err := s.Put(bucket, "tool", tool); err != nil {
+		t.Fatalf("testutil: Put tool: %v", err)
+	}
+	if err := s.Put(bucket, "model", model); err != nil {
+		t.Fatalf("testutil: Put model: %v", err)
+	}
+}
+
+// ReadAgentBucket returns (tool, model, interactive) from the settings bucket.
+func ReadAgentBucket(t *testing.T, bucket string) (string, string, string) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("testutil: DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("testutil: Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	tool, _, _ := s.Get(bucket, "tool")
+	model, _, _ := s.Get(bucket, "model")
+	interactive, _, _ := s.Get(bucket, "interactive")
+	return tool, model, interactive
+}
+
 // SeedTaskRow writes the supplied task to its per-task TOML file so
 // plan / work / verify shell-out branches see the row they expect
 // when invoked with TaskID set.

@@ -1,6 +1,6 @@
 // Package resolver concentrates the read / fallback / persist logic for
 // every bbolt bucket the j subcommands consume. Each cli command (plan,
-// work, verify, tasks/start, tasks/agentcheck, settings, init) calls
+// work, verify, tasks/start, preflight agent selection, settings, init) calls
 // into resolver to translate "what should I run" into a concrete value,
 // independent of how the value was supplied (cli flag, stored bucket,
 // interactive prompt). The package is UI-free; it consumes

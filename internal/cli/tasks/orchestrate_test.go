@@ -16,6 +16,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // chainAgent stands in for a real codingagents.Agent across the
@@ -92,7 +93,7 @@ func seedOrchestrateTask(t *testing.T, tool string) string {
 		t.Fatalf("write requirements: %v", err)
 	}
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
-		seedAgentBucket(t, bucket, tool, "m1")
+		testutil.SeedAgentBucketToolModel(t, bucket, tool, "m1")
 		writeBucketKey(t, bucket, "interactive", "false")
 	}
 	row := tasks.Task{
