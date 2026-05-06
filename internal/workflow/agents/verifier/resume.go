@@ -1,4 +1,4 @@
-package verify
+package verifier
 
 import (
 	"context"
@@ -9,14 +9,10 @@ import (
 	"path/filepath"
 
 	"github.com/charmbracelet/huh"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/coding-agents/claude"
-	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/run"
@@ -223,37 +219,4 @@ func listResumableTasks() ([]tasks.Task, error) {
 		}
 	}
 	return out, nil
-}
-
-// newResumeCmd builds the `j verify resume` cobra subcommand.
-//
-// viper.BindPFlag and viper.BindEnv only fail when their input is
-// nil or empty — programmer errors that this function does not
-// produce — so their returned errors are intentionally discarded.
-func newResumeCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "resume",
-		Short: "Resume a previously started verify session",
-		Long: "Lists tasks whose verify session is non-empty and resumes the chosen one " +
-			"using the tool/model recorded on the task row. " +
-			"Pass --from-task <id> (or VERIFY_RESUME_FROM_TASK) to skip the picker. " +
-			"With no eligible sessions, prints `J: there are no resumable verify sessions` " +
-			"and exits 0. The eligibility filter is intentionally permissive: tasks " +
-			"in any status are resumable as long as their verify_resume_session is non-empty. " +
-			"Resume always runs interactive; the verifier bucket's `interactive` value " +
-			"is ignored.",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return RunResume(cmd.Context(), ResumeOptions{
-				TaskID: viper.GetString("verify.resume.from_task"),
-				Stdin:  cmd.InOrStdin(),
-				Stdout: cmd.OutOrStdout(),
-				Stderr: cmd.ErrOrStderr(),
-				Agents: []codingagents.Agent{cursor.New(), claude.New()},
-			})
-		},
-	}
-	cmd.Flags().String("from-task", "", "Resume the named task without showing the picker")
-	_ = viper.BindPFlag("verify.resume.from_task", cmd.Flags().Lookup("from-task"))
-	_ = viper.BindEnv("verify.resume.from_task", "VERIFY_RESUME_FROM_TASK")
-	return cmd
 }

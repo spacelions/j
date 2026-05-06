@@ -43,7 +43,7 @@ type PlannerOverrides struct {
 // RunForTask drives the planner → worker → verifier flow for an
 // already-seeded task end to end.
 func RunForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, overrides PlannerOverrides) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr, false, false, overrides)
+	return runForTask(ctx, cfg, taskID, agents, stderr, false, false, false, overrides)
 }
 
 // RunForTaskWithGate drives an already-seeded task, stopping after the
@@ -51,7 +51,7 @@ func RunForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents
 // row at plan-done so `j tasks continue --from-task <id>` can pick up
 // the existing dispatch path.
 func RunForTaskWithGate(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval bool, overrides PlannerOverrides) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr, planRequiresApproval, false, overrides)
+	return runForTask(ctx, cfg, taskID, agents, stderr, planRequiresApproval, false, false, overrides)
 }
 
 // RunForTaskFromWork drives an already-seeded task that is past the
@@ -59,7 +59,15 @@ func RunForTaskWithGate(ctx context.Context, cfg store.TaskConfig, taskID string
 // on a `plan-done` row so the implicit-approval handoff resumes the
 // chain without re-running the planner.
 func RunForTaskFromWork(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr, false, true, PlannerOverrides{})
+	return runForTask(ctx, cfg, taskID, agents, stderr, false, true, false, PlannerOverrides{})
+}
+
+// RunForTaskVerifyOnly drives only the verifier phase on an
+// already-seeded task, skipping both planner and worker. Used by
+// `j tasks re-verify` and `j tasks resume-verify` via orchestrator
+// re-exec.
+func RunForTaskVerifyOnly(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer) error {
+	return runForTask(ctx, cfg, taskID, agents, stderr, false, true, true, PlannerOverrides{})
 }
 
 // runForTask builds a top-level SequentialAgent over shell-out custom
@@ -87,7 +95,7 @@ func RunForTaskFromWork(ctx context.Context, cfg store.TaskConfig, taskID string
 // MaxIterations defaults are owned by callers: production callers
 // fetch a sane default via store.LoadTaskConfig; tests that pass a
 // zero-value Config flow through verifier.New's own fallback.
-func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval, skipPlanning bool, overrides PlannerOverrides) error {
+func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval, skipPlanning, skipWork bool, overrides PlannerOverrides) error {
 	if taskID == "" {
 		return errors.New("workflow: task id required")
 	}
@@ -98,7 +106,7 @@ func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents
 		stderr = io.Discard
 	}
 
-	subAgents, err := taskSubAgents(cfg, taskID, agents, stderr, planRequiresApproval, skipPlanning, overrides)
+	subAgents, err := taskSubAgents(cfg, taskID, agents, stderr, planRequiresApproval, skipPlanning, skipWork, overrides)
 	if err != nil {
 		return err
 	}
@@ -121,9 +129,24 @@ func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents
 	return nil
 }
 
-func taskSubAgents(cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval, skipPlanning bool, overrides PlannerOverrides) ([]agent.Agent, error) {
+func taskSubAgents(cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval, skipPlanning, skipWork bool, overrides PlannerOverrides) ([]agent.Agent, error) {
 	if planRequiresApproval && skipPlanning {
 		return nil, errors.New("workflow: planRequiresApproval and skipPlanning are mutually exclusive")
+	}
+	if skipWork && !skipPlanning {
+		return nil, errors.New("workflow: skipWork requires skipPlanning")
+	}
+	if skipPlanning && skipWork {
+		verifierAgent, err := verifier.New(verifier.Config{
+			TaskID:        taskID,
+			Agents:        agents,
+			Stderr:        stderr,
+			MaxIterations: cfg.MaxIterations,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("workflow: verifier: %w", err)
+		}
+		return []agent.Agent{verifierAgent}, nil
 	}
 	if skipPlanning {
 		workerAgent, verifierAgent, err := newWorkVerify(cfg, taskID, agents, stderr)

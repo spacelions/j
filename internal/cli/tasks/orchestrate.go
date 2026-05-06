@@ -37,6 +37,12 @@ type OrchestrateOptions struct {
 	// PlanRequiresApproval=true.
 	SkipPlanning bool
 
+	// SkipWork, when true, skips the worker phase and runs only the
+	// verifier. Requires SkipPlanning. Used by `j tasks re-verify`
+	// and `j tasks resume-verify` to re-exec the orchestrator for
+	// only the verifier phase.
+	SkipWork bool
+
 	// Tool and Model are one-off planner overrides forwarded from
 	// `j tasks start --tool/--model`.
 	Tool  string
@@ -92,10 +98,13 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 		Interactive: opts.Interactive,
 		Yes:         opts.Yes,
 	}
-	emitSessionStart(opts.Stderr, opts.TaskID, opts.SkipPlanning)
+	emitSessionStart(opts.Stderr, opts.TaskID, opts.SkipPlanning, opts.SkipWork)
 	if opts.SkipPlanning {
 		if planRequiresApproval {
 			return errors.New("tasks: --skip-planning is incompatible with --plan-requires-approval=true")
+		}
+		if opts.SkipWork {
+			return workflow.RunForTaskVerifyOnly(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
 		}
 		return workflow.RunForTaskFromWork(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
 	}
@@ -108,7 +117,7 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 // reading bbolt. Field collection is deliberately cheap — os.Hostname
 // and os.Getwd never block — and write errors are swallowed because
 // markers are observability signal, not load-bearing data.
-func emitSessionStart(w io.Writer, taskID string, skipPlanning bool) {
+func emitSessionStart(w io.Writer, taskID string, skipPlanning, skipWork bool) {
 	hostname, _ := os.Hostname()
 	cwd, _ := os.Getwd()
 	_ = agentlog.Emit(w, "session_start", map[string]any{
@@ -117,6 +126,7 @@ func emitSessionStart(w io.Writer, taskID string, skipPlanning bool) {
 		"hostname":         hostname,
 		"cwd":              cwd,
 		"skip_planning":    skipPlanning,
+		"skip_work":        skipWork,
 	})
 }
 
@@ -162,6 +172,7 @@ func newOrchestrateCmd() *cobra.Command {
 				TaskID:               viper.GetString("tasks.orchestrate.id"),
 				PlanRequiresApproval: approval,
 				SkipPlanning:         viper.GetBool("tasks.orchestrate.skip_planning"),
+					SkipWork:             viper.GetBool("tasks.orchestrate.skip_work"),
 				Tool:                 viper.GetString("tasks.orchestrate.tool"),
 				Model:                viper.GetString("tasks.orchestrate.model"),
 				Interactive:          interactive,
@@ -176,6 +187,7 @@ func newOrchestrateCmd() *cobra.Command {
 	cmd.Flags().String("id", "", "Task id whose planner→worker→verifier chain to drive")
 	cmd.Flags().Bool("plan-requires-approval", false, "Resolved project.plan_requires_approval value")
 	cmd.Flags().Bool("skip-planning", false, "Run only worker → verifier on a task already past the planner")
+	cmd.Flags().Bool("skip-work", false, "Run only verifier (requires --skip-planning)")
 	cmd.Flags().String("tool", "", "Planner tool override (cursor|claude)")
 	cmd.Flags().String("model", "", "Planner model override")
 	cmd.Flags().Bool("interactive", false, "Run planner in interactive (TUI) mode")
@@ -186,6 +198,8 @@ func newOrchestrateCmd() *cobra.Command {
 	_ = viper.BindEnv("tasks.orchestrate.plan_requires_approval", "TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL")
 	_ = viper.BindPFlag("tasks.orchestrate.skip_planning", cmd.Flags().Lookup("skip-planning"))
 	_ = viper.BindEnv("tasks.orchestrate.skip_planning", "TASKS_ORCHESTRATE_SKIP_PLANNING")
+	_ = viper.BindPFlag("tasks.orchestrate.skip_work", cmd.Flags().Lookup("skip-work"))
+	_ = viper.BindEnv("tasks.orchestrate.skip_work", "TASKS_ORCHESTRATE_SKIP_WORK")
 	_ = viper.BindPFlag("tasks.orchestrate.tool", cmd.Flags().Lookup("tool"))
 	_ = viper.BindEnv("tasks.orchestrate.tool", "TASKS_ORCHESTRATE_TOOL")
 	_ = viper.BindPFlag("tasks.orchestrate.model", cmd.Flags().Lookup("model"))

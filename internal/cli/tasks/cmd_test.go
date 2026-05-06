@@ -91,6 +91,30 @@ func TestNew_HasDiscardSubcommand(t *testing.T) {
 	t.Fatal("expected `discard` subcommand to be registered on `j tasks`")
 }
 
+// TestNew_HasReVerifySubcommand pins the registration of the
+// re-verify child.
+func TestNew_HasReVerifySubcommand(t *testing.T) {
+	cmd := New()
+	for _, child := range cmd.Commands() {
+		if child.Name() == "re-verify" {
+			return
+		}
+	}
+	t.Fatal("expected `re-verify` subcommand to be registered on `j tasks`")
+}
+
+// TestNew_HasResumeVerifySubcommand pins the registration of the
+// resume-verify child.
+func TestNew_HasResumeVerifySubcommand(t *testing.T) {
+	cmd := New()
+	for _, child := range cmd.Commands() {
+		if child.Name() == "resume-verify" {
+			return
+		}
+	}
+	t.Fatal("expected `resume-verify` subcommand to be registered on `j tasks`")
+}
+
 // TestRun_NoTasksFile_PrintsEmptyMessage covers the defense-in-depth
 // short-circuit in listTasks: when list.db is missing it returns
 // emptyMessage instead of a stat error. We bypass the cobra layer

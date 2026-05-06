@@ -1,11 +1,10 @@
-// Package verifier exposes a single New(Config) constructor mirroring
-// the planner / worker shape: Config.LLM → llmagent.New (used by
-// `j run` / `j web`), Config{TaskID, Agents, MaxIterations} → a
-// custom shell-out agent whose Run blocks on cli/verify.Run (used by
-// `j tasks orchestrate`). The shell-out branch flips
-// event.Actions.Escalate=true on `VERDICT: PASS` so a future
-// enclosing LoopAgent exits early instead of running to its own
-// MaxIterations.
+// Package verifier exposes the verifier agent and its shell-out
+// orchestrator (Run, RunResume). New(Config) returns either an
+// llmagent (Config.LLM, used by `j run` / `j web`) or a custom
+// shell-out agent whose Run calls Run or RunResume based on whether
+// the task already has a VerifyResumeSession. The shell-out branch
+// flips event.Actions.Escalate=true on `VERDICT: PASS` so a future
+// enclosing LoopAgent exits early.
 package verifier
 
 import (
@@ -20,7 +19,6 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
-	"github.com/spacelions/j/internal/cli/verify"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
@@ -77,20 +75,31 @@ func New(cfg Config) (agent.Agent, error) {
 	agents := cfg.Agents
 	return agent.New(agent.Config{
 		Name:        Name,
-		Description: "Runs the verifier phase by shelling out to `j verify` against the seeded task.",
+		Description: "Runs the verifier phase against the seeded task.",
 		Run: func(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
 			return func(yield func(*session.Event, error) bool) {
-				interactive := false
-				if err := verify.Run(ctx, verify.Options{
-					TaskID:        taskID,
-					Yes:           true,
-					Interactive:   interactive,
-					Stdout:        stderr,
-					Stderr:        stderr,
-					Agents:        agents,
-					MaxIterations: maxIters,
-				}); err != nil {
-					yield(nil, fmt.Errorf("%s: %w", Name, err))
+				t, lookupErr := resolver.TaskByID(taskID)
+				var runErr error
+				if lookupErr == nil && t.VerifyResumeSession != "" {
+					runErr = RunResume(ctx, ResumeOptions{
+						TaskID: taskID,
+						Stdout: stderr,
+						Stderr: stderr,
+						Agents: agents,
+					})
+				} else {
+					runErr = Run(ctx, Options{
+						TaskID:        taskID,
+						Yes:           true,
+						Interactive:   false,
+						Stdout:        stderr,
+						Stderr:        stderr,
+						Agents:        agents,
+						MaxIterations: maxIters,
+					})
+				}
+				if runErr != nil {
+					yield(nil, fmt.Errorf("%s: %w", Name, runErr))
 					return
 				}
 				verdict := resolver.ReadVerdictForTask(taskID)

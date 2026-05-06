@@ -13,7 +13,8 @@ import (
 
 	"github.com/spacelions/j/internal/cli/preflight"
 	"github.com/spacelions/j/internal/cli/uitheme"
-	"github.com/spacelions/j/internal/cli/verify"
+	"path/filepath"
+
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
@@ -146,21 +147,9 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, t tasks.Task) e
 		uitheme.NormalFprintf(opts.Stdout, "J: task %s is working; use `j tasks re-work` or `j tasks resume-work`\n", t.ID)
 		return nil
 	case tasks.StatusWorkDone:
-		return verify.Run(ctx, verify.Options{
-			TaskID: t.ID,
-			Stdin:  opts.Stdin,
-			Stdout: opts.Stdout,
-			Stderr: opts.Stderr,
-			Agents: opts.Agents,
-		})
+		return reverifyAsDetachedOrchestrator(ctx, opts, t.ID)
 	case tasks.StatusVerifying:
-		return verify.RunResume(ctx, verify.ResumeOptions{
-			TaskID: t.ID,
-			Stdin:  opts.Stdin,
-			Stdout: opts.Stdout,
-			Stderr: opts.Stderr,
-			Agents: opts.Agents,
-		})
+		return resumeVerifyingInline(ctx, opts, t.ID)
 	case tasks.StatusVerifyDone, tasks.StatusCompleted:
 		uitheme.NormalFprintf(opts.Stdout, "J: task %s already finished\n", t.ID)
 		return nil
@@ -168,6 +157,39 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, t tasks.Task) e
 		return dispatchHelp(ctx, opts, t)
 	}
 	return fmt.Errorf("J: task %s has unsupported status %q", t.ID, t.Status)
+}
+
+func reverifyAsDetachedOrchestrator(ctx context.Context, opts ContinueOptions, taskID string) error {
+	taskDir, err := tasks.EnsureDir(taskID)
+	if err != nil {
+		return fmt.Errorf("J: ensure task dir: %w", err)
+	}
+	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
+	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
+		"tasks", "orchestrate",
+		"--id", taskID,
+		"--skip-planning=true",
+		"--skip-work=true",
+	})
+	if err != nil {
+		return err
+	}
+	stampSpawnOnRow(opts.Stderr, taskID, agentLogPath, pid)
+	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", taskID), pid, agentLogPath)
+	return nil
+}
+
+func resumeVerifyingInline(ctx context.Context, opts ContinueOptions, taskID string) error {
+	if _, err := tasks.EnsureDir(taskID); err != nil {
+		return err
+	}
+	return runInlineOrchestrator(ctx, opts.JBinary, []string{
+		"tasks", "orchestrate",
+		"--id", taskID,
+		"--skip-planning=true",
+		"--skip-work=true",
+		"--interactive=true",
+	})
 }
 
 func (o ContinueOptions) withDefaults() ContinueOptions {

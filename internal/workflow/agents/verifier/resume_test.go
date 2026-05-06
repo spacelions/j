@@ -1,4 +1,4 @@
-package verify
+package verifier
 
 import (
 	"bytes"
@@ -11,9 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/spf13/pflag"
-	"github.com/spf13/viper"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
@@ -510,87 +507,6 @@ func TestRunResume_FailLeavesVerifyDone(t *testing.T) {
 	}
 	if !rows[0].DoneAt.IsZero() {
 		t.Fatalf("DoneAt should remain nil: %v", rows[0].DoneAt)
-	}
-}
-
-// TestNewResumeCmd_FromTaskFlowsToViper covers the cobra wiring.
-func TestNewResumeCmd_FromTaskFlowsToViper(t *testing.T) {
-	viper.Reset()
-	t.Cleanup(viper.Reset)
-
-	cmd := newResumeCmd()
-	if err := cmd.Flags().Set("from-task", "abc"); err != nil {
-		t.Fatalf("Flags().Set: %v", err)
-	}
-	if got := viper.GetString("verify.resume.from_task"); got != "abc" {
-		t.Errorf("verify.resume.from_task = %q, want %q", got, "abc")
-	}
-}
-
-func TestNewResumeCmd_FromTaskEnv(t *testing.T) {
-	viper.Reset()
-	t.Cleanup(viper.Reset)
-	t.Setenv("VERIFY_RESUME_FROM_TASK", "env-task")
-
-	_ = newResumeCmd()
-	if got := viper.GetString("verify.resume.from_task"); got != "env-task" {
-		t.Errorf("verify.resume.from_task = %q, want %q", got, "env-task")
-	}
-}
-
-func TestNewResumeCmd_RegistersOnlyFromTask(t *testing.T) {
-	viper.Reset()
-	t.Cleanup(viper.Reset)
-
-	cmd := newResumeCmd()
-	if cmd.Use != "resume" {
-		t.Fatalf("Use = %q", cmd.Use)
-	}
-	var names []string
-	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		names = append(names, f.Name)
-	})
-	if len(names) != 1 || names[0] != "from-task" {
-		t.Fatalf("flags = %v, want only [from-task]", names)
-	}
-}
-
-// TestNewResumeCmd_RunEPropagates exercises the RunE closure.
-func TestNewResumeCmd_RunEPropagates(t *testing.T) {
-	viper.Reset()
-	t.Cleanup(viper.Reset)
-	t.Chdir(t.TempDir())
-	mustInit(t)
-
-	cmd := newResumeCmd()
-	if err := cmd.Flags().Set("from-task", "missing-id"); err != nil {
-		t.Fatalf("Flags().Set: %v", err)
-	}
-	cmd.SetContext(context.Background())
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-
-	err := cmd.RunE(cmd, nil)
-	if err == nil || !strings.Contains(err.Error(), `task "missing-id" not found`) {
-		t.Fatalf("err = %v", err)
-	}
-}
-
-// TestRunResume_RegisteredAsChild verifies `j verify resume` is
-// wired as a child of `j verify`.
-func TestRunResume_RegisteredAsChild(t *testing.T) {
-	viper.Reset()
-	t.Cleanup(viper.Reset)
-	parent := New()
-	var found bool
-	for _, sub := range parent.Commands() {
-		if sub.Name() == "resume" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatal("`j verify resume` should be registered as a child of `j verify`")
 	}
 }
 
