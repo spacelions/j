@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
@@ -60,10 +61,6 @@ func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
 // same precedence so a plan-time crash that never wrote PlanEndAt is
 // still resumable. With no usable signal the dispatch errors instead
 // of silently skipping.
-//
-// Plan-phase help is now a detached re-plan spawn (same as
-// StatusPlanning) so the user can review the updated plan before work
-// restarts.
 func dispatchHelp(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
 	switch latestPhase(t) {
 	case "verify":
@@ -83,10 +80,11 @@ func dispatchHelp(ctx context.Context, opts ContinueOptions, t tasks.Task) error
 		if _, err := tasks.EnsureDir(t.ID); err != nil {
 			return fmt.Errorf("J: ensure task dir: %w", err)
 		}
+		approval, _ := store.LoadPlanRequiresApproval()
 		return runInlineOrchestrator(ctx, opts.JBinary, []string{
 			"tasks", "orchestrate",
 			"--id", t.ID,
-			"--plan-requires-approval=true",
+			"--plan-requires-approval=" + strconv.FormatBool(approval),
 			"--interactive=true",
 		})
 	}

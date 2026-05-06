@@ -706,3 +706,44 @@ func TestAgent_LazyPromptPersists(t *testing.T) {
 		t.Fatalf("interactive = %q %v %v", got, ok, err)
 	}
 }
+
+func TestResolveToolModel_BothExplicit(t *testing.T) {
+	tool, model := ResolveToolModel("cursor", "sonnet", store.BucketWorker, io.Discard)
+	if tool != "cursor" || model != "sonnet" {
+		t.Fatalf("got (%q, %q), want (cursor, sonnet)", tool, model)
+	}
+}
+
+func TestResolveToolModel_FillsFromStore(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	ss, ok := store.OpenSettings(io.Discard)
+	if !ok {
+		t.Fatal("OpenSettings failed")
+	}
+	if err := ss.Put(store.BucketWorker, "tool", "stored-tool"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := ss.Put(store.BucketWorker, "model", "stored-model"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	_ = ss.Close()
+	tool, model := ResolveToolModel("", "explicit-model", store.BucketWorker, io.Discard)
+	if tool != "stored-tool" {
+		t.Fatalf("tool = %q, want stored-tool", tool)
+	}
+	if model != "explicit-model" {
+		t.Fatalf("model = %q, want explicit-model (already set)", model)
+	}
+}
+
+func TestResolveToolModel_StoreOpenFails(t *testing.T) {
+	// In a non-.j directory, store.OpenSettings returns ("", false).
+	t.Chdir(t.TempDir())
+	tool, model := ResolveToolModel("", "", store.BucketWorker, io.Discard)
+	if tool != "" || model != "" {
+		t.Fatalf("got (%q, %q), want empty (store not available)", tool, model)
+	}
+}
