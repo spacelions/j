@@ -15,6 +15,24 @@ import (
 	"github.com/spacelions/j/internal/workflow/agents/worker"
 )
 
+// resumePlanInlineOrchestrator re-execs `j tasks orchestrate inline so
+// the planner resumes its session in the foreground.
+func resumePlanInlineOrchestrator(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
+	if _, err := resolver.StartTargetFromExistingTask(ctx, t.ID); err != nil {
+		return err
+	}
+	if _, err := tasks.EnsureDir(t.ID); err != nil {
+		return fmt.Errorf("J: ensure task dir: %w", err)
+	}
+	approval, _ := store.LoadPlanRequiresApproval()
+	return runInlineOrchestrator(ctx, opts.JBinary, []string{
+		"tasks", "orchestrate",
+		"--id", t.ID,
+		"--plan-requires-approval=" + strconv.FormatBool(approval),
+		"--interactive=true",
+	})
+}
+
 // resumeWorkInlineOrchestrator re-execs `j tasks orchestrate
 // --skip-planning=true --interactive=true` inline so the worker
 // resumes its session in the foreground.
@@ -74,19 +92,7 @@ func dispatchHelp(ctx context.Context, opts ContinueOptions, t tasks.Task) error
 	case "work":
 		return resumeWorkInlineOrchestrator(ctx, opts, t)
 	case "plan":
-		if _, err := resolver.StartTargetFromExistingTask(ctx, t.ID); err != nil {
-			return err
-		}
-		if _, err := tasks.EnsureDir(t.ID); err != nil {
-			return fmt.Errorf("J: ensure task dir: %w", err)
-		}
-		approval, _ := store.LoadPlanRequiresApproval()
-		return runInlineOrchestrator(ctx, opts.JBinary, []string{
-			"tasks", "orchestrate",
-			"--id", t.ID,
-			"--plan-requires-approval=" + strconv.FormatBool(approval),
-			"--interactive=true",
-		})
+		return resumePlanInlineOrchestrator(ctx, opts, t)
 	}
 	return fmt.Errorf("J: task %s in `help` has no resumable phase signal", t.ID)
 }
@@ -136,11 +142,11 @@ func latestEndAt(t tasks.Task) string {
 }
 
 // runPlanDoneWork resolves the tool/model from explicit flags and the
-// stored worker bucket, then calls worker.Run in-process.
+// stored worker bucket, then calls worker.Execute in-process.
 func runPlanDoneWork(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
 	tool, model := resolver.ResolveToolModel(opts.Tool, opts.Model, store.BucketWorker, opts.Stderr)
 	interactive := resolver.Interactive(nil, opts.Stderr, store.BucketWorker, opts.Interactive)
-	return worker.Run(ctx, worker.Options{
+	return worker.Execute(ctx, worker.ExecuteOptions{
 		TaskID:      t.ID,
 		Yes:         true,
 		Interactive: interactive,

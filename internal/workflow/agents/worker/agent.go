@@ -67,7 +67,7 @@ func New(cfg Config) (agent.Agent, error) {
 		Description: "Runs the worker phase against the seeded task.",
 		Run: func(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
 			return func(yield func(*session.Event, error) bool) {
-				if err := Run(ctx, Options{
+				if err := Execute(ctx, ExecuteOptions{
 					TaskID:            taskID,
 					Yes:               true,
 					Stdout:            stderr,

@@ -16,7 +16,7 @@ import (
 	"github.com/spacelions/j/internal/testutil"
 )
 
-// runTestAgent implements codingagents.Agent for Run tests.
+// runTestAgent implements codingagents.Agent for Execute tests.
 type runTestAgent struct {
 	name   string
 	models []string
@@ -59,7 +59,7 @@ func (a *runTestAgent) Work(_ context.Context, req codingagents.WorkRequest) (in
 	return a.workPid, a.workErr
 }
 
-// fakeRunUI is a scripted UI fake for Run tests.
+// fakeRunUI is a scripted UI fake for Execute tests.
 type fakeRunUI struct {
 	pickTaskReturn string
 	pickTaskOK     bool
@@ -119,7 +119,7 @@ func seedPlanDoneTask(t *testing.T) string {
 
 func TestRun_NoAgentsError(t *testing.T) {
 	ctx := context.Background()
-	err := Run(ctx, Options{Stdout: io.Discard, Stderr: io.Discard})
+	err := Execute(ctx, ExecuteOptions{Stdout: io.Discard, Stderr: io.Discard})
 	if err == nil || !strings.Contains(err.Error(), "no coding agents") {
 		t.Fatalf("err = %v, want 'no coding agents' error", err)
 	}
@@ -130,7 +130,7 @@ func TestRun_HappyPath(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
 	var stdout bytes.Buffer
-	err := Run(context.Background(), Options{
+	err := Execute(context.Background(), ExecuteOptions{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -142,7 +142,7 @@ func TestRun_HappyPath(t *testing.T) {
 		Model:  "m1",
 	})
 	if err != nil {
-		t.Fatalf("Run: %v", err)
+		t.Fatalf("Execute: %v", err)
 	}
 	if agent.workCalls != 1 {
 		t.Fatalf("workCalls = %d, want 1", agent.workCalls)
@@ -151,7 +151,7 @@ func TestRun_HappyPath(t *testing.T) {
 	if row.Status != tasks.StatusWorkDone {
 		t.Fatalf("Status = %q, want work-done", row.Status)
 	}
-	if !strings.Contains(stdout.String(), "coding on task "+id) {
+	if !strings.Contains(stdout.String(), "working on task "+id) {
 		t.Fatalf("stdout = %q, missing coding message", stdout.String())
 	}
 }
@@ -161,7 +161,7 @@ func TestRun_WorkErrorPromotesToHelp(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
 	agent.workErr = errors.New("worker boom")
-	err := Run(context.Background(), Options{
+	err := Execute(context.Background(), ExecuteOptions{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -188,7 +188,7 @@ func TestRun_ConfirmStatusOverrideDeclined(t *testing.T) {
 	row.Status = tasks.StatusCompleted
 	testutil.SeedTaskRow(t, row)
 	agent := newRunTestAgent("cursor")
-	err := Run(context.Background(), Options{
+	err := Execute(context.Background(), ExecuteOptions{
 		TaskID: id,
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -199,7 +199,7 @@ func TestRun_ConfirmStatusOverrideDeclined(t *testing.T) {
 		Model:  "m1",
 	})
 	if err != nil {
-		t.Fatalf("Run: %v", err)
+		t.Fatalf("Execute: %v", err)
 	}
 	if agent.workCalls != 0 {
 		t.Fatalf("workCalls = %d, want 0 (confirm declined)", agent.workCalls)
@@ -212,7 +212,7 @@ func TestRun_BackgroundPID(t *testing.T) {
 	agent := newRunTestAgent("cursor")
 	agent.workPid = 42
 	var stdout bytes.Buffer
-	err := Run(context.Background(), Options{
+	err := Execute(context.Background(), ExecuteOptions{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -224,7 +224,7 @@ func TestRun_BackgroundPID(t *testing.T) {
 		Model:  "m1",
 	})
 	if err != nil {
-		t.Fatalf("Run: %v", err)
+		t.Fatalf("Execute: %v", err)
 	}
 	row := testutil.ReadTaskRow(t, id)
 	if row.BackgroundPID != 42 {
@@ -240,7 +240,7 @@ func TestRun_WaitForCompletion_Success(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
 	agent.workPid = 0
-	err := Run(context.Background(), Options{
+	err := Execute(context.Background(), ExecuteOptions{
 		TaskID:            id,
 		Yes:               true,
 		Stdin:             strings.NewReader(""),
@@ -253,7 +253,7 @@ func TestRun_WaitForCompletion_Success(t *testing.T) {
 		WaitForCompletion: true,
 	})
 	if err != nil {
-		t.Fatalf("Run: %v", err)
+		t.Fatalf("Execute: %v", err)
 	}
 	if agent.workCalls != 1 {
 		t.Fatalf("workCalls = %d, want 1", agent.workCalls)
@@ -264,7 +264,7 @@ func TestRun_AppliesDefaults(t *testing.T) {
 	setupRunEnv(t)
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
-	opts := Options{
+	opts := ExecuteOptions{
 		TaskID: id,
 		Agents: []codingagents.Agent{agent},
 		Yes:    true,
@@ -284,7 +284,7 @@ func TestRun_ExplicitToolModelSkipsPersistence(t *testing.T) {
 	setupRunEnv(t)
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
-	err := Run(context.Background(), Options{
+	err := Execute(context.Background(), ExecuteOptions{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -296,7 +296,7 @@ func TestRun_ExplicitToolModelSkipsPersistence(t *testing.T) {
 		Model:  "m1",
 	})
 	if err != nil {
-		t.Fatalf("Run: %v", err)
+		t.Fatalf("Execute: %v", err)
 	}
 	if agent.workCalls != 1 {
 		t.Fatalf("workCalls = %d, want 1", agent.workCalls)
@@ -306,7 +306,7 @@ func TestRun_ExplicitToolModelSkipsPersistence(t *testing.T) {
 func TestRun_NoPlanTasks(t *testing.T) {
 	setupRunEnv(t)
 	agent := newRunTestAgent("cursor")
-	err := Run(context.Background(), Options{
+	err := Execute(context.Background(), ExecuteOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -328,7 +328,7 @@ func TestRun_NewResumeIDError(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
 	agent.resumeIDErr = errors.New("resume id failure")
-	err := Run(context.Background(), Options{
+	err := Execute(context.Background(), ExecuteOptions{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -340,7 +340,7 @@ func TestRun_NewResumeIDError(t *testing.T) {
 		Model:  "m1",
 	})
 	if err != nil {
-		t.Fatalf("Run: %v (NewResumeID error should not abort)", err)
+		t.Fatalf("Execute: %v (NewResumeID error should not abort)", err)
 	}
 	if agent.workCalls != 1 {
 		t.Fatalf("workCalls = %d, want 1", agent.workCalls)
@@ -354,7 +354,7 @@ func TestRun_ConfirmStatusOverrideError(t *testing.T) {
 	row.Status = tasks.StatusCompleted
 	testutil.SeedTaskRow(t, row)
 	agent := newRunTestAgent("cursor")
-	err := Run(context.Background(), Options{
+	err := Execute(context.Background(), ExecuteOptions{
 		TaskID: id,
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -377,7 +377,7 @@ func TestRun_WaitForCompletion_PIDZero(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
 	agent.workPid = 0
-	err := Run(context.Background(), Options{
+	err := Execute(context.Background(), ExecuteOptions{
 		TaskID:            id,
 		Yes:               true,
 		Stdin:             strings.NewReader(""),
@@ -390,7 +390,7 @@ func TestRun_WaitForCompletion_PIDZero(t *testing.T) {
 		WaitForCompletion: true,
 	})
 	if err != nil {
-		t.Fatalf("Run: %v", err)
+		t.Fatalf("Execute: %v", err)
 	}
 	if agent.workCalls != 1 {
 		t.Fatalf("workCalls = %d, want 1", agent.workCalls)

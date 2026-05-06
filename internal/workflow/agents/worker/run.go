@@ -24,8 +24,8 @@ type UI interface {
 	ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error)
 }
 
-// Options configures Run.
-type Options struct {
+// ExecuteOptions configures Execute.
+type ExecuteOptions struct {
 	TaskID      string
 	Yes         bool
 	Interactive bool
@@ -46,8 +46,8 @@ type Options struct {
 	Store *store.Store
 }
 
-// Run resolves a plan, selects a worker agent, and hands the plan to the agent.
-func Run(ctx context.Context, opts Options) (err error) {
+// Execute resolves a plan, selects a worker agent, and hands the plan to the agent.
+func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
@@ -110,11 +110,11 @@ func Run(ctx context.Context, opts Options) (err error) {
 	if workErr != nil {
 		return workErr
 	}
-	uitheme.NormalFprintf(opts.Stdout, "J: coding on task %s\n", res.Task.ID)
+	uitheme.NormalFprintf(opts.Stdout, "J: working on task %s\n", res.Task.ID)
 	return nil
 }
 
-func selectWorker(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
+func selectWorker(ctx context.Context, opts ExecuteOptions) (codingagents.Agent, string, error) {
 	return resolver.Agent(ctx, resolver.AgentOptions{
 		Bucket:        store.BucketWorker,
 		Agents:        opts.Agents,
@@ -127,7 +127,7 @@ func selectWorker(ctx context.Context, opts Options) (codingagents.Agent, string
 	})
 }
 
-func (o Options) withDefaults() Options {
+func (o ExecuteOptions) withDefaults() ExecuteOptions {
 	if o.Stdin == nil {
 		o.Stdin = os.Stdin
 	}
