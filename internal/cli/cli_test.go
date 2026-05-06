@@ -9,8 +9,6 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/settings"
-	"github.com/spacelions/j/internal/store"
-	"github.com/spacelions/j/internal/testutil"
 )
 
 // TestMain chdir's the entire cli-package test binary into an
@@ -36,21 +34,6 @@ func resetGlobals(t *testing.T) {
 	t.Cleanup(func() { viper.Reset() })
 }
 
-// mustInit lays down the .j layout in the current working directory.
-// CLI tests that exercise plan/work/tasks/settings via Execute must
-// call this helper so the new pre-flight contract is satisfied.
-// Idempotent.
-func mustInit(t *testing.T) {
-	t.Helper()
-	testutil.Init(t)
-	t.Cleanup(func() {
-		jDir, err := store.DefaultDir()
-		if err != nil {
-			return
-		}
-		_ = os.RemoveAll(jDir)
-	})
-}
 
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
@@ -135,29 +118,3 @@ func TestExecute_WebMissingSettings(t *testing.T) {
 	assertExecuteFails(t, "j init")
 }
 
-// TestExecute_WorkInteractiveFlag_FromFlag confirms --interactive is
-// parsed by cobra and surfaces on the viper singleton via BindPFlag.
-// We piggy-back on the missing-task failure path so the test
-// stays hermetic (no agent invocation), and read viper after Execute
-// to observe the bound value.
-func TestExecute_WorkInteractiveFlag_FromFlag(t *testing.T) {
-	resetGlobals(t)
-	mustInit(t)
-	withArgs(t, "work", "--interactive=false", "--from-task", "missing")
-	assertExecuteFails(t, "not found")
-	if viper.GetBool("work.interactive") {
-		t.Fatalf("work.interactive should be false after --interactive=false")
-	}
-}
-
-func TestExecute_WorkInteractiveFlag_FromEnv(t *testing.T) {
-	resetGlobals(t)
-	mustInit(t)
-	t.Setenv("WORK_INTERACTIVE", "false")
-	t.Setenv("WORK_FROM_TASK", "missing")
-	withArgs(t, "work")
-	assertExecuteFails(t, "not found")
-	if viper.GetBool("work.interactive") {
-		t.Fatalf("work.interactive should be false from WORK_INTERACTIVE=false")
-	}
-}

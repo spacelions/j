@@ -1,7 +1,7 @@
 // Package worker exposes a single New(Config) constructor mirroring
 // the planner / verifier shape: Config.LLM → llmagent.New (used by
 // `j run` / `j web`), Config{TaskID, Agents} → a custom shell-out
-// agent whose Run blocks on cli/work.Run (used by
+// agent whose Run calls the in-package Run (used by
 // `j tasks orchestrate`).
 package worker
 
@@ -17,7 +17,6 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
-	"github.com/spacelions/j/internal/cli/work"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/workflow/instructions"
 )
@@ -65,14 +64,12 @@ func New(cfg Config) (agent.Agent, error) {
 	agents := cfg.Agents
 	return agent.New(agent.Config{
 		Name:        Name,
-		Description: "Runs the worker phase by shelling out to `j work` against the seeded task.",
+		Description: "Runs the worker phase against the seeded task.",
 		Run: func(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
 			return func(yield func(*session.Event, error) bool) {
-				interactive := false
-				if err := work.Run(ctx, work.Options{
+				if err := Execute(ctx, ExecuteOptions{
 					TaskID:            taskID,
 					Yes:               true,
-					Interactive:       interactive,
 					Stdout:            stderr,
 					Stderr:            stderr,
 					Agents:            agents,

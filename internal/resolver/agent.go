@@ -209,6 +209,36 @@ func readToolModel(s *store.Store, bucket string) (map[string]string, error) {
 	return values, nil
 }
 
+// ResolveToolModel fills missing halves of the tool/model pair from the
+// bucket. When both explicit values are already set the store is never
+// opened. Errors from opening or reading the store are swallowed so the
+// caller gets whatever could be resolved (the preflight
+// EnsureAgentSelections call guarantees every bucket is populated).
+func ResolveToolModel(explicitTool, explicitModel, bucket string, stderr io.Writer) (string, string) {
+	tool, model := explicitTool, explicitModel
+	if tool != "" && model != "" {
+		return tool, model
+	}
+	s, ok := store.OpenSettings(stderr)
+	if !ok {
+		return tool, model
+	}
+	defer func() { _ = s.Close() }()
+	entries, err := s.List(bucket)
+	if err != nil {
+		return tool, model
+	}
+	for _, kv := range entries {
+		if tool == "" && kv.Key == "tool" {
+			tool = kv.Value
+		}
+		if model == "" && kv.Key == "model" {
+			model = kv.Value
+		}
+	}
+	return tool, model
+}
+
 func lookupAgent(agents []codingagents.Agent, name string) (codingagents.Agent, bool) {
 	for _, a := range agents {
 		if a.Name() == name {
