@@ -33,8 +33,8 @@ func resumePlanInlineOrchestrator(ctx context.Context, opts ContinueOptions, t t
 }
 
 // resumeWorkInlineOrchestrator re-execs `j tasks orchestrate
-// --skip-planning=true --interactive=true` inline so the worker
-// resumes its session in the foreground.
+// --phase=from-work --interactive=true` inline so the worker resumes
+// its session in the foreground.
 func resumeWorkInlineOrchestrator(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
 	if _, err := tasks.EnsureDir(t.ID); err != nil {
 		return fmt.Errorf("J: ensure task dir: %w", err)
@@ -42,7 +42,7 @@ func resumeWorkInlineOrchestrator(ctx context.Context, opts ContinueOptions, t t
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
 		"tasks", "orchestrate",
 		"--id", t.ID,
-		"--skip-planning=true",
+		"--phase=from-work",
 		"--interactive=true",
 	})
 }

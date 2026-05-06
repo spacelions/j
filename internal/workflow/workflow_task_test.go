@@ -135,8 +135,8 @@ func TestTaskSubAgents_FromWorkIgnoresGate(t *testing.T) {
 	}
 }
 
-// TestRunForTaskFromWork_RunsWorkerVerifier pins that the
-// skip-planning entry point runs only worker → verifier.
+// TestRunForTaskFromWork_RunsWorkerVerifier pins that the from-work
+// entry point runs only worker → verifier.
 func TestRunForTaskFromWork_RunsWorkerVerifier(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)

@@ -17,6 +17,7 @@ import (
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
+	"github.com/spacelions/j/internal/workflow"
 )
 
 // chainAgent stands in for a real codingagents.Agent across the
@@ -372,7 +373,7 @@ func TestNewOrchestrateCmd_FlagDefaults(t *testing.T) {
 	var names []string
 	cmd.Flags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
 	// pflag visits flags in lexicographic order.
-	want := []string{"id", "interactive", "model", "plan-requires-approval", "skip-planning", "skip-work", "tool", "yes"}
+	want := []string{"id", "interactive", "model", "phase", "plan-requires-approval", "tool", "yes"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("flags = %v, want %v", names, want)
 	}
@@ -427,35 +428,36 @@ func TestOrchestratePlanRequiresApprovalOverride_NoFlag(t *testing.T) {
 	}
 }
 
-// TestNewOrchestrateCmd_SkipPlanningFlagBindings covers --skip-planning
-// viper + env bindings.
-func TestNewOrchestrateCmd_SkipPlanningFlagBindings(t *testing.T) {
+// TestNewOrchestrateCmd_PhaseFlagBindings covers --phase viper +
+// env bindings — the single phase flag replaces the prior
+// --skip-planning / --skip-work bool pair.
+func TestNewOrchestrateCmd_PhaseFlagBindings(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	cmd := newOrchestrateCmd()
-	if err := cmd.Flags().Set("skip-planning", "true"); err != nil {
-		t.Fatalf("Flags().Set skip-planning: %v", err)
+	if err := cmd.Flags().Set("phase", "from-work"); err != nil {
+		t.Fatalf("Flags().Set phase: %v", err)
 	}
-	if got := viper.GetBool("tasks.orchestrate.skip_planning"); !got {
-		t.Errorf("tasks.orchestrate.skip_planning = false, want true")
+	if got := viper.GetString("tasks.orchestrate.phase"); got != "from-work" {
+		t.Errorf("tasks.orchestrate.phase = %q, want from-work", got)
 	}
 }
 
-func TestNewOrchestrateCmd_SkipPlanningEnvBinding(t *testing.T) {
+func TestNewOrchestrateCmd_PhaseEnvBinding(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
-	t.Setenv("TASKS_ORCHESTRATE_SKIP_PLANNING", "true")
+	t.Setenv("TASKS_ORCHESTRATE_PHASE", "verify-only")
 	_ = newOrchestrateCmd()
-	if got := viper.GetBool("tasks.orchestrate.skip_planning"); !got {
-		t.Errorf("tasks.orchestrate.skip_planning = false, want true")
+	if got := viper.GetString("tasks.orchestrate.phase"); got != "verify-only" {
+		t.Errorf("tasks.orchestrate.phase = %q, want verify-only", got)
 	}
 }
 
-// TestRunOrchestrate_SkipPlanningRunsWorkVerify pins that the
-// SkipPlanning option drives only worker → verifier without
-// re-running the planner. The seeded task already has plan.md
-// staged because the planner phase is skipped.
-func TestRunOrchestrate_SkipPlanningRunsWorkVerify(t *testing.T) {
+// TestRunOrchestrate_FromWorkRunsWorkVerify pins that Phase=FromWork
+// drives only worker → verifier without re-running the planner. The
+// seeded task already has plan.md staged because the planner phase
+// is skipped.
+func TestRunOrchestrate_FromWorkRunsWorkVerify(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedOrchestrateTask(t, "scripted")
@@ -472,7 +474,7 @@ func TestRunOrchestrate_SkipPlanningRunsWorkVerify(t *testing.T) {
 	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: noPlanApproval(),
-		SkipPlanning:         true,
+		Phase:                workflow.RunPhaseFromWork,
 		Stdin:                strings.NewReader(""),
 		Stdout:               io.Discard,
 		Stderr:               io.Discard,
@@ -481,18 +483,17 @@ func TestRunOrchestrate_SkipPlanningRunsWorkVerify(t *testing.T) {
 		t.Fatalf("RunOrchestrate: %v", err)
 	}
 	if stub.planCalls.Load() != 0 {
-		t.Fatalf("plan calls = %d, want 0 (skip-planning must not re-plan)", stub.planCalls.Load())
+		t.Fatalf("plan calls = %d, want 0 (from-work must not re-plan)", stub.planCalls.Load())
 	}
 	if stub.workCalls.Load() != 1 || stub.verifyCalls.Load() != 1 {
 		t.Fatalf("call counts: work=%d verify=%d", stub.workCalls.Load(), stub.verifyCalls.Load())
 	}
 }
 
-// TestRunOrchestrate_SkipPlanningConflictsWithApproval pins the
-// rejected combination: --skip-planning with
-// --plan-requires-approval=true must error before invoking the
-// workflow.
-func TestRunOrchestrate_SkipPlanningConflictsWithApproval(t *testing.T) {
+// TestRunOrchestrate_FromWorkConflictsWithApproval pins the rejected
+// combination: --phase=from-work with --plan-requires-approval=true
+// must error before invoking the workflow.
+func TestRunOrchestrate_FromWorkConflictsWithApproval(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedOrchestrateTask(t, "scripted")
@@ -501,14 +502,14 @@ func TestRunOrchestrate_SkipPlanningConflictsWithApproval(t *testing.T) {
 	err := RunOrchestrate(context.Background(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: requirePlanApproval(),
-		SkipPlanning:         true,
+		Phase:                workflow.RunPhaseFromWork,
 		Stdin:                strings.NewReader(""),
 		Stdout:               io.Discard,
 		Stderr:               io.Discard,
 		Agents:               []codingagents.Agent{stub},
 	})
-	if err == nil || !strings.Contains(err.Error(), "skip-planning") {
-		t.Fatalf("err = %v, want skip-planning incompatibility guard", err)
+	if err == nil || !strings.Contains(err.Error(), "from-work") {
+		t.Fatalf("err = %v, want from-work incompatibility guard", err)
 	}
 	if stub.planCalls.Load()+stub.workCalls.Load()+stub.verifyCalls.Load() != 0 {
 		t.Fatalf("no agent should run when conflict guard fires")
@@ -614,13 +615,13 @@ func stagePlan(t *testing.T, id string) {
 	}
 }
 
-// TestRunOrchestrate_SkipPlanningIgnoresProjectApproval pins the fix
-// for the re-work / re-verify regression: when SkipPlanning is true
-// and PlanRequiresApproval is nil, the project-level
+// TestRunOrchestrate_FromWorkIgnoresProjectApproval pins the fix for
+// the re-work / re-verify regression: when Phase=FromWork and
+// PlanRequiresApproval is nil, the project-level
 // plan_requires_approval default must NOT be consulted (otherwise
 // projects opted into approval would hit the conflict guard and the
 // post-planner re-runs would refuse to proceed).
-func TestRunOrchestrate_SkipPlanningIgnoresProjectApproval(t *testing.T) {
+func TestRunOrchestrate_FromWorkIgnoresProjectApproval(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	putProjectPlanRequiresApproval(t, "true")
@@ -630,12 +631,12 @@ func TestRunOrchestrate_SkipPlanningIgnoresProjectApproval(t *testing.T) {
 	stub.verdicts = []string{"VERDICT: PASS"}
 
 	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
-		TaskID:       id,
-		SkipPlanning: true,
-		Stdin:        strings.NewReader(""),
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{stub},
+		TaskID: id,
+		Phase:  workflow.RunPhaseFromWork,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{stub},
 	}); err != nil {
 		t.Fatalf("RunOrchestrate: %v", err)
 	}
@@ -648,11 +649,11 @@ func TestRunOrchestrate_SkipPlanningIgnoresProjectApproval(t *testing.T) {
 	}
 }
 
-// TestRunOrchestrate_SkipPlanningSkipWorkIgnoresProjectApproval pins
-// the verifier-only re-run (j tasks re-verify / resume-verify): with
+// TestRunOrchestrate_VerifyOnlyIgnoresProjectApproval pins the
+// verifier-only re-run (j tasks re-verify / resume-verify): with
 // project.plan_requires_approval=true and PlanRequiresApproval nil,
-// SkipPlanning+SkipWork must reach the verifier without erroring.
-func TestRunOrchestrate_SkipPlanningSkipWorkIgnoresProjectApproval(t *testing.T) {
+// Phase=VerifyOnly must reach the verifier without erroring.
+func TestRunOrchestrate_VerifyOnlyIgnoresProjectApproval(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	putProjectPlanRequiresApproval(t, "true")
@@ -663,13 +664,12 @@ func TestRunOrchestrate_SkipPlanningSkipWorkIgnoresProjectApproval(t *testing.T)
 	stub.verdicts = []string{"VERDICT: PASS"}
 
 	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
-		TaskID:       id,
-		SkipPlanning: true,
-		SkipWork:     true,
-		Stdin:        strings.NewReader(""),
-		Stdout:       io.Discard,
-		Stderr:       io.Discard,
-		Agents:       []codingagents.Agent{stub},
+		TaskID: id,
+		Phase:  workflow.RunPhaseVerifyOnly,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{stub},
 	}); err != nil {
 		t.Fatalf("RunOrchestrate: %v", err)
 	}
@@ -682,12 +682,12 @@ func TestRunOrchestrate_SkipPlanningSkipWorkIgnoresProjectApproval(t *testing.T)
 	}
 }
 
-// TestRunOrchestrate_SkipPlanningConflictExplicitOverrideOnly pins
-// that the conflict guard only fires on an *explicit* approval=true
+// TestRunOrchestrate_FromWorkConflictExplicitOverrideOnly pins that
+// the conflict guard only fires on an *explicit* approval=true
 // override, not on the project default. The sub-case with the project
 // default ALSO set to true keeps the explicit-override path
 // load-bearing.
-func TestRunOrchestrate_SkipPlanningConflictExplicitOverrideOnly(t *testing.T) {
+func TestRunOrchestrate_FromWorkConflictExplicitOverrideOnly(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	putProjectPlanRequiresApproval(t, "true")
@@ -697,24 +697,24 @@ func TestRunOrchestrate_SkipPlanningConflictExplicitOverrideOnly(t *testing.T) {
 	err := RunOrchestrate(context.Background(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: requirePlanApproval(),
-		SkipPlanning:         true,
+		Phase:                workflow.RunPhaseFromWork,
 		Stdin:                strings.NewReader(""),
 		Stdout:               io.Discard,
 		Stderr:               io.Discard,
 		Agents:               []codingagents.Agent{stub},
 	})
-	if err == nil || !strings.Contains(err.Error(), "skip-planning") {
-		t.Fatalf("err = %v, want skip-planning incompatibility", err)
+	if err == nil || !strings.Contains(err.Error(), "from-work") {
+		t.Fatalf("err = %v, want from-work incompatibility", err)
 	}
 	if stub.planCalls.Load()+stub.workCalls.Load()+stub.verifyCalls.Load() != 0 {
 		t.Fatalf("no agent should run when conflict guard fires")
 	}
 }
 
-// TestRunOrchestrate_SkipPlanningExplicitFalseAllowed pins that an
+// TestRunOrchestrate_FromWorkExplicitFalseAllowed pins that an
 // explicit PlanRequiresApproval=false short-circuits the project
 // default the same way nil does — worker/verifier both run.
-func TestRunOrchestrate_SkipPlanningExplicitFalseAllowed(t *testing.T) {
+func TestRunOrchestrate_FromWorkExplicitFalseAllowed(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	putProjectPlanRequiresApproval(t, "true")
@@ -726,7 +726,7 @@ func TestRunOrchestrate_SkipPlanningExplicitFalseAllowed(t *testing.T) {
 	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: noPlanApproval(),
-		SkipPlanning:         true,
+		Phase:                workflow.RunPhaseFromWork,
 		Stdin:                strings.NewReader(""),
 		Stdout:               io.Discard,
 		Stderr:               io.Discard,

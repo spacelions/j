@@ -48,8 +48,7 @@ func (o ResumeVerifyOptions) withDefaults() ResumeVerifyOptions {
 
 // RunResumeVerify implements `j tasks resume-verify`. It filters tasks
 // with a non-empty VerifyResumeSession and re-execs
-// `j tasks orchestrate --skip-planning --skip-work --interactive=true`
-// inline.
+// `j tasks orchestrate --phase=verify-only --interactive=true` inline.
 func RunResumeVerify(ctx context.Context, opts ResumeVerifyOptions) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
@@ -64,8 +63,7 @@ func RunResumeVerify(ctx context.Context, opts ResumeVerifyOptions) (err error) 
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
 		"tasks", "orchestrate",
 		"--id", taskID,
-		"--skip-planning=true",
-		"--skip-work=true",
+		"--phase=verify-only",
 		"--interactive=true",
 	})
 }
@@ -112,7 +110,7 @@ func newResumeVerifyCmd() *cobra.Command {
 		Short: "Resume an in-flight verifier session in the foreground",
 		Long: "Filters tasks to rows with a non-empty verify_resume_session and " +
 			"renders the shared task picker. The selected task re-execs " +
-			"`j tasks orchestrate --skip-planning --skip-work --interactive=true` " +
+			"`j tasks orchestrate --phase=verify-only --interactive=true` " +
 			"inline so the verifier resumes its session in the foreground. " +
 			"When no task carries an active verify session, prints " +
 			"`J: no tasks with an active verify session` and exits 0.",

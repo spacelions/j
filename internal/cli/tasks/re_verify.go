@@ -61,8 +61,8 @@ func (o ReVerifyOptions) withDefaults() ReVerifyOptions {
 }
 
 // RunReVerify implements `j tasks re-verify`. It resolves a task
-// and re-execs `j tasks orchestrate --skip-planning --skip-work`
-// either inline (--interactive=true) or detached.
+// and re-execs `j tasks orchestrate --phase=verify-only` either
+// inline (--interactive=true) or detached.
 func RunReVerify(ctx context.Context, opts ReVerifyOptions) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
@@ -94,8 +94,7 @@ func RunReVerify(ctx context.Context, opts ReVerifyOptions) (err error) {
 	args := []string{
 		"tasks", "orchestrate",
 		"--id", task.ID,
-		"--skip-planning=true",
-		"--skip-work=true",
+		"--phase=verify-only",
 		"--interactive=" + strconv.FormatBool(interactive),
 	}
 
@@ -146,7 +145,7 @@ func newReVerifyCmd() *cobra.Command {
 		Use:   "re-verify",
 		Short: "Re-verify an existing task: run the verifier inline (--interactive) or detached",
 		Long: "Resolves a task (via --from-task or the shared picker) and either " +
-			"re-execs `j tasks orchestrate --skip-planning --skip-work` inline " +
+			"re-execs `j tasks orchestrate --phase=verify-only` inline " +
 			"(with --interactive=true so the TUI can render in the parent's terminal) " +
 			"or forks it as a detached child. Tasks in work-done / verify-done / help " +
 			"skip the status-override prompt; any other status renders a yes/no confirm " +

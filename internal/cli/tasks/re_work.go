@@ -57,7 +57,7 @@ func (o ReWorkOptions) withDefaults() ReWorkOptions {
 }
 
 // RunReWork implements `j tasks re-work`. It resolves a task, confirms
-// status override, and re-execs `j tasks orchestrate --skip-planning=true`.
+// status override, and re-execs `j tasks orchestrate --phase=from-work`.
 func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
@@ -104,7 +104,7 @@ func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 	args := []string{
 		"tasks", "orchestrate",
 		"--id", task.ID,
-		"--skip-planning=true",
+		"--phase=from-work",
 		"--interactive=" + strconv.FormatBool(interactive),
 	}
 	if opts.Tool != "" {
@@ -159,7 +159,7 @@ func newReWorkCmd() *cobra.Command {
 		Use:   "re-work",
 		Short: "Re-work an existing task: run the worker inline (--interactive) or detached",
 		Long: "Resolves a task (via --from-task or the shared picker) and either " +
-			"re-execs `j tasks orchestrate --skip-planning=true` inline " +
+			"re-execs `j tasks orchestrate --phase=from-work` inline " +
 			"(with --interactive=true so the TUI can render in the parent's terminal) " +
 			"or forks it as a detached child so the worker re-runs without the user " +
 			"waiting in-process. Tasks in plan-done or help skip the status-override " +
