@@ -127,7 +127,7 @@ func TestRunResumeVerify_HappyPath(t *testing.T) {
 		t.Fatalf("RunResumeVerify: %v", err)
 	}
 	args := readSpawnedArgv(t, argvPath)
-	want := []string{"tasks", "orchestrate", "--id", id, "--skip-planning=true", "--skip-work=true", "--interactive=true"}
+	want := []string{"tasks", "orchestrate", "--id", id, "--phase=verify-only", "--interactive=true"}
 	if strings.Join(args, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", args, want)
 	}

@@ -3,6 +3,7 @@ package tasks
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 
@@ -28,28 +29,29 @@ type OrchestrateOptions struct {
 
 	// PlanRequiresApproval, when non-nil, is the resolved gate value
 	// passed by `j tasks start`. nil makes direct/internal callers
-	// inherit project.plan_requires_approval.
+	// inherit project.plan_requires_approval — but only on the
+	// planner path; see Phase for the post-planner rule.
 	PlanRequiresApproval *bool
 
-	// SkipPlanning, when true, runs only worker → verifier on a
-	// task already past the planner. Set by `j tasks continue` when
-	// it picks up a `plan-done` row. Mutually exclusive with
-	// PlanRequiresApproval=true.
-	SkipPlanning bool
-
-	// SkipWork, when true, skips the worker phase and runs only the
-	// verifier. Requires SkipPlanning. Used by `j tasks re-verify`
-	// and `j tasks resume-verify` to re-exec the orchestrator for
-	// only the verifier phase.
-	SkipWork bool
+	// Phase selects which slice of planner→worker→verifier runs.
+	// RunPhaseFull (zero value) is the planner-led path and respects
+	// PlanRequiresApproval. RunPhaseFromWork / RunPhaseVerifyOnly
+	// short-circuit past the planner; the project default for
+	// plan_requires_approval is intentionally ignored on those
+	// paths so re-work / re-verify on opted-in projects do not hit
+	// the conflict guard. The guard still fires on an *explicit*
+	// PlanRequiresApproval=true paired with a non-Full phase.
+	Phase workflow.RunPhase
 
 	// Tool and Model are one-off planner overrides forwarded from
 	// `j tasks start --tool/--model`.
 	Tool  string
 	Model string
 
-	// Interactive controls whether the planner runs in TUI mode.
-	// Defaults to false (headless). Set by `j tasks start --interactive`.
+	// Interactive controls whether the active phase (planner on
+	// RunPhaseFull, worker on RunPhaseFromWork) runs in TUI mode.
+	// Defaults to false (headless). Set by `j tasks start
+	// --interactive` and the resume-* CLI wrappers.
 	Interactive bool
 
 	// Yes skips status-mismatch confirmation in the planner.
@@ -69,13 +71,12 @@ type OrchestrateOptions struct {
 // reads the relaxed per-project task config (`project.max_iterations`
 // plus `project.plan_requires_approval` — `project.api_key` /
 // `project.model` are NOT required on this path because the shell-out
-// branch never instantiates a Gemini model), then drives planner only
-// or planner → worker → verifier (or worker → verifier when
-// SkipPlanning is set) via the matching workflow.RunForTask* entry
-// point. The agent.log redirection is the parent's concern: the
-// caller opens the per-task log with O_APPEND and passes its fd as
-// our stdout/stderr, so any line the chain writes (including warnings
-// from this function) lands chronologically.
+// branch never instantiates a Gemini model), then dispatches by Phase
+// to the matching workflow.RunForTask* entry point. The agent.log
+// redirection is the parent's concern: the caller opens the per-task
+// log with O_APPEND and passes its fd as our stdout/stderr, so any
+// line the chain writes (including warnings from this function) lands
+// chronologically.
 func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 	opts = opts.withDefaults()
 	if opts.TaskID == "" {
@@ -88,45 +89,59 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 	if err != nil {
 		return err
 	}
-	planRequiresApproval, err := resolvePlanRequiresApproval(opts.PlanRequiresApproval)
-	if err != nil {
-		return err
-	}
-	overrides := workflow.PlannerOverrides{
+	emitSessionStart(opts.Stderr, opts.TaskID, opts.Phase)
+	overrides := workflow.PhaseOverrides{
 		Tool:        opts.Tool,
 		Model:       opts.Model,
 		Interactive: opts.Interactive,
 		Yes:         opts.Yes,
 	}
-	emitSessionStart(opts.Stderr, opts.TaskID, opts.SkipPlanning, opts.SkipWork)
-	if opts.SkipPlanning {
-		if planRequiresApproval {
-			return errors.New("tasks: --skip-planning is incompatible with --plan-requires-approval=true")
+	switch opts.Phase {
+	case workflow.RunPhaseVerifyOnly:
+		if opts.PlanRequiresApproval != nil && *opts.PlanRequiresApproval {
+			return errPhaseConflictsWithApproval
 		}
-		if opts.SkipWork {
-			return workflow.RunForTaskVerifyOnly(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
+		return workflow.RunForTaskVerifyOnly(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
+	case workflow.RunPhaseFromWork:
+		if opts.PlanRequiresApproval != nil && *opts.PlanRequiresApproval {
+			return errPhaseConflictsWithApproval
 		}
-		return workflow.RunForTaskFromWork(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
+		return workflow.RunForTaskFromWork(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, overrides)
+	case workflow.RunPhaseFull, "":
+		planRequiresApproval, err := resolvePlanRequiresApproval(opts.PlanRequiresApproval)
+		if err != nil {
+			return err
+		}
+		return workflow.RunForTaskWithGate(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, planRequiresApproval, overrides)
 	}
-	return workflow.RunForTaskWithGate(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, planRequiresApproval, overrides)
+	return fmt.Errorf("tasks: unknown phase %q", opts.Phase)
 }
+
+// errPhaseConflictsWithApproval is returned when a non-Full Phase is
+// paired with an explicit PlanRequiresApproval=true override. The
+// project default is intentionally ignored on non-Full phases, so the
+// error fires only when the caller deliberately set the override.
+var errPhaseConflictsWithApproval = errors.New(
+	"tasks: --phase=from-work / verify-only is incompatible with --plan-requires-approval=true")
 
 // emitSessionStart writes one `session_start` marker into the agent
 // log at the very top of orchestrate so a tailer can pin the task id,
-// orchestrator pid, working directory, and skip-planning flag without
+// orchestrator pid, working directory, and selected phase without
 // reading bbolt. Field collection is deliberately cheap — os.Hostname
 // and os.Getwd never block — and write errors are swallowed because
 // markers are observability signal, not load-bearing data.
-func emitSessionStart(w io.Writer, taskID string, skipPlanning, skipWork bool) {
+func emitSessionStart(w io.Writer, taskID string, phase workflow.RunPhase) {
 	hostname, _ := os.Hostname()
 	cwd, _ := os.Getwd()
+	if phase == "" {
+		phase = workflow.RunPhaseFull
+	}
 	_ = agentlog.Emit(w, "session_start", map[string]any{
 		"task":             taskID,
 		"orchestrator_pid": os.Getpid(),
 		"hostname":         hostname,
 		"cwd":              cwd,
-		"skip_planning":    skipPlanning,
-		"skip_work":        skipWork,
+		"phase":            string(phase),
 	})
 }
 
@@ -164,6 +179,10 @@ func newOrchestrateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			phase, err := workflow.ParseRunPhase(viper.GetString("tasks.orchestrate.phase"))
+			if err != nil {
+				return err
+			}
 			var interactive bool
 			if cmd.Flags().Changed("interactive") || envSet("TASKS_ORCHESTRATE_INTERACTIVE") {
 				interactive = viper.GetBool("tasks.orchestrate.interactive")
@@ -171,8 +190,7 @@ func newOrchestrateCmd() *cobra.Command {
 			return RunOrchestrate(cmd.Context(), OrchestrateOptions{
 				TaskID:               viper.GetString("tasks.orchestrate.id"),
 				PlanRequiresApproval: approval,
-				SkipPlanning:         viper.GetBool("tasks.orchestrate.skip_planning"),
-					SkipWork:             viper.GetBool("tasks.orchestrate.skip_work"),
+				Phase:                phase,
 				Tool:                 viper.GetString("tasks.orchestrate.tool"),
 				Model:                viper.GetString("tasks.orchestrate.model"),
 				Interactive:          interactive,
@@ -186,20 +204,17 @@ func newOrchestrateCmd() *cobra.Command {
 	}
 	cmd.Flags().String("id", "", "Task id whose planner→worker→verifier chain to drive")
 	cmd.Flags().Bool("plan-requires-approval", false, "Resolved project.plan_requires_approval value")
-	cmd.Flags().Bool("skip-planning", false, "Run only worker → verifier on a task already past the planner")
-	cmd.Flags().Bool("skip-work", false, "Run only verifier (requires --skip-planning)")
+	cmd.Flags().String("phase", string(workflow.RunPhaseFull), "Which slice of the chain to run: full | from-work | verify-only")
 	cmd.Flags().String("tool", "", "Planner tool override (cursor|claude)")
 	cmd.Flags().String("model", "", "Planner model override")
-	cmd.Flags().Bool("interactive", false, "Run planner in interactive (TUI) mode")
+	cmd.Flags().Bool("interactive", false, "Run the active phase (planner on full, worker on from-work) in TUI mode")
 	cmd.Flags().Bool("yes", false, "Skip status-mismatch confirmation in the planner")
 	_ = viper.BindPFlag("tasks.orchestrate.id", cmd.Flags().Lookup("id"))
 	_ = viper.BindEnv("tasks.orchestrate.id", "TASKS_ORCHESTRATE_ID")
 	_ = viper.BindPFlag("tasks.orchestrate.plan_requires_approval", cmd.Flags().Lookup("plan-requires-approval"))
 	_ = viper.BindEnv("tasks.orchestrate.plan_requires_approval", "TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL")
-	_ = viper.BindPFlag("tasks.orchestrate.skip_planning", cmd.Flags().Lookup("skip-planning"))
-	_ = viper.BindEnv("tasks.orchestrate.skip_planning", "TASKS_ORCHESTRATE_SKIP_PLANNING")
-	_ = viper.BindPFlag("tasks.orchestrate.skip_work", cmd.Flags().Lookup("skip-work"))
-	_ = viper.BindEnv("tasks.orchestrate.skip_work", "TASKS_ORCHESTRATE_SKIP_WORK")
+	_ = viper.BindPFlag("tasks.orchestrate.phase", cmd.Flags().Lookup("phase"))
+	_ = viper.BindEnv("tasks.orchestrate.phase", "TASKS_ORCHESTRATE_PHASE")
 	_ = viper.BindPFlag("tasks.orchestrate.tool", cmd.Flags().Lookup("tool"))
 	_ = viper.BindEnv("tasks.orchestrate.tool", "TASKS_ORCHESTRATE_TOOL")
 	_ = viper.BindPFlag("tasks.orchestrate.model", cmd.Flags().Lookup("model"))

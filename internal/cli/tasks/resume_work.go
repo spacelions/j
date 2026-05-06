@@ -64,7 +64,7 @@ func RunResumeWork(ctx context.Context, opts ResumeWorkOptions) (err error) {
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
 		"tasks", "orchestrate",
 		"--id", taskID,
-		"--skip-planning=true",
+		"--phase=from-work",
 		"--interactive=true",
 	})
 }
@@ -111,7 +111,7 @@ func newResumeWorkCmd() *cobra.Command {
 		Short: "Resume an in-flight worker session in the foreground with --interactive=true",
 		Long: "Filters tasks to rows with a non-empty work_resume_session and " +
 			"renders the shared task picker. The selected task re-execs " +
-			"`j tasks orchestrate --skip-planning=true --interactive=true` " +
+			"`j tasks orchestrate --phase=from-work --interactive=true` " +
 			"inline so the worker resumes its session in the foreground with the " +
 			"parent's terminal attached. When no task carries an active work session, " +
 			"prints `J: no tasks with an active work session` and exits 0.",

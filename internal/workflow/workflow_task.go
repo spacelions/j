@@ -31,43 +31,90 @@ const (
 	orchestratorUserID  = "j-tasks"
 )
 
-// PlannerOverrides carries one-off flag overrides for the planner
-// phase. Zero value = no override (existing callers pass zero struct).
-type PlannerOverrides struct {
+// PhaseOverrides carries one-off flag overrides for whichever phase
+// the orchestrator is going to run. Zero value = no override (existing
+// callers pass zero struct).
+//
+// Tool / Model / Yes are planner-specific; Interactive flows into the
+// active phase (planner when not skipped, otherwise worker). Resume
+// state is intentionally not part of this struct: the worker / verifier
+// infer it from the task row's WorkResumeSession / VerifyResumeSession
+// fields (re-work / re-verify clear them; resume-work / resume-verify
+// leave them populated).
+type PhaseOverrides struct {
 	Tool        string
 	Model       string
 	Interactive bool
 	Yes         bool
 }
 
+// RunPhase selects the slice of the planner→worker→verifier chain a
+// single RunForTask invocation drives. Encoded as a string so it
+// round-trips cleanly through cobra (`--phase=...`) / viper / agent
+// log markers; expressing the previous bool-pair encoding's
+// impossible combination is unrepresentable.
+type RunPhase string
+
+const (
+	// RunPhaseFull runs planner → worker → verifier. Used by
+	// `j tasks start` and `j tasks continue` on a fresh row.
+	RunPhaseFull RunPhase = "full"
+	// RunPhaseFromWork skips the planner and runs worker → verifier.
+	// Used by `j tasks continue` on a plan-done row plus the re-work
+	// / resume-work CLI wrappers.
+	RunPhaseFromWork RunPhase = "from-work"
+	// RunPhaseVerifyOnly runs only the verifier. Used by re-verify
+	// / resume-verify.
+	RunPhaseVerifyOnly RunPhase = "verify-only"
+)
+
+// ParseRunPhase resolves a string to a RunPhase. Empty maps to
+// RunPhaseFull so a missing flag value behaves like the default. Any
+// other unknown value is rejected so a typo at the CLI surfaces
+// instead of silently running the planner.
+func ParseRunPhase(s string) (RunPhase, error) {
+	switch s {
+	case "", string(RunPhaseFull):
+		return RunPhaseFull, nil
+	case string(RunPhaseFromWork):
+		return RunPhaseFromWork, nil
+	case string(RunPhaseVerifyOnly):
+		return RunPhaseVerifyOnly, nil
+	}
+	return "", fmt.Errorf("workflow: unknown run phase %q (want full|from-work|verify-only)", s)
+}
+
 // RunForTask drives the planner → worker → verifier flow for an
 // already-seeded task end to end.
-func RunForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, overrides PlannerOverrides) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr, false, false, false, overrides)
+func RunForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, overrides PhaseOverrides) error {
+	return runForTask(ctx, cfg, taskID, agents, stderr, RunPhaseFull, false, overrides)
 }
 
 // RunForTaskWithGate drives an already-seeded task, stopping after the
 // planner when planRequiresApproval is true. A gated run leaves the
 // row at plan-done so `j tasks continue --from-task <id>` can pick up
 // the existing dispatch path.
-func RunForTaskWithGate(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval bool, overrides PlannerOverrides) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr, planRequiresApproval, false, false, overrides)
+func RunForTaskWithGate(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval bool, overrides PhaseOverrides) error {
+	return runForTask(ctx, cfg, taskID, agents, stderr, RunPhaseFull, planRequiresApproval, overrides)
 }
 
 // RunForTaskFromWork drives an already-seeded task that is past the
-// planner, running only worker → verifier. Used by `j tasks continue`
-// on a `plan-done` row so the implicit-approval handoff resumes the
-// chain without re-running the planner.
-func RunForTaskFromWork(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr, false, true, false, PlannerOverrides{})
+// planner, running only worker → verifier. overrides.Interactive flows
+// into the worker so `j tasks resume-work` / `re-work
+// --interactive=true` surface the agent's TUI; the worker reads
+// resume state from the task row's WorkResumeSession field directly
+// (re-work clears it; resume-work leaves it).
+func RunForTaskFromWork(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, overrides PhaseOverrides) error {
+	return runForTask(ctx, cfg, taskID, agents, stderr, RunPhaseFromWork, false, overrides)
 }
 
 // RunForTaskVerifyOnly drives only the verifier phase on an
-// already-seeded task, skipping both planner and worker. Used by
-// `j tasks re-verify` and `j tasks resume-verify` via orchestrator
-// re-exec.
+// already-seeded task. The verifier inspects the row's
+// VerifyResumeSession to decide between Run / RunResume internally so
+// the orchestrator does not need to thread interactive / resume
+// through here.
 func RunForTaskVerifyOnly(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr, false, true, true, PlannerOverrides{})
+	return runForTask(ctx, cfg, taskID, agents, stderr, RunPhaseVerifyOnly, false, PhaseOverrides{})
 }
 
 // runForTask builds a top-level SequentialAgent over shell-out custom
@@ -95,7 +142,7 @@ func RunForTaskVerifyOnly(ctx context.Context, cfg store.TaskConfig, taskID stri
 // MaxIterations defaults are owned by callers: production callers
 // fetch a sane default via store.LoadTaskConfig; tests that pass a
 // zero-value Config flow through verifier.New's own fallback.
-func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval, skipPlanning, skipWork bool, overrides PlannerOverrides) error {
+func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, phase RunPhase, planRequiresApproval bool, overrides PhaseOverrides) error {
 	if taskID == "" {
 		return errors.New("workflow: task id required")
 	}
@@ -106,7 +153,7 @@ func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents
 		stderr = io.Discard
 	}
 
-	subAgents, err := taskSubAgents(cfg, taskID, agents, stderr, planRequiresApproval, skipPlanning, skipWork, overrides)
+	subAgents, err := taskSubAgents(cfg, taskID, agents, stderr, phase, planRequiresApproval, overrides)
 	if err != nil {
 		return err
 	}
@@ -129,14 +176,13 @@ func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents
 	return nil
 }
 
-func taskSubAgents(cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval, skipPlanning, skipWork bool, overrides PlannerOverrides) ([]agent.Agent, error) {
-	if planRequiresApproval && skipPlanning {
-		return nil, errors.New("workflow: planRequiresApproval and skipPlanning are mutually exclusive")
-	}
-	if skipWork && !skipPlanning {
-		return nil, errors.New("workflow: skipWork requires skipPlanning")
-	}
-	if skipPlanning && skipWork {
+func taskSubAgents(cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, phase RunPhase, planRequiresApproval bool, overrides PhaseOverrides) ([]agent.Agent, error) {
+	switch phase {
+	case RunPhaseVerifyOnly:
+		// The verifier internally decides between Run / RunResume by
+		// inspecting the task's VerifyResumeSession (see
+		// verifier.New), so the orchestrator does not have to thread
+		// resume / interactive in here.
 		verifierAgent, err := verifier.New(verifier.Config{
 			TaskID:        taskID,
 			Agents:        agents,
@@ -147,41 +193,47 @@ func taskSubAgents(cfg store.TaskConfig, taskID string, agents []codingagents.Ag
 			return nil, fmt.Errorf("workflow: verifier: %w", err)
 		}
 		return []agent.Agent{verifierAgent}, nil
-	}
-	if skipPlanning {
-		workerAgent, verifierAgent, err := newWorkVerify(cfg, taskID, agents, stderr)
+	case RunPhaseFromWork:
+		workerAgent, verifierAgent, err := newWorkVerify(cfg, taskID, agents, stderr, overrides.Interactive)
 		if err != nil {
 			return nil, err
 		}
 		return []agent.Agent{workerAgent, verifierAgent}, nil
+	case RunPhaseFull:
+		plannerAgent, err := planner.New(planner.Config{
+			TaskID:      taskID,
+			Agents:      agents,
+			Stderr:      stderr,
+			Tool:        overrides.Tool,
+			Model:       overrides.Model,
+			Interactive: overrides.Interactive,
+			Yes:         overrides.Yes,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("workflow: planner: %w", err)
+		}
+		if planRequiresApproval {
+			return []agent.Agent{plannerAgent}, nil
+		}
+		// The planner-then-worker handoff path leaves the worker
+		// non-interactive: the planner's TUI exits cleanly as the
+		// hand-off, and the worker proceeds headless.
+		workerAgent, verifierAgent, err := newWorkVerify(cfg, taskID, agents, stderr, false)
+		if err != nil {
+			return nil, err
+		}
+		return []agent.Agent{plannerAgent, workerAgent, verifierAgent}, nil
+	default:
+		return nil, fmt.Errorf("workflow: unknown phase %q", phase)
 	}
-	plannerAgent, err := planner.New(planner.Config{
+}
+
+func newWorkVerify(cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, workerInteractive bool) (agent.Agent, agent.Agent, error) {
+	workerAgent, err := worker.New(worker.Config{
 		TaskID:      taskID,
 		Agents:      agents,
 		Stderr:      stderr,
-		Tool:        overrides.Tool,
-		Model:       overrides.Model,
-		Interactive: overrides.Interactive,
-		Yes:         overrides.Yes,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("workflow: planner: %w", err)
-	}
-	if planRequiresApproval {
-		return []agent.Agent{plannerAgent}, nil
-	}
-	workerAgent, verifierAgent, err := newWorkVerify(cfg, taskID, agents, stderr)
-	if err != nil {
-		return nil, err
-	}
-	return []agent.Agent{plannerAgent, workerAgent, verifierAgent}, nil
-}
-
-func newWorkVerify(cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer) (agent.Agent, agent.Agent, error) {
-	workerAgent, err := worker.New(worker.Config{
-		TaskID: taskID,
-		Agents: agents,
-		Stderr: stderr,
+		Interactive: workerInteractive,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("workflow: worker: %w", err)

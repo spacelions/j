@@ -168,8 +168,7 @@ func reverifyAsDetachedOrchestrator(ctx context.Context, opts ContinueOptions, t
 	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
 		"tasks", "orchestrate",
 		"--id", taskID,
-		"--skip-planning=true",
-		"--skip-work=true",
+		"--phase=verify-only",
 	})
 	if err != nil {
 		return err
@@ -186,8 +185,7 @@ func resumeVerifyingInline(ctx context.Context, opts ContinueOptions, taskID str
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
 		"tasks", "orchestrate",
 		"--id", taskID,
-		"--skip-planning=true",
-		"--skip-work=true",
+		"--phase=verify-only",
 		"--interactive=true",
 	})
 }

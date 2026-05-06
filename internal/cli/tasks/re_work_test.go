@@ -87,7 +87,7 @@ func TestRunReWork_HappyPath(t *testing.T) {
 		t.Fatalf("RunReWork: %v", err)
 	}
 	args := readSpawnedArgv(t, argvPath)
-	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--skip-planning=true", "--interactive=false"}
+	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--phase=from-work", "--interactive=false"}
 	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
 		t.Fatalf("argv = %v, want %v", args, wantArgs)
 	}

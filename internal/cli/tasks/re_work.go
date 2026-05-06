@@ -57,7 +57,7 @@ func (o ReWorkOptions) withDefaults() ReWorkOptions {
 }
 
 // RunReWork implements `j tasks re-work`. It resolves a task, confirms
-// status override, and re-execs `j tasks orchestrate --skip-planning=true`.
+// status override, and re-execs `j tasks orchestrate --phase=from-work`.
 func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
@@ -90,12 +90,21 @@ func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 	}
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 
+	// Re-work means "start the worker fresh"; clearing
+	// WorkResumeSession before re-execing the orchestrator is how
+	// worker.Execute distinguishes re-work from resume-work (the
+	// former mints a new session via NewResumeID, the latter sees
+	// the populated row and feeds the existing id into `--resume`).
+	if err := clearWorkResumeSession(task.ID); err != nil {
+		return err
+	}
+
 	interactive := resolver.Interactive(nil, opts.Stderr, store.BucketWorker, opts.Interactive)
 
 	args := []string{
 		"tasks", "orchestrate",
 		"--id", task.ID,
-		"--skip-planning=true",
+		"--phase=from-work",
 		"--interactive=" + strconv.FormatBool(interactive),
 	}
 	if opts.Tool != "" {
@@ -119,6 +128,30 @@ func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 	return nil
 }
 
+// clearWorkResumeSession blanks the task row's WorkResumeSession in
+// place. The orchestrator's worker phase treats a populated session
+// as the "resume" signal, so callers that want a fresh worker run
+// (re-work) must drop the field before re-execing.
+func clearWorkResumeSession(taskID string) error {
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		return fmt.Errorf("J: open task store: %w", err)
+	}
+	defer func() { _ = s.Close() }()
+	row, err := s.GetTask(taskID)
+	if err != nil {
+		return fmt.Errorf("J: read task %s: %w", taskID, err)
+	}
+	if row.WorkResumeSession == "" {
+		return nil
+	}
+	row.WorkResumeSession = ""
+	if err := s.PutTask(row); err != nil {
+		return fmt.Errorf("J: clear work resume session: %w", err)
+	}
+	return nil
+}
+
 // newReWorkCmd builds the `j tasks re-work` cobra subcommand.
 func newReWorkCmd() *cobra.Command {
 	agents := []codingagents.Agent{cursor.New(), claude.New()}
@@ -126,7 +159,7 @@ func newReWorkCmd() *cobra.Command {
 		Use:   "re-work",
 		Short: "Re-work an existing task: run the worker inline (--interactive) or detached",
 		Long: "Resolves a task (via --from-task or the shared picker) and either " +
-			"re-execs `j tasks orchestrate --skip-planning=true` inline " +
+			"re-execs `j tasks orchestrate --phase=from-work` inline " +
 			"(with --interactive=true so the TUI can render in the parent's terminal) " +
 			"or forks it as a detached child so the worker re-runs without the user " +
 			"waiting in-process. Tasks in plan-done or help skip the status-override " +

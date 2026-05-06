@@ -244,7 +244,7 @@ func TestRunContinue_WorkingShowsTooltip(t *testing.T) {
 }
 
 // TestRunContinue_WorkDoneDispatchesToVerify pins work-done ->
-// detached `j tasks orchestrate --skip-planning=true --skip-work=true`.
+// detached `j tasks orchestrate --phase=verify-only`.
 func TestRunContinue_WorkDoneDispatchesToVerify(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
@@ -271,7 +271,7 @@ func TestRunContinue_WorkDoneDispatchesToVerify(t *testing.T) {
 			agent.planned, agent.worked, agent.verified)
 	}
 	args := readSpawnedArgv(t, argvPath)
-	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--skip-planning=true", "--skip-work=true"}
+	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--phase=verify-only"}
 	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
 		t.Fatalf("argv = %v, want %v", args, wantArgs)
 	}
@@ -282,9 +282,9 @@ func TestRunContinue_WorkDoneDispatchesToVerify(t *testing.T) {
 }
 
 // TestRunContinue_VerifyingDispatchesToVerifyResume pins verifying ->
-// inline `j tasks orchestrate --skip-planning=true --skip-work=true
-// --interactive=true`. Uses noopJBinary because the inline path
-// blocks until the process exits.
+// inline `j tasks orchestrate --phase=verify-only --interactive=true`.
+// Uses noopJBinary because the inline path blocks until the process
+// exits.
 func TestRunContinue_VerifyingDispatchesToVerifyResume(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
@@ -368,7 +368,10 @@ func TestRunContinue_CompletedShortCircuits(t *testing.T) {
 }
 
 // TestRunContinue_HelpFromVerifyEnd pins help-status dispatch when
-// VerifyEndAt is the freshest timestamp: routes to verify.RunResume.
+// VerifyEndAt is the freshest timestamp: re-execs the orchestrator
+// with --phase=verify-only --interactive=true so the verifier resumes
+// inline. Stubbing JBinary captures the spawned argv instead of
+// running the real test binary recursively.
 func TestRunContinue_HelpFromVerifyEnd(t *testing.T) {
 	setupContinueEnv(t)
 	t1 := time.Now().UTC().Add(-3 * time.Hour)
@@ -382,25 +385,32 @@ func TestRunContinue_HelpFromVerifyEnd(t *testing.T) {
 		task.WorkEndAt = t2
 		task.VerifyEndAt = t3
 	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
-	err := RunContinue(context.Background(), ContinueOptions{
-		TaskID: id,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &fakeUI{},
-	})
-	if err != nil {
+	if err := RunContinue(context.Background(), ContinueOptions{
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      &fakeUI{},
+		JBinary: argvJBinary(t, argvPath),
+	}); err != nil {
 		t.Fatalf("RunContinue: %v", err)
 	}
-	if agent.verified != 1 {
-		t.Fatalf("verified = %d, want 1 (help with VerifyEndAt should resume verify)", agent.verified)
+	if agent.planned+agent.worked+agent.verified != 0 {
+		t.Fatalf("no in-process agent call (spawned child): planned=%d worked=%d verified=%d",
+			agent.planned, agent.worked, agent.verified)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--phase=verify-only", "--interactive=true"}
+	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
+		t.Fatalf("argv = %v, want %v", args, wantArgs)
 	}
 }
 
 // TestRunContinue_HelpFromWorkEnd: help with only WorkEndAt set ->
-// detached `j tasks orchestrate --skip-planning=true --interactive=true`.
+// detached `j tasks orchestrate --phase=from-work --interactive=true`.
 func TestRunContinue_HelpFromWorkEnd(t *testing.T) {
 	setupContinueEnv(t)
 	t1 := time.Now().UTC().Add(-2 * time.Hour)
@@ -429,7 +439,7 @@ func TestRunContinue_HelpFromWorkEnd(t *testing.T) {
 			agent.planned, agent.worked, agent.verified)
 	}
 	args := readSpawnedArgv(t, argvPath)
-	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--skip-planning=true", "--interactive=true"}
+	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--phase=from-work", "--interactive=true"}
 	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
 		t.Fatalf("argv = %v, want %v", args, wantArgs)
 	}
@@ -471,7 +481,7 @@ func TestRunContinue_HelpFromPlanEnd(t *testing.T) {
 
 // TestRunContinue_HelpFromCursorFallback covers the cursor-precedence
 // fallback when no *EndAt is set: WorkResumeSession wins over plan,
-// spawning a detached orchestrator with --skip-planning=true.
+// spawning a detached orchestrator with --phase=from-work.
 func TestRunContinue_HelpFromCursorFallback(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
@@ -498,7 +508,7 @@ func TestRunContinue_HelpFromCursorFallback(t *testing.T) {
 			agent.planned, agent.worked, agent.verified)
 	}
 	args := readSpawnedArgv(t, argvPath)
-	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--skip-planning=true", "--interactive=true"}
+	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--phase=from-work", "--interactive=true"}
 	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
 		t.Fatalf("argv = %v, want %v", args, wantArgs)
 	}
