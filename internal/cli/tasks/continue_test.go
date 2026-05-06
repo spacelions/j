@@ -368,7 +368,10 @@ func TestRunContinue_CompletedShortCircuits(t *testing.T) {
 }
 
 // TestRunContinue_HelpFromVerifyEnd pins help-status dispatch when
-// VerifyEndAt is the freshest timestamp: routes to verify.RunResume.
+// VerifyEndAt is the freshest timestamp: re-execs the orchestrator
+// with --skip-planning=true --skip-work=true --interactive=true so the
+// verifier resumes inline. Stubbing JBinary captures the spawned argv
+// instead of running the real test binary recursively.
 func TestRunContinue_HelpFromVerifyEnd(t *testing.T) {
 	setupContinueEnv(t)
 	t1 := time.Now().UTC().Add(-3 * time.Hour)
@@ -382,20 +385,27 @@ func TestRunContinue_HelpFromVerifyEnd(t *testing.T) {
 		task.WorkEndAt = t2
 		task.VerifyEndAt = t3
 	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
-	err := RunContinue(context.Background(), ContinueOptions{
-		TaskID: id,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &fakeUI{},
-	})
-	if err != nil {
+	if err := RunContinue(context.Background(), ContinueOptions{
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      &fakeUI{},
+		JBinary: argvJBinary(t, argvPath),
+	}); err != nil {
 		t.Fatalf("RunContinue: %v", err)
 	}
-	if agent.verified != 1 {
-		t.Fatalf("verified = %d, want 1 (help with VerifyEndAt should resume verify)", agent.verified)
+	if agent.planned+agent.worked+agent.verified != 0 {
+		t.Fatalf("no in-process agent call (spawned child): planned=%d worked=%d verified=%d",
+			agent.planned, agent.worked, agent.verified)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--skip-planning=true", "--skip-work=true", "--interactive=true"}
+	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
+		t.Fatalf("argv = %v, want %v", args, wantArgs)
 	}
 }
 

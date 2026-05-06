@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -63,13 +64,38 @@ func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 	if !ok {
 		return nil
 	}
-	agent, model, err := selectWorker(ctx, opts)
-	if err != nil {
-		return err
-	}
-	resumeID, err := agent.NewResumeID(ctx)
-	if err != nil {
-		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
+	// A non-empty WorkResumeSession on the task row signals "resume"
+	// — the row was last touched by a worker run that recorded its
+	// session id. resume-work leaves it populated; re-work clears it
+	// before re-execing so this branch picks the fresh path. In
+	// resume mode the agent + model are pinned to the row's
+	// WorkTool / WorkModel so claude is reused with `--resume <id>`
+	// (resuming a claude session in cursor is impossible).
+	resumeMode := res.Task.WorkResumeSession != ""
+	var (
+		agent codingagents.Agent
+		model string
+	)
+	resumeID := res.Task.WorkResumeSession
+	if resumeMode {
+		a, ok := lookupResumeAgent(opts.Agents, res.Task.WorkTool)
+		if !ok {
+			return fmt.Errorf("J: unknown tool %q", res.Task.WorkTool)
+		}
+		agent = a
+		model = res.Task.WorkModel
+	} else {
+		a, m, err := selectWorker(ctx, opts)
+		if err != nil {
+			return err
+		}
+		agent = a
+		model = m
+		fresh, err := agent.NewResumeID(ctx)
+		if err != nil {
+			uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
+		}
+		resumeID = fresh
 	}
 	proceed, confirmErr := resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, "work", res.Task, resolver.ReplanAllowed)
 	if confirmErr != nil {
@@ -79,7 +105,12 @@ func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 		return nil
 	}
 	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), tasks.AgentLogFileName)
-	lc := res.Task.BeginWorkReuse(opts.Stderr, agent.Name(), model, resumeID, agentLogPath)
+	var lc *tasks.WorkLifecycle
+	if resumeMode {
+		lc = res.Task.BeginWorkResume(opts.Stderr, agentLogPath)
+	} else {
+		lc = res.Task.BeginWorkReuse(opts.Stderr, agent.Name(), model, resumeID, agentLogPath)
+	}
 
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
@@ -90,6 +121,7 @@ func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 		Model:        model,
 		Interactive:  opts.Interactive,
 		ResumeChatID: resumeID,
+		Resume:       resumeMode,
 		Worktree:     lc.Task().Worktree,
 		AgentLogPath: agentLogPath,
 		MustRead:     mustReadFiles,
@@ -112,6 +144,23 @@ func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 	}
 	uitheme.NormalFprintf(opts.Stdout, "J: working on task %s\n", res.Task.ID)
 	return nil
+}
+
+// lookupResumeAgent finds the agent in agents whose Name matches the
+// task row's recorded WorkTool. Returns false when the row was written
+// by a backend the current binary no longer ships (an empty WorkTool
+// also fails so the caller surfaces a clear error rather than silently
+// running with the first agent).
+func lookupResumeAgent(agents []codingagents.Agent, name string) (codingagents.Agent, bool) {
+	if name == "" {
+		return nil, false
+	}
+	for _, a := range agents {
+		if a.Name() == name {
+			return a, true
+		}
+	}
+	return nil, false
 }
 
 func selectWorker(ctx context.Context, opts ExecuteOptions) (codingagents.Agent, string, error) {

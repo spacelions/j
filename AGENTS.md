@@ -10,3 +10,5 @@
   - use `bat` to replace `cat`
   - use `sd` to replace `sed`
 - Every non-test file must be ≤ 300 lines.
+- Each method must be <= 80 lines.
+- Each line must be <= 80 characters.

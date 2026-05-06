@@ -33,6 +33,12 @@ type Config struct {
 	TaskID string
 	Agents []codingagents.Agent
 	Stderr io.Writer
+
+	// Interactive routes through Execute → agent.Work so the
+	// orchestrator's `--interactive=true` flag (set by `j tasks
+	// resume-work` and `j tasks re-work --interactive=true`)
+	// surfaces the agent's TUI instead of running headless.
+	Interactive bool
 }
 
 // New returns the configured worker agent. See planner.New for the
@@ -62,6 +68,7 @@ func New(cfg Config) (agent.Agent, error) {
 	}
 	taskID := cfg.TaskID
 	agents := cfg.Agents
+	interactive := cfg.Interactive
 	return agent.New(agent.Config{
 		Name:        Name,
 		Description: "Runs the worker phase against the seeded task.",
@@ -70,6 +77,7 @@ func New(cfg Config) (agent.Agent, error) {
 				if err := Execute(ctx, ExecuteOptions{
 					TaskID:            taskID,
 					Yes:               true,
+					Interactive:       interactive,
 					Stdout:            stderr,
 					Stderr:            stderr,
 					Agents:            agents,

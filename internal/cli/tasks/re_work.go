@@ -90,6 +90,15 @@ func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 	}
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 
+	// Re-work means "start the worker fresh"; clearing
+	// WorkResumeSession before re-execing the orchestrator is how
+	// worker.Execute distinguishes re-work from resume-work (the
+	// former mints a new session via NewResumeID, the latter sees
+	// the populated row and feeds the existing id into `--resume`).
+	if err := clearWorkResumeSession(task.ID); err != nil {
+		return err
+	}
+
 	interactive := resolver.Interactive(nil, opts.Stderr, store.BucketWorker, opts.Interactive)
 
 	args := []string{
@@ -116,6 +125,30 @@ func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 	}
 	stampSpawnOnRow(opts.Stderr, task.ID, agentLogPath, pid)
 	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", task.ID), pid, agentLogPath)
+	return nil
+}
+
+// clearWorkResumeSession blanks the task row's WorkResumeSession in
+// place. The orchestrator's worker phase treats a populated session
+// as the "resume" signal, so callers that want a fresh worker run
+// (re-work) must drop the field before re-execing.
+func clearWorkResumeSession(taskID string) error {
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		return fmt.Errorf("J: open task store: %w", err)
+	}
+	defer func() { _ = s.Close() }()
+	row, err := s.GetTask(taskID)
+	if err != nil {
+		return fmt.Errorf("J: read task %s: %w", taskID, err)
+	}
+	if row.WorkResumeSession == "" {
+		return nil
+	}
+	row.WorkResumeSession = ""
+	if err := s.PutTask(row); err != nil {
+		return fmt.Errorf("J: clear work resume session: %w", err)
+	}
 	return nil
 }
 

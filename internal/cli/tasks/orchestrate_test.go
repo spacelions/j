@@ -372,7 +372,7 @@ func TestNewOrchestrateCmd_FlagDefaults(t *testing.T) {
 	var names []string
 	cmd.Flags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
 	// pflag visits flags in lexicographic order.
-	want := []string{"id", "interactive", "model", "plan-requires-approval", "skip-planning", "tool", "yes"}
+	want := []string{"id", "interactive", "model", "plan-requires-approval", "skip-planning", "skip-work", "tool", "yes"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("flags = %v, want %v", names, want)
 	}
@@ -578,5 +578,167 @@ func putProjectMaxIters(t *testing.T, value string) {
 	defer func() { _ = s.Close() }()
 	if err := s.Put(store.BucketProject, "max_iterations", value); err != nil {
 		t.Fatalf("Put max_iterations: %v", err)
+	}
+}
+
+// setRowWorkTool stamps WorkTool on the seeded row so the verifier-only
+// path can resolve the worker for its fix loop without a prior worker
+// phase running.
+func setRowWorkTool(t *testing.T, id, tool string) {
+	t.Helper()
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	row, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row.WorkTool = tool
+	if err := s.PutTask(row); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+}
+
+// stagePlan writes plan.md into the seeded task dir so the worker
+// shell-out finds the stored plan when planning is skipped.
+func stagePlan(t *testing.T, id string) {
+	t.Helper()
+	tasksDir, err := tasks.DefaultDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tasksDir, id, tasks.PlanFileName), []byte("1. step"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestRunOrchestrate_SkipPlanningIgnoresProjectApproval pins the fix
+// for the re-work / re-verify regression: when SkipPlanning is true
+// and PlanRequiresApproval is nil, the project-level
+// plan_requires_approval default must NOT be consulted (otherwise
+// projects opted into approval would hit the conflict guard and the
+// post-planner re-runs would refuse to proceed).
+func TestRunOrchestrate_SkipPlanningIgnoresProjectApproval(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	putProjectPlanRequiresApproval(t, "true")
+	id := seedOrchestrateTask(t, "scripted")
+	stagePlan(t, id)
+	stub := newChainAgent("scripted")
+	stub.verdicts = []string{"VERDICT: PASS"}
+
+	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+		TaskID:       id,
+		SkipPlanning: true,
+		Stdin:        strings.NewReader(""),
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+		Agents:       []codingagents.Agent{stub},
+	}); err != nil {
+		t.Fatalf("RunOrchestrate: %v", err)
+	}
+	if stub.planCalls.Load() != 0 {
+		t.Fatalf("plan calls = %d, want 0", stub.planCalls.Load())
+	}
+	if stub.workCalls.Load() != 1 || stub.verifyCalls.Load() != 1 {
+		t.Fatalf("call counts: work=%d verify=%d, want 1/1",
+			stub.workCalls.Load(), stub.verifyCalls.Load())
+	}
+}
+
+// TestRunOrchestrate_SkipPlanningSkipWorkIgnoresProjectApproval pins
+// the verifier-only re-run (j tasks re-verify / resume-verify): with
+// project.plan_requires_approval=true and PlanRequiresApproval nil,
+// SkipPlanning+SkipWork must reach the verifier without erroring.
+func TestRunOrchestrate_SkipPlanningSkipWorkIgnoresProjectApproval(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	putProjectPlanRequiresApproval(t, "true")
+	id := seedOrchestrateTask(t, "scripted")
+	stagePlan(t, id)
+	setRowWorkTool(t, id, "scripted")
+	stub := newChainAgent("scripted")
+	stub.verdicts = []string{"VERDICT: PASS"}
+
+	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+		TaskID:       id,
+		SkipPlanning: true,
+		SkipWork:     true,
+		Stdin:        strings.NewReader(""),
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+		Agents:       []codingagents.Agent{stub},
+	}); err != nil {
+		t.Fatalf("RunOrchestrate: %v", err)
+	}
+	if stub.planCalls.Load() != 0 || stub.workCalls.Load() != 0 {
+		t.Fatalf("plan/work should not run on verify-only: plan=%d work=%d",
+			stub.planCalls.Load(), stub.workCalls.Load())
+	}
+	if stub.verifyCalls.Load() != 1 {
+		t.Fatalf("verify calls = %d, want 1", stub.verifyCalls.Load())
+	}
+}
+
+// TestRunOrchestrate_SkipPlanningConflictExplicitOverrideOnly pins
+// that the conflict guard only fires on an *explicit* approval=true
+// override, not on the project default. The sub-case with the project
+// default ALSO set to true keeps the explicit-override path
+// load-bearing.
+func TestRunOrchestrate_SkipPlanningConflictExplicitOverrideOnly(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	putProjectPlanRequiresApproval(t, "true")
+	id := seedOrchestrateTask(t, "scripted")
+	stub := newChainAgent("scripted")
+
+	err := RunOrchestrate(context.Background(), OrchestrateOptions{
+		TaskID:               id,
+		PlanRequiresApproval: requirePlanApproval(),
+		SkipPlanning:         true,
+		Stdin:                strings.NewReader(""),
+		Stdout:               io.Discard,
+		Stderr:               io.Discard,
+		Agents:               []codingagents.Agent{stub},
+	})
+	if err == nil || !strings.Contains(err.Error(), "skip-planning") {
+		t.Fatalf("err = %v, want skip-planning incompatibility", err)
+	}
+	if stub.planCalls.Load()+stub.workCalls.Load()+stub.verifyCalls.Load() != 0 {
+		t.Fatalf("no agent should run when conflict guard fires")
+	}
+}
+
+// TestRunOrchestrate_SkipPlanningExplicitFalseAllowed pins that an
+// explicit PlanRequiresApproval=false short-circuits the project
+// default the same way nil does — worker/verifier both run.
+func TestRunOrchestrate_SkipPlanningExplicitFalseAllowed(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	putProjectPlanRequiresApproval(t, "true")
+	id := seedOrchestrateTask(t, "scripted")
+	stagePlan(t, id)
+	stub := newChainAgent("scripted")
+	stub.verdicts = []string{"VERDICT: PASS"}
+
+	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+		TaskID:               id,
+		PlanRequiresApproval: noPlanApproval(),
+		SkipPlanning:         true,
+		Stdin:                strings.NewReader(""),
+		Stdout:               io.Discard,
+		Stderr:               io.Discard,
+		Agents:               []codingagents.Agent{stub},
+	}); err != nil {
+		t.Fatalf("RunOrchestrate: %v", err)
+	}
+	if stub.planCalls.Load() != 0 {
+		t.Fatalf("plan calls = %d, want 0", stub.planCalls.Load())
+	}
+	if stub.workCalls.Load() != 1 || stub.verifyCalls.Load() != 1 {
+		t.Fatalf("call counts: work=%d verify=%d, want 1/1",
+			stub.workCalls.Load(), stub.verifyCalls.Load())
 	}
 }
