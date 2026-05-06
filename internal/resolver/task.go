@@ -32,7 +32,7 @@ func ReplanAllowed(t tasks.Task) bool {
 
 func VerifyAllowed(t tasks.Task) bool {
 	switch t.Status {
-	case tasks.StatusWorkDone, tasks.StatusVerifyDone, tasks.StatusHelp:
+	case tasks.StatusWorkDone, tasks.StatusFailed, tasks.StatusHelp:
 		return true
 	}
 	return false

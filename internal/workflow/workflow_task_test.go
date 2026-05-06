@@ -58,7 +58,7 @@ func TestRunForTask_PassFlow(t *testing.T) {
 
 // TestRunForTask_FailFlow drives the FAIL-exhaust branch:
 // MaxIterations=1, verifier writes VERDICT: FAIL → verify.Run
-// finalises the row to `verify-done`. No retries.
+// finalises the row to `failed`. No retries.
 func TestRunForTask_FailFlow(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
@@ -70,8 +70,8 @@ func TestRunForTask_FailFlow(t *testing.T) {
 		t.Fatalf("RunForTask: %v", err)
 	}
 	row := readChainTaskRow(t, id)
-	if row.Status != tasks.StatusVerifyDone {
-		t.Fatalf("Status = %q, want verify-done", row.Status)
+	if row.Status != tasks.StatusFailed {
+		t.Fatalf("Status = %q, want failed", row.Status)
 	}
 }
 
@@ -239,7 +239,7 @@ func TestRunForTask_StderrReceivesPhaseOutput(t *testing.T) {
 
 // TestRunForTask_FinaliseStuckVerifying pins the post-iter
 // mop-up path: a row left at `verifying` after the iterator
-// drains is flipped to `verify-done` so `j tasks` reflects a
+// drains is flipped to `failed` so `j tasks` reflects a
 // terminal state without waiting for the reaper.
 //
 // We exercise this by manually mutating the row to `verifying`
@@ -255,13 +255,13 @@ func TestRunForTask_FinaliseStuckVerifying(t *testing.T) {
 
 	finaliseVerifyFailIfStuck(io.Discard, id)
 	got := readChainTaskRow(t, id)
-	if got.Status != tasks.StatusVerifyDone {
-		t.Fatalf("Status = %q, want verify-done after mop-up", got.Status)
+	if got.Status != tasks.StatusFailed {
+		t.Fatalf("Status = %q, want failed after mop-up", got.Status)
 	}
 }
 
 // TestFinaliseVerifyFailIfStuck_NoOpOnTerminal pins that a row
-// already in a terminal state (completed / verify-done / help /
+// already in a terminal state (completed / failed / help /
 // plan-done / etc.) is left alone.
 func TestFinaliseVerifyFailIfStuck_NoOpOnTerminal(t *testing.T) {
 	t.Chdir(t.TempDir())

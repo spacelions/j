@@ -311,12 +311,12 @@ func TestRunContinue_VerifyingDispatchesToVerifyResume(t *testing.T) {
 	}
 }
 
-// TestRunContinue_VerifyDoneShortCircuits pins verify-done -> done message,
+// TestRunContinue_FailedShortCircuits pins failed -> done message,
 // no dispatch, exit 0.
-func TestRunContinue_VerifyDoneShortCircuits(t *testing.T) {
+func TestRunContinue_FailedShortCircuits(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
-		task.Status = tasks.StatusVerifyDone
+		task.Status = tasks.StatusFailed
 	})
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
@@ -332,7 +332,7 @@ func TestRunContinue_VerifyDoneShortCircuits(t *testing.T) {
 		t.Fatalf("RunContinue: %v", err)
 	}
 	if agent.planned+agent.worked+agent.verified != 0 {
-		t.Fatalf("no agent should run for verify-done; got planned=%d worked=%d verified=%d",
+		t.Fatalf("no agent should run for failed; got planned=%d worked=%d verified=%d",
 			agent.planned, agent.worked, agent.verified)
 	}
 	want := "J: task " + id + " already finished"
@@ -341,7 +341,7 @@ func TestRunContinue_VerifyDoneShortCircuits(t *testing.T) {
 	}
 }
 
-// TestRunContinue_CompletedShortCircuits mirrors verify-done for the
+// TestRunContinue_CompletedShortCircuits mirrors failed for the
 // completed status.
 func TestRunContinue_CompletedShortCircuits(t *testing.T) {
 	setupContinueEnv(t)

@@ -239,7 +239,7 @@ func (t Task) DisplayToolModel() (tool, model string) {
 		return t.PlanTool, t.PlanModel
 	case StatusWorking, StatusWorkDone:
 		return t.WorkTool, t.WorkModel
-	case StatusVerifying, StatusVerifyDone, StatusCompleted:
+	case StatusVerifying, StatusFailed, StatusCompleted:
 		return t.VerifyTool, t.VerifyModel
 	case StatusHelp:
 		if t.VerifyTool != "" {

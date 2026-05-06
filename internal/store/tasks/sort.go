@@ -36,7 +36,7 @@ func SortTasks(tasks []Task) {
 }
 
 // taskIsActive returns true for the four "still in flight" statuses.
-// Anything else (plan-done, work-done, verify-done, completed, plus
+// Anything else (plan-done, work-done, failed, completed, plus
 // any future inactive state) is treated as inactive by SortTasks.
 func taskIsActive(s TaskStatus) bool {
 	switch s {
@@ -48,7 +48,7 @@ func taskIsActive(s TaskStatus) bool {
 
 // taskFallbackTime returns the timestamp SortTasks compares for
 // inactive tasks. The cascade reflects how a task's lifecycle ends:
-// completed tasks have done_at; verify-done tasks only have
+// completed tasks have done_at; failed tasks only have
 // verify_end_at; work-done tasks only have work_end_at; plan-done
 // tasks only have plan_end_at; anything older falls through to the
 // zero time so ID order takes over.

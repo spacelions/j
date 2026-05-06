@@ -147,7 +147,7 @@ func newReVerifyCmd() *cobra.Command {
 		Long: "Resolves a task (via --from-task or the shared picker) and either " +
 			"re-execs `j tasks orchestrate --phase=verify-only` inline " +
 			"(with --interactive=true so the TUI can render in the parent's terminal) " +
-			"or forks it as a detached child. Tasks in work-done / verify-done / help " +
+			"or forks it as a detached child. Tasks in work-done / failed / help " +
 			"skip the status-override prompt; any other status renders a yes/no confirm " +
 			"before the orchestrator runs.",
 		PersistentPreRunE: preflight.PreRunE,

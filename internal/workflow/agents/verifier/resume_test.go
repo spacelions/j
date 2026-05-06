@@ -21,7 +21,7 @@ import (
 
 // seedResumableVerify creates a task row plus the matching
 // requirements / plan / verifier_findings markdown files. The
-// default row is `verify-done` with a non-empty
+// default row is `failed` with a non-empty
 // VerifyResumeSession; tests override fields via mutate.
 func seedResumableVerify(t *testing.T, mutate func(*tasks.Task)) (string, time.Time) {
 	t.Helper()
@@ -47,7 +47,7 @@ func seedResumableVerify(t *testing.T, mutate func(*tasks.Task)) (string, time.T
 	verifyEnd := verifyBegin.Add(time.Minute)
 	row := tasks.Task{
 		ID:                 id,
-		Status:             tasks.StatusVerifyDone,
+		Status:             tasks.StatusFailed,
 		VerifyTool:         "cursor",
 		VerifyModel:        "sonnet-4",
 		PlanResumeSession:   "plan-cursor",
@@ -480,11 +480,11 @@ func TestRunResume_StampsCompletedOnPass(t *testing.T) {
 	}
 }
 
-// TestRunResume_FailLeavesVerifyDone covers the no-retries branch
+// TestRunResume_FailLeavesFailed covers the no-retries branch
 // on the resume path: the resumed verifier writes FAIL and the
-// lifecycle finalises the task as verify-done (no re-loop on
+// lifecycle finalises the task as failed (no re-loop on
 // resume).
-func TestRunResume_FailLeavesVerifyDone(t *testing.T) {
+func TestRunResume_FailLeavesFailed(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id, _ := seedResumableVerify(t, nil)
@@ -502,8 +502,8 @@ func TestRunResume_FailLeavesVerifyDone(t *testing.T) {
 		t.Fatalf("RunResume: %v", err)
 	}
 	rows := readTasks(t)
-	if rows[0].Status != tasks.StatusVerifyDone {
-		t.Fatalf("Status = %q, want verify-done", rows[0].Status)
+	if rows[0].Status != tasks.StatusFailed {
+		t.Fatalf("Status = %q, want failed", rows[0].Status)
 	}
 	if !rows[0].DoneAt.IsZero() {
 		t.Fatalf("DoneAt should remain nil: %v", rows[0].DoneAt)
@@ -610,7 +610,7 @@ func TestRunResume_Verify_AlwaysInteractive(t *testing.T) {
 // of TestRunVerifyLoop_WaitsForSpawnedChild. The verifier child
 // sleeps before writing the findings file; without
 // run.WaitForExit, RunResume would parseVerdict before the child
-// has written PASS and finalise the row as verify-done.
+// has written PASS and finalise the row as failed.
 func TestRunResume_WaitsForSpawnedChild(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)

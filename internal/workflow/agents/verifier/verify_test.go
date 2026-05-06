@@ -485,7 +485,7 @@ func TestRun_ThreadsWorktreeIntoRequests(t *testing.T) {
 
 // TestRun_LoopExhausted pins the no-retries terminal state: every
 // verifier turn returns FAIL and the loop runs out, finalising the
-// task as `verify-done` (DoneAt stays nil).
+// task as `failed` (DoneAt stays nil).
 func TestRun_LoopExhausted(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -516,16 +516,16 @@ func TestRun_LoopExhausted(t *testing.T) {
 		t.Fatalf("stdout should mention exhausted retries: %q", stdout.String())
 	}
 	rows := readTasks(t)
-	if len(rows) != 1 || rows[0].Status != tasks.StatusVerifyDone {
-		t.Fatalf("tasks = %+v, want one verify-done", rows)
+	if len(rows) != 1 || rows[0].Status != tasks.StatusFailed {
+		t.Fatalf("tasks = %+v, want one failed", rows)
 	}
 	if !rows[0].DoneAt.IsZero() {
-		t.Fatalf("DoneAt must remain nil on verify-done: %v", rows[0].DoneAt)
+		t.Fatalf("DoneAt must remain nil on failed: %v", rows[0].DoneAt)
 	}
 }
 
 // TestRun_MaxIterations1 disables the loop: the verifier runs once
-// and a FAIL terminates the task as verify-done without invoking
+// and a FAIL terminates the task as failed without invoking
 // the worker.
 func TestRun_MaxIterations1(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -553,7 +553,7 @@ func TestRun_MaxIterations1(t *testing.T) {
 		t.Fatalf("work calls = %d, want 0 with max-iterations=1", len(agent.workedReqs))
 	}
 	rows := readTasks(t)
-	if rows[0].Status != tasks.StatusVerifyDone {
+	if rows[0].Status != tasks.StatusFailed {
 		t.Fatalf("Status = %q", rows[0].Status)
 	}
 }
@@ -617,7 +617,7 @@ func TestRun_WorkerFixError(t *testing.T) {
 // TestRun_MalformedVerdictTreatedAsFail pins parseVerdict's
 // fall-through branch: a finding file whose terminal line is not
 // the literal verdict line should be treated as FAIL. With
-// MaxIterations=1 this terminates as verify-done.
+// MaxIterations=1 this terminates as failed.
 func TestRun_MalformedVerdictTreatedAsFail(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -638,7 +638,7 @@ func TestRun_MalformedVerdictTreatedAsFail(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	rows := readTasks(t)
-	if rows[0].Status != tasks.StatusVerifyDone {
+	if rows[0].Status != tasks.StatusFailed {
 		t.Fatalf("Status = %q", rows[0].Status)
 	}
 }
@@ -686,7 +686,7 @@ func TestParseVerdict_EdgeCases(t *testing.T) {
 
 // TestAllowedForVerify covers every status branch of the new
 // allowlist helper used by the prompt logic. work-done /
-// verify-done / help are the natural happy-path entries;
+// failed / help are the natural happy-path entries;
 // everything else triggers the confirm prompt unless --yes /
 // VERIFY_YES skips it.
 func TestAllowedForVerify(t *testing.T) {
@@ -695,7 +695,7 @@ func TestAllowedForVerify(t *testing.T) {
 		want   bool
 	}{
 		{tasks.StatusWorkDone, true},
-		{tasks.StatusVerifyDone, true},
+		{tasks.StatusFailed, true},
 		{tasks.StatusHelp, true},
 		{tasks.StatusPlanning, false},
 		{tasks.StatusPlanDone, false},
@@ -762,7 +762,7 @@ func TestRun_FromTask_NotFound(t *testing.T) {
 
 // TestRun_FromTask_StatusMismatch_DeclinedExitsClean covers the
 // new prompt-on-mismatch contract: a task that is not in the
-// work-done / verify-done / help allowlist (here `completed`)
+// work-done / failed / help allowlist (here `completed`)
 // triggers the confirm prompt; a `no` answer exits cleanly.
 func TestRun_FromTask_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())

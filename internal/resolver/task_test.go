@@ -79,7 +79,7 @@ func TestTaskAllowlists(t *testing.T) {
 	if ReplanAllowed(tasks.Task{Status: tasks.StatusWorking}) {
 		t.Fatal("working should not be allowed for replan")
 	}
-	for _, status := range []tasks.TaskStatus{tasks.StatusWorkDone, tasks.StatusVerifyDone, tasks.StatusHelp} {
+	for _, status := range []tasks.TaskStatus{tasks.StatusWorkDone, tasks.StatusFailed, tasks.StatusHelp} {
 		if !VerifyAllowed(tasks.Task{Status: status}) {
 			t.Fatalf("VerifyAllowed(%s) = false", status)
 		}

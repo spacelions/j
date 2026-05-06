@@ -42,7 +42,7 @@ func TestSortTasks_FallbackTimes(t *testing.T) {
 	tasks := []Task{
 		{ID: "plan-only", Status: StatusPlanDone, PlanEndAt: t1},
 		{ID: "work-end", Status: StatusWorkDone, WorkEndAt: t3},
-		{ID: "verify-end", Status: StatusVerifyDone, VerifyEndAt: t4},
+		{ID: "verify-end", Status: StatusFailed, VerifyEndAt: t4},
 		{ID: "no-time", Status: StatusPlanDone},
 		{ID: "done", Status: StatusCompleted, DoneAt: t2},
 	}
