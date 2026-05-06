@@ -243,34 +243,48 @@ func TestRunContinue_WorkingShowsTooltip(t *testing.T) {
 	}
 }
 
-// TestRunContinue_WorkDoneDispatchesToVerify pins work-done -> verify.Run.
+// TestRunContinue_WorkDoneDispatchesToVerify pins work-done ->
+// detached `j tasks orchestrate --skip-planning=true --skip-work=true`.
 func TestRunContinue_WorkDoneDispatchesToVerify(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorkDone
 		task.WorkResumeSession = "work-cursor"
 	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
+	var stdout bytes.Buffer
 	err := RunContinue(context.Background(), ContinueOptions{
-		TaskID: id,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &fakeUI{},
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  &stdout,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      &fakeUI{},
+		JBinary: argvJBinary(t, argvPath),
 	})
 	if err != nil {
 		t.Fatalf("RunContinue: %v", err)
 	}
-	if agent.verified != 1 {
-		t.Fatalf("verified = %d, want 1", agent.verified)
+	if agent.planned+agent.worked+agent.verified != 0 {
+		t.Fatalf("no in-process agent call should fire (spawned child runs the chain): planned=%d worked=%d verified=%d",
+			agent.planned, agent.worked, agent.verified)
 	}
-	if agent.verifyReq.Resume {
-		t.Fatalf("verify.Run should not set Resume on first dispatch")
+	args := readSpawnedArgv(t, argvPath)
+	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--skip-planning=true", "--skip-work=true"}
+	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
+		t.Fatalf("argv = %v, want %v", args, wantArgs)
+	}
+	row := readTaskFromBolt(t, id)
+	if row.BackgroundPID == 0 {
+		t.Fatalf("BackgroundPID = 0; want non-zero detached child PID")
 	}
 }
 
-// TestRunContinue_VerifyingDispatchesToVerifyResume pins verifying -> verify.RunResume.
+// TestRunContinue_VerifyingDispatchesToVerifyResume pins verifying ->
+// inline `j tasks orchestrate --skip-planning=true --skip-work=true
+// --interactive=true`. Uses noopJBinary because the inline path
+// blocks until the process exits.
 func TestRunContinue_VerifyingDispatchesToVerifyResume(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
@@ -278,22 +292,22 @@ func TestRunContinue_VerifyingDispatchesToVerifyResume(t *testing.T) {
 		task.VerifyResumeSession = "verify-cursor"
 	})
 	agent := newContinueAgent()
+	var stdout bytes.Buffer
 	err := RunContinue(context.Background(), ContinueOptions{
-		TaskID: id,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &fakeUI{},
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  &stdout,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      &fakeUI{},
+		JBinary: noopJBinary(t),
 	})
 	if err != nil {
 		t.Fatalf("RunContinue: %v", err)
 	}
-	if agent.verified != 1 {
-		t.Fatalf("verified = %d, want 1", agent.verified)
-	}
-	if !agent.verifyReq.Resume {
-		t.Fatalf("verify.RunResume should set Resume=true")
+	if agent.planned+agent.worked+agent.verified != 0 {
+		t.Fatalf("no in-process agent call should fire: planned=%d worked=%d verified=%d",
+			agent.planned, agent.worked, agent.verified)
 	}
 }
 

@@ -77,14 +77,14 @@ func TestRunForTask_FailFlow(t *testing.T) {
 
 func TestTaskSubAgents_PlanApprovalGate(t *testing.T) {
 	agents := []codingagents.Agent{stubChain("scripted")}
-	gated, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, true, false, PlannerOverrides{})
+	gated, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, true, false, false, PlannerOverrides{})
 	if err != nil {
 		t.Fatalf("taskSubAgents gated: %v", err)
 	}
 	if len(gated) != 1 {
 		t.Fatalf("gated SubAgents length = %d, want 1", len(gated))
 	}
-	full, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, false, false, PlannerOverrides{})
+	full, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, false, false, false, PlannerOverrides{})
 	if err != nil {
 		t.Fatalf("taskSubAgents full: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestTaskSubAgents_PlanApprovalGate(t *testing.T) {
 // by `j tasks continue` on a `plan-done` row.
 func TestTaskSubAgents_SkipPlanning(t *testing.T) {
 	agents := []codingagents.Agent{stubChain("scripted")}
-	subs, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, false, true, PlannerOverrides{})
+	subs, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, false, true, false, PlannerOverrides{})
 	if err != nil {
 		t.Fatalf("taskSubAgents skip-planning: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestTaskSubAgents_SkipPlanning(t *testing.T) {
 // skipPlanning=true).
 func TestTaskSubAgents_ConflictingFlagsErr(t *testing.T) {
 	agents := []codingagents.Agent{stubChain("scripted")}
-	_, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, true, true, PlannerOverrides{})
+	_, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, true, true, false, PlannerOverrides{})
 	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
 		t.Fatalf("err = %v, want mutually-exclusive guard", err)
 	}

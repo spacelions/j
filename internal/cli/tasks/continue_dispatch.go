@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
-	"github.com/spacelions/j/internal/cli/verify"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
@@ -82,13 +81,7 @@ func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
 func dispatchHelp(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
 	switch latestPhase(t) {
 	case "verify":
-		return verify.RunResume(ctx, verify.ResumeOptions{
-			TaskID: t.ID,
-			Stdin:  opts.Stdin,
-			Stdout: opts.Stdout,
-			Stderr: opts.Stderr,
-			Agents: opts.Agents,
-		})
+		return resumeVerifyingInline(ctx, opts, t.ID)
 	case "work":
 		return resumeWorkInlineOrchestrator(ctx, opts, t)
 	case "plan":

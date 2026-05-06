@@ -6,7 +6,7 @@
 // iteration cap is exhausted. The verifier writes verifier_plan.md
 // and verifier_findings.md inside `<cwd>/.j/tasks/<id>/`; the worker
 // edits project files in place when fixing findings.
-package verify
+package verifier
 
 import (
 	"context"
@@ -24,6 +24,11 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/run"
 )
+
+// defaultMaxIterations bounds the verifier / worker fix loop. Three
+// is the default the plan asks for: enough to converge on small
+// follow-up fixes, low enough that a divergent loop fails fast.
+const defaultMaxIterations = 3
 
 // Options configures Run. Stdin/Stdout/Stderr default to the process
 // streams. UI defaults to the huh implementation. Agents must be
