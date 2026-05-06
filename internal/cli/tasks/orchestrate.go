@@ -28,13 +28,21 @@ type OrchestrateOptions struct {
 
 	// PlanRequiresApproval, when non-nil, is the resolved gate value
 	// passed by `j tasks start`. nil makes direct/internal callers
-	// inherit project.plan_requires_approval.
+	// inherit project.plan_requires_approval — but only on the
+	// planner path; see SkipPlanning for the post-planner rule.
 	PlanRequiresApproval *bool
 
 	// SkipPlanning, when true, runs only worker → verifier on a
-	// task already past the planner. Set by `j tasks continue` when
-	// it picks up a `plan-done` row. Mutually exclusive with
-	// PlanRequiresApproval=true.
+	// task already past the planner. Set by `j tasks re-work` /
+	// `j tasks resume-work` (and the verifier-only variants) when
+	// they pick up a row past plan-done. The "incompatible"
+	// constraint is narrow: it only conflicts with an *explicit*
+	// PlanRequiresApproval=true, because there is no plan to gate
+	// once we are past the planner. The project default
+	// (`project.plan_requires_approval`) is intentionally ignored
+	// when planning is skipped — otherwise re-work / re-verify on
+	// projects that opted into approval would hit the conflict
+	// guard and fail.
 	SkipPlanning bool
 
 	// SkipWork, when true, skips the worker phase and runs only the
@@ -88,6 +96,16 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 	if err != nil {
 		return err
 	}
+	emitSessionStart(opts.Stderr, opts.TaskID, opts.SkipPlanning, opts.SkipWork)
+	if opts.SkipPlanning {
+		if opts.PlanRequiresApproval != nil && *opts.PlanRequiresApproval {
+			return errors.New("tasks: --skip-planning is incompatible with --plan-requires-approval=true")
+		}
+		if opts.SkipWork {
+			return workflow.RunForTaskVerifyOnly(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
+		}
+		return workflow.RunForTaskFromWork(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
+	}
 	planRequiresApproval, err := resolvePlanRequiresApproval(opts.PlanRequiresApproval)
 	if err != nil {
 		return err
@@ -97,16 +115,6 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 		Model:       opts.Model,
 		Interactive: opts.Interactive,
 		Yes:         opts.Yes,
-	}
-	emitSessionStart(opts.Stderr, opts.TaskID, opts.SkipPlanning, opts.SkipWork)
-	if opts.SkipPlanning {
-		if planRequiresApproval {
-			return errors.New("tasks: --skip-planning is incompatible with --plan-requires-approval=true")
-		}
-		if opts.SkipWork {
-			return workflow.RunForTaskVerifyOnly(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
-		}
-		return workflow.RunForTaskFromWork(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
 	}
 	return workflow.RunForTaskWithGate(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, planRequiresApproval, overrides)
 }
