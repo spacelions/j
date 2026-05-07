@@ -182,10 +182,21 @@ func fireStateSync(
 	taskID, linearIssue string,
 	from, to tasks.TaskStatus, ev tasks.Event,
 ) {
+	fireStateSyncWithPR(taskID, linearIssue, "", from, to, ev)
+}
+
+// fireStateSyncWithPR mirrors fireStateSync but populates
+// PullRequestURL so the verify-begin PR-link branch can be
+// exercised.
+func fireStateSyncWithPR(
+	taskID, linearIssue, prURL string,
+	from, to tasks.TaskStatus, ev tasks.Event,
+) {
 	tasks.Notify(
 		tasks.Transition{From: from, Event: ev, To: to},
 		tasks.Task{
 			ID: taskID, Status: to, LinearIssue: linearIssue,
+			PullRequestURL: prURL,
 		},
 	)
 }

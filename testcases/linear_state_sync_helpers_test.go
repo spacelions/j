@@ -171,10 +171,22 @@ func fireStateSyncTransition(
 	taskID, linearIssue string,
 	from, to tasks.TaskStatus, ev tasks.Event,
 ) {
+	fireStateSyncTransitionWithPR(
+		taskID, linearIssue, "", from, to, ev)
+}
+
+// fireStateSyncTransitionWithPR mirrors fireStateSyncTransition but
+// sets PullRequestURL so the verify-begin PR-link branch is
+// exercised end-to-end through the registered hook.
+func fireStateSyncTransitionWithPR(
+	taskID, linearIssue, prURL string,
+	from, to tasks.TaskStatus, ev tasks.Event,
+) {
 	tasks.Notify(
 		tasks.Transition{From: from, Event: ev, To: to},
 		tasks.Task{
 			ID: taskID, Status: to, LinearIssue: linearIssue,
+			PullRequestURL: prURL,
 		},
 	)
 }

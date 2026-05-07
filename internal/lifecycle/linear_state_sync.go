@@ -48,10 +48,12 @@ func InitLinearStateSync() {
 // linearStateSyncHook moves the linked Linear issue into the
 // workflow state that mirrors tr.To, and optionally posts a
 // `@<viewer> todo` mention comment when the destination warrants
-// human attention. All failures emit a DangerousDialogBox warning
-// to stderr and return — the hook never returns an error and never
-// blocks the FSM transition. Failures of issueUpdate do not prevent
-// the comment from being attempted.
+// human attention. The verify-begin transition additionally posts a
+// `@<viewer> <PR URL>` mention so reviewers see the PR link the
+// first time the task enters verifying. All failures emit a
+// DangerousDialogBox warning to stderr and return — the hook never
+// returns an error and never blocks the FSM transition. Failures of
+// issueUpdate do not prevent the comment from being attempted.
 func linearStateSyncHook(tr tasks.Transition, task tasks.Task) {
 	if task.LinearIssue == "" {
 		return
@@ -82,7 +84,12 @@ func linearStateSyncHook(tr tasks.Transition, task tasks.Task) {
 		warnLinearSync("issueUpdate: %s", err)
 	}
 	if target.mention {
-		postMentionTodo(ctx, client, issue.ID)
+		postMention(ctx, client, issue.ID, "todo")
+	}
+	if tr.To == tasks.StatusVerifying &&
+		tr.Event == tasks.EventVerifyBegin &&
+		task.PullRequestURL != "" {
+		postMention(ctx, client, issue.ID, task.PullRequestURL)
 	}
 }
 
@@ -123,11 +130,13 @@ func resolveStateID(
 	return state.ID, true
 }
 
-// postMentionTodo resolves the API-key owner's viewer id and posts a
-// `@<uuid> todo` comment on the issue. Each step warns on error and
-// never blocks — failures here must not change the J task status.
-func postMentionTodo(
-	ctx context.Context, client *linear.Client, issueID string,
+// postMention resolves the API-key owner's viewer id and posts a
+// `@<uuid> <body>` comment on the issue. Each step warns on error
+// and never blocks — failures here must not change the J task
+// status.
+func postMention(
+	ctx context.Context,
+	client *linear.Client, issueID, body string,
 ) {
 	viewerID, err := client.ViewerID(ctx)
 	if err != nil {
@@ -135,7 +144,7 @@ func postMentionTodo(
 		return
 	}
 	if err := client.CreateMentionComment(
-		ctx, issueID, viewerID, "todo"); err != nil {
+		ctx, issueID, viewerID, body); err != nil {
 		warnLinearSync("commentCreate: %s", err)
 	}
 }

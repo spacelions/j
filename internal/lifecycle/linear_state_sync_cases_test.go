@@ -275,3 +275,107 @@ func TestLinearStateSync_CommentFails_Warns(t *testing.T) {
 		t.Fatalf("stderr = %q", msg)
 	}
 }
+
+func TestLinearStateSync_VerifyBegin_WithPR_PostsMentionAndState(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	InitLinearStateSync()
+	fireStateSyncWithPR("task-1", "ENG-1",
+		"https://github.com/x/y/pull/42",
+		tasks.StatusWorkDone, tasks.StatusVerifying,
+		tasks.EventVerifyBegin)
+	got := env.recordedBodies()
+	want := []string{
+		"issue", "states", "issueUpdate", "viewer", "commentCreate",
+	}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	assertVarStr(t, got[2], "stateId", "s-prog")
+	assertVarStr(t, got[4], "body",
+		"@user-uuid https://github.com/x/y/pull/42")
+}
+
+func TestLinearStateSync_VerifyRestart_WithPR_NoComment(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	InitLinearStateSync()
+	fireStateSyncWithPR("task-1", "ENG-1",
+		"https://github.com/x/y/pull/42",
+		tasks.StatusWorkDone, tasks.StatusVerifying,
+		tasks.EventVerifyRestart)
+	got := env.recordedBodies()
+	want := []string{"issue", "states", "issueUpdate"}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	assertVarStr(t, got[2], "stateId", "s-prog")
+}
+
+func TestLinearStateSync_VerifyBegin_PR_UpdateFails_StillPosts(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	env.updateErrors = []string{"boom"}
+	saveAPIKey(t, "lin_api_test")
+	InitLinearStateSync()
+	fireStateSyncWithPR("task-1", "ENG-1",
+		"https://github.com/x/y/pull/42",
+		tasks.StatusWorkDone, tasks.StatusVerifying,
+		tasks.EventVerifyBegin)
+	got := env.recordedBodies()
+	want := []string{
+		"issue", "states", "issueUpdate", "viewer", "commentCreate",
+	}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	if msg := env.stderrText(t); !strings.Contains(
+		msg, "issueUpdate") {
+		t.Fatalf("stderr = %q, want issueUpdate warning", msg)
+	}
+}
+
+func TestLinearStateSync_VerifyBegin_PR_ViewerFails_NoComment(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	env.viewerErrors = []string{"nope"}
+	saveAPIKey(t, "lin_api_test")
+	InitLinearStateSync()
+	fireStateSyncWithPR("task-1", "ENG-1",
+		"https://github.com/x/y/pull/42",
+		tasks.StatusWorkDone, tasks.StatusVerifying,
+		tasks.EventVerifyBegin)
+	got := env.recordedBodies()
+	for _, b := range got {
+		if strings.Contains(b, "commentCreate") {
+			t.Fatalf(
+				"commentCreate sent despite viewer fail: %v", got)
+		}
+	}
+	if msg := env.stderrText(t); !strings.Contains(msg, "viewer") {
+		t.Fatalf("stderr = %q", msg)
+	}
+}
+
+func TestLinearStateSync_VerifyBegin_PR_CommentFails_Warns(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	env.commentErrs = []string{"down"}
+	saveAPIKey(t, "lin_api_test")
+	InitLinearStateSync()
+	fireStateSyncWithPR("task-1", "ENG-1",
+		"https://github.com/x/y/pull/42",
+		tasks.StatusWorkDone, tasks.StatusVerifying,
+		tasks.EventVerifyBegin)
+	if msg := env.stderrText(t); !strings.Contains(
+		msg, "commentCreate") {
+		t.Fatalf("stderr = %q", msg)
+	}
+}
