@@ -27,7 +27,11 @@ func markersHook(tr tasks.Transition, task tasks.Task) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			// Intentionally ignored: marker logging is best-effort and must not affect transitions.
+		}
+	}()
 
 	phase, verb := eventToPhaseVerb(tr.Event)
 	ts := time.Now().UTC().Format(time.RFC3339)
