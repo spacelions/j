@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -42,4 +45,25 @@ func freshInit(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("freshInit: %v", err)
 	}
+}
+
+// installCursorAgentLoginStub drops a PATH-resolvable `cursor-agent`
+// shell script that prints "Logged in" and exits 0 so the start-time
+// PreRunE login check (`cursor-agent status`) succeeds without the
+// real binary on CI. Mirrors the stub in
+// internal/cli/tasks/continue_test.go. Skips on Windows because the
+// shebang stub is POSIX-only.
+func installCursorAgentLoginStub(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("posix-only stub")
+	}
+	dir := t.TempDir()
+	body := "#!/bin/sh\nprintf 'Logged in\\n'\nexit 0\n"
+	bin := filepath.Join(dir, "cursor-agent")
+	if err := os.WriteFile(bin, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH",
+		dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }

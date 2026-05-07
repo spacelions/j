@@ -74,6 +74,7 @@ func TestLinearTasksStart_FromLinearNoAPIKey(t *testing.T) {
 	freshInit(t)
 	seedAgentBuckets(t)
 	clearStartEnv(t)
+	installCursorAgentLoginStub(t)
 
 	_, _, err := testutil.RunCobra(tasks.New(),
 		"start", "--from-linear", "ENG-123",
@@ -104,6 +105,7 @@ func TestLinearTasksStart_FromLinearInvalidIdentifier(t *testing.T) {
 	freshInit(t)
 	seedAgentBuckets(t)
 	clearStartEnv(t)
+	installCursorAgentLoginStub(t)
 	if err := linear.SaveAPIKey(linearAPIKey); err != nil {
 		t.Fatalf("SaveAPIKey: %v", err)
 	}
@@ -138,6 +140,7 @@ func TestLinearTasksStart_FromLinearEnvVar(t *testing.T) {
 	freshInit(t)
 	seedAgentBuckets(t)
 	clearStartEnv(t)
+	installCursorAgentLoginStub(t)
 	t.Setenv("TASKS_START_FROM_LINEAR", "foo")
 
 	_, _, err := testutil.RunCobra(tasks.New(), "start")
