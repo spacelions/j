@@ -38,8 +38,8 @@ func NewWorkTask(stderr io.Writer, agentName, model, taskID,
 		tasks.EventWorkBegin, "work begin")
 }
 
-// BeginWorkReuse mutates a copy of t to flip status to `working`.
-func BeginWorkReuse(t tasks.Task, stderr io.Writer, agentName, model,
+// BeginWorkRestart mutates a copy of t to flip status to `working`.
+func BeginWorkRestart(t tasks.Task, stderr io.Writer, agentName, model,
 	resumeID, agentLogPath string,
 ) *WorkLifecycle {
 	task := t
@@ -54,7 +54,7 @@ func BeginWorkReuse(t tasks.Task, stderr io.Writer, agentName, model,
 		tasks.EventWorkRestart, "work restart")
 }
 
-// BeginWorkResume is the resume-flow companion of BeginWorkReuse.
+// BeginWorkResume is the resume-flow companion of BeginWorkRestart.
 func BeginWorkResume(t tasks.Task, stderr io.Writer,
 	agentLogPath string,
 ) *WorkLifecycle {

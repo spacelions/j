@@ -26,9 +26,7 @@ import (
 	"github.com/spacelions/j/internal/util/run"
 )
 
-// defaultMaxIterations bounds the verifier / worker fix loop. Three
-// is the default the plan asks for: enough to converge on small
-// follow-up fixes, low enough that a divergent loop fails fast.
+// defaultMaxIterations bounds the verifier / worker fix loop.
 const defaultMaxIterations = 3
 
 // Options configures Run. Stdin/Stdout/Stderr default to the process
@@ -86,19 +84,10 @@ type Options struct {
 
 type resolved = resolver.VerifyTask
 
-// Run executes `j verify`. It resolves the task source, selects a
-// verifier tool/model, then runs the bounded fix-loop until the
-// verifier returns VERDICT: PASS or the loop is exhausted.
-//
-// User-abort signals from any huh prompt (Ctrl+C / Esc) propagate up
-// as huh.ErrUserAborted; the deferred guard below converts them to a
-// nil return so an explicit cancel exits the command cleanly without
-// printing a bogus "cancelled by user" line.
-//
-// The bbolt file lock on `<cwd>/.j/settings` is never held across the
-// agent.Verify / agent.Work calls: each settings read/write below
-// opens the DB, performs the operation, and closes before any agent
-// work begins.
+// Run executes `j verify`. Resolves the task, selects a
+// verifier tool/model, then drives the bounded fix-loop until the
+// verifier writes `VERDICT: PASS` or MaxIterations is exhausted.
+// huh user-abort signals are translated to nil by CleanAbort.
 func Run(ctx context.Context, opts Options) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
@@ -107,76 +96,96 @@ func Run(ctx context.Context, opts Options) (err error) {
 	}
 
 	res, ok, err := resolveTask(ctx, opts)
-	if err != nil {
+	if err != nil || !ok {
 		return err
 	}
-	if !ok {
-		return nil
-	}
-	proceed, err := resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, "verify", res.Task, resolver.VerifyAllowed)
-	if err != nil {
-		return err
-	}
-	if !proceed {
-		return nil
-	}
-
-	verifierAgent, model, err := selectVerifier(ctx, opts)
-	if err != nil {
+	proceed, err := resolver.ConfirmStatusOverride(
+		ctx, opts.UI, opts.Yes, "verify",
+		res.Task, resolver.VerifyAllowed,
+	)
+	if err != nil || !proceed {
 		return err
 	}
 
-	resumeID, err := verifierAgent.NewResumeID(ctx)
+	verifierAgent, workerAgent, model, resumeID, err :=
+		resolveVerifyAgents(ctx, opts, res)
 	if err != nil {
-		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
-	}
-
-	// The worker agent for the fix loop must match the tool the
-	// task was originally worked with so the resume cursor lines
-	// up. lookupResumeAgent resolves it; a missing entry surfaces
-	// as a clean error.
-	workerAgent, ok := lookupResumeAgent(opts.Agents, res.Task.WorkTool)
-	if !ok {
-		return fmt.Errorf("J: unknown tool %q (recorded on task %s)", res.Task.WorkTool, res.Task.ID)
+		return err
 	}
 
 	agentLogPath := filepath.Join(res.TaskDir, tasks.AgentLogFileName)
-	lc := lifecycle.BeginVerify(res.Task, opts.Stderr, verifierAgent.Name(), model, resumeID, agentLogPath)
-	outcome, runErr := runVerifyLoop(ctx, opts, lc, verifierAgent, workerAgent, model, resumeID, res, agentLogPath)
+	lc := lifecycle.BeginVerifyRestart(
+		res.Task, opts.Stderr, verifierAgent.Name(),
+		model, resumeID, agentLogPath,
+	)
+	outcome, runErr := runVerifyLoop(
+		ctx, opts, lc, verifierAgent, workerAgent,
+		model, resumeID, res, agentLogPath,
+	)
 	lc.Finish(outcome, runErr)
 	if runErr != nil {
 		return runErr
 	}
-	switch outcome {
-	case lifecycle.VerifyOutcomeSuccess:
-		uitheme.NormalFprintf(opts.Stdout, "J: verified task %s\n", res.Task.ID)
-	case lifecycle.VerifyOutcomeNoRetries:
-		uitheme.DangerousFprintf(opts.Stdout, "J: verifier exhausted retries on task %s; status failed\n", res.Task.ID)
-	}
+	reportOutcome(opts.Stdout, outcome, res.Task.ID)
 	return nil
 }
 
+// resolveVerifyAgents picks the verifier (bucket-resolved) and the
+// worker (pinned to the row's WorkTool so the worker fix loop reuses
+// the original session). NewResumeID is called eagerly: a failure
+// warns to stderr but is non-fatal — the verifier still runs without
+// a resume cursor on the first turn, matching prior behaviour.
+func resolveVerifyAgents(
+	ctx context.Context, opts Options, res resolved,
+) (codingagents.Agent, codingagents.Agent, string, string, error) {
+	verifierAgent, model, err := selectVerifier(ctx, opts)
+	if err != nil {
+		return nil, nil, "", "", err
+	}
+	resumeID, err := verifierAgent.NewResumeID(ctx)
+	if err != nil {
+		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
+	}
+	workerAgent, ok := lookupResumeAgent(opts.Agents, res.Task.WorkTool)
+	if !ok {
+		return nil, nil, "", "", fmt.Errorf(
+			"J: unknown tool %q (recorded on task %s)",
+			res.Task.WorkTool, res.Task.ID,
+		)
+	}
+	return verifierAgent, workerAgent, model, resumeID, nil
+}
+
+func reportOutcome(
+	stdout io.Writer, outcome lifecycle.VerifyOutcome, taskID string,
+) {
+	switch outcome {
+	case lifecycle.VerifyOutcomeSuccess:
+		uitheme.NormalFprintf(
+			stdout, "J: verified task %s\n", taskID,
+		)
+	case lifecycle.VerifyOutcomeNoRetries:
+		uitheme.DangerousFprintf(
+			stdout,
+			"J: verifier exhausted retries on task %s; status failed\n",
+			taskID,
+		)
+	}
+}
+
 // runVerifyLoop alternates verifier turns with worker-resume fix
-// turns until the verifier writes VERDICT: PASS to findingsPath or
-// MaxIterations is exhausted. Errors from either agent abort the
-// loop and surface up to Run, which finishes the row as `help`.
-//
-// The body and verdict-on-FAIL semantics mirror the plan flowchart
-// exactly: turn 1 always runs the verifier; subsequent iterations
-// resume the worker with FixFindings populated, then re-run the
-// verifier with Resume=true so the prior verification context is
-// reused.
-//
-// The orchestrator blocks on every spawned child via run.WaitForExit
-// before reading findings or queuing the next worker turn. The
-// codingagents.Agent contract permits backends to return a non-zero
-// PID for fire-and-forget headless children whose Wait was released;
-// reading findings before the child has finished writing them would
-// race the verdict line and produce a stale FAIL. The wait honours
-// the contract documented on agent.go without binding child
-// lifetime to ctx — see run.Spawn's commentary on why a true
-// fire-and-forget child cannot be safely killed by ctx cancellation.
-func runVerifyLoop(ctx context.Context, opts Options, lc *lifecycle.VerifyLifecycle, verifierAgent, workerAgent codingagents.Agent, model, resumeID string, res resolved, agentLogPath string) (lifecycle.VerifyOutcome, error) {
+// turns until the verifier writes VERDICT: PASS or MaxIterations is
+// exhausted. Turn 1 runs the verifier; subsequent iterations resume
+// the worker with FixFindings, then the verifier with Resume=true.
+// run.WaitForExit blocks on every spawned child before reading the
+// findings file so a headless backend's deferred write doesn't race
+// the verdict parse.
+func runVerifyLoop(
+	ctx context.Context, opts Options,
+	lc *lifecycle.VerifyLifecycle,
+	verifierAgent, workerAgent codingagents.Agent,
+	model, resumeID string, res resolved, agentLogPath string,
+) (lifecycle.VerifyOutcome, error) {
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
@@ -244,7 +253,9 @@ func resolveTask(ctx context.Context, opts Options) (resolved, bool, error) {
 	})
 }
 
-func selectVerifier(ctx context.Context, opts Options) (codingagents.Agent, string, error) {
+func selectVerifier(
+	ctx context.Context, opts Options,
+) (codingagents.Agent, string, error) {
 	return resolver.Agent(ctx, resolver.AgentOptions{
 		Bucket:        store.BucketVerifier,
 		Agents:        opts.Agents,
@@ -257,7 +268,9 @@ func selectVerifier(ctx context.Context, opts Options) (codingagents.Agent, stri
 	})
 }
 
-func lookupResumeAgent(agents []codingagents.Agent, tool string) (codingagents.Agent, bool) {
+func lookupResumeAgent(
+	agents []codingagents.Agent, tool string,
+) (codingagents.Agent, bool) {
 	for _, agent := range agents {
 		if agent.Name() == tool {
 			return agent, true

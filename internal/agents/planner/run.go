@@ -30,6 +30,14 @@ type ExecuteOptions struct {
 // loads the task row, drives agent.Plan, and finalises the lifecycle
 // row. WaitForCompletion must be true in the orchestrator chain so
 // the next phase (worker) starts only after the planner exits.
+//
+// Resume vs fresh is inferred from the row's PlanResumeSession: a
+// non-empty value means `j tasks resume-plan` (or any wrapper that
+// preserved the session) — reuse the existing session and pick the
+// resume-framing prompt. An empty value means a fresh / restart run
+// (`j tasks start` or `j tasks re-plan`, the latter clears the
+// session beforehand) — mint a new id via NewResumeID. Worker /
+// verifier follow the same shape.
 func Execute(ctx context.Context, opts ExecuteOptions) error {
 	stderr := opts.Stderr
 	if stderr == nil {
@@ -55,19 +63,10 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 		uitheme.DangerousDialogBox(stderr, "J: %v", mustReadErr)
 	}
 
-	resumeID, resumeErr := opts.Agent.NewResumeID(ctx)
-	if resumeErr != nil {
-		uitheme.DangerousDialogBox(stderr, "J: %v", resumeErr)
-	}
-
-	var lc *lifecycle.PlanLifecycle
-	if existing.Status == tasks.StatusPlanning {
-		lc = lifecycle.BeginPlanExisting(existing, stderr,
-			opts.Agent.Name(), opts.Model, resumeID, agentLogPath)
-	} else {
-		lc = lifecycle.BeginPlanReuse(existing, stderr,
-			opts.Agent.Name(), opts.Model, resumeID, agentLogPath)
-	}
+	resumeMode := existing.PlanResumeSession != ""
+	lc, resumeID := beginPlanLifecycle(
+		ctx, opts, existing, stderr, agentLogPath, resumeMode,
+	)
 	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           requirementsPath,
 		Model:                  opts.Model,
@@ -75,6 +74,7 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 		PlanOutputPath:         planPath,
 		Interactive:            opts.Interactive,
 		ResumeChatID:           resumeID,
+		Resume:                 resumeMode,
 		AgentLogPath:           agentLogPath,
 		MustRead:               mustReadFiles,
 	})
@@ -101,4 +101,32 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 	}
 	lc.Finish(planErr, refinedReq, planMD, requirementsPath)
 	return planErr
+}
+
+// beginPlanLifecycle picks the correct lifecycle helper given the
+// inferred resume mode and the row's status. The returned resume id
+// is what gets forwarded to the agent's PlanRequest.ResumeChatID:
+// the row's stored value on resume, a freshly-minted one on fresh
+// runs.
+func beginPlanLifecycle(ctx context.Context, opts ExecuteOptions,
+	existing tasks.Task, stderr io.Writer, agentLogPath string,
+	resumeMode bool,
+) (*lifecycle.PlanLifecycle, string) {
+	if resumeMode {
+		lc := lifecycle.BeginPlanResume(existing, stderr,
+			opts.Agent.Name(), opts.Model, agentLogPath)
+		return lc, existing.PlanResumeSession
+	}
+	resumeID, resumeErr := opts.Agent.NewResumeID(ctx)
+	if resumeErr != nil {
+		uitheme.DangerousDialogBox(stderr, "J: %v", resumeErr)
+	}
+	if existing.Status == tasks.StatusPlanning {
+		lc := lifecycle.BeginPlanExisting(existing, stderr,
+			opts.Agent.Name(), opts.Model, resumeID, agentLogPath)
+		return lc, resumeID
+	}
+	lc := lifecycle.BeginPlanRestart(existing, stderr,
+		opts.Agent.Name(), opts.Model, resumeID, agentLogPath)
+	return lc, resumeID
 }

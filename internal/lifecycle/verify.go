@@ -25,8 +25,12 @@ type VerifyLifecycle struct {
 	closed       bool
 }
 
-// BeginVerify flips an existing task row to `verifying`.
-func BeginVerify(t tasks.Task, stderr io.Writer, agentName, model,
+// BeginVerifyRestart flips an existing task row to `verifying` for
+// the re-verify / first-run flow: tool/model/resume cursor are
+// refreshed and stale verify timestamps cleared. Mirrors the
+// BeginPlanRestart / BeginWorkRestart shape so the restart vs resume
+// vocabulary is uniform across the lifecycle helpers.
+func BeginVerifyRestart(t tasks.Task, stderr io.Writer, agentName, model,
 	resumeID, agentLogPath string,
 ) *VerifyLifecycle {
 	task := t
@@ -40,7 +44,7 @@ func BeginVerify(t tasks.Task, stderr io.Writer, agentName, model,
 		tasks.EventVerifyBegin, "verify begin")
 }
 
-// BeginVerifyResume is the resume-flow companion of BeginVerify.
+// BeginVerifyResume is the resume-flow companion of BeginVerifyRestart.
 func BeginVerifyResume(t tasks.Task, stderr io.Writer,
 	agentLogPath string,
 ) *VerifyLifecycle {

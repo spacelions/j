@@ -1,7 +1,7 @@
 // Package lifecycle owns the per-phase begin/end task-log writes
 // and the planner → worker → verifier orchestration that drives
 // `j tasks` end to end. The per-phase helpers (NewPlanTask,
-// BeginWorkReuse, BeginVerifyResume, ...) live in this package's
+// BeginWorkRestart, BeginVerifyResume, ...) live in this package's
 // root; the SequentialAgent / launcher wiring lives in
 // internal/lifecycle/orchestrator/ to avoid an import cycle with
 // internal/agents/{planner,worker,verifier}, which in turn call back
@@ -22,7 +22,7 @@ import (
 // and closes within the same call so the bbolt file lock is never
 // held across agent.Plan and a concurrent `j tasks` from another
 // shell is not blocked. The lifecycle is constructed with NewPlanTask
-// / BeginPlanReuse and finalised with Finish; callers pair them with
+// / BeginPlanRestart and finalised with Finish; callers pair them with
 // a defer so the task is always written even when agent.Plan panics.
 //
 // agentLogPath is the per-task `agent.log` destination for phase
@@ -70,13 +70,13 @@ func NewPlanTask(stderr io.Writer, agentName, model, taskID, target,
 	}
 }
 
-// BeginPlanReuse mutates a copy of t to flip status to `planning`
+// BeginPlanRestart mutates a copy of t to flip status to `planning`
 // for the re-plan flow. PlanEndAt and DoneAt are cleared so the
 // finalize step stamps fresh values; the original PlanBeginAt is
 // preserved verbatim when set so the row keeps its first-run
 // lineage. Tool/model and the plan resume session are refreshed so
 // the row reflects the latest re-plan invocation.
-func BeginPlanReuse(t tasks.Task, stderr io.Writer, agentName, model,
+func BeginPlanRestart(t tasks.Task, stderr io.Writer, agentName, model,
 	resumeID, agentLogPath string,
 ) *PlanLifecycle {
 	task := t
@@ -98,6 +98,46 @@ func BeginPlanReuse(t tasks.Task, stderr io.Writer, agentName, model,
 		agentLogPath: agentLogPath,
 		task:         task,
 	}
+}
+
+// BeginPlanResume mirrors BeginPlanRestart but is the resume-flow
+// companion: the row's existing PlanResumeSession is preserved
+// verbatim (so the backend forwards the original `--resume <id>` to
+// the underlying CLI) and the FSM transition is EventPlanResume so
+// notify hooks see the resume edge instead of a restart. Tool/model
+// are refreshed because a resume can switch backends just like a
+// re-plan can; PlanEndAt / DoneAt are cleared so Finish stamps fresh
+// values, while PlanBeginAt is preserved when set so the row keeps
+// its first-run lineage.
+func BeginPlanResume(t tasks.Task, stderr io.Writer, agentName, model,
+	agentLogPath string,
+) *PlanLifecycle {
+	prev := t.Status
+	newStatus, err := tasks.Apply(prev, tasks.EventPlanResume)
+	if err != nil {
+		panic("plan resume: " + err.Error())
+	}
+	task := t
+	task.Status = newStatus
+	task.PlanTool = agentName
+	task.PlanModel = model
+	task.PlanEndAt = time.Time{}
+	task.DoneAt = time.Time{}
+	if task.PlanBeginAt.IsZero() {
+		task.PlanBeginAt = time.Now().UTC()
+	}
+	task.AgentLogPath = agentLogPath
+	lc := &PlanLifecycle{
+		stderr:       stderr,
+		agentLogPath: agentLogPath,
+		task:         task,
+		prevStatus:   newStatus,
+	}
+	tasks.PersistWarn(stderr, task)
+	tasks.Notify(tasks.Transition{
+		From: prev, Event: tasks.EventPlanResume, To: newStatus,
+	}, task)
+	return lc
 }
 
 // BeginPlanExisting creates a PlanLifecycle for a task that is

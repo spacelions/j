@@ -42,9 +42,9 @@ func TestNewWorkTask_RecordsRow(t *testing.T) {
 	}
 }
 
-// TestTask_BeginWorkReuse_PreservesPlanPhase pins the bbolt-sourced
+// TestTask_BeginWorkRestart_PreservesPlanPhase pins the bbolt-sourced
 // reuse path: the existing plan-phase fields stay intact.
-func TestTask_BeginWorkReuse_PreservesPlanPhase(t *testing.T) {
+func TestTask_BeginWorkRestart_PreservesPlanPhase(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
@@ -64,7 +64,7 @@ func TestTask_BeginWorkReuse_PreservesPlanPhase(t *testing.T) {
 	prePlanEnd := existing.PlanEndAt
 	preCursor := existing.PlanResumeSession
 
-	lc := BeginWorkReuse(existing, io.Discard, "cursor", "gpt-5", "fresh-work-cursor", "")
+	lc := BeginWorkRestart(existing, io.Discard, "cursor", "gpt-5", "fresh-work-cursor", "")
 	lc.Finish(nil)
 
 	got := listAllTasks(t)[0]
@@ -224,9 +224,9 @@ func TestNewWorkTask_MintsWorktreeName(t *testing.T) {
 	}
 }
 
-// TestTask_BeginWorkReuse_MintsWorktreeWhenEmpty pins the
+// TestTask_BeginWorkRestart_MintsWorktreeWhenEmpty pins the
 // reuse-mint-on-empty branch.
-func TestTask_BeginWorkReuse_MintsWorktreeWhenEmpty(t *testing.T) {
+func TestTask_BeginWorkRestart_MintsWorktreeWhenEmpty(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "myproj")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -249,7 +249,7 @@ func TestTask_BeginWorkReuse_MintsWorktreeWhenEmpty(t *testing.T) {
 	if existing.Worktree != "" {
 		t.Fatalf("seed already has worktree %q", existing.Worktree)
 	}
-	lc := BeginWorkReuse(existing, io.Discard, "cursor", "m", "cursor", "")
+	lc := BeginWorkRestart(existing, io.Discard, "cursor", "m", "cursor", "")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
 	if got.Worktree != "myproj-hello-world" {
@@ -257,9 +257,9 @@ func TestTask_BeginWorkReuse_MintsWorktreeWhenEmpty(t *testing.T) {
 	}
 }
 
-// TestTask_BeginWorkReuse_PreservesPreExistingWorktree pins the
+// TestTask_BeginWorkRestart_PreservesPreExistingWorktree pins the
 // preserve-existing-value branch of fillWorktree.
-func TestTask_BeginWorkReuse_PreservesPreExistingWorktree(t *testing.T) {
+func TestTask_BeginWorkRestart_PreservesPreExistingWorktree(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
@@ -276,7 +276,7 @@ func TestTask_BeginWorkReuse_PreservesPreExistingWorktree(t *testing.T) {
 	}
 	_ = s.Close()
 	existing.Worktree = "manual-override"
-	lc := BeginWorkReuse(existing, io.Discard, "cursor", "m", "cursor", "")
+	lc := BeginWorkRestart(existing, io.Discard, "cursor", "m", "cursor", "")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
 	if got.Worktree != "manual-override" {
