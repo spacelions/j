@@ -26,6 +26,7 @@ func NewRoot() *cobra.Command {
 	lifecycle.Init()
 	lifecycle.InitLinearPush()
 	lifecycle.InitLinearStateSync()
+	lifecycle.InitLinearVerifyPush()
 	root := &cobra.Command{
 		Use:   "j",
 		Short: "J Harness CLI",
