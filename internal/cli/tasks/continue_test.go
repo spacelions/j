@@ -186,51 +186,133 @@ func TestRunContinue_PlanningShowsTooltip(t *testing.T) {
 	}
 }
 
-// TestRunContinue_PlanDoneRunsWorkInProcess pins plan-done ->
-// worker.Run in-process. The agent.Work call fires directly (not
-// via a detached spawn), so the work counter is incremented.
-func TestRunContinue_PlanDoneRunsWorkInProcess(t *testing.T) {
+// TestRunContinue_PlanDoneDispatchesToOrchestratorFromWork pins
+// plan-done -> detached `j tasks orchestrate --phase=from-work` so the
+// orchestrator's worker → verifier chain runs to a terminal status.
+// The in-process worker no longer fires from this path.
+func TestRunContinue_PlanDoneDispatchesToOrchestratorFromWork(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, nil) // default is plan-done
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
-		TaskID: id,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &fakeUI{},
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      &fakeUI{},
+		JBinary: argvJBinary(t, argvPath),
 	})
 	if err != nil {
 		t.Fatalf("RunContinue: %v", err)
 	}
-	if agent.worked != 1 {
-		t.Fatalf("worked = %d, want 1 (plan-done now runs worker.Run in-process)", agent.worked)
+	if agent.planned+agent.worked+agent.verified != 0 {
+		t.Fatalf("no in-process agent call (spawned child runs the chain): planned=%d worked=%d verified=%d",
+			agent.planned, agent.worked, agent.verified)
 	}
-	if agent.planned != 0 || agent.verified != 0 {
-		t.Fatalf("only work should fire: planned=%d verified=%d", agent.planned, agent.verified)
+	args := readSpawnedArgv(t, argvPath)
+	wantArgs := []string{
+		"tasks", "orchestrate",
+		"--id", id,
+		"--phase=from-work",
+		"--interactive=false",
+	}
+	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
+		t.Fatalf("argv = %v, want %v", args, wantArgs)
+	}
+	row := readTaskFromBolt(t, id)
+	if row.BackgroundPID == 0 {
+		t.Fatalf("BackgroundPID = 0; want non-zero detached child PID")
 	}
 }
 
-// TestRunContinue_PlanDoneFailsWhenToolNotInAgents pins the error path
-// when the stored worker bucket references a tool not in the supplied
-// agents slice.
-func TestRunContinue_PlanDoneFailsWhenToolNotInAgents(t *testing.T) {
+// TestRunContinue_PlanDoneForwardsToolModel pins that --tool / --model
+// flags forward into the orchestrate argv on the plan-done dispatch
+// path so the child's preflight surfaces tool problems.
+func TestRunContinue_PlanDoneForwardsToolModel(t *testing.T) {
 	setupContinueEnv(t)
-	// Override the worker bucket with a tool not in the agent list.
-	testutil.SeedAgentBucketToolModel(t, store.BucketWorker, "ghost-tool", "m1")
 	id := seedTaskFull(t, nil)
-	agent := newContinueAgent() // Name() == "cursor", not "ghost-tool"
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
-		TaskID: id,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &fakeUI{},
+		TaskID:  id,
+		Tool:    "claude",
+		Model:   "opus-4",
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      &fakeUI{},
+		JBinary: argvJBinary(t, argvPath),
 	})
-	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
-		t.Fatalf("err = %v, want unknown tool error", err)
+	if err != nil {
+		t.Fatalf("RunContinue: %v", err)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	if !containsArg(args, "--tool=claude") {
+		t.Fatalf("argv = %v, want --tool=claude", args)
+	}
+	if !containsArg(args, "--model=opus-4") {
+		t.Fatalf("argv = %v, want --model=opus-4", args)
+	}
+	if !containsArg(args, "--phase=from-work") {
+		t.Fatalf("argv = %v, want --phase=from-work", args)
+	}
+}
+
+// TestRunContinue_PlanDoneSpawnFails covers the error path when the
+// detached orchestrator spawn fails (binary missing).
+func TestRunContinue_PlanDoneSpawnFails(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, nil)
+	err := RunContinue(context.Background(), ContinueOptions{
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{newContinueAgent()},
+		UI:      &fakeUI{},
+		JBinary: "/no/such/binary-xyzzy",
+	})
+	if err == nil {
+		t.Fatal("expected spawn failure")
+	}
+}
+
+// TestRunContinue_PlanDoneInlineWhenInteractive pins that
+// --interactive=true selects the inline orchestrator path (the parent
+// blocks on the child instead of forking).
+func TestRunContinue_PlanDoneInlineWhenInteractive(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, nil)
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	agent := newContinueAgent()
+	err := RunContinue(context.Background(), ContinueOptions{
+		TaskID:      id,
+		Interactive: boolPtr(true),
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{agent},
+		UI:          &fakeUI{},
+		JBinary:     argvJBinary(t, argvPath),
+	})
+	if err != nil {
+		t.Fatalf("RunContinue: %v", err)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	if !containsArg(args, "--interactive=true") {
+		t.Fatalf("argv = %v, want --interactive=true", args)
+	}
+	if !containsArg(args, "--phase=from-work") {
+		t.Fatalf("argv = %v, want --phase=from-work", args)
+	}
+	// Inline path does not stamp BackgroundPID (the parent waits).
+	row := readTaskFromBolt(t, id)
+	if row.BackgroundPID != 0 {
+		t.Fatalf("BackgroundPID = %d, want 0 (inline path)",
+			row.BackgroundPID)
 	}
 }
 
@@ -608,27 +690,35 @@ func TestRunContinue_PickerCancel(t *testing.T) {
 }
 
 // TestRunContinue_PickerHappy pins the no-flag picker path: the user
-// selects one row and dispatch fires for it. plan-done now runs
-// worker.Run in-process, so the agent.Work counter is incremented.
+// selects one row and dispatch fires for it. plan-done now spawns the
+// orchestrator detached, so the captured argv carries
+// --phase=from-work rather than the agent.Work counter ticking.
 func TestRunContinue_PickerHappy(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil) // plan-done -> worker.Run in-process
+	id := seedTaskFull(t, nil) // plan-done -> detached orchestrator
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
 	ui := &fakeUI{pickReturn: id}
 	if err := RunContinue(context.Background(), ContinueOptions{
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     ui,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      ui,
+		JBinary: argvJBinary(t, argvPath),
 	}); err != nil {
 		t.Fatalf("RunContinue: %v", err)
 	}
 	if ui.pickCalls != 1 {
 		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
 	}
-	if agent.worked != 1 {
-		t.Fatalf("worked = %d, want 1 (plan-done runs worker.Run in-process)", agent.worked)
+	if agent.planned+agent.worked+agent.verified != 0 {
+		t.Fatalf("no in-process agent call (spawned child runs the chain): planned=%d worked=%d verified=%d",
+			agent.planned, agent.worked, agent.verified)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	if !containsArg(args, "--phase=from-work") {
+		t.Fatalf("argv = %v, want --phase=from-work", args)
 	}
 }
 
@@ -992,32 +1082,46 @@ func TestNewContinueCmd_ToolModelEnvBindings(t *testing.T) {
 	}
 }
 
-// TestRunContinue_PlanPendingApproval_ApprovesAndRunsWork pins
+// TestRunContinue_PlanApproveDispatchesToOrchestratorFromWork pins
 // plan-pending-approval -> dispatchPlanApprove: fires EventPlanApprove,
-// persists plan-done, then runs worker in-process.
-func TestRunContinue_PlanPendingApproval_ApprovesAndRunsWork(t *testing.T) {
+// persists plan-done, then dispatches through the orchestrator with
+// --phase=from-work (inheriting the runPlanDoneWork fix).
+func TestRunContinue_PlanApproveDispatchesToOrchestratorFromWork(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusPlanPendingApproval
 	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
 	err := RunContinue(context.Background(), ContinueOptions{
-		TaskID: id,
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{agent},
-		UI:     &fakeUI{},
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      &fakeUI{},
+		JBinary: argvJBinary(t, argvPath),
 	})
 	if err != nil {
 		t.Fatalf("RunContinue: %v", err)
 	}
-	if agent.worked != 1 {
-		t.Fatalf("worked = %d, want 1 (approval triggers worker)", agent.worked)
+	if agent.planned+agent.worked+agent.verified != 0 {
+		t.Fatalf("no in-process agent call (spawned child runs the chain): planned=%d worked=%d verified=%d",
+			agent.planned, agent.worked, agent.verified)
 	}
-	if agent.planned != 0 || agent.verified != 0 {
-		t.Fatalf("only work should fire: planned=%d verified=%d",
-			agent.planned, agent.verified)
+	args := readSpawnedArgv(t, argvPath)
+	wantArgs := []string{
+		"tasks", "orchestrate",
+		"--id", id,
+		"--phase=from-work",
+		"--interactive=false",
+	}
+	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
+		t.Fatalf("argv = %v, want %v", args, wantArgs)
+	}
+	row := readTaskFromBolt(t, id)
+	if row.Status != tasks.StatusPlanDone {
+		t.Fatalf("Status = %q, want plan-done (EventPlanApprove fired)", row.Status)
 	}
 }
 

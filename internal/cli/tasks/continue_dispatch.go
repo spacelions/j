@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
-	"github.com/spacelions/j/internal/agents/worker"
 )
 
 // resumePlanInlineOrchestrator re-execs `j tasks orchestrate inline so
@@ -140,25 +140,44 @@ func latestEndAt(t tasks.Task) string {
 	return best
 }
 
-// runPlanDoneWork resolves the tool/model from explicit flags and the
-// stored worker bucket, then calls worker.Execute in-process.
+// runPlanDoneWork dispatches a plan-done task through the orchestrator
+// the same way `re-work` does so the worker → verifier chain runs to a
+// terminal status. Inline when --interactive=true; detached otherwise.
+// --tool / --model overrides forward into the orchestrate argv; the
+// child resolves the worker bucket itself when the flags are absent.
 func runPlanDoneWork(
 	ctx context.Context, opts ContinueOptions, t tasks.Task,
 ) error {
-	tool, model := resolver.ResolveToolModel(
-		opts.Tool, opts.Model, store.BucketWorker, opts.Stderr)
+	taskDir, err := tasks.EnsureDir(t.ID)
+	if err != nil {
+		return fmt.Errorf("J: ensure task dir: %w", err)
+	}
 	interactive := resolver.Interactive(opts.Interactive)
-	return worker.Execute(ctx, worker.ExecuteOptions{
-		TaskID:      t.ID,
-		Yes:         true,
-		Interactive: interactive,
-		Tool:        tool,
-		Model:       model,
-		Stdin:       opts.Stdin,
-		Stdout:      opts.Stdout,
-		Stderr:      opts.Stderr,
-		Agents:      opts.Agents,
-	})
+	args := []string{
+		"tasks", "orchestrate",
+		"--id", t.ID,
+		"--phase=from-work",
+		"--interactive=" + strconv.FormatBool(interactive),
+	}
+	if opts.Tool != "" {
+		args = append(args, "--tool="+opts.Tool)
+	}
+	if opts.Model != "" {
+		args = append(args, "--model="+opts.Model)
+	}
+	if interactive {
+		return runInlineOrchestrator(ctx, opts.JBinary, args)
+	}
+	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
+	pid, err := spawnDetachedOrchestrator(
+		ctx, opts.JBinary, agentLogPath, args)
+	if err != nil {
+		return err
+	}
+	stampSpawnOnRow(opts.Stderr, t.ID, agentLogPath, pid)
+	uitheme.NormalForkDialog(
+		opts.Stdout, fmt.Sprintf("task %s", t.ID), pid, agentLogPath)
+	return nil
 }
 
 // dispatchPlanApprove fires EventPlanApprove and falls through to work
