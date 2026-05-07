@@ -102,7 +102,8 @@ See [`AGENTS.md`](AGENTS.md): high test coverage, no test-only packages (use `in
 |------|------|
 | [`cmd/j`](cmd/j) | `main` entrypoint |
 | [`internal/cli`](internal/cli) | Cobra commands (`plan`, `work`, `verify`, `tasks`, …) |
-| [`internal/workflow`](internal/workflow) | Planner / coder / verifier wiring and prompts |
+| [`internal/agents`](internal/agents) | Planner / worker / verifier sub-agents and prompts |
+| [`internal/lifecycle`](internal/lifecycle) | Per-phase lifecycle helpers and the SequentialAgent orchestrator |
 | [`internal/coding-agents`](internal/coding-agents) | Backends (Cursor, Claude, …) |
 | [`internal/store`](internal/store) | BoltDB task and settings persistence |
 | [`testcases/`](testcases/) | Human-readable manual test steps |

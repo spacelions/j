@@ -13,7 +13,7 @@ import (
 	"time"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/workflow/instructions"
+	"github.com/spacelions/j/internal/agents/instructions"
 )
 
 // spawnWaitTimeout bounds the polling helpers below. The cursor stub

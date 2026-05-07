@@ -9,6 +9,7 @@ import (
 
 	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/lifecycle"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/mdfile"
 	"github.com/spacelions/j/internal/util/run"
@@ -108,7 +109,7 @@ func runPlanInTaskDir(ctx context.Context, opts PlanMarkdownOptions, taskID, tas
 	if mustReadErr != nil {
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
-	lc := tasks.NewPlanTask(opts.Stderr, opts.Agent.Name(), opts.Model, taskID, fromFilePath, sourceBody, resumeID, agentLogPath, linearIssue)
+	lc := lifecycle.NewPlanTask(opts.Stderr, opts.Agent.Name(), opts.Model, taskID, fromFilePath, sourceBody, resumeID, agentLogPath, linearIssue)
 	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           fromFilePath,
 		Model:                  opts.Model,

@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/spacelions/j/internal/store"
-	"github.com/spacelions/j/internal/workflow"
+	"github.com/spacelions/j/internal/lifecycle/orchestrator"
 )
 
 // New returns the `j web` cobra subcommand.
@@ -22,7 +22,7 @@ func New() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return workflow.Run(context.Background(), cfg, []string{"web", "api", "webui"})
+			return orchestrator.Run(context.Background(), cfg, []string{"web", "api", "webui"})
 		},
 	}
 }

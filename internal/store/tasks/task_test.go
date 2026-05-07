@@ -3,7 +3,6 @@ package tasks
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
-	"github.com/spacelions/j/internal/store"
 )
 
 func TestTaskStatus_Valid_AllAllowlist(t *testing.T) {
@@ -555,31 +553,6 @@ func TestPutTask_LinearIssueEmptyOmitted(t *testing.T) {
 	}
 }
 
-// TestBeginPlanReuse_PreservesLinearIssue pins the re-plan round-trip
-// for the Linear identifier: a row whose original plan stamped a
-// LinearIssue keeps it after BeginPlanReuse mutates the row for a
-// re-plan invocation.
-func TestBeginPlanReuse_PreservesLinearIssue(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
-	begin := time.Now().UTC()
-	original := Task{
-		ID:           "id-reuse",
-		Status:       StatusPlanDone,
-		LinearIssue:  "ENG-9",
-		PlanBeginAt:  begin,
-		PlanTool:     "cursor",
-		PlanModel:    "sonnet-4",
-	}
-	lc := original.BeginPlanReuse(io.Discard, "claude", "opus-4", "resume-id", "")
-	got := lc.Task()
-	if got.LinearIssue != "ENG-9" {
-		t.Fatalf("LinearIssue lost across BeginPlanReuse: got %q", got.LinearIssue)
-	}
-}
-
 // TestDeleteTask_IdempotentSecondCall pins the requirements doc's
 // "deletion is permanent" rule by re-running DeleteTask: the second
 // call must surface fs.ErrNotExist (not silently succeed) so callers
@@ -677,28 +650,6 @@ func TestListTasks_SortOrder(t *testing.T) {
 	}
 }
 
-// TestBeginPlanReuse_SetsBeginAtWhenZero covers the PlanBeginAt.IsZero()
-// true branch in BeginPlanReuse (a task with no prior PlanBeginAt).
-func TestBeginPlanReuse_SetsBeginAtWhenZero(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
-	task := Task{
-		ID:           NewTaskID(),
-		Status:       StatusPlanDone,
-		PlanTool:     "cursor",
-		PlanModel:    "m",
-		// PlanBeginAt deliberately zero
-	}
-	PersistWarn(io.Discard, task)
-	lc := task.BeginPlanReuse(io.Discard, "cursor", "m", "", "")
-	got := lc.Task()
-	if got.PlanBeginAt.IsZero() {
-		t.Fatal("PlanBeginAt should be stamped when zero at BeginPlanReuse time")
-	}
-}
-
 // TestListTasks_ReadFilePermissionError plants a task directory with a
 // task.toml that has mode 000, so os.ReadFile returns a non-ErrNotExist error.
 func TestListTasks_ReadFilePermissionError(t *testing.T) {
@@ -751,29 +702,6 @@ func TestListTasks_ReadDirError(t *testing.T) {
 	_, err := s.ListTasks()
 	if err == nil || !strings.Contains(err.Error(), "readdir") {
 		t.Fatalf("err = %v, want readdir error", err)
-	}
-}
-
-// TestBeginVerifyResume_SetsBeginAtWhenZero covers the VerifyBeginAt.IsZero()
-// true branch in BeginVerifyResume.
-func TestBeginVerifyResume_SetsBeginAtWhenZero(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
-	task := Task{
-		ID:                  NewTaskID(),
-		Status:              StatusFailed,
-		VerifyTool:          "cursor",
-		VerifyModel:         "m",
-		VerifyResumeSession: "v-cursor",
-		// VerifyBeginAt deliberately zero
-	}
-	PersistWarn(io.Discard, task)
-	lc := task.BeginVerifyResume(io.Discard, "")
-	got := lc.task
-	if got.VerifyBeginAt.IsZero() {
-		t.Fatal("VerifyBeginAt should be stamped when zero at BeginVerifyResume time")
 	}
 }
 

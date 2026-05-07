@@ -15,7 +15,7 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/agentlog"
-	"github.com/spacelions/j/internal/workflow"
+	"github.com/spacelions/j/internal/lifecycle/orchestrator"
 )
 
 // OrchestrateOptions configures RunOrchestrate. The detached child
@@ -41,7 +41,7 @@ type OrchestrateOptions struct {
 	// paths so re-work / re-verify on opted-in projects do not hit
 	// the conflict guard. The guard still fires on an *explicit*
 	// PlanRequiresApproval=true paired with a non-Full phase.
-	Phase workflow.RunPhase
+	Phase orchestrator.RunPhase
 
 	// Tool and Model are one-off planner overrides forwarded from
 	// `j tasks start --tool/--model`.
@@ -72,7 +72,7 @@ type OrchestrateOptions struct {
 // plus `project.plan_requires_approval` — `project.api_key` /
 // `project.model` are NOT required on this path because the shell-out
 // branch never instantiates a Gemini model), then dispatches by Phase
-// to the matching workflow.RunForTask* entry point. The agent.log
+// to the matching orchestrator.RunForTask* entry point. The agent.log
 // redirection is the parent's concern: the caller opens the per-task
 // log with O_APPEND and passes its fd as our stdout/stderr, so any
 // line the chain writes (including warnings from this function) lands
@@ -90,29 +90,29 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 		return err
 	}
 	emitSessionStart(opts.Stderr, opts.TaskID, opts.Phase)
-	overrides := workflow.PhaseOverrides{
+	overrides := orchestrator.PhaseOverrides{
 		Tool:        opts.Tool,
 		Model:       opts.Model,
 		Interactive: opts.Interactive,
 		Yes:         opts.Yes,
 	}
 	switch opts.Phase {
-	case workflow.RunPhaseVerifyOnly:
+	case orchestrator.RunPhaseVerifyOnly:
 		if opts.PlanRequiresApproval != nil && *opts.PlanRequiresApproval {
 			return errPhaseConflictsWithApproval
 		}
-		return workflow.RunForTaskVerifyOnly(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
-	case workflow.RunPhaseFromWork:
+		return orchestrator.RunForTaskVerifyOnly(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
+	case orchestrator.RunPhaseFromWork:
 		if opts.PlanRequiresApproval != nil && *opts.PlanRequiresApproval {
 			return errPhaseConflictsWithApproval
 		}
-		return workflow.RunForTaskFromWork(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, overrides)
-	case workflow.RunPhaseFull, "":
+		return orchestrator.RunForTaskFromWork(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, overrides)
+	case orchestrator.RunPhaseFull, "":
 		planRequiresApproval, err := resolvePlanRequiresApproval(opts.PlanRequiresApproval)
 		if err != nil {
 			return err
 		}
-		return workflow.RunForTaskWithGate(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, planRequiresApproval, overrides)
+		return orchestrator.RunForTaskWithGate(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, planRequiresApproval, overrides)
 	}
 	return fmt.Errorf("tasks: unknown phase %q", opts.Phase)
 }
@@ -130,11 +130,11 @@ var errPhaseConflictsWithApproval = errors.New(
 // reading bbolt. Field collection is deliberately cheap — os.Hostname
 // and os.Getwd never block — and write errors are swallowed because
 // markers are observability signal, not load-bearing data.
-func emitSessionStart(w io.Writer, taskID string, phase workflow.RunPhase) {
+func emitSessionStart(w io.Writer, taskID string, phase orchestrator.RunPhase) {
 	hostname, _ := os.Hostname()
 	cwd, _ := os.Getwd()
 	if phase == "" {
-		phase = workflow.RunPhaseFull
+		phase = orchestrator.RunPhaseFull
 	}
 	_ = agentlog.Emit(w, "session_start", map[string]any{
 		"task":             taskID,
@@ -179,7 +179,7 @@ func newOrchestrateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			phase, err := workflow.ParseRunPhase(viper.GetString("tasks.orchestrate.phase"))
+			phase, err := orchestrator.ParseRunPhase(viper.GetString("tasks.orchestrate.phase"))
 			if err != nil {
 				return err
 			}
@@ -204,7 +204,7 @@ func newOrchestrateCmd() *cobra.Command {
 	}
 	cmd.Flags().String("id", "", "Task id whose planner→worker→verifier chain to drive")
 	cmd.Flags().Bool("plan-requires-approval", false, "Resolved project.plan_requires_approval value")
-	cmd.Flags().String("phase", string(workflow.RunPhaseFull), "Which slice of the chain to run: full | from-work | verify-only")
+	cmd.Flags().String("phase", string(orchestrator.RunPhaseFull), "Which slice of the chain to run: full | from-work | verify-only")
 	cmd.Flags().String("tool", "", "Planner tool override (cursor|claude)")
 	cmd.Flags().String("model", "", "Planner model override")
 	cmd.Flags().Bool("interactive", false, "Run the active phase (planner on full, worker on from-work) in TUI mode")
