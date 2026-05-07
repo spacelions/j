@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/spacelions/j/internal/agents/instructions"
+	"github.com/spacelions/j/internal/store"
 )
 
 // BuildWorker composes the worker's shared instruction with a
@@ -25,7 +26,7 @@ func BuildWorker(planPath, worktree string, mustRead []string) string {
 	return appendWorktreeLine(
 		fmt.Sprintf(
 			"%s%s\n\n"+strings.TrimSpace(instructions.WorkerPlan),
-			strings.TrimSpace(instructions.Worker),
+			strings.TrimSpace(Resolve(store.BucketWorker)),
 			mustReadSuffix(mustRead),
 			planPath,
 		),
@@ -56,7 +57,7 @@ func BuildWorkerResume(planPath, worktree string, mustRead []string) string {
 	return appendWorktreeLine(
 		fmt.Sprintf(
 			"%s%s\n\n"+strings.TrimSpace(instructions.WorkerResume),
-			strings.TrimSpace(instructions.Worker),
+			strings.TrimSpace(Resolve(store.BucketWorker)),
 			mustReadSuffix(mustRead),
 			planPath,
 		),

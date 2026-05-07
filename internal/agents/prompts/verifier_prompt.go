@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/spacelions/j/internal/agents/instructions"
+	"github.com/spacelions/j/internal/store"
 )
 
 // BuildVerifier composes the verifier's shared instruction with
@@ -24,12 +25,15 @@ import (
 // and the builder simply does not surface it in the prompt because
 // the agent learns the path through the same instruction body that
 // drives the save behaviour.
-func BuildVerifier(reqPath, planPath, verifierPlanPath, findingsPath, worktree string, mustRead []string) string {
+func BuildVerifier(
+	reqPath, planPath, verifierPlanPath, findingsPath, worktree string,
+	mustRead []string,
+) string {
 	_ = verifierPlanPath
 	return appendVerifierWorktreeLine(
 		fmt.Sprintf(
 			"%s%s\n\n"+strings.TrimSpace(instructions.VerifierRequest),
-			strings.TrimSpace(instructions.Verifier),
+			strings.TrimSpace(Resolve(store.BucketVerifier)),
 			mustReadSuffix(mustRead),
 			reqPath, planPath,
 			findingsPath,
@@ -57,11 +61,13 @@ func BuildVerifier(reqPath, planPath, verifierPlanPath, findingsPath, worktree s
 // instruction and the resume framing line (mirroring
 // BuildPlannerResume). An empty / nil mustRead leaves the prompt
 // byte-identical to the pre-must-read output.
-func BuildVerifierResume(reqPath, planPath, worktree string, mustRead []string) string {
+func BuildVerifierResume(
+	reqPath, planPath, worktree string, mustRead []string,
+) string {
 	return appendVerifierWorktreeLine(
 		fmt.Sprintf(
 			"%s%s\n\n"+strings.TrimSpace(instructions.VerifierResume),
-			strings.TrimSpace(instructions.Verifier),
+			strings.TrimSpace(Resolve(store.BucketVerifier)),
 			mustReadSuffix(mustRead),
 			reqPath, planPath,
 		),
@@ -85,7 +91,7 @@ func BuildVerifierFix(planPath, findingsPath, worktree string) string {
 	return appendWorktreeLine(
 		fmt.Sprintf(
 			"%s\n\n"+strings.TrimSpace(instructions.VerifierFix),
-			strings.TrimSpace(instructions.Worker),
+			strings.TrimSpace(Resolve(store.BucketWorker)),
 			planPath, findingsPath,
 		),
 		worktree,

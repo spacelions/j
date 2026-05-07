@@ -19,9 +19,9 @@ import (
 	"google.golang.org/genai"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/agents/prompts"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
-	"github.com/spacelions/j/internal/agents/instructions"
 )
 
 const (
@@ -66,14 +66,17 @@ type Config struct {
 // rather than at first Run.
 func New(cfg Config) (agent.Agent, error) {
 	if cfg.LLM != nil && cfg.TaskID != "" {
-		return nil, errors.New("planner: Config.LLM and Config.TaskID are mutually exclusive")
+		return nil, errors.New(
+			"planner: Config.LLM and Config.TaskID are mutually exclusive",
+		)
 	}
 	if cfg.LLM != nil {
 		return llmagent.New(llmagent.Config{
-			Name:        Name,
-			Model:       cfg.LLM,
-			Description: "Breaks the user's request into a concrete, ordered implementation plan.",
-			Instruction: instructions.Planner,
+			Name:  Name,
+			Model: cfg.LLM,
+			Description: "Breaks the user's request into a concrete, " +
+				"ordered implementation plan.",
+			Instruction: prompts.Resolve(store.BucketPlanner),
 			OutputKey:   OutputKey,
 		})
 	}
@@ -97,14 +100,17 @@ func New(cfg Config) (agent.Agent, error) {
 		Description: "Runs the planner phase via Execute against the seeded task.",
 		Run: func(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
 			return func(yield func(*session.Event, error) bool) {
-				resolvedAgent, resolvedModel, err := resolver.Agent(ctx, resolver.AgentOptions{
+				opts := resolver.AgentOptions{
 					Bucket:        store.BucketPlanner,
 					Agents:        agents,
 					ExplicitTool:  tool,
 					ExplicitModel: agentModel,
 					Stderr:        stderr,
 					Interactive:   interactive,
-				})
+				}
+				resolvedAgent, resolvedModel, err := resolver.Agent(
+					ctx, opts,
+				)
 				if err != nil {
 					yield(nil, fmt.Errorf("%s: %w", Name, err))
 					return

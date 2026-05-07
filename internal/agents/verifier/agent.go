@@ -20,9 +20,9 @@ import (
 	"google.golang.org/genai"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/agents/prompts"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
-	"github.com/spacelions/j/internal/agents/instructions"
 )
 
 const (
@@ -46,23 +46,43 @@ type Config struct {
 // store.DefaultTaskMaxIterations when zero or negative is supplied).
 func New(cfg Config) (agent.Agent, error) {
 	if cfg.LLM != nil && cfg.TaskID != "" {
-		return nil, errors.New("verifier: Config.LLM and Config.TaskID are mutually exclusive")
+		return nil, errors.New(
+			"verifier: Config.LLM and Config.TaskID are mutually exclusive",
+		)
 	}
 	if cfg.LLM != nil {
-		return llmagent.New(llmagent.Config{
-			Name:        Name,
-			Model:       cfg.LLM,
-			Description: "Reviews the worker's output against the plan and returns a concise verdict.",
-			Instruction: instructions.Verifier,
-			OutputKey:   OutputKey,
-		})
+		return newLLMVerifier(cfg)
 	}
 	if cfg.TaskID == "" {
 		return nil, errors.New("verifier: Config requires LLM or TaskID")
 	}
 	if len(cfg.Agents) == 0 {
-		return nil, errors.New("verifier: shell-out branch requires Agents")
+		return nil, errors.New(
+			"verifier: shell-out branch requires Agents",
+		)
 	}
+	return newShellOutVerifier(cfg), nil
+}
+
+// newLLMVerifier builds the LLMAgent flavour returned by New when
+// Config.LLM is set. Split out so New stays under the 80-line method
+// cap enforced by the pre-commit hook.
+func newLLMVerifier(cfg Config) (agent.Agent, error) {
+	return llmagent.New(llmagent.Config{
+		Name:  Name,
+		Model: cfg.LLM,
+		Description: "Reviews the worker's output against the plan " +
+			"and returns a concise verdict.",
+		Instruction: prompts.Resolve(store.BucketVerifier),
+		OutputKey:   OutputKey,
+	})
+}
+
+// newShellOutVerifier builds the custom shell-out agent returned by
+// New when Config.TaskID is set. The Run closure captures the
+// resolved knobs so each invocation drives Run / RunResume against a
+// stable task identity.
+func newShellOutVerifier(cfg Config) agent.Agent {
 	stderr := cfg.Stderr
 	if stderr == nil {
 		stderr = io.Discard
@@ -73,49 +93,87 @@ func New(cfg Config) (agent.Agent, error) {
 	}
 	taskID := cfg.TaskID
 	agents := cfg.Agents
-	return agent.New(agent.Config{
+	a, _ := agent.New(agent.Config{
 		Name:        Name,
 		Description: "Runs the verifier phase against the seeded task.",
-		Run: func(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
-			return func(yield func(*session.Event, error) bool) {
-				t, lookupErr := resolver.TaskByID(taskID)
-				var runErr error
-				if lookupErr == nil && t.VerifyResumeSession != "" {
-					runErr = RunResume(ctx, ResumeOptions{
-						TaskID: taskID,
-						Stdout: stderr,
-						Stderr: stderr,
-						Agents: agents,
-					})
-				} else {
-					runErr = Run(ctx, Options{
-						TaskID:        taskID,
-						Yes:           true,
-						Interactive:   false,
-						Stdout:        stderr,
-						Stderr:        stderr,
-						Agents:        agents,
-						MaxIterations: maxIters,
-					})
-				}
-				if runErr != nil {
-					yield(nil, fmt.Errorf("%s: %w", Name, runErr))
-					return
-				}
-				verdict := resolver.ReadVerdictForTask(taskID)
-				ev := session.NewEvent(ctx.InvocationID())
-				ev.Author = Name
-				ev.LLMResponse = model.LLMResponse{
-					Content: &genai.Content{
-						Role:  genai.RoleUser,
-						Parts: []*genai.Part{{Text: fmt.Sprintf("verifier phase complete (verdict=%s)", verdict)}},
-					},
-				}
-				if verdict == "PASS" {
-					ev.Actions.Escalate = true
-				}
-				yield(ev, nil)
-			}
-		},
+		Run:         shellOutRun(taskID, agents, stderr, maxIters),
 	})
+	return a
+}
+
+// shellOutRun returns the iter.Seq2 closure used by the shell-out
+// verifier branch. Extracting it keeps newShellOutVerifier slim and
+// makes the dispatch (RunResume vs Run) easy to follow.
+func shellOutRun(
+	taskID string,
+	agents []codingagents.Agent,
+	stderr io.Writer,
+	maxIters int,
+) func(agent.InvocationContext) iter.Seq2[*session.Event, error] {
+	return func(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
+		return func(yield func(*session.Event, error) bool) {
+			runErr := dispatchShellOut(
+				ctx, taskID, agents, stderr, maxIters,
+			)
+			if runErr != nil {
+				yield(nil, fmt.Errorf("%s: %w", Name, runErr))
+				return
+			}
+			yield(verdictEvent(ctx, taskID), nil)
+		}
+	}
+}
+
+// dispatchShellOut chooses between Run and RunResume for the shell-out
+// branch based on whether the task has a recorded resume session.
+func dispatchShellOut(
+	ctx agent.InvocationContext,
+	taskID string,
+	agents []codingagents.Agent,
+	stderr io.Writer,
+	maxIters int,
+) error {
+	t, lookupErr := resolver.TaskByID(taskID)
+	if lookupErr == nil && t.VerifyResumeSession != "" {
+		return RunResume(ctx, ResumeOptions{
+			TaskID: taskID,
+			Stdout: stderr,
+			Stderr: stderr,
+			Agents: agents,
+		})
+	}
+	return Run(ctx, Options{
+		TaskID:        taskID,
+		Yes:           true,
+		Interactive:   false,
+		Stdout:        stderr,
+		Stderr:        stderr,
+		Agents:        agents,
+		MaxIterations: maxIters,
+	})
+}
+
+// verdictEvent constructs the trailing session.Event yielded by the
+// shell-out verifier branch, including the Escalate flag set on
+// VERDICT: PASS so an enclosing LoopAgent exits early.
+func verdictEvent(
+	ctx agent.InvocationContext, taskID string,
+) *session.Event {
+	verdict := resolver.ReadVerdictForTask(taskID)
+	ev := session.NewEvent(ctx.InvocationID())
+	ev.Author = Name
+	ev.LLMResponse = model.LLMResponse{
+		Content: &genai.Content{
+			Role: genai.RoleUser,
+			Parts: []*genai.Part{{
+				Text: fmt.Sprintf(
+					"verifier phase complete (verdict=%s)", verdict,
+				),
+			}},
+		},
+	}
+	if verdict == "PASS" {
+		ev.Actions.Escalate = true
+	}
+	return ev
 }

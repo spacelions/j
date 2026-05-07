@@ -12,8 +12,9 @@ import (
 
 func newSetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "set <bucket.key=value> [bucket.key=value ...]",
-		Short: "Set one or more values under bucket.key in the local settings database",
+		Use: "set <bucket.key=value> [bucket.key=value ...]",
+		Short: "Set one or more values under bucket.key " +
+			"in the local settings database",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			return runSet(c, args)
@@ -35,14 +36,18 @@ func runSet(cmd *cobra.Command, args []string) error {
 		entries = append(entries, setEntry{bucket: bucket, key: key, value: value})
 	}
 	return withOpenStore(func(_ string, s *store.Store) error {
+		out := cmd.OutOrStdout()
 		for _, e := range entries {
+			if err := maybeSeedPromptFile(out, e); err != nil {
+				return err
+			}
 			if err := s.EnsureBucket(e.bucket); err != nil {
 				return err
 			}
 			if err := s.Put(e.bucket, storageKey(e.bucket, e.key), e.value); err != nil {
 				return err
 			}
-			uitheme.NormalFprintf(cmd.OutOrStdout(), "J: set %s.%s = %s\n", e.bucket, e.key, e.value)
+			uitheme.NormalFprintf(out, "J: set %s.%s = %s\n", e.bucket, e.key, e.value)
 		}
 		return nil
 	})
@@ -55,7 +60,10 @@ func runSet(cmd *cobra.Command, args []string) error {
 func parseKeyValue(arg string) (bucket, key, value string, err error) {
 	i := strings.IndexByte(arg, '=')
 	if i < 0 {
-		return "", "", "", fmt.Errorf("settings: %q is not a valid key=value (missing '=')", arg)
+		return "", "", "", fmt.Errorf(
+			"settings: %q is not a valid key=value (missing '=')",
+			arg,
+		)
 	}
 	bucket, key, err = parseBucketKey(arg[:i])
 	if err != nil {
@@ -72,7 +80,10 @@ func parseKeyValue(arg string) (bucket, key, value string, err error) {
 func parseBucketKey(s string) (bucket, key string, err error) {
 	i := strings.IndexByte(s, '.')
 	if i < 0 {
-		return "", "", fmt.Errorf("settings: %q is not a valid bucket.key (missing '.')", s)
+		return "", "", fmt.Errorf(
+			"settings: %q is not a valid bucket.key (missing '.')",
+			s,
+		)
 	}
 	bucket, key = s[:i], s[i+1:]
 	if bucket == "" {

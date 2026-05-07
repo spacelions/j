@@ -4,12 +4,21 @@
 // `j settings set bucket.key=value [bucket.key=value ...]` (e.g.
 // `j settings set planner.tool=cursor planner.model=opus`).
 //
+// Setting `planner.prompt`, `worker.prompt`, or `verifier.prompt` to
+// a path stores the path AND, if the file does not yet exist,
+// seeds it with the bundled role markdown (parents created). The
+// rendered prompt at runtime then comes from the file instead of
+// the embedded default. Existing files are never overwritten.
+//
 // Values are cleared with `j settings reset`, which accepts:
 //   - no args  → prompt + wipe the entire `.j/` directory.
 //   - bucket   → wipe every key under that bucket (`reset planner`).
 //   - bucket.key → wipe one key (`reset planner.tool`).
 //   - any number of the above, whitespace-separated and applied in
 //     left-to-right order (`reset planner worker.model verifier`).
+//
+// Resetting a `<role>.prompt` removes the override but does NOT
+// delete the on-disk markdown copy.
 //
 // Whitespace is the only target separator: `,` and `;` are NOT
 // recognized and remain part of the literal target name.
@@ -27,11 +36,16 @@ func New() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "settings",
 		Short: "List, set, or reset local j settings",
-		Long: "Manages the on-disk settings database used by `j` to persist user " +
-			"preferences (e.g. the planner or worker tool/model last selected). The DB " +
+		Long: "Manages the on-disk settings database used by `j` to persist " +
+			"user preferences (e.g. the planner or worker tool/model last " +
+			"selected). The DB " +
 			"lives at <cwd>/.j/settings. The file is created by `j init`; the " +
 			"settings subcommands assume it already exists (a missing file makes the " +
-			"shared pre-flight prompt the user to run init).",
+			"shared pre-flight prompt the user to run init).\n\n" +
+			"Setting planner.prompt / worker.prompt / verifier.prompt to a path " +
+			"records the override AND, if the file does not yet exist, seeds it " +
+			"with the bundled role markdown so users can edit a real file. The " +
+			"override is honoured by every backend (shell-out and ADK).",
 		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runList(cmd)

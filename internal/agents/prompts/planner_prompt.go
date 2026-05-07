@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/spacelions/j/internal/agents/instructions"
+	"github.com/spacelions/j/internal/store"
 )
 
 // BuildPlanner composes the planner's shared instruction with a
@@ -30,7 +31,7 @@ import (
 func BuildPlanner(targetPath string, mustRead []string) string {
 	return fmt.Sprintf(
 		"%s%s\n\n"+strings.TrimSpace(instructions.PlannerRequest),
-		strings.TrimSpace(instructions.Planner),
+		strings.TrimSpace(Resolve(store.BucketPlanner)),
 		mustReadSuffix(mustRead),
 		targetPath,
 	)
@@ -82,7 +83,7 @@ func AppendPlannerSaveSuffix(base, requirementsPath, planPath string) string {
 func BuildPlannerResume(targetPath string, mustRead []string) string {
 	return fmt.Sprintf(
 		"%s%s\n\n"+strings.TrimSpace(instructions.PlannerResume),
-		strings.TrimSpace(instructions.Planner),
+		strings.TrimSpace(Resolve(store.BucketPlanner)),
 		mustReadSuffix(mustRead),
 		targetPath,
 	)
