@@ -872,6 +872,110 @@ func TestNewContinueCmd_InteractiveFlagBindToViper(t *testing.T) {
 	}
 }
 
+func TestStampSpawnOnRow_KnownTask(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, nil)
+	var stderr bytes.Buffer
+	stampSpawnOnRow(&stderr, id, "/tmp/agent.log", 12345)
+	if stderr.Len() > 0 {
+		t.Fatalf("unexpected stderr: %q", stderr.String())
+	}
+	// Verify the row was updated.
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	row, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.AgentLogPath != "/tmp/agent.log" {
+		t.Fatalf("AgentLogPath = %q, want /tmp/agent.log",
+			row.AgentLogPath)
+	}
+	if row.BackgroundPID != 12345 {
+		t.Fatalf("BackgroundPID = %d, want 12345",
+			row.BackgroundPID)
+	}
+}
+
+func TestStampSpawnOnRow_UnknownID(t *testing.T) {
+	setupContinueEnv(t)
+	var stderr bytes.Buffer
+	stampSpawnOnRow(&stderr, "ghost-id", "", 0)
+	if !strings.Contains(stderr.String(), "ghost-id") {
+		t.Fatalf("stderr = %q, want ghost-id mention", stderr.String())
+	}
+}
+
+func TestPickReVerifyFromStore_EmptyBucket(t *testing.T) {
+	setupContinueEnv(t)
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	var stdout bytes.Buffer
+	_, ok, err := pickReVerifyFromStore(
+		context.Background(), s,
+		ReVerifyOptions{Stdout: &stdout, UI: &fakeUI{}},
+	)
+	if err != nil || ok {
+		t.Fatalf("pickReVerifyFromStore: ok=%v, err=%v, want (false, nil)",
+			ok, err)
+	}
+	if !strings.Contains(stdout.String(), emptyMessage) {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), emptyMessage)
+	}
+}
+
+func TestPickReVerifyFromStore_PickerHappy(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, nil)
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	ui := &fakeUI{pickReturn: id}
+	got, ok, err := pickReVerifyFromStore(
+		context.Background(), s,
+		ReVerifyOptions{Stdout: io.Discard, UI: ui},
+	)
+	if err != nil || !ok {
+		t.Fatalf("pickReVerifyFromStore = (%q, %v, %v)",
+			got, ok, err)
+	}
+	if got != id {
+		t.Fatalf("id = %q, want %q", got, id)
+	}
+	if ui.pickCalls != 1 {
+		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
+	}
+}
+
+func TestNewContinueCmd_RunE_InteractiveFlag(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	setupContinueEnv(t)
+	cmd := newContinueCmd()
+	cmd.SetContext(context.Background())
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Flags().Set("interactive", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("RunE with --interactive=true: %v", err)
+	}
+	if !strings.Contains(stdout.String(), emptyMessage) {
+		t.Fatalf("stdout = %q, want %q",
+			stdout.String(), emptyMessage)
+	}
+}
+
 // TestNewContinueCmd_ToolModelEnvBindings covers TASKS_CONTINUE_TOOL
 // and TASKS_CONTINUE_MODEL env var bindings.
 func TestNewContinueCmd_ToolModelEnvBindings(t *testing.T) {

@@ -135,3 +135,19 @@ func TestRunResumeWork_RegisteredAsChild(t *testing.T) {
 	}
 	t.Fatal("`j tasks resume-work` should be registered as a child of `j tasks`")
 }
+
+func TestNewResumeWorkCmd_RunE_NoTasks(t *testing.T) {
+	setupContinueEnv(t)
+	cmd := newResumeWorkCmd()
+	cmd.SetContext(context.Background())
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(io.Discard)
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+	if !strings.Contains(stdout.String(), noActiveWorkSessionMessage) {
+		t.Fatalf("stdout = %q, want %q",
+			stdout.String(), noActiveWorkSessionMessage)
+	}
+}

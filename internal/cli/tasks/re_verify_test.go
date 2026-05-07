@@ -215,6 +215,27 @@ func TestNewReVerifyCmd_PreRunE_DefaultedAgents(t *testing.T) {
 	}
 }
 
+func TestNewReVerifyCmd_RunE_InteractiveFlag(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	setupContinueEnv(t)
+	cmd := newReVerifyCmd()
+	cmd.SetContext(context.Background())
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Flags().Set("interactive", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("RunE with --interactive=true: %v", err)
+	}
+	if !strings.Contains(stdout.String(), emptyMessage) {
+		t.Fatalf("stdout = %q, want %q",
+			stdout.String(), emptyMessage)
+	}
+}
+
 func TestReVerify_RegisteredAsChild(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
