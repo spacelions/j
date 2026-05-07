@@ -187,15 +187,10 @@ func dispatchPlanApprove(
 	ctx context.Context, opts ContinueOptions, t tasks.Task,
 ) error {
 	prev := t.Status
-	newStatus, err := tasks.Apply(prev, tasks.EventPlanApprove)
-	if err != nil {
+	if _, err := tasks.ApplyAndPersistWarn(
+		opts.Stderr, &t, tasks.EventPlanApprove); err != nil {
 		return fmt.Errorf("J: cannot approve task in status %q", prev)
 	}
-	t.Status = newStatus
-	tasks.PersistWarn(opts.Stderr, t)
-	tasks.Notify(tasks.Transition{
-		From: prev, Event: tasks.EventPlanApprove, To: newStatus,
-	}, t)
 	return runPlanDoneWork(ctx, opts, t)
 }
 
@@ -219,17 +214,12 @@ func dispatchClarification(
 				t.ID, tasks.StatusNeedsClarification)
 	}
 	prev := t.Status
-	newStatus, err := tasks.Apply(prev, ev)
-	if err != nil {
+	if _, err := tasks.ApplyAndPersistWarn(
+		opts.Stderr, &t, ev); err != nil {
 		return fmt.Errorf(
 				"J: cannot resume task in status %q (event %q)",
 				prev, ev)
 	}
-	t.Status = newStatus
-	tasks.PersistWarn(opts.Stderr, t)
-	tasks.Notify(tasks.Transition{
-		From: prev, Event: ev, To: newStatus,
-	}, t)
 
 	switch ev {
 	case tasks.EventVerifyResume:

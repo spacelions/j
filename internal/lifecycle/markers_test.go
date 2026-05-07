@@ -60,6 +60,27 @@ func TestMarkers_ReaperAndStuckEvents(t *testing.T) {
 			tasks.EventVerifyStuck,
 			"verify stuck",
 		},
+		{"plan_begin", tasks.EventPlanBegin, "plan begin"},
+		{"plan_restart", tasks.EventPlanRestart, "plan restart"},
+		{"plan_done", tasks.EventPlanDone, "plan done"},
+		{
+			"plan_await_approval",
+			tasks.EventPlanAwaitApproval,
+			"plan await approval",
+		},
+		{"plan_approve", tasks.EventPlanApprove, "plan approve"},
+		{"plan_resume", tasks.EventPlanResume, "plan resume"},
+		{"plan_error", tasks.EventPlanError, "plan error"},
+		{"work_begin", tasks.EventWorkBegin, "work begin"},
+		{"work_restart", tasks.EventWorkRestart, "work restart"},
+		{"work_resume", tasks.EventWorkResume, "work resume"},
+		{"work_done", tasks.EventWorkDone, "work done"},
+		{"work_error", tasks.EventWorkError, "work error"},
+		{"verify_begin", tasks.EventVerifyBegin, "verify begin"},
+		{"verify_resume", tasks.EventVerifyResume, "verify resume"},
+		{"verify_pass", tasks.EventVerifyPass, "verify pass"},
+		{"verify_fail", tasks.EventVerifyFail, "verify fail"},
+		{"verify_error", tasks.EventVerifyError, "verify error"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

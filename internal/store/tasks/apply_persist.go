@@ -1,6 +1,9 @@
 package tasks
 
-import "time"
+import (
+	"io"
+	"time"
+)
 
 // ApplyAndPersist routes a transition through the canonical
 // Apply → mutate → PutTask → Notify path. The destination status is
@@ -27,6 +30,34 @@ func ApplyAndPersist(s *Store, t *Task, ev Event) (Transition, error) {
 	if err := s.PutTask(*t); err != nil {
 		return tr, err
 	}
+	Notify(tr, *t)
+	return tr, nil
+}
+
+// ApplyAndPersistWarn mirrors ApplyAndPersist for best-effort
+// callers that hold no *Store and use PersistWarn (open-write-close
+// per call, stderr warn on failure). Returns the Transition + the
+// Apply error so user-facing dispatchers can produce a friendly
+// message on illegal transitions; PersistWarn errors stay
+// best-effort and are NOT returned, matching the existing contract
+// of every begin/finish lifecycle helper. Notify fires only when
+// PersistWarn would have written the row, i.e. unconditionally
+// after the in-memory mutation — PersistWarn itself swallows IO
+// errors so observers may see a transition that did not reach
+// disk; that matches the pre-migration behaviour of every caller
+// being migrated and is the explicit best-effort contract.
+func ApplyAndPersistWarn(
+	stderr io.Writer, t *Task, ev Event,
+) (Transition, error) {
+	from := t.Status
+	newStatus, err := Apply(from, ev)
+	if err != nil {
+		return Transition{From: from, Event: ev}, err
+	}
+	t.Status = newStatus
+	StampTerminal(t)
+	tr := Transition{From: from, Event: ev, To: newStatus}
+	PersistWarn(stderr, *t)
 	Notify(tr, *t)
 	return tr, nil
 }

@@ -142,7 +142,10 @@ func TestPlanLifecycle_FinishPutErrorWarns(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
-	lc := &PlanLifecycle{stderr: &stderr, prevStatus: tasks.StatusPlanning, task: tasks.Task{Status: tasks.StatusPlanning}}
+	lc := &PlanLifecycle{
+		stderr: &stderr,
+		task:   tasks.Task{Status: tasks.StatusPlanning},
+	}
 	lc.Finish(nil, "", "", "")
 	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())

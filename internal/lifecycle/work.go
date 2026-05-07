@@ -14,7 +14,6 @@ type WorkLifecycle struct {
 	stderr       io.Writer
 	agentLogPath string
 	task         tasks.Task
-	prevStatus   tasks.TaskStatus
 	closed       bool
 }
 
@@ -24,14 +23,9 @@ type WorkLifecycle struct {
 func NewWorkTask(stderr io.Writer, agentName, model, taskID,
 	planPath, requirement, planBody, resumeID, agentLogPath string,
 ) *WorkLifecycle {
-	fromStatus := tasks.StatusPlanDone
-	newStatus, err := tasks.Apply(fromStatus, tasks.EventWorkBegin)
-	if err != nil {
-		panic("work begin: " + err.Error())
-	}
 	task := tasks.Task{
 		ID:                taskID,
-		Status:            newStatus,
+		Status:            tasks.StatusPlanDone,
 		WorkTool:          agentName,
 		WorkModel:         model,
 		WorkResumeSession: resumeID,
@@ -40,21 +34,15 @@ func NewWorkTask(stderr io.Writer, agentName, model, taskID,
 		WorkBeginAt: time.Now().UTC(),
 	}
 	fillWorktree(&task)
-	return openWorkLifecycle(stderr, task, agentLogPath, fromStatus,
-		tasks.EventWorkBegin)
+	return openWorkLifecycle(stderr, task, agentLogPath,
+		tasks.EventWorkBegin, "work begin")
 }
 
 // BeginWorkReuse mutates a copy of t to flip status to `working`.
 func BeginWorkReuse(t tasks.Task, stderr io.Writer, agentName, model,
 	resumeID, agentLogPath string,
 ) *WorkLifecycle {
-	prev := t.Status
-	newStatus, err := tasks.Apply(prev, tasks.EventWorkRestart)
-	if err != nil {
-		panic("work restart: " + err.Error())
-	}
 	task := t
-	task.Status = newStatus
 	task.WorkTool = agentName
 	task.WorkModel = model
 	task.WorkResumeSession = resumeID
@@ -62,46 +50,37 @@ func BeginWorkReuse(t tasks.Task, stderr io.Writer, agentName, model,
 	task.WorkEndAt = time.Time{}
 	task.DoneAt = time.Time{}
 	fillWorktree(&task)
-	return openWorkLifecycle(stderr, task, agentLogPath, prev,
-		tasks.EventWorkRestart)
+	return openWorkLifecycle(stderr, task, agentLogPath,
+		tasks.EventWorkRestart, "work restart")
 }
 
 // BeginWorkResume is the resume-flow companion of BeginWorkReuse.
 func BeginWorkResume(t tasks.Task, stderr io.Writer,
 	agentLogPath string,
 ) *WorkLifecycle {
-	prev := t.Status
-	newStatus, err := tasks.Apply(prev, tasks.EventWorkResume)
-	if err != nil {
-		panic("work resume: " + err.Error())
-	}
 	task := t
-	task.Status = newStatus
 	task.WorkEndAt = time.Time{}
 	task.DoneAt = time.Time{}
 	if task.WorkBeginAt.IsZero() {
 		task.WorkBeginAt = time.Now().UTC()
 	}
-	return openWorkLifecycle(stderr, task, agentLogPath, prev,
-		tasks.EventWorkResume)
+	return openWorkLifecycle(stderr, task, agentLogPath,
+		tasks.EventWorkResume, "work resume")
 }
 
 func openWorkLifecycle(stderr io.Writer, task tasks.Task,
-	agentLogPath string, fromStatus tasks.TaskStatus,
-	ev tasks.Event,
+	agentLogPath string, ev tasks.Event, panicTag string,
 ) *WorkLifecycle {
 	task.AgentLogPath = agentLogPath
-	lc := &WorkLifecycle{
+	if _, err := tasks.ApplyAndPersistWarn(
+		stderr, &task, ev); err != nil {
+		panic(panicTag + ": " + err.Error())
+	}
+	return &WorkLifecycle{
 		stderr:       stderr,
 		agentLogPath: agentLogPath,
 		task:         task,
-		prevStatus:   task.Status,
 	}
-	tasks.PersistWarn(stderr, task)
-	tasks.Notify(tasks.Transition{
-		From: fromStatus, Event: ev, To: task.Status,
-	}, task)
-	return lc
 }
 
 func fillWorktree(task *tasks.Task) {
@@ -136,16 +115,10 @@ func (lc *WorkLifecycle) Finish(runErr error) {
 	if runErr != nil {
 		ev = tasks.EventWorkError
 	}
-	from := lc.task.Status
-	newStatus, err := tasks.Apply(from, ev)
-	if err != nil {
+	if _, err := tasks.ApplyAndPersistWarn(
+		lc.stderr, &lc.task, ev); err != nil {
 		panic("work finish: " + err.Error())
 	}
-	lc.task.Status = newStatus
-	tasks.PersistWarn(lc.stderr, lc.task)
-	tasks.Notify(tasks.Transition{
-		From: from, Event: ev, To: newStatus,
-	}, lc.task)
 }
 
 // Task returns the in-memory snapshot of the work task row.
