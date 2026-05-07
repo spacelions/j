@@ -520,6 +520,7 @@ func TestNewRePlanCmd_PreRunE_DefaultedAgents(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	setupContinueEnv(t)
+	installCursorAgentLoginStub(t)
 	cmd := newRePlanCmd()
 	cmd.SetContext(context.Background())
 	cmd.SetIn(strings.NewReader(""))
