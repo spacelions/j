@@ -18,7 +18,8 @@ import (
 	"google.golang.org/genai"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/agents/instructions"
+	"github.com/spacelions/j/internal/agents/prompts"
+	"github.com/spacelions/j/internal/store"
 )
 
 const (
@@ -45,14 +46,17 @@ type Config struct {
 // full Config branching contract.
 func New(cfg Config) (agent.Agent, error) {
 	if cfg.LLM != nil && cfg.TaskID != "" {
-		return nil, errors.New("worker: Config.LLM and Config.TaskID are mutually exclusive")
+		return nil, errors.New(
+			"worker: Config.LLM and Config.TaskID are mutually exclusive",
+		)
 	}
 	if cfg.LLM != nil {
 		return llmagent.New(llmagent.Config{
-			Name:        Name,
-			Model:       cfg.LLM,
-			Description: "Produces code from the plan, revising when verifier feedback is available.",
-			Instruction: instructions.Worker,
+			Name:  Name,
+			Model: cfg.LLM,
+			Description: "Produces code from the plan, revising when " +
+				"verifier feedback is available.",
+			Instruction: prompts.Resolve(store.BucketWorker),
 			OutputKey:   OutputKey,
 		})
 	}
