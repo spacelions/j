@@ -1,4 +1,4 @@
-package tuiquit_test
+package testcases_test
 
 import (
 	"os"
@@ -114,4 +114,3 @@ func TestCase_DecideVerify_MissingFile(t *testing.T) {
 		t.Fatalf("event = %q, want %q", ev, tasks.EventVerifyQuit)
 	}
 }
-

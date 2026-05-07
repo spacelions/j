@@ -179,7 +179,7 @@ func (lc *PlanLifecycle) Finish(
 		}
 	}
 	from := lc.task.Status
-		newStatus, err := tasks.Apply(from, ev)
+	newStatus, err := tasks.Apply(from, ev)
 	if err != nil {
 		panic("plan finish: " + err.Error())
 	}

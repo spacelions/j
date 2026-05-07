@@ -12,7 +12,7 @@ import (
 type VerifyOutcome int
 
 const (
-	VerifyOutcomeSuccess    VerifyOutcome = iota
+	VerifyOutcomeSuccess VerifyOutcome = iota
 	VerifyOutcomeNoRetries
 )
 
@@ -115,7 +115,7 @@ func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
 		ev = tasks.EventVerifyFail
 	}
 	from := lc.task.Status
-		newStatus, err := tasks.Apply(from, ev)
+	newStatus, err := tasks.Apply(from, ev)
 	if err != nil {
 		panic("verify finish: " + err.Error())
 	}

@@ -137,7 +137,7 @@ func (lc *WorkLifecycle) Finish(runErr error) {
 		ev = tasks.EventWorkError
 	}
 	from := lc.task.Status
-		newStatus, err := tasks.Apply(from, ev)
+	newStatus, err := tasks.Apply(from, ev)
 	if err != nil {
 		panic("work finish: " + err.Error())
 	}
