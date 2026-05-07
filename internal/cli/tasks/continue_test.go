@@ -991,3 +991,130 @@ func TestNewContinueCmd_ToolModelEnvBindings(t *testing.T) {
 		t.Errorf("tasks.continue.model = %q", got)
 	}
 }
+
+// TestRunContinue_PlanPendingApproval_ApprovesAndRunsWork pins
+// plan-pending-approval -> dispatchPlanApprove: fires EventPlanApprove,
+// persists plan-done, then runs worker in-process.
+func TestRunContinue_PlanPendingApproval_ApprovesAndRunsWork(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusPlanPendingApproval
+	})
+	agent := newContinueAgent()
+	err := RunContinue(context.Background(), ContinueOptions{
+		TaskID: id,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &fakeUI{},
+	})
+	if err != nil {
+		t.Fatalf("RunContinue: %v", err)
+	}
+	if agent.worked != 1 {
+		t.Fatalf("worked = %d, want 1 (approval triggers worker)", agent.worked)
+	}
+	if agent.planned != 0 || agent.verified != 0 {
+		t.Fatalf("only work should fire: planned=%d verified=%d",
+			agent.planned, agent.verified)
+	}
+}
+
+// TestRunContinue_NeedsClarification_VerifyResume pins
+// needs-clarification -> EventVerifyResume when VerifyEndAt is freshest:
+// persists verifying and spawns inline orchestrator with
+// --phase=verify-only --interactive=true.
+func TestRunContinue_NeedsClarification_VerifyResume(t *testing.T) {
+	setupContinueEnv(t)
+	t1 := time.Now().UTC().Add(-3 * time.Hour)
+	t2 := t1.Add(time.Hour)
+	t3 := t2.Add(time.Hour)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusNeedsClarification
+		task.VerifyResumeSession = "verify-cursor"
+		task.PlanEndAt = t1
+		task.WorkEndAt = t2
+		task.VerifyEndAt = t3
+	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	agent := newContinueAgent()
+	err := RunContinue(context.Background(), ContinueOptions{
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      &fakeUI{},
+		JBinary: argvJBinary(t, argvPath),
+	})
+	if err != nil {
+		t.Fatalf("RunContinue: %v", err)
+	}
+	if agent.planned+agent.worked+agent.verified != 0 {
+		t.Fatalf("no in-process agent call: planned=%d worked=%d verified=%d",
+			agent.planned, agent.worked, agent.verified)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	wantArgs := []string{
+		"tasks", "orchestrate",
+		"--id", id,
+		"--phase=verify-only",
+		"--interactive=true",
+	}
+	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
+		t.Fatalf("argv = %v, want %v", args, wantArgs)
+	}
+	row := readTaskFromBolt(t, id)
+	if row.Status != tasks.StatusVerifying {
+		t.Fatalf("Status = %q, want verifying (EventVerifyResume fired)", row.Status)
+	}
+}
+
+// TestRunContinue_NeedsClarification_WorkResume pins
+// needs-clarification -> EventWorkResume when WorkEndAt is freshest:
+// persists working and spawns inline orchestrator with
+// --phase=from-work --interactive=true.
+func TestRunContinue_NeedsClarification_WorkResume(t *testing.T) {
+	setupContinueEnv(t)
+	t1 := time.Now().UTC().Add(-2 * time.Hour)
+	t2 := t1.Add(time.Hour)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusNeedsClarification
+		task.WorkResumeSession = "work-cursor"
+		task.PlanEndAt = t1
+		task.WorkEndAt = t2
+	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	agent := newContinueAgent()
+	err := RunContinue(context.Background(), ContinueOptions{
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      &fakeUI{},
+		JBinary: argvJBinary(t, argvPath),
+	})
+	if err != nil {
+		t.Fatalf("RunContinue: %v", err)
+	}
+	if agent.planned+agent.worked+agent.verified != 0 {
+		t.Fatalf("no in-process agent call: planned=%d worked=%d verified=%d",
+			agent.planned, agent.worked, agent.verified)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	wantArgs := []string{
+		"tasks", "orchestrate",
+		"--id", id,
+		"--phase=from-work",
+		"--interactive=true",
+	}
+	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
+		t.Fatalf("argv = %v, want %v", args, wantArgs)
+	}
+	row := readTaskFromBolt(t, id)
+	if row.Status != tasks.StatusWorking {
+		t.Fatalf("Status = %q, want working (EventWorkResume fired)", row.Status)
+	}
+}
