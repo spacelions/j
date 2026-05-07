@@ -2,7 +2,8 @@
 # (which runs `go tool lefthook install` and wires the git hooks).
 #
 # pre-commit runs:
-#   1. line-cap: fails if any staged non-test file exceeds 300 lines.
+#   1. line-cap: fails if any staged non-test file exceeds 300 lines, any
+#      line exceeds 80 chars, or any method exceeds 80 lines.
 #   2. tests:    runs `make test`.
 
 pre-commit:
