@@ -347,7 +347,7 @@ func TestVerifyLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 	if !strings.Contains(body, "verify pass") {
 		t.Fatalf("agent.log missing verify pass marker: %q", body)
 	}
-	if strings.Contains(stderr.String(), agentlog.Sentinel) {
+	if strings.Contains(stderr.String(), agentlog.Header("verify_begin")) {
 		t.Fatalf("stderr leaked phase marker: %q", stderr.String())
 	}
 }
@@ -389,7 +389,7 @@ func TestVerifyLifecycle_IterationMarkersInAgentLog(t *testing.T) {
 	if !strings.Contains(body, "verify fail") {
 		t.Fatalf("agent.log missing verify fail marker: %q", body)
 	}
-	if strings.Contains(stderr.String(), agentlog.Sentinel) {
+	if strings.Contains(stderr.String(), agentlog.Header("verify_begin")) {
 		t.Fatalf("stderr leaked phase marker: %q", stderr.String())
 	}
 }
