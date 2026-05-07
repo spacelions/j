@@ -76,7 +76,7 @@ func RunContinue(ctx context.Context, opts ContinueOptions) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
-		return errors.New("J: no coding agents configured")
+		return errors.New("no coding agents configured")
 	}
 
 	task, ok, err := resolveContinueTask(ctx, opts)
@@ -160,13 +160,13 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, t tasks.Task) e
 	case tasks.StatusHelp:
 		return dispatchHelp(ctx, opts, t)
 	}
-	return fmt.Errorf("J: task %s has unsupported status %q", t.ID, t.Status)
+	return fmt.Errorf("task %s has unsupported status %q", t.ID, t.Status)
 }
 
 func reverifyAsDetachedOrchestrator(ctx context.Context, opts ContinueOptions, taskID string) error {
 	taskDir, err := tasks.EnsureDir(taskID)
 	if err != nil {
-		return fmt.Errorf("J: ensure task dir: %w", err)
+		return fmt.Errorf("ensure task dir: %w", err)
 	}
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{

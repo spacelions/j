@@ -176,7 +176,7 @@ func NewStartTargetFromMarkdown(raw string) (StartTarget, error) {
 	}
 	body, err := os.ReadFile(abs)
 	if err != nil {
-		return StartTarget{}, fmt.Errorf("J: read source: %w", err)
+		return StartTarget{}, fmt.Errorf("read source: %w", err)
 	}
 	return StartTarget{TaskID: tasks.NewTaskID(), IsNew: true, Body: string(body), Source: abs}, nil
 }
@@ -195,12 +195,12 @@ func NewStartTargetFromBody(body, sourceLabel, linearIssue string) StartTarget {
 func PrepareStartTaskFiles(target StartTarget) (string, error) {
 	taskDir, err := tasks.EnsureDir(target.TaskID)
 	if err != nil {
-		return "", fmt.Errorf("J: ensure task dir: %w", err)
+		return "", fmt.Errorf("ensure task dir: %w", err)
 	}
 	if target.IsNew {
 		requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
 		if err := os.WriteFile(requirementsPath, []byte(target.Body), 0o644); err != nil {
-			return "", fmt.Errorf("J: stage requirements: %w", err)
+			return "", fmt.Errorf("stage requirements: %w", err)
 		}
 	}
 	return filepath.Join(taskDir, tasks.AgentLogFileName), nil

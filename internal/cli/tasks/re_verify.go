@@ -75,7 +75,7 @@ func RunReVerify(ctx context.Context, opts ReVerifyOptions) (err error) {
 		return err
 	}
 	if !tasks.IsLegal(task.Status, tasks.EventVerifyRestart) {
-		return fmt.Errorf("J: cannot re-verify task in status %q", task.Status)
+		return fmt.Errorf("cannot re-verify task in status %q", task.Status)
 	}
 	proceed, err := resolver.ConfirmStatusOverride(ctx, opts.UI, false, "re-verify", task, resolver.VerifyAllowed)
 	if err != nil {
@@ -87,7 +87,7 @@ func RunReVerify(ctx context.Context, opts ReVerifyOptions) (err error) {
 
 	taskDir, err := tasks.EnsureDir(task.ID)
 	if err != nil {
-		return fmt.Errorf("J: ensure task dir: %w", err)
+		return fmt.Errorf("ensure task dir: %w", err)
 	}
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 

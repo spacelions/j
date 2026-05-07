@@ -64,7 +64,7 @@ func RunResumeWork(ctx context.Context, opts ResumeWorkOptions) (err error) {
 		return err
 	}
 	if !tasks.IsLegal(t.Status, tasks.EventWorkResume) {
-		return fmt.Errorf("J: cannot resume-work task in status %q", t.Status)
+		return fmt.Errorf("cannot resume-work task in status %q", t.Status)
 	}
 	if _, err := tasks.EnsureDir(taskID); err != nil {
 		return err

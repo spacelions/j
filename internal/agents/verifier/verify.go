@@ -103,7 +103,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
-		return errors.New("J: no coding agents configured")
+		return errors.New("no coding agents configured")
 	}
 
 	res, ok, err := resolveTask(ctx, opts)
@@ -137,7 +137,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 	// as a clean error.
 	workerAgent, ok := lookupResumeAgent(opts.Agents, res.Task.WorkTool)
 	if !ok {
-		return fmt.Errorf("J: unknown tool %q (recorded on task %s)", res.Task.WorkTool, res.Task.ID)
+		return fmt.Errorf("unknown tool %q (recorded on task %s)", res.Task.WorkTool, res.Task.ID)
 	}
 
 	agentLogPath := filepath.Join(res.TaskDir, tasks.AgentLogFileName)

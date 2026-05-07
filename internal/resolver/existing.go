@@ -28,7 +28,7 @@ func StartTargetFromExistingTask(ctx context.Context, taskID string) (StartTarge
 	if task.LinearIssue == "" {
 		if _, statErr := os.Stat(reqPath); statErr != nil {
 			if errors.Is(statErr, os.ErrNotExist) {
-				return StartTarget{}, fmt.Errorf("J: task %q has no requirements.md; cannot re-plan", taskID)
+				return StartTarget{}, fmt.Errorf("task %q has no requirements.md; cannot re-plan", taskID)
 			}
 			return StartTarget{}, statErr
 		}

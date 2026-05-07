@@ -90,7 +90,7 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	}()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
-		return errors.New("J: no coding agents configured")
+		return errors.New("no coding agents configured")
 	}
 
 	t, ok, err := resolveResumeTask(ctx, opts)
@@ -103,12 +103,12 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	}
 
 	if !tasks.IsLegal(t.Status, tasks.EventVerifyResume) {
-		return fmt.Errorf("J: cannot resume verify on task in status %q", t.Status)
+		return fmt.Errorf("cannot resume verify on task in status %q", t.Status)
 	}
 
 	agent, ok := lookupResumeAgent(opts.Agents, t.VerifyTool)
 	if !ok {
-		return fmt.Errorf("J: unknown tool %q", t.VerifyTool)
+		return fmt.Errorf("unknown tool %q", t.VerifyTool)
 	}
 
 	tasksDir, err := tasks.DefaultDir()
@@ -190,7 +190,7 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (tasks.Task, boo
 			return t, true, nil
 		}
 	}
-	return tasks.Task{}, false, fmt.Errorf("J: task %q not found", chosen)
+	return tasks.Task{}, false, fmt.Errorf("task %q not found", chosen)
 }
 
 // resolveResumeByID loads the named task and validates it has a
@@ -203,7 +203,7 @@ func resolveResumeByID(id string) (tasks.Task, bool, error) {
 		return tasks.Task{}, false, err
 	}
 	if t.VerifyResumeSession == "" {
-		return tasks.Task{}, false, fmt.Errorf("J: task %q has no verify session", id)
+		return tasks.Task{}, false, fmt.Errorf("task %q has no verify session", id)
 	}
 	return t, true, nil
 }

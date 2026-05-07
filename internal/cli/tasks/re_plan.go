@@ -99,7 +99,7 @@ func RunRePlan(ctx context.Context, opts RePlanOptions) (err error) {
 		return err
 	}
 	if !tasks.IsLegal(task.Status, tasks.EventPlanRestart) {
-		return fmt.Errorf("J: cannot re-plan task in status %q", task.Status)
+		return fmt.Errorf("cannot re-plan task in status %q", task.Status)
 	}
 	proceed, err := resolver.ConfirmStatusOverride(ctx, opts.UI, false, "re-plan", task, resolver.ReplanAllowed)
 	if err != nil {
@@ -111,7 +111,7 @@ func RunRePlan(ctx context.Context, opts RePlanOptions) (err error) {
 
 	taskDir, err := tasks.EnsureDir(task.ID)
 	if err != nil {
-		return fmt.Errorf("J: ensure task dir: %w", err)
+		return fmt.Errorf("ensure task dir: %w", err)
 	}
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 

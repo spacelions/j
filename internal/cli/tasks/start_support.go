@@ -46,7 +46,7 @@ func resolveJBinary(override string) (string, error) {
 	}
 	exe, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("J: resolve j binary: %w", err)
+		return "", fmt.Errorf("resolve j binary: %w", err)
 	}
 	return exe, nil
 }

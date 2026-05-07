@@ -176,7 +176,7 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
-		return errors.New("J: no coding agents configured")
+		return errors.New("no coding agents configured")
 	}
 
 	target, err := resolveStartTarget(ctx, opts)
