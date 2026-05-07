@@ -236,6 +236,37 @@ func TestNewReVerifyCmd_RunE_InteractiveFlag(t *testing.T) {
 	}
 }
 
+// TestRunReVerify_FromCompletedSpawnsAfterConfirm pins that
+// re-verify no longer rejects a completed task at the IsLegal guard.
+// `completed` is outside VerifyAllowed so the override prompt fires.
+func TestRunReVerify_FromCompletedSpawnsAfterConfirm(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusCompleted
+	})
+	ui := &fakeUI{statusReturn: true}
+	if err := RunReVerify(context.Background(), ReVerifyOptions{
+		FromTask:    id,
+		Interactive: boolPtr(false),
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{newContinueAgent()},
+		UI:          ui,
+		JBinary:     noopJBinary(t),
+	}); err != nil {
+		t.Fatalf("RunReVerify: %v", err)
+	}
+	if ui.statusCalls != 1 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 1",
+			ui.statusCalls)
+	}
+	row := readTaskFromBolt(t, id)
+	if row.BackgroundPID == 0 {
+		t.Fatalf("BackgroundPID = 0, want non-zero detached child PID")
+	}
+}
+
 func TestReVerify_RegisteredAsChild(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)

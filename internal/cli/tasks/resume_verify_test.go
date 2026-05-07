@@ -256,6 +256,67 @@ func TestNewResumeVerifyCmd_PreRunE_DefaultedAgents(t *testing.T) {
 	}
 }
 
+// TestRunResumeVerify_HappyPath_Completed pins that resume-verify
+// succeeds for a completed row carrying a verify resume session. The
+// FSM edge {completed, EventVerifyResume, verifying} must permit it.
+func TestRunResumeVerify_HappyPath_Completed(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusCompleted
+		task.VerifyResumeSession = "sess-x"
+	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	ui := &fakeUI{pickReturn: id}
+	if err := RunResumeVerify(context.Background(), ResumeVerifyOptions{
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{newContinueAgent()},
+		UI:      ui,
+		JBinary: argvJBinary(t, argvPath),
+	}); err != nil {
+		t.Fatalf("RunResumeVerify: %v", err)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	want := []string{
+		"tasks", "orchestrate", "--id", id,
+		"--phase=verify-only", "--interactive=true",
+	}
+	if strings.Join(args, " ") != strings.Join(want, " ") {
+		t.Fatalf("argv = %v, want %v", args, want)
+	}
+}
+
+// TestRunResumeVerify_HappyPath_Failed mirrors the completed case
+// for the `failed` source status.
+func TestRunResumeVerify_HappyPath_Failed(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusFailed
+		task.VerifyResumeSession = "sess-x"
+	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	ui := &fakeUI{pickReturn: id}
+	if err := RunResumeVerify(context.Background(), ResumeVerifyOptions{
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{newContinueAgent()},
+		UI:      ui,
+		JBinary: argvJBinary(t, argvPath),
+	}); err != nil {
+		t.Fatalf("RunResumeVerify: %v", err)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	want := []string{
+		"tasks", "orchestrate", "--id", id,
+		"--phase=verify-only", "--interactive=true",
+	}
+	if strings.Join(args, " ") != strings.Join(want, " ") {
+		t.Fatalf("argv = %v, want %v", args, want)
+	}
+}
+
 func TestResumeVerify_RegisteredAsChild(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)

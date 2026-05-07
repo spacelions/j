@@ -126,6 +126,67 @@ func TestFilterTasksWithWorkSession(t *testing.T) {
 	}
 }
 
+// TestRunResumeWork_HappyPath_Completed pins that resume-work
+// succeeds for a completed row carrying a work resume session. The
+// FSM edge {completed, EventWorkResume, working} must permit it.
+func TestRunResumeWork_HappyPath_Completed(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusCompleted
+		task.WorkResumeSession = "sess-x"
+	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	ui := &fakeUI{pickReturn: id}
+	if err := RunResumeWork(context.Background(), ResumeWorkOptions{
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{newContinueAgent()},
+		UI:      ui,
+		JBinary: argvJBinary(t, argvPath),
+	}); err != nil {
+		t.Fatalf("RunResumeWork: %v", err)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	want := []string{
+		"tasks", "orchestrate", "--id", id,
+		"--phase=from-work", "--interactive=true",
+	}
+	if strings.Join(args, " ") != strings.Join(want, " ") {
+		t.Fatalf("argv = %v, want %v", args, want)
+	}
+}
+
+// TestRunResumeWork_HappyPath_Failed mirrors the completed case for
+// the `failed` source status.
+func TestRunResumeWork_HappyPath_Failed(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusFailed
+		task.WorkResumeSession = "sess-x"
+	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	ui := &fakeUI{pickReturn: id}
+	if err := RunResumeWork(context.Background(), ResumeWorkOptions{
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{newContinueAgent()},
+		UI:      ui,
+		JBinary: argvJBinary(t, argvPath),
+	}); err != nil {
+		t.Fatalf("RunResumeWork: %v", err)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	want := []string{
+		"tasks", "orchestrate", "--id", id,
+		"--phase=from-work", "--interactive=true",
+	}
+	if strings.Join(args, " ") != strings.Join(want, " ") {
+		t.Fatalf("argv = %v, want %v", args, want)
+	}
+}
+
 func TestRunResumeWork_RegisteredAsChild(t *testing.T) {
 	parent := New()
 	for _, sub := range parent.Commands() {

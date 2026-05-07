@@ -19,6 +19,39 @@ func TestApply_AllTransitionsRoundTrip(t *testing.T) {
 	}
 }
 
+// TestApply_FailedAndCompletedRecoveryEdges pins the nine new edges
+// that let `re-*` and `resume-*` rerun a finished task. Each entry
+// here must remain in the transitions table for the corresponding
+// CLI command to leave its IsLegal guard.
+func TestApply_FailedAndCompletedRecoveryEdges(t *testing.T) {
+	cases := []struct {
+		from TaskStatus
+		ev   Event
+		to   TaskStatus
+	}{
+		{StatusFailed, EventPlanResume, StatusPlanning},
+		{StatusFailed, EventWorkResume, StatusWorking},
+		{StatusFailed, EventVerifyResume, StatusVerifying},
+		{StatusCompleted, EventPlanRestart, StatusPlanning},
+		{StatusCompleted, EventPlanResume, StatusPlanning},
+		{StatusCompleted, EventWorkRestart, StatusWorking},
+		{StatusCompleted, EventWorkResume, StatusWorking},
+		{StatusCompleted, EventVerifyRestart, StatusVerifying},
+		{StatusCompleted, EventVerifyResume, StatusVerifying},
+	}
+	for _, c := range cases {
+		got, err := Apply(c.from, c.ev)
+		if err != nil {
+			t.Errorf("Apply(%q, %q): %v", c.from, c.ev, err)
+			continue
+		}
+		if got != c.to {
+			t.Errorf("Apply(%q, %q) = %q, want %q",
+				c.from, c.ev, got, c.to)
+		}
+	}
+}
+
 func TestApply_IllegalTransition(t *testing.T) {
 	_, err := Apply(StatusPlanning, EventWorkBegin)
 	if err == nil {
@@ -224,18 +257,12 @@ func TestTransitionTable_NoDuplicateEdges(t *testing.T) {
 
 func TestTransitionTable_TerminalStates(t *testing.T) {
 	for _, tr := range transitions {
-		if tr.From == StatusCompleted {
-			t.Errorf("completed state has outgoing edge: %q", tr.Event)
-		}
-		if tr.From == StatusFailed {
-			if !strings.Contains(string(tr.Event), "restart") {
-				t.Errorf("failed state has non-restart outgoing edge: %q", tr.Event)
-			}
-		}
-		if tr.From == StatusHelp {
+		switch tr.From {
+		case StatusFailed, StatusCompleted, StatusHelp:
 			if !strings.Contains(string(tr.Event), "restart") &&
 				!strings.Contains(string(tr.Event), "resume") {
-				t.Errorf("help state has non-restart/resume outgoing edge: %q", tr.Event)
+				t.Errorf("%s state has non-restart/resume edge: %q",
+					tr.From, tr.Event)
 			}
 		}
 	}

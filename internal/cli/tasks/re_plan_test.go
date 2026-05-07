@@ -556,6 +556,70 @@ func TestNewRePlanCmd_RunE_InteractiveFlag(t *testing.T) {
 	}
 }
 
+// TestRunRePlan_FromCompletedSpawnsAfterConfirm pins that re-plan no
+// longer rejects a completed task at the IsLegal guard. The status
+// is outside the re-plan allowlist so the override prompt fires;
+// confirming reaches the orchestrator-spawn fake.
+func TestRunRePlan_FromCompletedSpawnsAfterConfirm(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusCompleted
+	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	ui := &fakeUI{statusReturn: true}
+	if err := RunRePlan(context.Background(), RePlanOptions{
+		FromTask:    id,
+		Interactive: boolPtr(false),
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{newContinueAgent()},
+		UI:          ui,
+		JBinary:     argvJBinary(t, argvPath),
+	}); err != nil {
+		t.Fatalf("RunRePlan: %v", err)
+	}
+	if ui.statusCalls != 1 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 1",
+			ui.statusCalls)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	if len(args) == 0 || args[0] != "tasks" {
+		t.Fatalf("argv = %v, want spawned `tasks orchestrate ...`", args)
+	}
+}
+
+// TestRunRePlan_FromFailedSpawnsAfterConfirm mirrors the completed
+// case for the `failed` source status.
+func TestRunRePlan_FromFailedSpawnsAfterConfirm(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusFailed
+	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	ui := &fakeUI{statusReturn: true}
+	if err := RunRePlan(context.Background(), RePlanOptions{
+		FromTask:    id,
+		Interactive: boolPtr(false),
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{newContinueAgent()},
+		UI:          ui,
+		JBinary:     argvJBinary(t, argvPath),
+	}); err != nil {
+		t.Fatalf("RunRePlan: %v", err)
+	}
+	if ui.statusCalls != 1 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 1",
+			ui.statusCalls)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	if len(args) == 0 || args[0] != "tasks" {
+		t.Fatalf("argv = %v, want spawned `tasks orchestrate ...`", args)
+	}
+}
+
 // TestRunRePlan_RegisteredAsChild pins the cobra wiring.
 func TestRunRePlan_RegisteredAsChild(t *testing.T) {
 	viper.Reset()

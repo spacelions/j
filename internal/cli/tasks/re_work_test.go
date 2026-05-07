@@ -189,6 +189,68 @@ func TestNewReWorkCmd_EnvBindings(t *testing.T) {
 	}
 }
 
+// TestRunReWork_FromCompletedSpawnsAfterConfirm pins that re-work
+// no longer rejects a completed task at the IsLegal guard.
+func TestRunReWork_FromCompletedSpawnsAfterConfirm(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusCompleted
+	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	ui := &fakeUI{statusReturn: true}
+	if err := RunReWork(context.Background(), ReWorkOptions{
+		FromTask:    id,
+		Interactive: boolPtr(false),
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{newContinueAgent()},
+		UI:          ui,
+		JBinary:     argvJBinary(t, argvPath),
+	}); err != nil {
+		t.Fatalf("RunReWork: %v", err)
+	}
+	if ui.statusCalls != 1 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 1",
+			ui.statusCalls)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	if len(args) == 0 || args[0] != "tasks" {
+		t.Fatalf("argv = %v, want spawned `tasks orchestrate ...`", args)
+	}
+}
+
+// TestRunReWork_FromFailedSpawnsAfterConfirm mirrors the completed
+// case for the `failed` source status.
+func TestRunReWork_FromFailedSpawnsAfterConfirm(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusFailed
+	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	ui := &fakeUI{statusReturn: true}
+	if err := RunReWork(context.Background(), ReWorkOptions{
+		FromTask:    id,
+		Interactive: boolPtr(false),
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{newContinueAgent()},
+		UI:          ui,
+		JBinary:     argvJBinary(t, argvPath),
+	}); err != nil {
+		t.Fatalf("RunReWork: %v", err)
+	}
+	if ui.statusCalls != 1 {
+		t.Fatalf("ConfirmStatusOverride calls = %d, want 1",
+			ui.statusCalls)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	if len(args) == 0 || args[0] != "tasks" {
+		t.Fatalf("argv = %v, want spawned `tasks orchestrate ...`", args)
+	}
+}
+
 func TestRunReWork_RegisteredAsChild(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
