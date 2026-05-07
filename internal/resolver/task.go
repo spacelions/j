@@ -65,7 +65,7 @@ func ResolveWorkPlan(ctx context.Context, opts WorkPlanOptions) (WorkPlan, bool,
 		return WorkPlan{}, false, err
 	}
 	if len(rows) == 0 {
-		return WorkPlan{}, false, errors.New("J: no tasks to work; run `j plan` first")
+		return WorkPlan{}, false, errors.New("no tasks to work; run `j plan` first")
 	}
 	if id, ok := autoPickAllowed(rows, ReplanAllowed); ok {
 		r, err := resolveWorkByTaskID(id)
@@ -129,7 +129,7 @@ func ResolveVerifyTask(ctx context.Context, opts VerifyTaskOptions) (VerifyTask,
 		return VerifyTask{}, false, err
 	}
 	if len(rows) == 0 {
-		return VerifyTask{}, false, errors.New("J: no tasks to verify; run `j plan` and `j work` first")
+		return VerifyTask{}, false, errors.New("no tasks to verify; run `j plan` and `j work` first")
 	}
 	if id, ok := autoPickAllowed(rows, VerifyAllowed); ok {
 		r, err := resolveVerifyByTaskID(id)

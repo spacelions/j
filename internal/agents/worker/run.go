@@ -57,7 +57,7 @@ func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
-		return errors.New("J: no coding agents configured")
+		return errors.New("no coding agents configured")
 	}
 	res, ok, err := resolver.ResolveWorkPlan(ctx, resolver.WorkPlanOptions{
 		TaskID: opts.TaskID,
@@ -111,7 +111,7 @@ func resolveWorker(
 		a, ok := lookupResumeAgent(opts.Agents, res.Task.WorkTool)
 		if !ok {
 			return nil, "", "", fmt.Errorf(
-				"J: unknown tool %q", res.Task.WorkTool,
+				"unknown tool %q", res.Task.WorkTool,
 			)
 		}
 		return a, res.Task.WorkModel, res.Task.WorkResumeSession, nil

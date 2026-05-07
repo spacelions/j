@@ -63,7 +63,7 @@ func RunResumeVerify(ctx context.Context, opts ResumeVerifyOptions) (err error) 
 		return err
 	}
 	if !tasks.IsLegal(t.Status, tasks.EventVerifyResume) {
-		return fmt.Errorf("J: cannot resume-verify task in status %q", t.Status)
+		return fmt.Errorf("cannot resume-verify task in status %q", t.Status)
 	}
 	if _, err := tasks.EnsureDir(taskID); err != nil {
 		return err

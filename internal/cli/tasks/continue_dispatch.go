@@ -23,7 +23,7 @@ func resumePlanInlineOrchestrator(
 		return err
 	}
 	if _, err := tasks.EnsureDir(t.ID); err != nil {
-		return fmt.Errorf("J: ensure task dir: %w", err)
+		return fmt.Errorf("ensure task dir: %w", err)
 	}
 	approval, _ := store.LoadPlanRequiresApproval()
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
@@ -41,7 +41,7 @@ func resumeWorkInlineOrchestrator(
 	ctx context.Context, opts ContinueOptions, t tasks.Task,
 ) error {
 	if _, err := tasks.EnsureDir(t.ID); err != nil {
-		return fmt.Errorf("J: ensure task dir: %w", err)
+		return fmt.Errorf("ensure task dir: %w", err)
 	}
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
 		"tasks", "orchestrate",
@@ -93,7 +93,7 @@ func dispatchHelp(
 	case "plan":
 		return resumePlanInlineOrchestrator(ctx, opts, t)
 	}
-	return fmt.Errorf("J: task %s in `help` has no resumable phase signal", t.ID)
+	return fmt.Errorf("task %s in `help` has no resumable phase signal", t.ID)
 }
 
 // latestPhase returns "verify", "work", "plan", or "" depending on
@@ -150,7 +150,7 @@ func runPlanDoneWork(
 ) error {
 	taskDir, err := tasks.EnsureDir(t.ID)
 	if err != nil {
-		return fmt.Errorf("J: ensure task dir: %w", err)
+		return fmt.Errorf("ensure task dir: %w", err)
 	}
 	interactive := resolver.Interactive(opts.Interactive)
 	args := []string{
@@ -189,7 +189,7 @@ func dispatchPlanApprove(
 	prev := t.Status
 	if _, err := tasks.ApplyAndPersistWarn(
 		opts.Stderr, &t, tasks.EventPlanApprove); err != nil {
-		return fmt.Errorf("J: cannot approve task in status %q", prev)
+		return fmt.Errorf("cannot approve task in status %q", prev)
 	}
 	return runPlanDoneWork(ctx, opts, t)
 }
@@ -210,14 +210,14 @@ func dispatchClarification(
 		ev = tasks.EventPlanResume
 	default:
 		return fmt.Errorf(
-				"J: task %s in %s has no resumable phase",
+				"task %s in %s has no resumable phase",
 				t.ID, tasks.StatusNeedsClarification)
 	}
 	prev := t.Status
 	if _, err := tasks.ApplyAndPersistWarn(
 		opts.Stderr, &t, ev); err != nil {
 		return fmt.Errorf(
-				"J: cannot resume task in status %q (event %q)",
+				"cannot resume task in status %q (event %q)",
 				prev, ev)
 	}
 

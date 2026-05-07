@@ -77,7 +77,7 @@ func RunResumePlan(ctx context.Context, opts ResumePlanOptions) (err error) {
 		return err
 	}
 	if !tasks.IsLegal(t.Status, tasks.EventPlanResume) {
-		return fmt.Errorf("J: cannot resume-plan task in status %q", t.Status)
+		return fmt.Errorf("cannot resume-plan task in status %q", t.Status)
 	}
 	if _, err := tasks.EnsureDir(taskID); err != nil {
 		return err

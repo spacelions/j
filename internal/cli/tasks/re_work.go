@@ -76,7 +76,7 @@ func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 		return err
 	}
 	if !tasks.IsLegal(task.Status, tasks.EventWorkRestart) {
-		return fmt.Errorf("J: cannot re-work task in status %q", task.Status)
+		return fmt.Errorf("cannot re-work task in status %q", task.Status)
 	}
 	proceed, err := resolver.ConfirmStatusOverride(ctx, opts.UI, false, "re-work", task, resolver.ReplanAllowed)
 	if err != nil {
@@ -88,7 +88,7 @@ func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 
 	taskDir, err := tasks.EnsureDir(task.ID)
 	if err != nil {
-		return fmt.Errorf("J: ensure task dir: %w", err)
+		return fmt.Errorf("ensure task dir: %w", err)
 	}
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 
@@ -137,19 +137,19 @@ func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 func clearWorkResumeSession(taskID string) error {
 	s, err := tasks.OpenDefault()
 	if err != nil {
-		return fmt.Errorf("J: open task store: %w", err)
+		return fmt.Errorf("open task store: %w", err)
 	}
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(taskID)
 	if err != nil {
-		return fmt.Errorf("J: read task %s: %w", taskID, err)
+		return fmt.Errorf("read task %s: %w", taskID, err)
 	}
 	if row.WorkResumeSession == "" {
 		return nil
 	}
 	row.WorkResumeSession = ""
 	if err := s.PutTask(row); err != nil {
-		return fmt.Errorf("J: clear work resume session: %w", err)
+		return fmt.Errorf("clear work resume session: %w", err)
 	}
 	return nil
 }
