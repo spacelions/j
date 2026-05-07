@@ -277,3 +277,33 @@ func TestRunReVerify_OpenDefaultFails(t *testing.T) {
 		t.Fatal("expected DefaultDir to surface getwd error")
 	}
 }
+
+func TestReVerifyOptions_WithDefaults_FillsNilStreams(t *testing.T) {
+	o := ReVerifyOptions{}.withDefaults()
+	if o.Stdin != os.Stdin {
+		t.Errorf("Stdin = %v, want os.Stdin", o.Stdin)
+	}
+	if o.Stdout != os.Stdout {
+		t.Errorf("Stdout = %v, want os.Stdout", o.Stdout)
+	}
+	if o.Stderr != os.Stderr {
+		t.Errorf("Stderr = %v, want os.Stderr", o.Stderr)
+	}
+	if o.UI == nil {
+		t.Error("UI was not defaulted")
+	}
+}
+
+func TestReVerifyOptions_WithDefaults_KeepsProvided(t *testing.T) {
+	customUI := &fakeUI{}
+	o := ReVerifyOptions{
+		UI:     customUI,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+	}.withDefaults()
+	if o.UI != customUI {
+		t.Errorf("UI = %v, want custom", o.UI)
+	}
+}
+
