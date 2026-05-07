@@ -43,6 +43,20 @@ func TestIsLegal(t *testing.T) {
 	}
 }
 
+func TestIsLegal_PlanResumeFromPendingApproval(t *testing.T) {
+	if !IsLegal(StatusPlanPendingApproval, EventPlanResume) {
+		t.Error(
+			"IsLegal(plan-pending-approval, plan_resume) = false, want true")
+	}
+	got, err := Apply(StatusPlanPendingApproval, EventPlanResume)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if got != StatusPlanning {
+		t.Errorf("Apply(...) = %q, want %q", got, StatusPlanning)
+	}
+}
+
 func TestIsLegal_DoesNotFireHooks(t *testing.T) {
 	ResetHooksForTest()
 	fired := false

@@ -154,6 +154,39 @@ func TestRunResumePlan_HappyPath(t *testing.T) {
 	}
 }
 
+// TestRunResumePlan_HappyPath_PlanPendingApproval pins that resume-plan
+// succeeds for a row already at the approval gate. The FSM edge
+// {plan-pending-approval, EventPlanResume, planning} must be present
+// for resume_plan.go's IsLegal guard to permit the transition; this
+// test fails if the edge is removed.
+func TestRunResumePlan_HappyPath_PlanPendingApproval(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusPlanPendingApproval
+		task.PlanResumeSession = "active-cursor"
+	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	ui := &fakeUI{pickReturn: id}
+	if err := RunResumePlan(context.Background(), ResumePlanOptions{
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{newContinueAgent()},
+		UI:      ui,
+		JBinary: argvJBinary(t, argvPath),
+	}); err != nil {
+		t.Fatalf("RunResumePlan: %v", err)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	want := []string{
+		"tasks", "orchestrate", "--id", id,
+		"--plan-requires-approval=true", "--interactive=true",
+	}
+	if strings.Join(args, " ") != strings.Join(want, " ") {
+		t.Fatalf("argv = %v, want %v", args, want)
+	}
+}
+
 // TestRunResumePlan_SpawnFails pins the inline-exec error branch:
 // pointing JBinary at a missing path surfaces the run.RunIn error.
 func TestRunResumePlan_SpawnFails(t *testing.T) {
