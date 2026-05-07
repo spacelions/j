@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"bytes"
+	"github.com/spacelions/j/internal/lifecycle"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
@@ -454,6 +455,134 @@ func TestReap_DeadWorking_WithClarification(t *testing.T) {
 	if persisted.Status != tasks.StatusNeedsClarification {
 		t.Fatalf("persisted Status = %q, want needs-clarification",
 			persisted.Status)
+	}
+}
+
+// reaperMarkerCase drives one reaper transition end-to-end and pins
+// (a) the in-memory status flip, (b) one marker line in the per-task
+// agent.log via the registered markersHook, and (c) the persisted row.
+type reaperMarkerCase struct {
+	name        string
+	status      tasks.TaskStatus
+	wantStatus  tasks.TaskStatus
+	wantMarker  string
+	approval    bool
+	requirements string
+	plan        string
+	clarif      string
+}
+
+// TestReap_TransitionsEmitMarkers covers every reaper-driven event
+// flowing through ApplyAndPersist plus markersHook. The table mirrors
+// the four FSM edges reaper paths can take so a regression in either
+// the transition table or the hook surfaces here.
+func TestReap_TransitionsEmitMarkers(t *testing.T) {
+	cases := []reaperMarkerCase{
+		{
+			name:         "plan_done",
+			status:       tasks.StatusPlanning,
+			wantStatus:   tasks.StatusPlanDone,
+			wantMarker:   "plan done",
+			requirements: "# heading\nbody",
+			plan:         "1. step",
+		},
+		{
+			name:         "plan_await_approval",
+			status:       tasks.StatusPlanning,
+			wantStatus:   tasks.StatusPlanPendingApproval,
+			wantMarker:   "plan await approval",
+			approval:     true,
+			requirements: "# heading\nbody",
+			plan:         "1. step",
+		},
+		{
+			name:       "plan_fail",
+			status:     tasks.StatusPlanning,
+			wantStatus: tasks.StatusHelp,
+			wantMarker: "plan fail",
+		},
+		{
+			name:       "plan_needs_clarification",
+			status:     tasks.StatusPlanning,
+			wantStatus: tasks.StatusNeedsClarification,
+			wantMarker: "plan needs clarification",
+			clarif:     "what next?\n",
+		},
+		{
+			name:       "work_done",
+			status:     tasks.StatusWorking,
+			wantStatus: tasks.StatusWorkDone,
+			wantMarker: "work done",
+		},
+		{
+			name:       "work_needs_clarification",
+			status:     tasks.StatusWorking,
+			wantStatus: tasks.StatusNeedsClarification,
+			wantMarker: "work needs clarification",
+			clarif:     "what branch?\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := openTestStore(t)
+			if c.approval {
+				putProjectPlanRequiresApproval(t, "true")
+			} else {
+				putProjectPlanRequiresApproval(t, "false")
+			}
+			tasksDir, err := tasks.DefaultDir()
+			if err != nil {
+				t.Fatalf("DefaultDir: %v", err)
+			}
+			id := "reap-" + c.name
+			dir := seedTaskDir(t, id, c.requirements, c.plan)
+			if c.clarif != "" {
+				if err := os.WriteFile(
+					filepath.Join(dir, clarificationFileName),
+					[]byte(c.clarif), 0o644,
+				); err != nil {
+					t.Fatal(err)
+				}
+			}
+			logPath := filepath.Join(dir, tasks.AgentLogFileName)
+			t.Cleanup(tasks.ResetHooksForTest)
+			lifecycle.Init()
+			in := []tasks.Task{{
+				ID:            id,
+				Status:        c.status,
+				BackgroundPID: deadPID(t),
+				AgentLogPath:  logPath,
+			}}
+			out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
+			got := out[0]
+			if got.Status != c.wantStatus {
+				t.Fatalf("Status = %q, want %q",
+					got.Status, c.wantStatus)
+			}
+			persisted, err := s.GetTask(id)
+			if err != nil {
+				t.Fatalf("GetTask: %v", err)
+			}
+			if persisted.Status != c.wantStatus {
+				t.Fatalf("persisted Status = %q, want %q",
+					persisted.Status, c.wantStatus)
+			}
+			data, err := os.ReadFile(logPath)
+			if err != nil {
+				t.Fatalf("read agent.log: %v", err)
+			}
+			body := string(data)
+			if !strings.Contains(body, c.wantMarker) {
+				t.Fatalf("agent.log missing %q: %q",
+					c.wantMarker, body)
+			}
+			if lines := strings.Count(
+				strings.TrimSpace(body), "\n",
+			); lines != 0 {
+				t.Fatalf("want exactly one marker line, got %d in %q",
+					lines+1, body)
+			}
+		})
 	}
 }
 

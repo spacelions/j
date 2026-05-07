@@ -263,6 +263,42 @@ func TestRunForTask_FinaliseStuckVerifying(t *testing.T) {
 	}
 }
 
+// TestFinaliseVerifyFailIfStuck_FiresHook pins that the EventVerifyStuck
+// transition routes through ApplyAndPersist so registered observer
+// hooks (notably the agent.log marker writer) see it. The test wires
+// a capture hook directly so the orchestrator package stays free of
+// the lifecycle import.
+func TestFinaliseVerifyFailIfStuck_FiresHook(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := seedChainTask(t, "scripted")
+	row := readChainTaskRow(t, id)
+	row.Status = tasks.StatusVerifying
+	writeChainTaskRow(t, row)
+
+	t.Cleanup(tasks.ResetHooksForTest)
+	var captured []tasks.Transition
+	tasks.Register(func(tr tasks.Transition, _ tasks.Task) {
+		captured = append(captured, tr)
+	})
+
+	finaliseVerifyFailIfStuck(io.Discard, id)
+
+	if len(captured) != 1 {
+		t.Fatalf("hook fires = %d, want 1", len(captured))
+	}
+	got := captured[0]
+	if got.Event != tasks.EventVerifyStuck {
+		t.Fatalf("Event = %q, want verify_stuck", got.Event)
+	}
+	if got.From != tasks.StatusVerifying {
+		t.Fatalf("From = %q, want verifying", got.From)
+	}
+	if got.To != tasks.StatusFailed {
+		t.Fatalf("To = %q, want failed", got.To)
+	}
+}
+
 // TestFinaliseVerifyFailIfStuck_NoOpOnTerminal pins that a row
 // already in a terminal state (completed / failed / help /
 // plan-done / etc.) is left alone.
@@ -287,6 +323,36 @@ func TestFinaliseVerifyFailIfStuck_MissingRow(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 	finaliseVerifyFailIfStuck(io.Discard, "no-such-id")
+}
+
+// TestFinaliseVerifyFailIfStuck_PutErrorWarns drives the put-error
+// branch by clamping the per-task directory read-only after the row
+// has been seeded. PutTask's writeFileAtomic fails to open the
+// per-task dir for writes and the helper surfaces a warning.
+func TestFinaliseVerifyFailIfStuck_PutErrorWarns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := seedChainTask(t, "scripted")
+	row := readChainTaskRow(t, id)
+	row.Status = tasks.StatusVerifying
+	writeChainTaskRow(t, row)
+
+	tasksDir, err := tasks.DefaultDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskDir := filepath.Join(tasksDir, id)
+	if err := os.Chmod(taskDir, 0o500); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(taskDir, 0o755) })
+
+	var stderr bytes.Buffer
+	finaliseVerifyFailIfStuck(&stderr, id)
+	if !strings.Contains(stderr.String(), "tasks put") {
+		t.Fatalf("stderr = %q, want tasks-put warning",
+			stderr.String())
+	}
 }
 
 // seedChainTask seeds a task row + per-task dir with plan.md /

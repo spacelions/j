@@ -18,23 +18,18 @@ func persistStartRow(stderr io.Writer, target startTarget,
 	agentLogPath string, pid int,
 ) {
 	if target.IsNew {
-		newStatus, err := tasks.Apply("", tasks.EventPlanBegin)
-		if err != nil {
-			panic("plan begin from zero value: " + err.Error())
-		}
 		t := tasks.Task{
 			ID:            target.TaskID,
-			Status:        newStatus,
 			Summary:       tasks.Summary(target.Body, target.Source),
 			PlanBeginAt:   time.Now().UTC(),
 			AgentLogPath:  agentLogPath,
 			BackgroundPID: pid,
 			LinearIssue:   target.LinearIssue,
 		}
-		tasks.PersistWarn(stderr, t)
-		tasks.Notify(tasks.Transition{
-			From: "", Event: tasks.EventPlanBegin, To: newStatus,
-		}, t)
+		if _, err := tasks.ApplyAndPersistWarn(
+			stderr, &t, tasks.EventPlanBegin); err != nil {
+			panic("plan begin from zero value: " + err.Error())
+		}
 		return
 	}
 	stampSpawnOnRow(stderr, target.TaskID, agentLogPath, pid)
@@ -75,7 +70,8 @@ func (o StartOptions) withDefaults() StartOptions {
 }
 
 func startPlanRequiresApprovalOverride(cmd *cobra.Command) (*bool, error) {
-	approvalSet := cmd.Flags().Changed("plan-requires-approval") || envSet("TASKS_START_PLAN_REQUIRES_APPROVAL")
+	approvalSet := cmd.Flags().Changed("plan-requires-approval") ||
+		envSet("TASKS_START_PLAN_REQUIRES_APPROVAL")
 	if approvalSet {
 		v := viper.GetBool("tasks.start.plan_requires_approval")
 		return &v, nil

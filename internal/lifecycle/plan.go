@@ -31,7 +31,6 @@ type PlanLifecycle struct {
 	stderr       io.Writer
 	agentLogPath string
 	task         tasks.Task
-	prevStatus   tasks.TaskStatus
 	closed       bool
 }
 
@@ -50,13 +49,8 @@ type PlanLifecycle struct {
 func NewPlanTask(stderr io.Writer, agentName, model, taskID, target,
 	requirement, resumeID, agentLogPath, linearIssue string,
 ) *PlanLifecycle {
-	newStatus, err := tasks.Apply("", tasks.EventPlanBegin)
-	if err != nil {
-		panic("plan begin from zero value: " + err.Error())
-	}
 	task := tasks.Task{
 		ID:                taskID,
-		Status:            newStatus,
 		PlanTool:          agentName,
 		PlanModel:         model,
 		PlanResumeSession: resumeID,
@@ -65,17 +59,15 @@ func NewPlanTask(stderr io.Writer, agentName, model, taskID, target,
 		LinearIssue:       linearIssue,
 		AgentLogPath:      agentLogPath,
 	}
-	lc := &PlanLifecycle{
+	if _, err := tasks.ApplyAndPersistWarn(
+		stderr, &task, tasks.EventPlanBegin); err != nil {
+		panic("plan begin from zero value: " + err.Error())
+	}
+	return &PlanLifecycle{
 		stderr:       stderr,
 		agentLogPath: agentLogPath,
 		task:         task,
-		prevStatus:   newStatus,
 	}
-	tasks.PersistWarn(stderr, task)
-	tasks.Notify(tasks.Transition{
-		From: "", Event: tasks.EventPlanBegin, To: newStatus,
-	}, task)
-	return lc
 }
 
 // BeginPlanReuse mutates a copy of t to flip status to `planning`
@@ -87,13 +79,7 @@ func NewPlanTask(stderr io.Writer, agentName, model, taskID, target,
 func BeginPlanReuse(t tasks.Task, stderr io.Writer, agentName, model,
 	resumeID, agentLogPath string,
 ) *PlanLifecycle {
-	prev := t.Status
-	newStatus, err := tasks.Apply(prev, tasks.EventPlanRestart)
-	if err != nil {
-		panic("plan restart: " + err.Error())
-	}
 	task := t
-	task.Status = newStatus
 	task.PlanTool = agentName
 	task.PlanModel = model
 	task.PlanResumeSession = resumeID
@@ -103,17 +89,15 @@ func BeginPlanReuse(t tasks.Task, stderr io.Writer, agentName, model,
 		task.PlanBeginAt = time.Now().UTC()
 	}
 	task.AgentLogPath = agentLogPath
-	lc := &PlanLifecycle{
+	if _, err := tasks.ApplyAndPersistWarn(
+		stderr, &task, tasks.EventPlanRestart); err != nil {
+		panic("plan restart: " + err.Error())
+	}
+	return &PlanLifecycle{
 		stderr:       stderr,
 		agentLogPath: agentLogPath,
 		task:         task,
-		prevStatus:   newStatus,
 	}
-	tasks.PersistWarn(stderr, task)
-	tasks.Notify(tasks.Transition{
-		From: prev, Event: tasks.EventPlanRestart, To: newStatus,
-	}, task)
-	return lc
 }
 
 // BeginPlanExisting creates a PlanLifecycle for a task that is
@@ -135,7 +119,6 @@ func BeginPlanExisting(t tasks.Task, stderr io.Writer, agentName,
 		stderr:       stderr,
 		agentLogPath: agentLogPath,
 		task:         task,
-		prevStatus:   task.Status,
 	}
 	tasks.PersistWarn(stderr, task)
 	return lc
@@ -178,16 +161,10 @@ func (lc *PlanLifecycle) Finish(
 			ev = tasks.EventPlanDone
 		}
 	}
-	from := lc.task.Status
-	newStatus, err := tasks.Apply(from, ev)
-	if err != nil {
+	if _, err := tasks.ApplyAndPersistWarn(
+		lc.stderr, &lc.task, ev); err != nil {
 		panic("plan finish: " + err.Error())
 	}
-	lc.task.Status = newStatus
-	tasks.PersistWarn(lc.stderr, lc.task)
-	tasks.Notify(tasks.Transition{
-		From: from, Event: ev, To: newStatus,
-	}, lc.task)
 }
 
 // Task returns the in-memory snapshot of the task row.
