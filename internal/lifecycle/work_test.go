@@ -355,7 +355,7 @@ func TestWorkLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 	if !strings.Contains(body, "work done") {
 		t.Fatalf("agent.log missing work done marker: %q", body)
 	}
-	if strings.Contains(stderr.String(), agentlog.Sentinel) {
+	if strings.Contains(stderr.String(), agentlog.Header("work_begin")) {
 		t.Fatalf("stderr leaked phase marker: %q", stderr.String())
 	}
 }

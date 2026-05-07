@@ -1,15 +1,14 @@
-// Package agentlog emits single-line structured marker events
-// interleaved with the human transcript inside a per-task `agent.log`.
+// Package agentlog emits single-line, human-readable structured marker
+// events interleaved with the human transcript inside a per-task
+// `agent.log`.
 //
-// Every marker is a JSON object on its own line, prefixed with a fixed
-// sentinel:
+// Every marker is one line of the form
 //
-//	>>> J {"event":"phase_begin","ts":"2026-05-04T12:00:00Z","phase":"plan","task":"01KQ…"}
+//	2026-05-04T12:00:00Z  session start — task=01KQ phase=full
 //
-// The sentinel is unique to this codebase, so a downstream consumer
-// can split the file into the structured stream (lines that start
-// with the sentinel) and the human transcript (lines that don't) with
-// `rg '^>>> J '`.
+// The leading RFC3339Z timestamp + two spaces matches the lifecycle
+// status hook's own marker format, so a tailer can read the file as
+// continuous human text without filtering.
 //
 // Markers are best-effort: emit failures (closed file, full disk) are
 // returned to the caller but the lifecycle / orchestrator code that
@@ -18,18 +17,14 @@
 package agentlog
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
-
-// Sentinel prefixes every marker line. Using a string with characters
-// that are extremely unlikely to occur naturally at line-start in
-// agent stdout/stderr keeps the grep-out trivial without escaping.
-const Sentinel = ">>> J "
 
 // emitMu serialises Emit calls within a single process. Cross-process
 // atomicity is provided by O_APPEND on POSIX (small writes append
@@ -38,36 +33,85 @@ const Sentinel = ">>> J "
 // chunk a single marker line in half.
 var emitMu sync.Mutex
 
-// Emit writes one marker line to w. fields are merged into the JSON
-// payload alongside the auto-populated `event` and `ts` keys; `ts`
-// uses RFC3339 with nanosecond precision in UTC so log lines from
-// different time zones still sort chronologically.
+// Header returns the topic+verb prefix for the given event name. The
+// event is split on the first underscore: `session_start` becomes
+// `session start`, `child_exit` becomes `child exit`. An event with
+// no underscore returns just the event itself (verb is empty).
 //
-// A nil w is rejected — callers that have no writer (e.g. interactive
-// runs without a per-task log) should skip the call entirely. An
-// `event` collision in fields (caller passes "event" or "ts" keys) is
-// silently overridden by the auto-populated values; the helper owns
-// those slots.
+// Exported so tests that guard against marker leakage to stderr can
+// build the same prefix the writer uses without re-deriving it.
+func Header(event string) string {
+	topic, verb, ok := strings.Cut(event, "_")
+	if !ok || verb == "" {
+		return topic
+	}
+	return topic + " " + verb
+}
+
+// Emit writes one marker line to w: an RFC3339Z timestamp, two spaces,
+// the topic+verb derived from event, and — when fields is non-empty —
+// `— k=v k=v` with keys sorted lexicographically. Empty values are
+// skipped; integers are formatted as decimal, time.Duration as the
+// underlying int64 nanoseconds, and everything else via %v.
+//
+// A nil w is a silent no-op so callers without a per-task log
+// (interactive flows) can hand nil and not branch.
 func Emit(w io.Writer, event string, fields map[string]any) error {
 	if w == nil {
 		return nil
 	}
-	payload := make(map[string]any, len(fields)+2)
-	for k, v := range fields {
-		payload[k] = v
-	}
-	payload["event"] = event
-	payload["ts"] = time.Now().UTC().Format(time.RFC3339Nano)
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("agentlog: marshal %s: %w", event, err)
+	ts := time.Now().UTC().Format(time.RFC3339)
+	line := ts + "  " + Header(event)
+	if pairs := formatFields(fields); pairs != "" {
+		line += " — " + pairs
 	}
 	emitMu.Lock()
 	defer emitMu.Unlock()
-	if _, err := fmt.Fprintf(w, "%s%s\n", Sentinel, data); err != nil {
+	if _, err := fmt.Fprintln(w, line); err != nil {
 		return fmt.Errorf("agentlog: write %s: %w", event, err)
 	}
 	return nil
+}
+
+// formatFields renders fields as a `k=v k=v` string with keys sorted
+// lexicographically. Empty/zero string values and the reserved `event`
+// / `ts` keys are skipped — the formatter owns those slots and the
+// caller cannot override them.
+func formatFields(fields map[string]any) string {
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		if k == "event" || k == "ts" {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var parts []string
+	for _, k := range keys {
+		v := formatValue(fields[k])
+		if v == "" {
+			continue
+		}
+		parts = append(parts, k+"="+v)
+	}
+	return strings.Join(parts, " ")
+}
+
+// formatValue renders one field value. nil and empty strings render as
+// "" so formatFields can drop them; integers print as decimal,
+// time.Duration as its int64 nanoseconds (callers already pass
+// already-converted milliseconds for human readability).
+func formatValue(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	case time.Duration:
+		return fmt.Sprintf("%d", int64(x))
+	default:
+		return fmt.Sprintf("%v", x)
+	}
 }
 
 // EmitTo opens path in O_APPEND mode and emits one marker. An empty
@@ -78,7 +122,8 @@ func EmitTo(path string, event string, fields map[string]any) error {
 	if path == "" {
 		return nil
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(
+		path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("agentlog: open %q: %w", path, err)
 	}

@@ -281,7 +281,7 @@ func TestPlanLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 	if !strings.Contains(body, "plan ") {
 		t.Fatalf("agent.log missing plan end marker: %q", body)
 	}
-	if strings.Contains(stderr.String(), agentlog.Sentinel) {
+	if strings.Contains(stderr.String(), agentlog.Header("plan_begin")) {
 		t.Fatalf("stderr leaked phase marker: %q", stderr.String())
 	}
 }

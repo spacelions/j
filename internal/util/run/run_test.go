@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -295,14 +296,21 @@ func TestSpawnIn_PlumbsCwd(t *testing.T) {
 	}
 }
 
+// markerLine matches an agentlog marker header at the start of a line:
+// RFC3339Z timestamp followed by two spaces. SpawnIn appends a
+// `child exit` marker after the child reaps, so tests that consume
+// the child's own stdout must skip marker lines to avoid mixing the
+// two streams.
+var markerLine = regexp.MustCompile(
+	`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z  `,
+)
+
 // firstNonMarkerLine returns the first non-empty line of data that is
-// not an agentlog `>>> J ` marker. SpawnIn now appends a child_exit
-// marker after the child reaps, so tests that consume the child's
-// own stdout must skip marker lines to avoid mixing the two streams.
+// not an agentlog marker (RFC3339Z + two spaces).
 func firstNonMarkerLine(data string) string {
 	for _, line := range strings.Split(data, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, ">>> J ") {
+		if trimmed == "" || markerLine.MatchString(trimmed) {
 			continue
 		}
 		return trimmed
@@ -312,7 +320,7 @@ func firstNonMarkerLine(data string) string {
 
 // TestSpawn_AppendsChildExitMarker pins the child_exit marker
 // invariant: after a Spawn-ed child exits, the reap goroutine must
-// append one `>>> J {"event":"child_exit",...}` line to the same log
+// append one human-readable `child exit` marker line to the same log
 // so a tailer can see the child's exit code without opening bbolt.
 func TestSpawn_AppendsChildExitMarker(t *testing.T) {
 	dir := t.TempDir()
@@ -324,18 +332,20 @@ func TestSpawn_AppendsChildExitMarker(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		data, _ := os.ReadFile(logPath)
-		if strings.Contains(string(data), `"event":"child_exit"`) {
-			if !strings.Contains(string(data), `"exit_code":0`) {
-				t.Fatalf("missing exit_code in marker: %q", data)
+		body := string(data)
+		if strings.Contains(body, "child exit") {
+			if !strings.Contains(body, "exit_code=0") {
+				t.Fatalf("missing exit_code in marker: %q", body)
 			}
-			pidNeedle := fmt.Sprintf(`"pid":%d`, pid)
-			if !strings.Contains(string(data), pidNeedle) {
-				t.Fatalf("missing pid %d in marker: %q", pid, data)
+			pidNeedle := fmt.Sprintf("pid=%d", pid)
+			if !strings.Contains(body, pidNeedle) {
+				t.Fatalf("missing pid %d in marker: %q", pid, body)
 			}
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("timeout waiting for child_exit marker: log=%q", data)
+			t.Fatalf(
+				"timeout waiting for child_exit marker: log=%q", body)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
