@@ -25,6 +25,7 @@ import (
 func NewRoot() *cobra.Command {
 	lifecycle.Init()
 	lifecycle.InitLinearPush()
+	lifecycle.InitLinearStateSync()
 	root := &cobra.Command{
 		Use:   "j",
 		Short: "J Harness CLI",

@@ -157,6 +157,101 @@ func TestCreateComment_HTTP500(t *testing.T) {
 	}
 }
 
+func TestUpdateIssueState_OK(t *testing.T) {
+	var seenBody []byte
+	srv := issueServer(t, func(w http.ResponseWriter, r *http.Request) {
+		seenBody, _ = io.ReadAll(r.Body)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"issueUpdate": map[string]any{"success": true},
+			},
+		})
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	err := c.UpdateIssueState(
+		context.Background(), "node-1", "state-1")
+	if err != nil {
+		t.Fatalf("UpdateIssueState: %v", err)
+	}
+	if !strings.Contains(string(seenBody), "stateId") {
+		t.Fatalf("body missing stateId: %s", seenBody)
+	}
+	req := decodeReq(t, seenBody)
+	if req.Variables["id"] != "node-1" {
+		t.Fatalf("id var = %v", req.Variables["id"])
+	}
+	if req.Variables["stateId"] != "state-1" {
+		t.Fatalf("stateId var = %v", req.Variables["stateId"])
+	}
+}
+
+func TestUpdateIssueState_GraphQLError(t *testing.T) {
+	srv := issueServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"issueUpdate": map[string]any{"success": false},
+			},
+			"errors": []map[string]string{{"message": "bad state"}},
+		})
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	err := c.UpdateIssueState(context.Background(), "id", "s")
+	if err == nil || !strings.Contains(err.Error(), "bad state") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestUpdateIssueState_Unauthorized(t *testing.T) {
+	srv := issueServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	err := c.UpdateIssueState(context.Background(), "id", "s")
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("err = %v, want ErrUnauthorized", err)
+	}
+}
+
+func TestCreateMentionComment_PrependsViewerMention(t *testing.T) {
+	var seenBody []byte
+	srv := issueServer(t, func(w http.ResponseWriter, r *http.Request) {
+		seenBody, _ = io.ReadAll(r.Body)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"commentCreate": map[string]any{"success": true},
+			},
+		})
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	err := c.CreateMentionComment(
+		context.Background(), "id-1", "viewer-uuid", "todo")
+	if err != nil {
+		t.Fatalf("CreateMentionComment: %v", err)
+	}
+	req := decodeReq(t, seenBody)
+	if req.Variables["body"] != "@viewer-uuid todo" {
+		t.Fatalf("body = %v, want '@viewer-uuid todo'",
+			req.Variables["body"])
+	}
+}
+
+func TestCreateMentionComment_GraphQLError(t *testing.T) {
+	srv := issueServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"commentCreate": map[string]any{"success": false},
+			},
+			"errors": []map[string]string{{"message": "x"}},
+		})
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	err := c.CreateMentionComment(
+		context.Background(), "id", "v", "b")
+	if err == nil || !strings.Contains(err.Error(), "x") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 // TestGetIssue_PopulatesID confirms the GraphQL `id` field round-
 // trips into Issue.ID. The mutations need it as the address argument
 // so a regression here would silently break the linear-push hook.

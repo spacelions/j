@@ -1,7 +1,12 @@
 package testcases_test
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -129,6 +134,47 @@ func TestLinearTasksStart_FromLinearInvalidIdentifier(t *testing.T) {
 	}
 }
 
+// TestLinearTasksStart_PickerFiltersBacklogOnly pins the picker
+// query shape: only issues whose Linear workflow state has type
+// `backlog` are eligible. The picker must not surface In Progress /
+// Todo / Done / Cancelled issues at the user. We assert by
+// intercepting the `assignedIssues` GraphQL request and inspecting
+// the encoded filter — Linear's server-side filter is the only
+// place this contract lives, so a stale query is a regression.
+func TestLinearTasksStart_PickerFiltersBacklogOnly(t *testing.T) {
+	var seen string
+	srv := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			seen = string(body)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"viewer": map[string]any{
+						"assignedIssues": map[string]any{
+							"nodes": []any{},
+						},
+					},
+				},
+			})
+		}))
+	t.Cleanup(srv.Close)
+	prev := linear.TestEndpoint
+	linear.TestEndpoint = srv.URL
+	t.Cleanup(func() { linear.TestEndpoint = prev })
+
+	c := linear.NewClient("lin_api_test")
+	if _, err := c.ListAssignedIssues(
+		context.Background(), linear.ListIssuesOpts{}); err != nil {
+		t.Fatalf("ListAssignedIssues: %v", err)
+	}
+	if !strings.Contains(seen, `state:{type:{eq:\"backlog\"}}`) {
+		t.Fatalf("query missing backlog filter: %s", seen)
+	}
+	if strings.Contains(seen, "nin:") {
+		t.Fatalf("query still has stale nin filter: %s", seen)
+	}
+}
+
 // TestLinearTasksStart_FromLinearEnvVar pins that
 // `TASKS_START_FROM_LINEAR=foo j tasks start` (no flag) routes the
 // env-var binding through the same identifier validator as the
@@ -147,8 +193,11 @@ func TestLinearTasksStart_FromLinearEnvVar(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from env-var binding")
 	}
-	if !errors.Is(err, linear.ErrInvalidIdentifier) && !errors.Is(err, linear.ErrNoAPIKey) {
-		t.Fatalf("err = %v, want invalid-identifier or no-api-key (validator order)", err)
+	if !errors.Is(err, linear.ErrInvalidIdentifier) &&
+		!errors.Is(err, linear.ErrNoAPIKey) {
+		t.Fatalf(
+			"err = %v, want invalid-identifier or no-api-key (validator order)",
+			err)
 	}
 
 	listing, _, lerr := testutil.RunCobra(tasks.New())
