@@ -31,9 +31,7 @@ coverage:
 	echo "total coverage: $$total"; \
 	below=$$(go tool cover -func=cover.out | awk '$$NF != "100.0%" && !/^total:/ {print}'); \
 	below=$$(printf '%s\n' "$$below" | grep -Ev \
-		-e 'internal/workflow/workflow\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
-		-e 'internal/workflow/loadconfig\.go:[0-9]+:[[:space:]]+LoadConfig[[:space:]]' \
-		-e 'internal/workflow/loadconfig\.go:[0-9]+:[[:space:]]+readSetting[[:space:]]' \
+		-e 'internal/lifecycle/orchestrator/workflow\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
 		-e 'internal/cli/run/run\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
 		-e 'internal/cli/web/web\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
 		-e 'internal/cli/uitheme/dialog_box\.go:[0-9]+:[[:space:]]+displayLogPath[[:space:]]' \
@@ -100,8 +98,8 @@ coverage:
 		-e 'internal/store/store\.go:[0-9]+:[[:space:]]+touchBoltFile[[:space:]]' \
 		-e 'internal/store/tasks/task\.go:[0-9]+:[[:space:]]+PutTask[[:space:]]' \
 		-e 'internal/store/tasks/persist\.go:[0-9]+:[[:space:]]+PersistWarn[[:space:]]' \
-		-e 'internal/store/tasks/lifecycle_plan\.go:[0-9]+:[[:space:]]+BeginPlanReuse[[:space:]]' \
-		-e 'internal/store/tasks/lifecycle_verify\.go:[0-9]+:[[:space:]]+BeginVerifyResume[[:space:]]' \
+		-e 'internal/lifecycle/plan\.go:[0-9]+:[[:space:]]+BeginPlanReuse[[:space:]]' \
+		-e 'internal/lifecycle/verify\.go:[0-9]+:[[:space:]]+BeginVerifyResume[[:space:]]' \
 		-e 'internal/store/tasks/dir\.go:[0-9]+:[[:space:]]+DefaultDir[[:space:]]' \
 		-e 'internal/store/tasks/dir\.go:[0-9]+:[[:space:]]+EnsureDir[[:space:]]' \
 		-e 'internal/store/tasks/dir\.go:[0-9]+:[[:space:]]+RemoveDir[[:space:]]' \
@@ -168,15 +166,15 @@ coverage:
 		-e 'internal/store/tasks/task\.go:[0-9]+:[[:space:]]+ListTasks[[:space:]]' \
 		-e 'internal/store/tasks/atomic\.go:[0-9]+:[[:space:]]+writeFileAtomic[[:space:]]' \
 		-e 'internal/testutil/.*\.go:[0-9]+:[[:space:]]+' \
-		-e 'internal/workflow/workflow_task\.go:[0-9]+:[[:space:]]+runForTask[[:space:]]' \
-		-e 'internal/workflow/workflow_task\.go:[0-9]+:[[:space:]]+taskSubAgents[[:space:]]' \
-		-e 'internal/workflow/workflow_task\.go:[0-9]+:[[:space:]]+newWorkVerify[[:space:]]' \
-		-e 'internal/workflow/workflow_task\.go:[0-9]+:[[:space:]]+driveSequential[[:space:]]' \
-		-e 'internal/workflow/workflow_task\.go:[0-9]+:[[:space:]]+finaliseVerifyFailIfStuck[[:space:]]' \
-		-e 'internal/workflow/agents/worker/run\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
-		-e 'internal/workflow/agents/worker/run\.go:[0-9]+:[[:space:]]+RunResume[[:space:]]' \
-		-e 'internal/workflow/agents/worker/run\.go:[0-9]+:[[:space:]]+resolveResumeTask[[:space:]]' \
-		-e 'internal/workflow/agents/worker/run\.go:[0-9]+:[[:space:]]+listResumableTasks[[:space:]]' \
+		-e 'internal/lifecycle/orchestrator/workflow_task\.go:[0-9]+:[[:space:]]+runForTask[[:space:]]' \
+		-e 'internal/lifecycle/orchestrator/workflow_task\.go:[0-9]+:[[:space:]]+taskSubAgents[[:space:]]' \
+		-e 'internal/lifecycle/orchestrator/workflow_task\.go:[0-9]+:[[:space:]]+newWorkVerify[[:space:]]' \
+		-e 'internal/lifecycle/orchestrator/workflow_task\.go:[0-9]+:[[:space:]]+driveSequential[[:space:]]' \
+		-e 'internal/lifecycle/orchestrator/workflow_task\.go:[0-9]+:[[:space:]]+finaliseVerifyFailIfStuck[[:space:]]' \
+		-e 'internal/agents/worker/run\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
+		-e 'internal/agents/worker/run\.go:[0-9]+:[[:space:]]+RunResume[[:space:]]' \
+		-e 'internal/agents/worker/run\.go:[0-9]+:[[:space:]]+resolveResumeTask[[:space:]]' \
+		-e 'internal/agents/worker/run\.go:[0-9]+:[[:space:]]+listResumableTasks[[:space:]]' \
 		-e 'internal/cli/root\.go:[0-9]+:[[:space:]]+Execute[[:space:]]' \
 		-e 'internal/cli/tasks/continue\.go:[0-9]+:[[:space:]]+newContinueCmd[[:space:]]' \
 		-e 'internal/cli/tasks/continue_dispatch\.go:[0-9]+:[[:space:]]+replanAsDetachedOrchestrator[[:space:]]' \
@@ -192,8 +190,8 @@ coverage:
 		-e 'internal/resolver/existing\.go:[0-9]+:[[:space:]]+StartTargetFromExistingTask[[:space:]]' \
 		-e 'internal/store/tasks/dir\.go:[0-9]+:[[:space:]]+OpenDefault[[:space:]]' \
 		-e 'internal/store/tasks/task\.go:[0-9]+:[[:space:]]+DisplayToolModel[[:space:]]' \
-		-e 'internal/workflow/agents/planner/agent\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
-		-e 'internal/workflow/agents/planner/run\.go:[0-9]+:[[:space:]]+Execute[[:space:]]' \
+		-e 'internal/agents/planner/agent\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
+		-e 'internal/agents/planner/run\.go:[0-9]+:[[:space:]]+Execute[[:space:]]' \
 		|| true); \
 	below=$$(printf '%s\n' "$$below" | sed '/^$$/d'); \
 	if [ -n "$$below" ]; then \

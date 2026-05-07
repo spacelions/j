@@ -11,7 +11,7 @@ import (
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
-	"github.com/spacelions/j/internal/workflow/agents/worker"
+	"github.com/spacelions/j/internal/agents/worker"
 )
 
 // resumePlanInlineOrchestrator re-execs `j tasks orchestrate inline so

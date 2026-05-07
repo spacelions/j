@@ -15,7 +15,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/util/run"
-	"github.com/spacelions/j/internal/workflow/prompts"
+	"github.com/spacelions/j/internal/agents/prompts"
 )
 
 // Binary is the claude executable name.

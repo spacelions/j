@@ -17,12 +17,12 @@ import (
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
-	"github.com/spacelions/j/internal/workflow"
+	"github.com/spacelions/j/internal/lifecycle/orchestrator"
 )
 
 // chainAgent stands in for a real codingagents.Agent across the
 // planner / worker / verifier shell-out branches that
-// RunOrchestrate drives via workflow.RunForTask. Plan / Work /
+// RunOrchestrate drives via orchestrator.RunForTask. Plan / Work /
 // Verify each complete inline so the synchronous lifecycle paths
 // run end to end without a real subprocess.
 type chainAgent struct {
@@ -474,7 +474,7 @@ func TestRunOrchestrate_FromWorkRunsWorkVerify(t *testing.T) {
 	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: noPlanApproval(),
-		Phase:                workflow.RunPhaseFromWork,
+		Phase:                orchestrator.RunPhaseFromWork,
 		Stdin:                strings.NewReader(""),
 		Stdout:               io.Discard,
 		Stderr:               io.Discard,
@@ -492,7 +492,7 @@ func TestRunOrchestrate_FromWorkRunsWorkVerify(t *testing.T) {
 
 // TestRunOrchestrate_FromWorkConflictsWithApproval pins the rejected
 // combination: --phase=from-work with --plan-requires-approval=true
-// must error before invoking the workflow.
+// must error before invoking the orchestrator.
 func TestRunOrchestrate_FromWorkConflictsWithApproval(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -502,7 +502,7 @@ func TestRunOrchestrate_FromWorkConflictsWithApproval(t *testing.T) {
 	err := RunOrchestrate(context.Background(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: requirePlanApproval(),
-		Phase:                workflow.RunPhaseFromWork,
+		Phase:                orchestrator.RunPhaseFromWork,
 		Stdin:                strings.NewReader(""),
 		Stdout:               io.Discard,
 		Stderr:               io.Discard,
@@ -632,7 +632,7 @@ func TestRunOrchestrate_FromWorkIgnoresProjectApproval(t *testing.T) {
 
 	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
 		TaskID: id,
-		Phase:  workflow.RunPhaseFromWork,
+		Phase:  orchestrator.RunPhaseFromWork,
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -665,7 +665,7 @@ func TestRunOrchestrate_VerifyOnlyIgnoresProjectApproval(t *testing.T) {
 
 	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
 		TaskID: id,
-		Phase:  workflow.RunPhaseVerifyOnly,
+		Phase:  orchestrator.RunPhaseVerifyOnly,
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -697,7 +697,7 @@ func TestRunOrchestrate_FromWorkConflictExplicitOverrideOnly(t *testing.T) {
 	err := RunOrchestrate(context.Background(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: requirePlanApproval(),
-		Phase:                workflow.RunPhaseFromWork,
+		Phase:                orchestrator.RunPhaseFromWork,
 		Stdin:                strings.NewReader(""),
 		Stdout:               io.Discard,
 		Stderr:               io.Discard,
@@ -726,7 +726,7 @@ func TestRunOrchestrate_FromWorkExplicitFalseAllowed(t *testing.T) {
 	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: noPlanApproval(),
-		Phase:                workflow.RunPhaseFromWork,
+		Phase:                orchestrator.RunPhaseFromWork,
 		Stdin:                strings.NewReader(""),
 		Stdout:               io.Discard,
 		Stderr:               io.Discard,
