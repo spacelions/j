@@ -1,23 +1,65 @@
 #!/usr/bin/env bash
-# Fail if any of the given staged paths has more than MAX_LINES lines
-# in its staged blob. Invoked by lefthook with {staged_files}.
+# Fail if any staged file violates line/file/method caps.
+# Invoked by lefthook with {staged_files}.
 set -euo pipefail
 
 MAX_LINES=300
+MAX_CHARS_PER_LINE=80
+MAX_METHOD_LINES=80
 
 violations=()
+
 for path in "$@"; do
-	lines=$(git show ":$path" | wc -l | tr -d ' ')
+	content=$(git show ":$path")
+
+	# --- file line count (all files) ---
+	lines=$(printf '%s\n' "$content" | wc -l | tr -d ' ')
 	if [ "$lines" -gt "$MAX_LINES" ]; then
 		violations+=("$path: $lines lines (limit $MAX_LINES)")
+	fi
+
+	# --- Go-specific checks ---
+	if [[ "$path" != *.go ]]; then
+		continue
+	fi
+
+	# chars-per-line
+	while IFS=: read -r line_num line_len; do
+		violations+=("$path:$line_num: $line_len chars/line (limit $MAX_CHARS_PER_LINE)")
+	done < <(echo "$content" | awk -v max="$MAX_CHARS_PER_LINE" \
+		'length($0) > max { print NR":"length($0) }')
+
+	# method-cap: find every top-level func line, compute distance
+	# to the next func (or EOF) as the method length.
+	func_lines=$(echo "$content" | grep -n '^func ' | cut -d: -f1)
+
+	prev_line=0
+	prev_name=""
+	for fl in $func_lines; do
+		if [ "$prev_line" -ne 0 ]; then
+			method_len=$((fl - prev_line))
+			if [ "$method_len" -gt "$MAX_METHOD_LINES" ]; then
+				violations+=("$path: $prev_name() is $method_len lines (limit $MAX_METHOD_LINES)")
+			fi
+		fi
+		prev_line=$fl
+		prev_name=$(echo "$content" | sed -n "${fl}p" | \
+			sed -E 's/^func (\([^)]*\) )?([a-zA-Z0-9_]+).*$/\2/')
+	done
+
+	# last function in file
+	if [ "$prev_line" -ne 0 ]; then
+		method_len=$((lines - prev_line + 1))
+		if [ "$method_len" -gt "$MAX_METHOD_LINES" ]; then
+			violations+=("$path: $prev_name() is $method_len lines (limit $MAX_METHOD_LINES)")
+		fi
 	fi
 done
 
 if [ ${#violations[@]} -gt 0 ]; then
-	echo "staged non-test file(s) exceed ${MAX_LINES}-line cap:" >&2
+	echo "pre-commit cap violations:" >&2
 	for v in "${violations[@]}"; do
 		echo "  - $v" >&2
 	done
-	echo "split the file or move logic out before committing." >&2
 	exit 1
 fi
