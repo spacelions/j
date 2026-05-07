@@ -27,9 +27,6 @@ type linearStateSyncEnv struct {
 	states       []linear.WorkflowState
 	statesErrors []string
 	updateErrors []string
-	viewerID     string
-	viewerErrors []string
-	commentErrs  []string
 	stderrR      *os.File
 	stderrW      *os.File
 	stderrOrig   *os.File
@@ -51,7 +48,6 @@ func newLinearStateSyncEnv(t *testing.T) *linearStateSyncEnv {
 			{ID: "s-prog", Name: "In Progress", Type: "started"},
 			{ID: "s-rev", Name: "In Review", Type: "started"},
 		},
-		viewerID: "user-uuid",
 	}
 	env.srv = httptest.NewServer(http.HandlerFunc(env.handle))
 	t.Cleanup(env.srv.Close)
@@ -91,10 +87,6 @@ func (e *linearStateSyncEnv) handle(
 		writeStatesAck(w, e.states, e.statesErrors)
 	case strings.Contains(q, "issueUpdate"):
 		writeMutationResp(w, "issueUpdate", e.updateErrors)
-	case strings.Contains(q, "commentCreate"):
-		writeMutationResp(w, "commentCreate", e.commentErrs)
-	case strings.Contains(q, "viewer{id"):
-		writeViewerAck(w, e.viewerID, e.viewerErrors)
 	case strings.Contains(q, "issue(id:"):
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{"issue": e.issueResp},
@@ -115,24 +107,6 @@ func writeStatesAck(
 					"states": map[string]any{"nodes": states},
 				},
 			},
-		},
-	}
-	if len(errs) > 0 {
-		out := make([]map[string]string, 0, len(errs))
-		for _, m := range errs {
-			out = append(out, map[string]string{"message": m})
-		}
-		payload["errors"] = out
-	}
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func writeViewerAck(
-	w http.ResponseWriter, id string, errs []string,
-) {
-	payload := map[string]any{
-		"data": map[string]any{
-			"viewer": map[string]any{"id": id},
 		},
 	}
 	if len(errs) > 0 {
@@ -189,8 +163,6 @@ func bodyKindList(bodies []string) []string {
 			out = append(out, "issueUpdate")
 		case strings.Contains(b, "commentCreate"):
 			out = append(out, "commentCreate")
-		case strings.Contains(b, "viewer{id"):
-			out = append(out, "viewer")
 		case strings.Contains(b, "issue(id:"):
 			out = append(out, "issue")
 		default:

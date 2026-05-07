@@ -1,20 +1,20 @@
 package testcases_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spacelions/j/internal/lifecycle"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// TestLinearStateSync_PlanDone_MovesToTodoAndMentions pins the
-// "after a task transitions to plan-done, the linked Linear issue
-// is moved to Todo and a `@<owner> todo` mention comment appears"
-// acceptance criterion. Order matters: the issue must be looked up
-// before the team's workflow states are fetched, and the mention
-// comment must follow the state move so a UI watcher always sees
-// the new state by the time the comment lands.
-func TestLinearStateSync_PlanDone_MovesToTodoAndMentions(
+// TestLinearStateSync_PlanDone_MovesToTodo pins the "after a task
+// transitions to plan-done, the linked Linear issue is moved to
+// Todo" acceptance criterion. Order matters: the issue must be
+// looked up before the team's workflow states are fetched. No
+// comment is posted: the previous @-mention path was removed
+// because Linear suppresses self-mentions.
+func TestLinearStateSync_PlanDone_MovesToTodo(
 	t *testing.T,
 ) {
 	env := newLinearStateSyncEnv(t)
@@ -26,9 +26,7 @@ func TestLinearStateSync_PlanDone_MovesToTodoAndMentions(
 		tasks.EventPlanDone)
 
 	got := env.recordedBodies()
-	want := []string{
-		"issue", "states", "issueUpdate", "viewer", "commentCreate",
-	}
+	want := []string{"issue", "states", "issueUpdate"}
 	if !equalSlices(bodyKindList(got), want) {
 		t.Fatalf("call order = %v, want %v",
 			bodyKindList(got), want)
@@ -36,7 +34,9 @@ func TestLinearStateSync_PlanDone_MovesToTodoAndMentions(
 	if v := decodeMutationVar(t, got[2], "stateId"); v != "s-todo" {
 		t.Fatalf("issueUpdate stateId = %q, want s-todo", v)
 	}
-	if v := decodeMutationVar(t, got[4], "body"); v != "@user-uuid todo" {
-		t.Fatalf("commentCreate body = %q, want '@user-uuid todo'", v)
+	for _, b := range got {
+		if strings.Contains(b, "commentCreate") {
+			t.Fatalf("unexpected commentCreate: %v", got)
+		}
 	}
 }

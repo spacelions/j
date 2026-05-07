@@ -183,22 +183,6 @@ func (c *Client) ListTeamWorkflowStates(
 	return resp.Data.Issue.Team.States.Nodes, nil
 }
 
-// ViewerID returns the GraphQL node id of the user the API key is
-// scoped to. Used by the linear-state-sync hook to address a
-// `@<uuid>` mention in a follow-up comment so Linear renders it as
-// the API-key owner's mention pill.
-func (c *Client) ViewerID(ctx context.Context) (string, error) {
-	var resp viewerIDResponse
-	req := graphQLRequest{Query: viewerIDQuery}
-	if err := c.do(ctx, req, &resp); err != nil {
-		return "", err
-	}
-	if msg := firstGraphQLError(resp.Errors); msg != "" {
-		return "", fmt.Errorf("linear: %s", msg)
-	}
-	return resp.Data.Viewer.ID, nil
-}
-
 // do is the shared transport: marshals req, POSTs to the endpoint
 // with the API key in the Authorization header, maps 401 to
 // ErrUnauthorized, wraps every other non-2xx as *HTTPError, and

@@ -28,9 +28,6 @@ type stateSyncEnv struct {
 	states       []linear.WorkflowState
 	statesErrors []string
 	updateErrors []string
-	viewerID     string
-	viewerErrors []string
-	commentErrs  []string
 	stderrR      *os.File
 	stderrW      *os.File
 	stderrOrig   *os.File
@@ -52,7 +49,6 @@ func newStateSyncEnv(t *testing.T) *stateSyncEnv {
 			{ID: "s-prog", Name: "In Progress", Type: "started"},
 			{ID: "s-rev", Name: "In Review", Type: "started"},
 		},
-		viewerID: "user-uuid",
 	}
 	env.srv = httptest.NewServer(http.HandlerFunc(env.handle))
 	t.Cleanup(env.srv.Close)
@@ -119,10 +115,6 @@ func (e *stateSyncEnv) handle(
 		writeStatesResp(w, e.states, e.statesErrors)
 	case strings.Contains(q, "issueUpdate"):
 		writeMutation(w, "issueUpdate", e.updateErrors)
-	case strings.Contains(q, "commentCreate"):
-		writeMutation(w, "commentCreate", e.commentErrs)
-	case strings.Contains(q, "viewer{id"):
-		writeViewerResp(w, e.viewerID, e.viewerErrors)
 	case strings.Contains(q, "issue(id:"):
 		writeIssueResp(w, e.issueResp, e.issueErrors)
 	default:
@@ -161,20 +153,6 @@ func writeStatesResp(
 	writeJSON(w, payload)
 }
 
-func writeViewerResp(
-	w http.ResponseWriter, id string, errs []string,
-) {
-	payload := map[string]any{
-		"data": map[string]any{
-			"viewer": map[string]any{"id": id},
-		},
-	}
-	if len(errs) > 0 {
-		payload["errors"] = errorList(errs)
-	}
-	writeJSON(w, payload)
-}
-
 // fireStateSync dispatches a synthetic transition to registered
 // hooks. Centralising the construction keeps each case focused on
 // the behaviour under test rather than the lifecycle plumbing.
@@ -204,10 +182,6 @@ func classifyBody(body string) string {
 		return "states"
 	case strings.Contains(body, "issueUpdate"):
 		return "issueUpdate"
-	case strings.Contains(body, "commentCreate"):
-		return "commentCreate"
-	case strings.Contains(body, "viewer{id"):
-		return "viewer"
 	case strings.Contains(body, "issue(id:"):
 		return "issue"
 	}

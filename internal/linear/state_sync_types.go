@@ -14,8 +14,6 @@ type WorkflowState struct {
 const teamWorkflowStatesQuery = `query($id:String!){` +
 	`issue(id:$id){team{states{nodes{id name type}}}}}`
 
-const viewerIDQuery = `query{viewer{id}}`
-
 type teamWorkflowStatesResponse struct {
 	Data struct {
 		Issue *struct {
@@ -25,15 +23,6 @@ type teamWorkflowStatesResponse struct {
 				} `json:"states"`
 			} `json:"team"`
 		} `json:"issue"`
-	} `json:"data"`
-	Errors []graphQLError `json:"errors"`
-}
-
-type viewerIDResponse struct {
-	Data struct {
-		Viewer struct {
-			ID string `json:"id"`
-		} `json:"viewer"`
 	} `json:"data"`
 	Errors []graphQLError `json:"errors"`
 }

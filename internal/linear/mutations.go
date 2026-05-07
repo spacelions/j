@@ -80,20 +80,6 @@ func (c *Client) UpdateIssueState(
 	return nil
 }
 
-// CreateMentionComment posts a new comment whose body is prefixed
-// with a `@<viewerID>` mention pill — Linear renders the bare UUID
-// as a user mention pill in the issue thread. Used by the
-// linear-state-sync hook so the API-key owner is notified when a
-// task transitions into a state that needs human attention.
-func (c *Client) CreateMentionComment(
-	ctx context.Context, issueID, viewerID, body string,
-) error {
-	return c.runMutation(
-		ctx, commentCreateMutation, issueID,
-		"@"+viewerID+" "+body,
-	)
-}
-
 // runMutation is the shared transport for the (id, body) mutations.
 // Both issueUpdate and commentCreate take the same variable shape so
 // the call sites collapse to a single helper that builds the request,

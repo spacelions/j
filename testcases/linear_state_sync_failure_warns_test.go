@@ -8,13 +8,12 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// TestLinearStateSync_UpdateFails_StillCommentsAndWarns pins the
-// best-effort acceptance criterion: a Linear API error at any step
+// TestLinearStateSync_UpdateFails_Warns pins the best-effort
+// acceptance criterion: a Linear API error at the issueUpdate step
 // warns to stderr (same `linear sync:` box) and does NOT block
-// the transition or skip the follow-up comment. tasks.Notify
-// returning normally proves the FSM is unaffected; the stderr
-// warning proves the user is informed.
-func TestLinearStateSync_UpdateFails_StillCommentsAndWarns(
+// the transition. tasks.Notify returning normally proves the FSM
+// is unaffected; the stderr warning proves the user is informed.
+func TestLinearStateSync_UpdateFails_Warns(
 	t *testing.T,
 ) {
 	env := newLinearStateSyncEnv(t)
@@ -27,9 +26,7 @@ func TestLinearStateSync_UpdateFails_StillCommentsAndWarns(
 		tasks.EventPlanDone)
 
 	got := env.recordedBodies()
-	want := []string{
-		"issue", "states", "issueUpdate", "viewer", "commentCreate",
-	}
+	want := []string{"issue", "states", "issueUpdate"}
 	if !equalSlices(bodyKindList(got), want) {
 		t.Fatalf("call order = %v, want %v",
 			bodyKindList(got), want)

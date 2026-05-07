@@ -212,46 +212,6 @@ func TestUpdateIssueState_Unauthorized(t *testing.T) {
 	}
 }
 
-func TestCreateMentionComment_PrependsViewerMention(t *testing.T) {
-	var seenBody []byte
-	srv := issueServer(t, func(w http.ResponseWriter, r *http.Request) {
-		seenBody, _ = io.ReadAll(r.Body)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"data": map[string]any{
-				"commentCreate": map[string]any{"success": true},
-			},
-		})
-	})
-	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.CreateMentionComment(
-		context.Background(), "id-1", "viewer-uuid", "todo")
-	if err != nil {
-		t.Fatalf("CreateMentionComment: %v", err)
-	}
-	req := decodeReq(t, seenBody)
-	if req.Variables["body"] != "@viewer-uuid todo" {
-		t.Fatalf("body = %v, want '@viewer-uuid todo'",
-			req.Variables["body"])
-	}
-}
-
-func TestCreateMentionComment_GraphQLError(t *testing.T) {
-	srv := issueServer(t, func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"data": map[string]any{
-				"commentCreate": map[string]any{"success": false},
-			},
-			"errors": []map[string]string{{"message": "x"}},
-		})
-	})
-	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.CreateMentionComment(
-		context.Background(), "id", "v", "b")
-	if err == nil || !strings.Contains(err.Error(), "x") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // TestGetIssue_PopulatesID confirms the GraphQL `id` field round-
 // trips into Issue.ID. The mutations need it as the address argument
 // so a regression here would silently break the linear-push hook.

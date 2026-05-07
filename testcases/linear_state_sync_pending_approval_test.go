@@ -1,19 +1,18 @@
 package testcases_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spacelions/j/internal/lifecycle"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// TestLinearStateSync_PlanPendingApproval_MovesToTodoAndMentions
-// pins the second half of the "plan stage -> Todo + mention"
-// acceptance criterion: `plan-pending-approval` must mirror to
-// `Todo` exactly like `plan-done`, and the same `@<owner> todo`
-// mention comment must follow so the user is paged whether the
-// plan auto-approves or queues for review.
-func TestLinearStateSync_PlanPendingApproval_MovesToTodoAndMentions(
+// TestLinearStateSync_PlanPendingApproval_MovesToTodo pins the
+// "plan-pending-approval mirrors to Linear's Todo state" acceptance
+// criterion. No comment is posted: the previous @-mention path was
+// removed because Linear suppresses self-mentions.
+func TestLinearStateSync_PlanPendingApproval_MovesToTodo(
 	t *testing.T,
 ) {
 	env := newLinearStateSyncEnv(t)
@@ -25,9 +24,7 @@ func TestLinearStateSync_PlanPendingApproval_MovesToTodoAndMentions(
 		tasks.EventPlanAwaitApproval)
 
 	got := env.recordedBodies()
-	want := []string{
-		"issue", "states", "issueUpdate", "viewer", "commentCreate",
-	}
+	want := []string{"issue", "states", "issueUpdate"}
 	if !equalSlices(bodyKindList(got), want) {
 		t.Fatalf("call order = %v, want %v",
 			bodyKindList(got), want)
@@ -35,7 +32,9 @@ func TestLinearStateSync_PlanPendingApproval_MovesToTodoAndMentions(
 	if v := decodeMutationVar(t, got[2], "stateId"); v != "s-todo" {
 		t.Fatalf("issueUpdate stateId = %q, want s-todo", v)
 	}
-	if v := decodeMutationVar(t, got[4], "body"); v != "@user-uuid todo" {
-		t.Fatalf("commentCreate body = %q, want '@user-uuid todo'", v)
+	for _, b := range got {
+		if strings.Contains(b, "commentCreate") {
+			t.Fatalf("unexpected commentCreate: %v", got)
+		}
 	}
 }

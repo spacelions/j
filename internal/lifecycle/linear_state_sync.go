@@ -18,23 +18,23 @@ const linearStateSyncTimeout = 30 * time.Second
 // stateSyncTarget describes how a destination TaskStatus should be
 // mirrored into Linear: stateName is the human-readable workflow
 // state to switch the issue to ("Todo", "In Progress", "In
-// Review"); mention=true also posts a `@<viewer> todo` comment so
-// the API-key owner is pinged when human attention is required.
+// Review").
 type stateSyncTarget struct {
 	stateName string
-	mention   bool
 }
 
 // stateSyncTable maps each destination TaskStatus to the Linear
-// workflow state and follow-up comment behaviour. Statuses absent
-// from the table are no-ops — the hook returns before any HTTP
-// traffic.
+// workflow state. Statuses absent from the table are no-ops — the
+// hook returns before any HTTP traffic. StatusPlanning is included
+// so EventPlanResume / EventPlanRestart paths mirror back to Linear's
+// "Todo" column when a task re-enters planning.
 var stateSyncTable = map[tasks.TaskStatus]stateSyncTarget{
-	tasks.StatusPlanDone:            {"Todo", true},
-	tasks.StatusPlanPendingApproval: {"Todo", true},
-	tasks.StatusWorking:             {"In Progress", false},
-	tasks.StatusVerifying:           {"In Progress", false},
-	tasks.StatusCompleted:           {"In Review", true},
+	tasks.StatusPlanning:            {"Todo"},
+	tasks.StatusPlanDone:            {"Todo"},
+	tasks.StatusPlanPendingApproval: {"Todo"},
+	tasks.StatusWorking:             {"In Progress"},
+	tasks.StatusVerifying:           {"In Progress"},
+	tasks.StatusCompleted:           {"In Review"},
 }
 
 // InitLinearStateSync registers the hook that mirrors J's lifecycle
@@ -46,12 +46,9 @@ func InitLinearStateSync() {
 }
 
 // linearStateSyncHook moves the linked Linear issue into the
-// workflow state that mirrors tr.To, and optionally posts a
-// `@<viewer> todo` mention comment when the destination warrants
-// human attention. All failures emit a DangerousDialogBox warning
-// to stderr and return — the hook never returns an error and never
-// blocks the FSM transition. Failures of issueUpdate do not prevent
-// the comment from being attempted.
+// workflow state that mirrors tr.To. All failures emit a
+// DangerousDialogBox warning to stderr and return — the hook never
+// returns an error and never blocks the FSM transition.
 func linearStateSyncHook(tr tasks.Transition, task tasks.Task) {
 	if task.LinearIssue == "" {
 		return
@@ -80,9 +77,6 @@ func linearStateSyncHook(tr tasks.Transition, task tasks.Task) {
 	if err := client.UpdateIssueState(
 		ctx, issue.ID, stateID); err != nil {
 		warnLinearSync("issueUpdate: %s", err)
-	}
-	if target.mention {
-		postMentionTodo(ctx, client, issue.ID)
 	}
 }
 
@@ -121,23 +115,6 @@ func resolveStateID(
 		return "", false
 	}
 	return state.ID, true
-}
-
-// postMentionTodo resolves the API-key owner's viewer id and posts a
-// `@<uuid> todo` comment on the issue. Each step warns on error and
-// never blocks — failures here must not change the J task status.
-func postMentionTodo(
-	ctx context.Context, client *linear.Client, issueID string,
-) {
-	viewerID, err := client.ViewerID(ctx)
-	if err != nil {
-		warnLinearSync("viewer: %s", err)
-		return
-	}
-	if err := client.CreateMentionComment(
-		ctx, issueID, viewerID, "todo"); err != nil {
-		warnLinearSync("commentCreate: %s", err)
-	}
 }
 
 // warnLinearSync emits a single orange dialog box to stderr with the

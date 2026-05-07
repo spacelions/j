@@ -1,6 +1,7 @@
 package testcases_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spacelions/j/internal/lifecycle"
@@ -9,9 +10,10 @@ import (
 
 // TestLinearStateSync_Completed_MovesToInReview pins the
 // completed-side acceptance criterion: a verify-pass transition
-// moves the linked Linear issue to "In Review" and posts a
-// `@<owner> todo` mention comment so the API-key owner is paged to
-// review the result.
+// moves the linked Linear issue to "In Review" with no follow-up
+// commentCreate — the @-mention path was removed because Linear
+// suppresses self-mentions and the comment was therefore silent
+// noise.
 func TestLinearStateSync_Completed_MovesToInReview(
 	t *testing.T,
 ) {
@@ -24,9 +26,7 @@ func TestLinearStateSync_Completed_MovesToInReview(
 		tasks.EventVerifyPass)
 
 	got := env.recordedBodies()
-	want := []string{
-		"issue", "states", "issueUpdate", "viewer", "commentCreate",
-	}
+	want := []string{"issue", "states", "issueUpdate"}
 	if !equalSlices(bodyKindList(got), want) {
 		t.Fatalf("call order = %v, want %v",
 			bodyKindList(got), want)
@@ -34,7 +34,9 @@ func TestLinearStateSync_Completed_MovesToInReview(
 	if v := decodeMutationVar(t, got[2], "stateId"); v != "s-rev" {
 		t.Fatalf("issueUpdate stateId = %q, want s-rev", v)
 	}
-	if v := decodeMutationVar(t, got[4], "body"); v != "@user-uuid todo" {
-		t.Fatalf("commentCreate body = %q, want '@user-uuid todo'", v)
+	for _, b := range got {
+		if strings.Contains(b, "commentCreate") {
+			t.Fatalf("unexpected commentCreate on completed: %v", got)
+		}
 	}
 }
