@@ -255,7 +255,7 @@ func TestRunOrchestrate_FailRetryPass(t *testing.T) {
 }
 
 // TestRunOrchestrate_FailExhausts pins the exhausted-retries
-// branch: MaxIterations=1, verifier returns FAIL → `verify-done`.
+// branch: MaxIterations=1, verifier returns FAIL → `failed`.
 func TestRunOrchestrate_FailExhausts(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -275,8 +275,8 @@ func TestRunOrchestrate_FailExhausts(t *testing.T) {
 		t.Fatalf("RunOrchestrate: %v", err)
 	}
 	row := readOrchestrateTaskRow(t, id)
-	if row.Status != tasks.StatusVerifyDone {
-		t.Fatalf("Status = %q, want verify-done", row.Status)
+	if row.Status != tasks.StatusFailed {
+		t.Fatalf("Status = %q, want failed", row.Status)
 	}
 }
 

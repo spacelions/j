@@ -9,7 +9,7 @@ import (
 // fix-loop. VerifyOutcomeSuccess means the verifier returned VERDICT:
 // PASS at some iteration; the task can be finalised as `completed`.
 // VerifyOutcomeNoRetries means the loop exhausted MaxIterations
-// without a PASS verdict; the task ends as `verify-done`. Errors are
+// without a PASS verdict; the task ends as `failed`. Errors are
 // surfaced separately via the runErr argument so VerifyLifecycle.Finish
 // can pick the `help` status.
 type VerifyOutcome int
@@ -19,7 +19,7 @@ const (
 	// `completed` with DoneAt stamped.
 	VerifyOutcomeSuccess VerifyOutcome = iota
 	// VerifyOutcomeNoRetries: loop exhausted without a PASS; finalise
-	// as `verify-done`.
+	// as `failed`.
 	VerifyOutcomeNoRetries
 )
 
@@ -105,7 +105,7 @@ func (lc *VerifyLifecycle) RecordBackground(pid int, logPath string) {
 //   - runErr != nil → status `help`, DoneAt unchanged.
 //   - outcome == VerifyOutcomeSuccess → status `completed`, DoneAt
 //     stamped.
-//   - outcome == VerifyOutcomeNoRetries → status `verify-done`,
+//   - outcome == VerifyOutcomeNoRetries → status `failed`,
 //     DoneAt unchanged.
 //
 // Calling Finish twice is a silent no-op via the closed flag.
@@ -125,7 +125,7 @@ func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
 		lc.task.DoneAt = time.Now().UTC()
 		markerOutcome = "pass"
 	default:
-		lc.task.Status = StatusVerifyDone
+		lc.task.Status = StatusFailed
 	}
 	PersistWarn(lc.stderr, lc.task)
 	emitPhaseEnd(lc.agentLogPath, "verify", lc.task.VerifyBeginAt, lc.task, markerOutcome)

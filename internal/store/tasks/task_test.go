@@ -19,7 +19,7 @@ import (
 func TestTaskStatus_Valid_AllAllowlist(t *testing.T) {
 	for _, s := range []TaskStatus{
 		StatusPlanning, StatusPlanDone, StatusWorking, StatusWorkDone,
-		StatusVerifying, StatusVerifyDone, StatusCompleted, StatusHelp,
+		StatusVerifying, StatusFailed, StatusCompleted, StatusHelp,
 	} {
 		if !s.Valid() {
 			t.Fatalf("Valid(%q) = false, want true", s)
@@ -763,7 +763,7 @@ func TestBeginVerifyResume_SetsBeginAtWhenZero(t *testing.T) {
 	}
 	task := Task{
 		ID:                  NewTaskID(),
-		Status:              StatusVerifyDone,
+		Status:              StatusFailed,
 		VerifyTool:          "cursor",
 		VerifyModel:         "m",
 		VerifyResumeSession: "v-cursor",
@@ -799,7 +799,7 @@ func TestDisplayToolModel(t *testing.T) {
 		{StatusWorking, "wtool", "wmodel"},
 		{StatusWorkDone, "wtool", "wmodel"},
 		{StatusVerifying, "vtool", "vmodel"},
-		{StatusVerifyDone, "vtool", "vmodel"},
+		{StatusFailed, "vtool", "vmodel"},
 		{StatusCompleted, "vtool", "vmodel"},
 		{StatusHelp, "vtool", "vmodel"},
 	}

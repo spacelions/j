@@ -61,7 +61,7 @@ func TestFormatStatus(t *testing.T) {
 	}
 
 	rawCases := []tsk.TaskStatus{
-		tsk.StatusPlanDone, tsk.StatusWorkDone, tsk.StatusVerifyDone,
+		tsk.StatusPlanDone, tsk.StatusWorkDone, tsk.StatusFailed,
 		tsk.StatusCompleted, tsk.StatusHelp,
 	}
 	for _, s := range rawCases {

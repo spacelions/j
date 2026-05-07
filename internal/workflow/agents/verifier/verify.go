@@ -39,11 +39,11 @@ type Options struct {
 	// TaskID, when set, names an existing task whose
 	// `<cwd>/.j/tasks/<id>/` should be verified. The task row is
 	// updated in place (work-done -> verifying ->
-	// completed | verify-done | help).
+	// completed | failed | help).
 	TaskID string
 	// Yes, when true, skips the status-mismatch confirmation
 	// prompt and proceeds even when the resolved task is not in
-	// the work-done / verify-done / help allowlist. Mirrors the
+	// the work-done / failed / help allowlist. Mirrors the
 	// `--yes` / VERIFY_YES flag wiring on the cobra command.
 	Yes bool
 
@@ -150,7 +150,7 @@ func Run(ctx context.Context, opts Options) (err error) {
 	case tasks.VerifyOutcomeSuccess:
 		uitheme.NormalFprintf(opts.Stdout, "J: verified task %s\n", res.Task.ID)
 	case tasks.VerifyOutcomeNoRetries:
-		uitheme.DangerousFprintf(opts.Stdout, "J: verifier exhausted retries on task %s; status verify-done\n", res.Task.ID)
+		uitheme.DangerousFprintf(opts.Stdout, "J: verifier exhausted retries on task %s; status failed\n", res.Task.ID)
 	}
 	return nil
 }

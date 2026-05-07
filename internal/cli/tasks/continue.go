@@ -70,7 +70,7 @@ type ContinueOptions struct {
 //     the standard `J: no tasks` message and returns nil; a
 //     user-cancel in the picker also returns nil.
 //  3. Dispatch by Task.Status onto the matching phase Run /
-//     RunResume. Already-finished tasks (verify-done / completed)
+//     RunResume. Already-finished tasks (failed / completed)
 //     short-circuit with `J: task <id> already finished`.
 func RunContinue(ctx context.Context, opts ContinueOptions) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
@@ -150,7 +150,7 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, t tasks.Task) e
 		return reverifyAsDetachedOrchestrator(ctx, opts, t.ID)
 	case tasks.StatusVerifying:
 		return resumeVerifyingInline(ctx, opts, t.ID)
-	case tasks.StatusVerifyDone, tasks.StatusCompleted:
+	case tasks.StatusFailed, tasks.StatusCompleted:
 		uitheme.NormalFprintf(opts.Stdout, "J: task %s already finished\n", t.ID)
 		return nil
 	case tasks.StatusHelp:
@@ -221,7 +221,7 @@ func newContinueCmd() *cobra.Command {
 			"to the right phase based on its status: planning -> detached re-plan, " +
 			"plan-done -> direct worker run, working -> work resume, " +
 			"work-done -> `j verify`, verifying -> `j verify resume`. " +
-			"Already-finished tasks (verify-done, completed) print " +
+			"Already-finished tasks (failed, completed) print " +
 			"`J: task <id> already finished` and exit 0; a `help` row " +
 			"resumes whichever phase produced the failure (latest *EndAt " +
 			"wins, falling back to the non-empty resume cursor). " +

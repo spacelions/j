@@ -40,7 +40,7 @@ func New() *cobra.Command {
 			"`j work` (bbolt at <cwd>/.j/tasks/list.db) and prints a " +
 			"stable list to stdout. Active tasks (planning, working, " +
 			"verifying, help) appear first; inactive tasks (plan-done, " +
-			"work-done, verify-done, completed) follow, sorted by the " +
+			"work-done, failed, completed) follow, sorted by the " +
 			"latest of their phase end timestamps. Each task is " +
 			"rendered as a single summary row carrying id, status, " +
 			"tool, model, and the human summary. Task bodies live as " +

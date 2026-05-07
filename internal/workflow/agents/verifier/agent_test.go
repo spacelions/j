@@ -143,8 +143,8 @@ func TestNew_ShellOutFailDoesNotEscalate(t *testing.T) {
 		t.Fatalf("Escalate must remain false on FAIL")
 	}
 	got := testutil.ReadTaskRow(t, taskID)
-	if got.Status != tasks.StatusVerifyDone {
-		t.Fatalf("Status = %q, want verify-done", got.Status)
+	if got.Status != tasks.StatusFailed {
+		t.Fatalf("Status = %q, want failed", got.Status)
 	}
 }
 

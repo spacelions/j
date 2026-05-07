@@ -68,8 +68,8 @@ func TestTask_BeginVerify_FlipsStatusAndStampsResume(t *testing.T) {
 	}
 }
 
-// TestVerifyLifecycle_FinishNoRetries pins the verify-done branch.
-func TestVerifyLifecycle_FinishNoRetries(t *testing.T) {
+// TestVerifyLifecycle_FinishFailed pins the failed branch.
+func TestVerifyLifecycle_FinishFailed(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
@@ -88,8 +88,8 @@ func TestVerifyLifecycle_FinishNoRetries(t *testing.T) {
 	lc := existing.BeginVerify(io.Discard, "cursor", "m", "v-cursor", "")
 	lc.Finish(VerifyOutcomeNoRetries, nil)
 	got := listAllTasks(t)[0]
-	if got.Status != StatusVerifyDone {
-		t.Fatalf("Status = %q, want verify-done", got.Status)
+	if got.Status != StatusFailed {
+		t.Fatalf("Status = %q, want failed", got.Status)
 	}
 	if !got.DoneAt.IsZero() {
 		t.Fatalf("DoneAt should remain zero: %v", got.DoneAt)
@@ -283,7 +283,7 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 	begin := time.Now().UTC().Add(-time.Hour)
 	existing := Task{
 		ID:                 NewTaskID(),
-		Status:             StatusVerifyDone,
+		Status:             StatusFailed,
 		VerifyTool:         "cursor",
 		VerifyModel:        "sonnet-4",
 		VerifyResumeSession: "v-cursor",

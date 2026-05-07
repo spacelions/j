@@ -37,7 +37,7 @@ Commands are scoped to the **current working directory**: each project gets its 
 
 4. **Run `j tasks`** (no subcommand) to print a tabular status list from `list.db` (ID, STATUS, TOOL, MODEL, SUMMARY). Rows can refresh after a background run has exited.
 
-5. **Stay in the loop.** When a phase needs you again—or you want to drive the next step—run **`j tasks continue`** (interactive task picker on a TTY, or **`--from-task <id>`** to pick a row without the picker). `continue` **dispatches on status** to the right `plan` / `work` / `verify` run or resume. Already-finished tasks print `J: task <id> already finished` and stop. Repeat **list → continue** until the task reaches **verify-done** / **completed** or you stop work.
+5. **Stay in the loop.** When a phase needs you again—or you want to drive the next step—run **`j tasks continue`** (interactive task picker on a TTY, or **`--from-task <id>`** to pick a row without the picker). `continue` **dispatches on status** to the right `plan` / `work` / `verify` run or resume. Already-finished tasks print `J: task <id> already finished` and stop. Repeat **list → continue** until the task reaches **failed** / **completed** or you stop work.
 
 ### Plan a task (manual, step-by-step)
 

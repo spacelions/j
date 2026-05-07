@@ -136,7 +136,7 @@ func RunForTaskVerifyOnly(ctx context.Context, cfg store.TaskConfig, taskID stri
 //
 // Lifecycle finalisation: after the SequentialAgent iterator
 // drains, the per-task row is read and — if the verifier left it
-// in `verifying` — flipped to `verify-done` so `j tasks` reflects
+// in `verifying` — flipped to `failed` so `j tasks` reflects
 // the terminal outcome without waiting for the reaper.
 //
 // MaxIterations defaults are owned by callers: production callers
@@ -286,7 +286,7 @@ func driveSequential(ctx context.Context, root agent.Agent) error {
 }
 
 // finaliseVerifyFailIfStuck flips a row still pinned at `verifying`
-// to `verify-done` after the orchestrator's SequentialAgent drains.
+// to `failed` after the orchestrator's SequentialAgent drains.
 // Best-effort: any read / write error surfaces as a single warning
 // on stderr and the helper returns.
 func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
@@ -303,7 +303,7 @@ func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
 	if t.Status != tasks.StatusVerifying {
 		return
 	}
-	t.Status = tasks.StatusVerifyDone
+	t.Status = tasks.StatusFailed
 	if err := s.PutTask(t); err != nil {
 		uitheme.DangerousDialogBox(stderr, "J: tasks put: %v", err)
 	}
