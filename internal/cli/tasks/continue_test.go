@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -132,6 +133,27 @@ func setupContinueEnv(t *testing.T) {
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
+}
+
+// installCursorAgentLoginStub drops a PATH-resolvable `cursor-agent`
+// shell script that prints "Logged in" and exits 0 so
+// cursor.Agent.CheckLogin succeeds without the real binary. The stub
+// ignores argv, so it covers the `status` subcommand and any future
+// caller. Skips on Windows; only the four PreRunE tests need it, so we
+// wire it per-test rather than from setupContinueEnv to keep the
+// OS-skip localized.
+func installCursorAgentLoginStub(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("posix-only stub")
+	}
+	dir := t.TempDir()
+	body := "#!/bin/sh\nprintf 'Logged in\\n'\nexit 0\n"
+	bin := filepath.Join(dir, "cursor-agent")
+	if err := os.WriteFile(bin, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
 // TestRunContinue_PlanningShowsTooltip pins planning -> tooltip message
