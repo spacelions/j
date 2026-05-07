@@ -11,8 +11,8 @@ import (
 
 // TestTasksLogs_AgentLogMissing pins the acceptance bullet:
 // `j tasks logs --from-task <known>` with no agent.log on disk
-// prints `J: agent.log not found for task <id>` and exits 0 without
-// execing `tail`.
+// prints `J: agent.log not found for task <id>` and exits 0
+// without invoking the renderer.
 func TestTasksLogs_AgentLogMissing(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
