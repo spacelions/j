@@ -287,8 +287,10 @@ func TestRunResume_AgentError(t *testing.T) {
 	}
 }
 
-// TestRunResume_StatusCompletedIsResumable pins the permissive
-// eligibility filter.
+// TestRunResume_StatusCompletedIsResumable pins that a completed
+// task carrying a verify resume session is resumable: the FSM edge
+// {completed, EventVerifyResume, verifying} clears the IsLegal
+// guard and the verifier runs through to PASS.
 func TestRunResume_StatusCompletedIsResumable(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -302,8 +304,8 @@ func TestRunResume_StatusCompletedIsResumable(t *testing.T) {
 		Agents: []codingagents.Agent{agent},
 		UI:     &scriptedUI{},
 	})
-	if err == nil {
-		t.Fatal("RunResume from completed should fail")
+	if err != nil {
+		t.Fatalf("RunResume from completed: %v", err)
 	}
 }
 

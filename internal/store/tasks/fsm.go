@@ -1,17 +1,9 @@
-// Package tasks provides the FSM that governs legal TaskStatus transitions.
-//
-// The FSM is a table-driven state machine with zero dependencies.
-// Apply checks the transition table and returns the destination status
-// (or an error for illegal edges). Callers persist the row and then
-// call Notify to fire registered observer hooks with the durable task
-// snapshot. The transition table is the single source of truth for
-// every legal edge — callers that need to validate without mutating
-// use IsLegal / LegalEvents.
-//
-// # State diagram
-//
-// The Mermaid diagram below is derived from the transitions table
-// and regenerated whenever the table changes.
+// Package tasks provides the FSM governing legal TaskStatus
+// transitions. Apply checks the transition table and returns the
+// destination status (or an error). Callers persist the row and then
+// call Notify to fire observer hooks with the durable snapshot. The
+// table is the single source of truth; IsLegal / LegalEvents validate
+// without mutating. The Mermaid diagram below mirrors the table.
 //
 //	stateDiagram-v2
 //	    [*] --> planning : EventPlanBegin
@@ -48,8 +40,17 @@
 //	    verifying --> verifying : EventVerifyResume
 //	    verifying --> needs-clarification : EventReaperVerifyNeedsClarification
 //	    failed --> planning : EventPlanRestart
+//	    failed --> planning : EventPlanResume
 //	    failed --> verifying : EventVerifyRestart
+//	    failed --> verifying : EventVerifyResume
 //	    failed --> working : EventWorkRestart
+//	    failed --> working : EventWorkResume
+//	    completed --> planning : EventPlanRestart
+//	    completed --> planning : EventPlanResume
+//	    completed --> working : EventWorkRestart
+//	    completed --> working : EventWorkResume
+//	    completed --> verifying : EventVerifyRestart
+//	    completed --> verifying : EventVerifyResume
 //	    help --> planning : EventPlanRestart
 //	    help --> planning : EventPlanResume
 //	    help --> working : EventWorkRestart
@@ -172,18 +173,24 @@ var transitions = []Transition{
 	{StatusFailed, EventPlanRestart, StatusPlanning},
 	{StatusFailed, EventWorkRestart, StatusWorking},
 	{StatusFailed, EventVerifyRestart, StatusVerifying},
-
+	{StatusFailed, EventPlanResume, StatusPlanning},
+	{StatusFailed, EventWorkResume, StatusWorking},
+	{StatusFailed, EventVerifyResume, StatusVerifying},
+	{StatusCompleted, EventPlanRestart, StatusPlanning},
+	{StatusCompleted, EventPlanResume, StatusPlanning},
+	{StatusCompleted, EventWorkRestart, StatusWorking},
+	{StatusCompleted, EventWorkResume, StatusWorking},
+	{StatusCompleted, EventVerifyRestart, StatusVerifying},
+	{StatusCompleted, EventVerifyResume, StatusVerifying},
 	{StatusHelp, EventPlanRestart, StatusPlanning},
 	{StatusHelp, EventPlanResume, StatusPlanning},
 	{StatusHelp, EventWorkRestart, StatusWorking},
 	{StatusHelp, EventWorkResume, StatusWorking},
 	{StatusHelp, EventVerifyRestart, StatusVerifying},
 	{StatusHelp, EventVerifyResume, StatusVerifying},
-
 	{StatusNeedsClarification, EventPlanResume, StatusPlanning},
 	{StatusNeedsClarification, EventWorkResume, StatusWorking},
 	{StatusNeedsClarification, EventVerifyResume, StatusVerifying},
-
 	{"", EventPlanBegin, StatusPlanning},
 }
 

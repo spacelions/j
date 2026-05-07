@@ -327,6 +327,67 @@ func TestNewResumePlanCmd_PreRunE_DefaultedAgents(t *testing.T) {
 	}
 }
 
+// TestRunResumePlan_HappyPath_Completed pins that resume-plan
+// succeeds for a completed row carrying a plan resume session. The
+// FSM edge {completed, EventPlanResume, planning} must permit it.
+func TestRunResumePlan_HappyPath_Completed(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusCompleted
+		task.PlanResumeSession = "sess-x"
+	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	ui := &fakeUI{pickReturn: id}
+	if err := RunResumePlan(context.Background(), ResumePlanOptions{
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{newContinueAgent()},
+		UI:      ui,
+		JBinary: argvJBinary(t, argvPath),
+	}); err != nil {
+		t.Fatalf("RunResumePlan: %v", err)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	want := []string{
+		"tasks", "orchestrate", "--id", id,
+		"--plan-requires-approval=true", "--interactive=true",
+	}
+	if strings.Join(args, " ") != strings.Join(want, " ") {
+		t.Fatalf("argv = %v, want %v", args, want)
+	}
+}
+
+// TestRunResumePlan_HappyPath_Failed mirrors the completed case for
+// the `failed` source status.
+func TestRunResumePlan_HappyPath_Failed(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusFailed
+		task.PlanResumeSession = "sess-x"
+	})
+	argvPath := filepath.Join(t.TempDir(), "argv.txt")
+	ui := &fakeUI{pickReturn: id}
+	if err := RunResumePlan(context.Background(), ResumePlanOptions{
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{newContinueAgent()},
+		UI:      ui,
+		JBinary: argvJBinary(t, argvPath),
+	}); err != nil {
+		t.Fatalf("RunResumePlan: %v", err)
+	}
+	args := readSpawnedArgv(t, argvPath)
+	want := []string{
+		"tasks", "orchestrate", "--id", id,
+		"--plan-requires-approval=true", "--interactive=true",
+	}
+	if strings.Join(args, " ") != strings.Join(want, " ") {
+		t.Fatalf("argv = %v, want %v", args, want)
+	}
+}
+
 // TestRunResumePlan_RegisteredAsChild pins the cobra wiring.
 func TestRunResumePlan_RegisteredAsChild(t *testing.T) {
 	viper.Reset()
