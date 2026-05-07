@@ -34,7 +34,7 @@ func TestLinearStateSync_UnmappedStatus_NoHTTP(t *testing.T) {
 	}
 }
 
-func TestLinearStateSync_PlanDone_PostsTodoMention(t *testing.T) {
+func TestLinearStateSync_PlanDone_PostsTodoReminder(t *testing.T) {
 	env := newStateSyncEnv(t)
 	saveAPIKey(t, "lin_api_test")
 	InitLinearStateSync()
@@ -43,16 +43,16 @@ func TestLinearStateSync_PlanDone_PostsTodoMention(t *testing.T) {
 		tasks.EventPlanDone)
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "viewer", "commentCreate",
+		"issue", "states", "issueUpdate", "remindMe",
 	}
 	if !equalKinds(bodyKinds(got), want) {
 		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
 	}
 	assertVarStr(t, got[2], "stateId", "s-todo")
-	assertVarStr(t, got[4], "body", "@user-uuid todo")
+	assertVarStr(t, got[3], "id", "node-1")
 }
 
-func TestLinearStateSync_PlanPendingApproval_PostsTodo(
+func TestLinearStateSync_PlanPendingApproval_PostsTodoReminder(
 	t *testing.T,
 ) {
 	env := newStateSyncEnv(t)
@@ -63,7 +63,7 @@ func TestLinearStateSync_PlanPendingApproval_PostsTodo(
 		tasks.EventPlanAwaitApproval)
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "viewer", "commentCreate",
+		"issue", "states", "issueUpdate", "remindMe",
 	}
 	if !equalKinds(bodyKinds(got), want) {
 		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
@@ -71,7 +71,7 @@ func TestLinearStateSync_PlanPendingApproval_PostsTodo(
 	assertVarStr(t, got[2], "stateId", "s-todo")
 }
 
-func TestLinearStateSync_Working_PostsInProgress(t *testing.T) {
+func TestLinearStateSync_Working_PostsInProgressNoPing(t *testing.T) {
 	env := newStateSyncEnv(t)
 	saveAPIKey(t, "lin_api_test")
 	InitLinearStateSync()
@@ -86,7 +86,7 @@ func TestLinearStateSync_Working_PostsInProgress(t *testing.T) {
 	assertVarStr(t, got[2], "stateId", "s-prog")
 }
 
-func TestLinearStateSync_Verifying_PostsInProgress(t *testing.T) {
+func TestLinearStateSync_Verifying_PostsInProgressNoPing(t *testing.T) {
 	env := newStateSyncEnv(t)
 	saveAPIKey(t, "lin_api_test")
 	InitLinearStateSync()
@@ -101,7 +101,7 @@ func TestLinearStateSync_Verifying_PostsInProgress(t *testing.T) {
 	assertVarStr(t, got[2], "stateId", "s-prog")
 }
 
-func TestLinearStateSync_Completed_PostsInReviewMention(
+func TestLinearStateSync_Completed_PostsInReviewReminder(
 	t *testing.T,
 ) {
 	env := newStateSyncEnv(t)
@@ -112,13 +112,43 @@ func TestLinearStateSync_Completed_PostsInReviewMention(
 		tasks.EventVerifyPass)
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "viewer", "commentCreate",
+		"issue", "states", "issueUpdate", "remindMe",
 	}
 	if !equalKinds(bodyKinds(got), want) {
 		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
 	}
 	assertVarStr(t, got[2], "stateId", "s-rev")
-	assertVarStr(t, got[4], "body", "@user-uuid todo")
+	assertVarStr(t, got[3], "id", "node-1")
+}
+
+func TestLinearStateSync_PlanRestart_PostsTodoNoReminder(t *testing.T) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	InitLinearStateSync()
+	fireStateSync("task-1", "ENG-1",
+		tasks.StatusWorking, tasks.StatusPlanning,
+		tasks.EventPlanRestart)
+	got := env.recordedBodies()
+	want := []string{"issue", "states", "issueUpdate"}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	assertVarStr(t, got[2], "stateId", "s-todo")
+}
+
+func TestLinearStateSync_PlanResume_PostsTodoNoReminder(t *testing.T) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	InitLinearStateSync()
+	fireStateSync("task-1", "ENG-1",
+		tasks.StatusFailed, tasks.StatusPlanning,
+		tasks.EventPlanResume)
+	got := env.recordedBodies()
+	want := []string{"issue", "states", "issueUpdate"}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	assertVarStr(t, got[2], "stateId", "s-todo")
 }
 
 func TestLinearStateSync_StateNameMissing_Warns(t *testing.T) {
@@ -219,7 +249,7 @@ func TestLinearStateSync_ListStatesFails_Warns(t *testing.T) {
 	}
 }
 
-func TestLinearStateSync_UpdateFails_StillPostsComment(
+func TestLinearStateSync_UpdateFails_StillPostsReminder(
 	t *testing.T,
 ) {
 	env := newStateSyncEnv(t)
@@ -231,7 +261,7 @@ func TestLinearStateSync_UpdateFails_StillPostsComment(
 		tasks.EventPlanDone)
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "viewer", "commentCreate",
+		"issue", "states", "issueUpdate", "remindMe",
 	}
 	if !equalKinds(bodyKinds(got), want) {
 		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
@@ -242,41 +272,21 @@ func TestLinearStateSync_UpdateFails_StillPostsComment(
 	}
 }
 
-func TestLinearStateSync_ViewerFails_Warns(t *testing.T) {
+func TestLinearStateSync_RemindFails_Warns(t *testing.T) {
 	env := newStateSyncEnv(t)
-	env.viewerErrors = []string{"nope"}
-	saveAPIKey(t, "lin_api_test")
-	InitLinearStateSync()
-	fireStateSync("task-1", "ENG-1",
-		tasks.StatusPlanning, tasks.StatusPlanDone,
-		tasks.EventPlanDone)
-	got := env.recordedBodies()
-	for _, b := range got {
-		if strings.Contains(b, "commentCreate") {
-			t.Fatalf("commentCreate sent despite viewer fail: %v",
-				got)
-		}
-	}
-	if msg := env.stderrText(t); !strings.Contains(msg, "viewer") {
-		t.Fatalf("stderr = %q", msg)
-	}
-}
-
-func TestLinearStateSync_CommentFails_Warns(t *testing.T) {
-	env := newStateSyncEnv(t)
-	env.commentErrs = []string{"down"}
+	env.remindErrors = []string{"down"}
 	saveAPIKey(t, "lin_api_test")
 	InitLinearStateSync()
 	fireStateSync("task-1", "ENG-1",
 		tasks.StatusPlanning, tasks.StatusPlanDone,
 		tasks.EventPlanDone)
 	if msg := env.stderrText(t); !strings.Contains(
-		msg, "commentCreate") {
+		msg, "issueRemindMe") {
 		t.Fatalf("stderr = %q", msg)
 	}
 }
 
-func TestLinearStateSync_VerifyBegin_WithPR_PostsMentionAndState(
+func TestLinearStateSync_VerifyBegin_WithPR_PostsCommentAndReminder(
 	t *testing.T,
 ) {
 	env := newStateSyncEnv(t)
@@ -288,17 +298,18 @@ func TestLinearStateSync_VerifyBegin_WithPR_PostsMentionAndState(
 		tasks.EventVerifyBegin)
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "viewer", "commentCreate",
+		"issue", "states", "issueUpdate", "commentCreate", "remindMe",
 	}
 	if !equalKinds(bodyKinds(got), want) {
 		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
 	}
 	assertVarStr(t, got[2], "stateId", "s-prog")
-	assertVarStr(t, got[4], "body",
-		"@user-uuid https://github.com/x/y/pull/42")
+	assertVarStr(t, got[3], "body",
+		"https://github.com/x/y/pull/42")
+	assertVarStr(t, got[4], "id", "node-1")
 }
 
-func TestLinearStateSync_VerifyRestart_WithPR_NoComment(
+func TestLinearStateSync_VerifyRestart_WithPR_NoCommentNoReminder(
 	t *testing.T,
 ) {
 	env := newStateSyncEnv(t)
@@ -329,7 +340,7 @@ func TestLinearStateSync_VerifyBegin_PR_UpdateFails_StillPosts(
 		tasks.EventVerifyBegin)
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "viewer", "commentCreate",
+		"issue", "states", "issueUpdate", "commentCreate", "remindMe",
 	}
 	if !equalKinds(bodyKinds(got), want) {
 		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
@@ -340,30 +351,7 @@ func TestLinearStateSync_VerifyBegin_PR_UpdateFails_StillPosts(
 	}
 }
 
-func TestLinearStateSync_VerifyBegin_PR_ViewerFails_NoComment(
-	t *testing.T,
-) {
-	env := newStateSyncEnv(t)
-	env.viewerErrors = []string{"nope"}
-	saveAPIKey(t, "lin_api_test")
-	InitLinearStateSync()
-	fireStateSyncWithPR("task-1", "ENG-1",
-		"https://github.com/x/y/pull/42",
-		tasks.StatusWorkDone, tasks.StatusVerifying,
-		tasks.EventVerifyBegin)
-	got := env.recordedBodies()
-	for _, b := range got {
-		if strings.Contains(b, "commentCreate") {
-			t.Fatalf(
-				"commentCreate sent despite viewer fail: %v", got)
-		}
-	}
-	if msg := env.stderrText(t); !strings.Contains(msg, "viewer") {
-		t.Fatalf("stderr = %q", msg)
-	}
-}
-
-func TestLinearStateSync_VerifyBegin_PR_CommentFails_Warns(
+func TestLinearStateSync_VerifyBegin_PR_CommentFails_StillReminds(
 	t *testing.T,
 ) {
 	env := newStateSyncEnv(t)
@@ -374,6 +362,13 @@ func TestLinearStateSync_VerifyBegin_PR_CommentFails_Warns(
 		"https://github.com/x/y/pull/42",
 		tasks.StatusWorkDone, tasks.StatusVerifying,
 		tasks.EventVerifyBegin)
+	got := env.recordedBodies()
+	want := []string{
+		"issue", "states", "issueUpdate", "commentCreate", "remindMe",
+	}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
 	if msg := env.stderrText(t); !strings.Contains(
 		msg, "commentCreate") {
 		t.Fatalf("stderr = %q", msg)

@@ -27,7 +27,6 @@ type verifyPushAcceptanceEnv struct {
 	mu           sync.Mutex
 	bodies       []string
 	issueResp    *linearIssueStub
-	viewerID     string
 	commentErrs  []string
 	stderrR      *os.File
 	stderrW      *os.File
@@ -56,7 +55,6 @@ func newVerifyPushAcceptanceEnv(
 		issueResp: &linearIssueStub{
 			ID: "node-1", Identifier: "ENG-1", Title: "t",
 		},
-		viewerID: "user-uuid",
 	}
 	env.srv = httptest.NewServer(http.HandlerFunc(env.handle))
 	t.Cleanup(env.srv.Close)
@@ -94,12 +92,6 @@ func (e *verifyPushAcceptanceEnv) handle(
 	switch {
 	case strings.Contains(q, "commentCreate"):
 		writeMutationResp(w, "commentCreate", e.commentErrs)
-	case strings.Contains(q, "viewer{id"):
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"data": map[string]any{
-				"viewer": map[string]any{"id": e.viewerID},
-			},
-		})
 	case strings.Contains(q, "issue(id:"):
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{"issue": e.issueResp},

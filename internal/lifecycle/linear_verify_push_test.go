@@ -26,8 +26,6 @@ type verifyPushEnv struct {
 	bodies       []string
 	issueResp    *linear.Issue
 	issueErrors  []string
-	viewerID     string
-	viewerErrors []string
 	commentErrs  []string
 	stderrR      *os.File
 	stderrW      *os.File
@@ -54,7 +52,6 @@ func newVerifyPushEnv(t *testing.T, taskID, findings string) *verifyPushEnv {
 		issueResp: &linear.Issue{
 			ID: "node-1", Identifier: "ENG-1", Title: "t",
 		},
-		viewerID: "user-uuid",
 	}
 	env.srv = httptest.NewServer(http.HandlerFunc(env.handle))
 	t.Cleanup(env.srv.Close)
@@ -114,8 +111,6 @@ func (e *verifyPushEnv) handle(
 	switch {
 	case strings.Contains(q, "commentCreate"):
 		writeMutation(w, "commentCreate", e.commentErrs)
-	case strings.Contains(q, "viewer{id"):
-		writeViewerResp(w, e.viewerID, e.viewerErrors)
 	case strings.Contains(q, "issue(id:"):
 		writeIssueResp(w, e.issueResp, e.issueErrors)
 	default:
@@ -156,7 +151,7 @@ func commentBody(t *testing.T, body string) string {
 
 // ============================== cases ==============================
 
-func TestLinearVerifyPush_TerminalPass_PostsMention(t *testing.T) {
+func TestLinearVerifyPush_TerminalPass_PostsPlainComment(t *testing.T) {
 	id := tasks.NewTaskID()
 	env := newVerifyPushEnv(t, id, "findings body")
 	saveAPIKey(t, "lin_api_test")
@@ -164,24 +159,27 @@ func TestLinearVerifyPush_TerminalPass_PostsMention(t *testing.T) {
 	fireVerifyHook(
 		id, "ENG-1", tasks.StatusCompleted, tasks.EventVerifyPass)
 	got := env.recordedBodies()
-	if len(got) != 3 {
+	if len(got) != 2 {
 		t.Fatalf(
-			"want 3 calls (issue, viewer, commentCreate), got %d: %v",
+			"want 2 calls (issue, commentCreate), got %d: %v",
 			len(got), got)
 	}
-	if !strings.Contains(got[2], "commentCreate") {
-		t.Fatalf("call[2] not commentCreate: %s", got[2])
+	if !strings.Contains(got[1], "commentCreate") {
+		t.Fatalf("call[1] not commentCreate: %s", got[1])
 	}
-	body := commentBody(t, got[2])
-	if !strings.HasPrefix(body, "@user-uuid Verification passed") {
+	body := commentBody(t, got[1])
+	if !strings.HasPrefix(body, "Verification passed") {
 		t.Fatalf("body prefix: %q", body)
+	}
+	if strings.HasPrefix(body, "@") {
+		t.Fatalf("body unexpectedly starts with mention: %q", body)
 	}
 	if !strings.Contains(body, "findings body") {
 		t.Fatalf("body missing findings: %q", body)
 	}
 }
 
-func TestLinearVerifyPush_TerminalFail_PostsMention(t *testing.T) {
+func TestLinearVerifyPush_TerminalFail_PostsPlainComment(t *testing.T) {
 	id := tasks.NewTaskID()
 	env := newVerifyPushEnv(t, id, "findings body")
 	saveAPIKey(t, "lin_api_test")
@@ -189,18 +187,18 @@ func TestLinearVerifyPush_TerminalFail_PostsMention(t *testing.T) {
 	fireVerifyHook(
 		id, "ENG-1", tasks.StatusFailed, tasks.EventVerifyFail)
 	got := env.recordedBodies()
-	if len(got) != 3 {
-		t.Fatalf("want 3 calls, got %d: %v", len(got), got)
+	if len(got) != 2 {
+		t.Fatalf("want 2 calls, got %d: %v", len(got), got)
 	}
-	body := commentBody(t, got[2])
+	body := commentBody(t, got[1])
 	if !strings.HasPrefix(
-		body, "@user-uuid Verification failed (retries exhausted)",
+		body, "Verification failed (retries exhausted)",
 	) {
 		t.Fatalf("body prefix: %q", body)
 	}
 }
 
-func TestLinearVerifyPush_TerminalStuck_PostsMention(t *testing.T) {
+func TestLinearVerifyPush_TerminalStuck_PostsPlainComment(t *testing.T) {
 	id := tasks.NewTaskID()
 	env := newVerifyPushEnv(t, id, "findings body")
 	saveAPIKey(t, "lin_api_test")
@@ -208,10 +206,10 @@ func TestLinearVerifyPush_TerminalStuck_PostsMention(t *testing.T) {
 	fireVerifyHook(
 		id, "ENG-1", tasks.StatusFailed, tasks.EventVerifyStuck)
 	got := env.recordedBodies()
-	if len(got) != 3 {
-		t.Fatalf("want 3 calls, got %d: %v", len(got), got)
+	if len(got) != 2 {
+		t.Fatalf("want 2 calls, got %d: %v", len(got), got)
 	}
-	body := commentBody(t, got[2])
+	body := commentBody(t, got[1])
 	if !strings.Contains(body, "Verification failed (retries exhausted)") {
 		t.Fatalf("body: %q", body)
 	}
@@ -319,24 +317,6 @@ func TestLinearVerifyPush_GetIssueFails_Warns(t *testing.T) {
 	}
 }
 
-func TestLinearVerifyPush_ViewerFails_Warns(t *testing.T) {
-	id := tasks.NewTaskID()
-	env := newVerifyPushEnv(t, id, "findings body")
-	env.viewerErrors = []string{"viewer-boom"}
-	saveAPIKey(t, "lin_api_test")
-	InitLinearVerifyPush()
-	fireVerifyHook(
-		id, "ENG-1", tasks.StatusCompleted, tasks.EventVerifyPass)
-	got := env.recordedBodies()
-	if len(got) != 2 {
-		t.Fatalf("want 2 calls (issue, viewer), got %d: %v",
-			len(got), got)
-	}
-	if msg := env.stderrText(t); !strings.Contains(msg, "viewer") {
-		t.Fatalf("stderr = %q, want viewer warning", msg)
-	}
-}
-
 func TestLinearVerifyPush_CommentFails_Warns(t *testing.T) {
 	id := tasks.NewTaskID()
 	env := newVerifyPushEnv(t, id, "findings body")
@@ -346,8 +326,8 @@ func TestLinearVerifyPush_CommentFails_Warns(t *testing.T) {
 	fireVerifyHook(
 		id, "ENG-1", tasks.StatusCompleted, tasks.EventVerifyPass)
 	got := env.recordedBodies()
-	if len(got) != 3 {
-		t.Fatalf("want 3 calls, got %d: %v", len(got), got)
+	if len(got) != 2 {
+		t.Fatalf("want 2 calls, got %d: %v", len(got), got)
 	}
 	if msg := env.stderrText(t); !strings.Contains(
 		msg, "commentCreate",
@@ -367,14 +347,17 @@ func TestPushVerifyIterationFinding_PostsHeaderedComment(t *testing.T) {
 	task := tasks.Task{ID: id, LinearIssue: "ENG-1"}
 	PushVerifyIterationFinding(io.Discard, task, 1, 3)
 	got := env.recordedBodies()
-	if len(got) != 3 {
-		t.Fatalf("want 3 calls, got %d: %v", len(got), got)
+	if len(got) != 2 {
+		t.Fatalf("want 2 calls, got %d: %v", len(got), got)
 	}
-	body := commentBody(t, got[2])
+	body := commentBody(t, got[1])
 	if !strings.HasPrefix(
-		body, "@user-uuid Verification iteration 2/3 failed",
+		body, "Verification iteration 2/3 failed",
 	) {
 		t.Fatalf("body prefix: %q", body)
+	}
+	if strings.HasPrefix(body, "@") {
+		t.Fatalf("body unexpectedly starts with mention: %q", body)
 	}
 	if !strings.Contains(body, "iter findings") {
 		t.Fatalf("body missing findings: %q", body)

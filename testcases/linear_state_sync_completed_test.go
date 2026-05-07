@@ -9,8 +9,8 @@ import (
 
 // TestLinearStateSync_Completed_MovesToInReview pins the
 // completed-side acceptance criterion: a verify-pass transition
-// moves the linked Linear issue to "In Review" and posts a
-// `@<owner> todo` mention comment so the API-key owner is paged to
+// moves the linked Linear issue to "In Review" and schedules a
+// Linear inbox reminder for the API-key owner so they are paged to
 // review the result.
 func TestLinearStateSync_Completed_MovesToInReview(
 	t *testing.T,
@@ -25,7 +25,7 @@ func TestLinearStateSync_Completed_MovesToInReview(
 
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "viewer", "commentCreate",
+		"issue", "states", "issueUpdate", "remindMe",
 	}
 	if !equalSlices(bodyKindList(got), want) {
 		t.Fatalf("call order = %v, want %v",
@@ -34,7 +34,7 @@ func TestLinearStateSync_Completed_MovesToInReview(
 	if v := decodeMutationVar(t, got[2], "stateId"); v != "s-rev" {
 		t.Fatalf("issueUpdate stateId = %q, want s-rev", v)
 	}
-	if v := decodeMutationVar(t, got[4], "body"); v != "@user-uuid todo" {
-		t.Fatalf("commentCreate body = %q, want '@user-uuid todo'", v)
+	if v := decodeMutationVar(t, got[3], "id"); v != "node-1" {
+		t.Fatalf("issueRemindMe id = %q, want node-1", v)
 	}
 }

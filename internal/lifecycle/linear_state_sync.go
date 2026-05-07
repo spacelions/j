@@ -18,18 +18,22 @@ const linearStateSyncTimeout = 30 * time.Second
 // stateSyncTarget describes how a destination TaskStatus should be
 // mirrored into Linear: stateName is the human-readable workflow
 // state to switch the issue to ("Todo", "In Progress", "In
-// Review"); mention=true also posts a `@<viewer> todo` comment so
-// the API-key owner is pinged when human attention is required.
+// Review"); ping=true also schedules a Linear inbox reminder for
+// the API-key owner so they are surfaced when human attention is
+// required.
 type stateSyncTarget struct {
 	stateName string
-	mention   bool
+	ping      bool
 }
 
 // stateSyncTable maps each destination TaskStatus to the Linear
-// workflow state and follow-up comment behaviour. Statuses absent
+// workflow state and follow-up reminder behaviour. Statuses absent
 // from the table are no-ops — the hook returns before any HTTP
-// traffic.
+// traffic. `Planning` is mapped (ping=false) so re-plan and
+// resume-plan transitions roll the upstream Linear issue back to
+// `Todo` without paging the owner; the user initiated the rollback.
 var stateSyncTable = map[tasks.TaskStatus]stateSyncTarget{
+	tasks.StatusPlanning:            {"Todo", false},
 	tasks.StatusPlanDone:            {"Todo", true},
 	tasks.StatusPlanPendingApproval: {"Todo", true},
 	tasks.StatusWorking:             {"In Progress", false},
@@ -46,14 +50,14 @@ func InitLinearStateSync() {
 }
 
 // linearStateSyncHook moves the linked Linear issue into the
-// workflow state that mirrors tr.To, and optionally posts a
-// `@<viewer> todo` mention comment when the destination warrants
-// human attention. The verify-begin transition additionally posts a
-// `@<viewer> <PR URL>` mention so reviewers see the PR link the
-// first time the task enters verifying. All failures emit a
-// DangerousDialogBox warning to stderr and return — the hook never
-// returns an error and never blocks the FSM transition. Failures of
-// issueUpdate do not prevent the comment from being attempted.
+// workflow state that mirrors tr.To, and optionally schedules a
+// Linear inbox reminder for the API-key owner when the destination
+// warrants human attention. The verify-begin transition additionally
+// posts a comment carrying the PR URL and pings the owner. All
+// failures emit a DangerousDialogBox warning to stderr and return —
+// the hook never returns an error and never blocks the FSM
+// transition. Failures of issueUpdate do not prevent the follow-up
+// comment / reminder from being attempted.
 func linearStateSyncHook(tr tasks.Transition, task tasks.Task) {
 	if task.LinearIssue == "" {
 		return
@@ -83,13 +87,15 @@ func linearStateSyncHook(tr tasks.Transition, task tasks.Task) {
 		ctx, issue.ID, stateID); err != nil {
 		warnLinearSync("issueUpdate: %s", err)
 	}
-	if target.mention {
-		postMention(ctx, client, issue.ID, "todo")
-	}
 	if tr.To == tasks.StatusVerifying &&
 		tr.Event == tasks.EventVerifyBegin &&
 		task.PullRequestURL != "" {
-		postMention(ctx, client, issue.ID, task.PullRequestURL)
+		postPullRequestComment(ctx, client, issue.ID, task.PullRequestURL)
+		postInboxReminder(ctx, client, issue.ID)
+		return
+	}
+	if target.ping {
+		postInboxReminder(ctx, client, issue.ID)
 	}
 }
 
@@ -130,21 +136,27 @@ func resolveStateID(
 	return state.ID, true
 }
 
-// postMention resolves the API-key owner's viewer id and posts a
-// `@<uuid> <body>` comment on the issue. Each step warns on error
-// and never blocks — failures here must not change the J task
-// status.
-func postMention(
-	ctx context.Context,
-	client *linear.Client, issueID, body string,
+// postInboxReminder schedules a Linear inbox reminder on the issue
+// for the API-key owner. Linear surfaces the reminder immediately
+// because RemindOnIssue passes "now" as the remindAt timestamp.
+// Warns on error and never blocks — failures here must not change
+// the J task status.
+func postInboxReminder(
+	ctx context.Context, client *linear.Client, issueID string,
 ) {
-	viewerID, err := client.ViewerID(ctx)
-	if err != nil {
-		warnLinearSync("viewer: %s", err)
-		return
+	if err := client.RemindOnIssue(ctx, issueID); err != nil {
+		warnLinearSync("issueRemindMe: %s", err)
 	}
-	if err := client.CreateMentionComment(
-		ctx, issueID, viewerID, body); err != nil {
+}
+
+// postPullRequestComment posts the GitHub PR URL as a plain comment
+// on the linked Linear issue so click-through from the inbox
+// reminder lands on the PR. Warns on error and never blocks.
+func postPullRequestComment(
+	ctx context.Context, client *linear.Client, issueID, prURL string,
+) {
+	if err := client.CreateComment(
+		ctx, issueID, prURL); err != nil {
 		warnLinearSync("commentCreate: %s", err)
 	}
 }

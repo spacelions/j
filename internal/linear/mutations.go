@@ -3,6 +3,7 @@ package linear
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // issueUpdateMutation overwrites the description of the issue
@@ -24,6 +25,12 @@ const commentCreateMutation = `mutation($id:String!,$body:String!){` +
 // field set is `stateId`.
 const issueUpdateStateMutation = `mutation($id:String!,$stateId:String!){` +
 	`issueUpdate(id:$id,input:{stateId:$stateId}){success}}`
+
+// issueRemindMeMutation schedules a Linear inbox reminder for the
+// API-key owner on the issue addressed by node id. `remindAt` is an
+// RFC3339 timestamp; passing "now" surfaces the reminder immediately.
+const issueRemindMeMutation = `mutation($id:String!,$remindAt:DateTime!){` +
+	`issueRemindMe(id:$id,remindAt:$remindAt){success}}`
 
 // mutationResponse captures only the part of a mutation response
 // the client cares about — Linear's `success` field is informational
@@ -80,18 +87,31 @@ func (c *Client) UpdateIssueState(
 	return nil
 }
 
-// CreateMentionComment posts a new comment whose body is prefixed
-// with a `@<viewerID>` mention pill — Linear renders the bare UUID
-// as a user mention pill in the issue thread. Used by the
-// linear-state-sync hook so the API-key owner is notified when a
-// task transitions into a state that needs human attention.
-func (c *Client) CreateMentionComment(
-	ctx context.Context, issueID, viewerID, body string,
+// RemindOnIssue schedules a Linear inbox reminder for the API-key
+// owner on the issue addressed by issueID (GraphQL node id). The
+// reminder fires at "now" (RFC3339 UTC) so it surfaces immediately
+// in the owner's inbox. Used by the linear-state-sync hook to ping
+// the owner on transitions that warrant human attention without
+// posting a comment thread entry that Linear's actor==recipient gate
+// would otherwise suppress.
+func (c *Client) RemindOnIssue(
+	ctx context.Context, issueID string,
 ) error {
-	return c.runMutation(
-		ctx, commentCreateMutation, issueID,
-		"@"+viewerID+" "+body,
-	)
+	var resp mutationResponse
+	req := graphQLRequest{
+		Query: issueRemindMeMutation,
+		Variables: map[string]any{
+			"id":       issueID,
+			"remindAt": time.Now().UTC().Format(time.RFC3339),
+		},
+	}
+	if err := c.do(ctx, req, &resp); err != nil {
+		return err
+	}
+	if msg := firstGraphQLError(resp.Errors); msg != "" {
+		return fmt.Errorf("linear: %s", msg)
+	}
+	return nil
 }
 
 // runMutation is the shared transport for the (id, body) mutations.

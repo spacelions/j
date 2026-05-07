@@ -7,13 +7,13 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// TestLinearStateSync_PlanPendingApproval_MovesToTodoAndMentions
-// pins the second half of the "plan stage -> Todo + mention"
+// TestLinearStateSync_PlanPendingApproval_MovesToTodoAndReminds
+// pins the second half of the "plan stage -> Todo + reminder"
 // acceptance criterion: `plan-pending-approval` must mirror to
-// `Todo` exactly like `plan-done`, and the same `@<owner> todo`
-// mention comment must follow so the user is paged whether the
-// plan auto-approves or queues for review.
-func TestLinearStateSync_PlanPendingApproval_MovesToTodoAndMentions(
+// `Todo` exactly like `plan-done`, and a Linear inbox reminder
+// must follow so the user is paged whether the plan auto-approves
+// or queues for review.
+func TestLinearStateSync_PlanPendingApproval_MovesToTodoAndReminds(
 	t *testing.T,
 ) {
 	env := newLinearStateSyncEnv(t)
@@ -26,7 +26,7 @@ func TestLinearStateSync_PlanPendingApproval_MovesToTodoAndMentions(
 
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "viewer", "commentCreate",
+		"issue", "states", "issueUpdate", "remindMe",
 	}
 	if !equalSlices(bodyKindList(got), want) {
 		t.Fatalf("call order = %v, want %v",
@@ -35,7 +35,7 @@ func TestLinearStateSync_PlanPendingApproval_MovesToTodoAndMentions(
 	if v := decodeMutationVar(t, got[2], "stateId"); v != "s-todo" {
 		t.Fatalf("issueUpdate stateId = %q, want s-todo", v)
 	}
-	if v := decodeMutationVar(t, got[4], "body"); v != "@user-uuid todo" {
-		t.Fatalf("commentCreate body = %q, want '@user-uuid todo'", v)
+	if v := decodeMutationVar(t, got[3], "id"); v != "node-1" {
+		t.Fatalf("issueRemindMe id = %q, want node-1", v)
 	}
 }
