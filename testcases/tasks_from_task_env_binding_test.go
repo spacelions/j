@@ -11,10 +11,10 @@ import (
 )
 
 // TestTasksFromTask_EnvBindings pins the acceptance bullet that each
-// of the four leaves wires `--from-task` to a viper key + env var:
+// of the leaves wires `--from-task` to a viper key + env var:
 //
-//   - TASKS_READ_REQUIREMENTS_FROM_TASK
-//   - TASKS_READ_PLAN_FROM_TASK
+//   - TASKS_SHOW_REQUIREMENTS_FROM_TASK
+//   - TASKS_SHOW_PLAN_FROM_TASK
 //   - TASKS_LOGS_FROM_TASK
 //   - TASKS_TASK_FROM_TASK
 //
@@ -27,12 +27,12 @@ func TestTasksFromTask_EnvBindings(t *testing.T) {
 		env  string
 		argv []string
 	}{
-		{"read requirements",
-			"TASKS_READ_REQUIREMENTS_FROM_TASK",
-			[]string{"read", "requirements"}},
-		{"read plan",
-			"TASKS_READ_PLAN_FROM_TASK",
-			[]string{"read", "plan"}},
+		{"show requirements",
+			"TASKS_SHOW_REQUIREMENTS_FROM_TASK",
+			[]string{"show", "requirements"}},
+		{"show plan",
+			"TASKS_SHOW_PLAN_FROM_TASK",
+			[]string{"show", "plan"}},
 		{"logs", "TASKS_LOGS_FROM_TASK", []string{"logs"}},
 		{"task", "TASKS_TASK_FROM_TASK", []string{"task"}},
 	}

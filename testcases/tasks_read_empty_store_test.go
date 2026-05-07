@@ -8,16 +8,16 @@ import (
 	"github.com/spacelions/j/internal/testutil"
 )
 
-// TestTasksReadRequirements_EmptyStore pins the acceptance bullet:
-// `j tasks read requirements` (no `--from-task`) on an empty store
+// TestTasksShowRequirements_EmptyStore pins the acceptance bullet:
+// `j tasks show requirements` (no `--from-task`) on an empty store
 // short-circuits BEFORE the picker, prints `J: no tasks`, and
 // exits 0.
-func TestTasksReadRequirements_EmptyStore(t *testing.T) {
+func TestTasksShowRequirements_EmptyStore(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
 	stdout, _, err := testutil.RunCobra(
-		tasks.New(), "read", "requirements",
+		tasks.New(), "show", "requirements",
 	)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -28,13 +28,13 @@ func TestTasksReadRequirements_EmptyStore(t *testing.T) {
 	}
 }
 
-// TestTasksReadPlan_EmptyStore pins the same contract for `read plan`.
-func TestTasksReadPlan_EmptyStore(t *testing.T) {
+// TestTasksShowPlan_EmptyStore pins the same contract for `show plan`.
+func TestTasksShowPlan_EmptyStore(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
 	stdout, _, err := testutil.RunCobra(
-		tasks.New(), "read", "plan",
+		tasks.New(), "show", "plan",
 	)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
