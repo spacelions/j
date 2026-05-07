@@ -131,7 +131,6 @@ func BeginPlanResume(t tasks.Task, stderr io.Writer, agentName, model,
 		stderr:       stderr,
 		agentLogPath: agentLogPath,
 		task:         task,
-		prevStatus:   newStatus,
 	}
 	tasks.PersistWarn(stderr, task)
 	tasks.Notify(tasks.Transition{
