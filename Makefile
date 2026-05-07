@@ -3,7 +3,7 @@ SHELL := /bin/bash
 BIN_DIR := bin
 BIN     := $(BIN_DIR)/j
 
-.PHONY: build clean coverage test race install-hooks
+.PHONY: build clean coverage test e2e race install-hooks
 
 build:
 	@mkdir -p $(BIN_DIR)
@@ -13,7 +13,10 @@ clean:
 	rm -rf $(BIN_DIR) cover.out
 
 test:
-	go test ./...
+	go test ./internal/... ./cmd/...
+
+e2e:
+	go test ./testcases/...
 
 race:
 	go test -race ./...

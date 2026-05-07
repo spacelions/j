@@ -18,9 +18,10 @@ import (
 	"github.com/spacelions/j/internal/cli/web"
 )
 
-// Execute is the process entry point. It builds the cobra root, parses
-// os.Args, and returns the exit code.
-func Execute() int {
+// NewRoot builds the cobra root command with every subcommand wired
+// in. Reused by Execute() and by tests that need to drive the root
+// command in-process.
+func NewRoot() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "j",
 		Short: "J Harness CLI",
@@ -28,7 +29,6 @@ func Execute() int {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
-
 	root.AddCommand(
 		run.New(),
 		web.New(),
@@ -36,6 +36,13 @@ func Execute() int {
 		tasks.New(),
 		initcmd.New(),
 	)
+	return root
+}
+
+// Execute is the process entry point. It builds the cobra root, parses
+// os.Args, and returns the exit code.
+func Execute() int {
+	root := NewRoot()
 	root.SetArgs(os.Args[1:])
 	if err := root.Execute(); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {

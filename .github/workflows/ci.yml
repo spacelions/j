@@ -14,3 +14,4 @@ jobs:
           go-version-file: .go-version
           cache: true
       - run: make test
+      - run: make e2e

@@ -28,7 +28,7 @@ func (p *Picker) PickTask(ctx context.Context, title string, tasks []tasks.Task)
 	if len(tasks) == 0 {
 		return "", false, nil
 	}
-	labels, byLabel := formatTaskLabels(tasks)
+	labels, byLabel := FormatTaskLabels(tasks)
 	chosen, err := p.choose(ctx, title, labels)
 	if errors.Is(err, huh.ErrUserAborted) {
 		return "", false, nil
@@ -43,7 +43,11 @@ func (p *Picker) PickTask(ctx context.Context, title string, tasks []tasks.Task)
 	return id, true, nil
 }
 
-func formatTaskLabels(tasks []tasks.Task) ([]string, map[string]string) {
+// FormatTaskLabels mirrors the label format the picker uses on the
+// terminal (`<id> — <status> — <summary>`, with empty summaries
+// collapsed to "(no summary)"). Exposed so test harnesses can build
+// the same option list the production picker would render.
+func FormatTaskLabels(tasks []tasks.Task) ([]string, map[string]string) {
 	labels := make([]string, 0, len(tasks))
 	byLabel := make(map[string]string, len(tasks))
 	for _, t := range tasks {

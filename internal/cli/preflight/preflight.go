@@ -89,13 +89,9 @@ func (u *huhUI) ConfirmInit(ctx context.Context) (bool, error) {
 
 func (u *huhUI) AskMustRead(ctx context.Context) (string, error) {
 	var v string
-	err := huh.NewForm(huh.NewGroup(
-		huh.NewInput().
-			Title("Files every agent must read first").
-			Description("Semicolon-separated list (case-sensitive). Leave blank for none.").
-			Placeholder("AGENTS.md;CLAUDE.md").
-			Value(&v),
-	)).WithInput(u.in).WithOutput(u.out).WithTheme(uitheme.Theme()).RunWithContext(ctx)
+	err := MustReadForm(&v).
+		WithInput(u.in).WithOutput(u.out).
+		RunWithContext(ctx)
 	if errors.Is(err, huh.ErrUserAborted) {
 		return "", nil
 	}
@@ -103,6 +99,22 @@ func (u *huhUI) AskMustRead(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("preflight: %w", err)
 	}
 	return v, nil
+}
+
+// MustReadForm builds the huh form that AskMustRead drives. It is
+// exported so test harnesses (teatest) can drive the same model the
+// production path renders, without going through *.RunWithContext.
+// Callers that drive the form via teatest must set
+// `form.SubmitCmd = tea.Quit` and `form.CancelCmd = tea.Interrupt`
+// themselves — production sets those inside huh.Form.RunWithContext.
+func MustReadForm(value *string) *huh.Form {
+	return huh.NewForm(huh.NewGroup(
+		huh.NewInput().
+			Title("Files every agent must read first").
+			Description("Semicolon-separated list (case-sensitive). Leave blank for none.").
+			Placeholder("AGENTS.md;CLAUDE.md").
+			Value(value),
+	)).WithTheme(uitheme.Theme())
 }
 
 // Ensure runs the shared pre-flight check. When ProjectInitialized
