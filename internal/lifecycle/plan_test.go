@@ -390,7 +390,7 @@ func TestBeginPlanResume_IllegalTransitionPanics(t *testing.T) {
 	}()
 	BeginPlanResume(tasks.Task{
 		ID:                "id-bad",
-		Status:            tasks.StatusCompleted,
+		Status:            tasks.StatusWorking,
 		PlanResumeSession: "prior",
 	}, io.Discard, "cursor", "m", "")
 }
