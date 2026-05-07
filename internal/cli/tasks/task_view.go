@@ -12,7 +12,7 @@ import (
 )
 
 // TaskViewOptions configures `j tasks task` — the bat/cat-rendered
-// dump of <cwd>/.j/tasks/<id>/task.toml. Same shape as ReadOptions;
+// dump of <cwd>/.j/tasks/<id>/task.toml. Same shape as ShowOptions;
 // the leaf is named TaskView to avoid colliding with the existing
 // tasks.Task type.
 type TaskViewOptions struct {

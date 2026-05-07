@@ -11,7 +11,7 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// LogsOptions configures `j tasks logs`. Same shape as ReadOptions
+// LogsOptions configures `j tasks logs`. Same shape as ShowOptions
 // but the renderer is a Tailer (no bat/cat fallback): the leaf
 // always execs `tail -f <agent.log>`.
 type LogsOptions struct {

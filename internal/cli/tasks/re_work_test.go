@@ -201,4 +201,80 @@ func TestRunReWork_RegisteredAsChild(t *testing.T) {
 	t.Fatal("`j tasks re-work` should be registered as a child of `j tasks`")
 }
 
+func TestClearWorkResumeSession_EmptySessionReturnsNil(t *testing.T) {
+	setupContinueEnv(t)
+	// seedTaskFull sets PlanResumeSession only; WorkResumeSession is empty.
+	id := seedTaskFull(t, nil)
+	if err := clearWorkResumeSession(id); err != nil {
+		t.Fatalf("clearWorkResumeSession: %v", err)
+	}
+}
 
+func TestClearWorkResumeSession_PopulatedSessionClears(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.WorkResumeSession = "session-xyz"
+	})
+	if err := clearWorkResumeSession(id); err != nil {
+		t.Fatalf("clearWorkResumeSession: %v", err)
+	}
+	// Verify the session was cleared.
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	row, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.WorkResumeSession != "" {
+		t.Fatalf("WorkResumeSession = %q, want empty",
+			row.WorkResumeSession)
+	}
+}
+
+func TestClearWorkResumeSession_UnknownID(t *testing.T) {
+	setupContinueEnv(t)
+	err := clearWorkResumeSession("ghost-id")
+	if err == nil {
+		t.Fatal("expected error for unknown task id")
+	}
+}
+
+func TestNewReWorkCmd_RunE_NoTasks(t *testing.T) {
+	setupContinueEnv(t)
+	cmd := newReWorkCmd()
+	cmd.SetContext(context.Background())
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(io.Discard)
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+	if !strings.Contains(stdout.String(), emptyMessage) {
+		t.Fatalf("stdout = %q, want %q",
+			stdout.String(), emptyMessage)
+	}
+}
+
+func TestNewReWorkCmd_RunE_InteractiveFlag(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	setupContinueEnv(t)
+	cmd := newReWorkCmd()
+	cmd.SetContext(context.Background())
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Flags().Set("interactive", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("RunE with --interactive=true: %v", err)
+	}
+	if !strings.Contains(stdout.String(), emptyMessage) {
+		t.Fatalf("stdout = %q, want %q",
+			stdout.String(), emptyMessage)
+	}
+}

@@ -8,9 +8,9 @@ import (
 	"github.com/spacelions/j/internal/testutil"
 )
 
-// TestTasksHelp_ListsReadLogsTask pins the acceptance bullet:
-// `j tasks --help` lists `read`, `logs`, and `task` as subcommands.
-func TestTasksHelp_ListsReadLogsTask(t *testing.T) {
+// TestTasksHelp_ListsShowLogsTask pins the acceptance bullet:
+// `j tasks --help` lists `show`, `logs`, and `task` as subcommands.
+func TestTasksHelp_ListsShowLogsTask(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
@@ -18,7 +18,7 @@ func TestTasksHelp_ListsReadLogsTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	for _, want := range []string{"read", "logs", "task"} {
+	for _, want := range []string{"show", "logs", "task"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("`j tasks --help` missing %q: %q",
 				want, stdout)
