@@ -20,10 +20,14 @@ import (
 
 // UI is the narrow set of picker methods the worker functions call.
 type UI interface {
-	PickTask(ctx context.Context, title string, t []tasks.Task) (string, bool, error)
+	PickTask(ctx context.Context, title string, t []tasks.Task) (
+		string, bool, error,
+	)
 	SelectTool(ctx context.Context, options []string) (string, error)
 	SelectModel(ctx context.Context, options []string) (string, error)
-	ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error)
+	ConfirmStatusOverride(
+		ctx context.Context, cmd, taskID, status string,
+	) (bool, error)
 }
 
 // ExecuteOptions configures Execute.
@@ -48,7 +52,7 @@ type ExecuteOptions struct {
 	Store *store.Store
 }
 
-// Execute resolves a plan, selects a worker agent, and hands the plan to the agent.
+// Execute resolves a plan, picks a worker agent, and dispatches.
 func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
@@ -59,11 +63,8 @@ func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 		TaskID: opts.TaskID,
 		UI:     opts.UI,
 	})
-	if err != nil {
+	if err != nil || !ok {
 		return err
-	}
-	if !ok {
-		return nil
 	}
 	// A non-empty WorkResumeSession on the task row signals "resume"
 	// — the row was last touched by a worker run that recorded its
@@ -73,46 +74,77 @@ func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 	// WorkTool / WorkModel so claude is reused with `--resume <id>`
 	// (resuming a claude session in cursor is impossible).
 	resumeMode := res.Task.WorkResumeSession != ""
-	var (
-		agent codingagents.Agent
-		model string
-	)
-	resumeID := res.Task.WorkResumeSession
-	if resumeMode {
-		a, ok := lookupResumeAgent(opts.Agents, res.Task.WorkTool)
-		if !ok {
-			return fmt.Errorf("J: unknown tool %q", res.Task.WorkTool)
-		}
-		agent = a
-		model = res.Task.WorkModel
-	} else {
-		a, m, err := selectWorker(ctx, opts)
-		if err != nil {
-			return err
-		}
-		agent = a
-		model = m
-		fresh, err := agent.NewResumeID(ctx)
-		if err != nil {
-			uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
-		}
-		resumeID = fresh
+	agent, model, resumeID, err := resolveWorker(ctx, opts, res, resumeMode)
+	if err != nil {
+		return err
 	}
-	proceed, confirmErr := resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, "work", res.Task, resolver.ReplanAllowed)
+	proceed, confirmErr := resolver.ConfirmStatusOverride(
+		ctx, opts.UI, opts.Yes, "work", res.Task, resolver.ReplanAllowed,
+	)
 	if confirmErr != nil {
 		return confirmErr
 	}
 	if !proceed {
 		return nil
 	}
-	agentLogPath := filepath.Join(filepath.Dir(res.PlanPath), tasks.AgentLogFileName)
-	var lc *lifecycle.WorkLifecycle
-	if resumeMode {
-		lc = lifecycle.BeginWorkResume(res.Task, opts.Stderr, agentLogPath)
-	} else {
-		lc = lifecycle.BeginWorkReuse(res.Task, opts.Stderr, agent.Name(), model, resumeID, agentLogPath)
-	}
+	agentLogPath := filepath.Join(
+		filepath.Dir(res.PlanPath), tasks.AgentLogFileName,
+	)
+	lc := beginWorkLifecycle(
+		res, opts.Stderr, agent.Name(), model, resumeID,
+		agentLogPath, resumeMode,
+	)
+	return runWorker(
+		ctx, opts, agent, lc, res, model, resumeID, resumeMode, agentLogPath,
+	)
+}
 
+// resolveWorker picks the agent + model + resume id for this run.
+// On resume the row's WorkTool / WorkModel / WorkResumeSession are
+// reused verbatim; on a fresh run resolver.Agent picks the bucket
+// agent and NewResumeID mints the cursor id.
+func resolveWorker(
+	ctx context.Context, opts ExecuteOptions,
+	res resolver.WorkPlan, resumeMode bool,
+) (codingagents.Agent, string, string, error) {
+	if resumeMode {
+		a, ok := lookupResumeAgent(opts.Agents, res.Task.WorkTool)
+		if !ok {
+			return nil, "", "", fmt.Errorf(
+				"J: unknown tool %q", res.Task.WorkTool,
+			)
+		}
+		return a, res.Task.WorkModel, res.Task.WorkResumeSession, nil
+	}
+	a, m, err := selectWorker(ctx, opts)
+	if err != nil {
+		return nil, "", "", err
+	}
+	fresh, err := a.NewResumeID(ctx)
+	if err != nil {
+		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
+	}
+	return a, m, fresh, nil
+}
+
+func beginWorkLifecycle(
+	res resolver.WorkPlan, stderr io.Writer,
+	agentName, model, resumeID, agentLogPath string, resumeMode bool,
+) *lifecycle.WorkLifecycle {
+	if resumeMode {
+		return lifecycle.BeginWorkResume(res.Task, stderr, agentLogPath)
+	}
+	return lifecycle.BeginWorkRestart(
+		res.Task, stderr, agentName, model, resumeID, agentLogPath,
+	)
+}
+
+func runWorker(
+	ctx context.Context, opts ExecuteOptions,
+	agent codingagents.Agent, lc *lifecycle.WorkLifecycle,
+	res resolver.WorkPlan, model, resumeID string,
+	resumeMode bool, agentLogPath string,
+) error {
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
@@ -135,7 +167,9 @@ func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 			}
 		} else {
 			lc.RecordBackground(pid, agentLogPath)
-			uitheme.NormalForkDialog(opts.Stdout, agent.Name(), pid, agentLogPath)
+			uitheme.NormalForkDialog(
+				opts.Stdout, agent.Name(), pid, agentLogPath,
+			)
 			return nil
 		}
 	}
@@ -143,7 +177,9 @@ func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 	if workErr != nil {
 		return workErr
 	}
-	uitheme.NormalFprintf(opts.Stdout, "J: working on task %s\n", res.Task.ID)
+	uitheme.NormalFprintf(
+		opts.Stdout, "J: working on task %s\n", res.Task.ID,
+	)
 	return nil
 }
 
@@ -152,7 +188,9 @@ func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 // by a backend the current binary no longer ships (an empty WorkTool
 // also fails so the caller surfaces a clear error rather than silently
 // running with the first agent).
-func lookupResumeAgent(agents []codingagents.Agent, name string) (codingagents.Agent, bool) {
+func lookupResumeAgent(
+	agents []codingagents.Agent, name string,
+) (codingagents.Agent, bool) {
 	if name == "" {
 		return nil, false
 	}
@@ -164,7 +202,9 @@ func lookupResumeAgent(agents []codingagents.Agent, name string) (codingagents.A
 	return nil, false
 }
 
-func selectWorker(ctx context.Context, opts ExecuteOptions) (codingagents.Agent, string, error) {
+func selectWorker(
+	ctx context.Context, opts ExecuteOptions,
+) (codingagents.Agent, string, error) {
 	return resolver.Agent(ctx, resolver.AgentOptions{
 		Bucket:        store.BucketWorker,
 		Agents:        opts.Agents,
