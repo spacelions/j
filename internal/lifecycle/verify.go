@@ -120,9 +120,7 @@ func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
 		panic("verify finish: " + err.Error())
 	}
 	lc.task.Status = newStatus
-	if newStatus == tasks.StatusCompleted {
-		lc.task.DoneAt = time.Now().UTC()
-	}
+	tasks.StampTerminal(&lc.task)
 	tasks.PersistWarn(lc.stderr, lc.task)
 	tasks.Notify(tasks.Transition{
 		From: from, Event: ev, To: newStatus,

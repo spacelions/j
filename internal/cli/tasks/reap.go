@@ -35,31 +35,24 @@ func maybeReap(s *tasks.Store, stderr io.Writer, tasksDir string,
 	}
 	switch t.Status {
 	case tasks.StatusPlanning:
-		t = finalisePlanReap(tasksDir, t)
+		return finalisePlanReap(s, stderr, tasksDir, t)
 	case tasks.StatusWorking:
-		t = finaliseWorkReap(tasksDir, t)
-	default:
-		return t
-	}
-	if err := s.PutTask(t); err != nil {
-		uitheme.DangerousDialogBox(stderr, "J: tasks put: %v", err)
+		return finaliseWorkReap(s, stderr, tasksDir, t)
 	}
 	return t
 }
 
-func finalisePlanReap(tasksDir string, t tasks.Task) tasks.Task {
+func finalisePlanReap(s *tasks.Store, stderr io.Writer, tasksDir string,
+	t tasks.Task,
+) tasks.Task {
 	taskDir := filepath.Join(tasksDir, t.ID)
 	t.PlanEndAt = time.Now().UTC()
 	t.BackgroundPID = 0
 
 	clarPath := filepath.Join(taskDir, clarificationFileName)
 	if _, err := os.Stat(clarPath); err == nil {
-		newStatus, fsmErr := tasks.Apply(t.Status,
+		applyAndWarn(s, stderr, &t,
 			tasks.EventReaperPlanNeedsClarification)
-		if fsmErr != nil {
-			return t
-		}
-		t.Status = newStatus
 		return t
 	}
 
@@ -68,12 +61,7 @@ func finalisePlanReap(tasksDir string, t tasks.Task) tasks.Task {
 	reqData, reqErr := os.ReadFile(requirementsPath)
 	_, planErr := os.Stat(planPath)
 	if reqErr != nil || planErr != nil {
-		newStatus, fsmErr := tasks.Apply(t.Status,
-			tasks.EventReaperPlanFail)
-		if fsmErr != nil {
-			return t
-		}
-		t.Status = newStatus
+		applyAndWarn(s, stderr, &t, tasks.EventReaperPlanFail)
 		return t
 	}
 
@@ -82,37 +70,39 @@ func finalisePlanReap(tasksDir string, t tasks.Task) tasks.Task {
 	if approval {
 		ev = tasks.EventReaperPlanAwaitApproval
 	}
-	newStatus, err := tasks.Apply(t.Status, ev)
-	if err != nil {
-		return t
-	}
-	t.Status = newStatus
 	if summary := tasks.SummarizeMarkdown(string(reqData)); summary != "" {
 		t.Summary = summary
 	}
+	applyAndWarn(s, stderr, &t, ev)
 	return t
 }
 
-func finaliseWorkReap(tasksDir string, t tasks.Task) tasks.Task {
+func finaliseWorkReap(s *tasks.Store, stderr io.Writer, tasksDir string,
+	t tasks.Task,
+) tasks.Task {
 	taskDir := filepath.Join(tasksDir, t.ID)
 	t.WorkEndAt = time.Now().UTC()
 	t.BackgroundPID = 0
 
 	clarPath := filepath.Join(taskDir, clarificationFileName)
 	if _, err := os.Stat(clarPath); err == nil {
-		newStatus, fsmErr := tasks.Apply(t.Status,
+		applyAndWarn(s, stderr, &t,
 			tasks.EventReaperWorkNeedsClarification)
-		if fsmErr != nil {
-			return t
-		}
-		t.Status = newStatus
 		return t
 	}
-
-	newStatus, err := tasks.Apply(t.Status, tasks.EventReaperWorkDone)
-	if err != nil {
-		return t
-	}
-	t.Status = newStatus
+	applyAndWarn(s, stderr, &t, tasks.EventReaperWorkDone)
 	return t
+}
+
+// applyAndWarn drives the row through ApplyAndPersist and surfaces
+// any error as a warning. Every reaper event is legal from its
+// source status so in practice only PutTask failures reach the
+// warning branch; an FSM-error here would mean the transition table
+// got out of sync and is loud-by-design rather than silently dropped.
+func applyAndWarn(s *tasks.Store, stderr io.Writer, t *tasks.Task,
+	ev tasks.Event,
+) {
+	if _, err := tasks.ApplyAndPersist(s, t, ev); err != nil {
+		uitheme.DangerousDialogBox(stderr, "J: tasks put: %v", err)
+	}
 }
