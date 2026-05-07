@@ -141,6 +141,8 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, t tasks.Task) e
 	case tasks.StatusPlanning:
 		uitheme.NormalFprintf(opts.Stdout, "J: task %s is planning; use `j tasks re-plan` or `j tasks resume-plan`\n", t.ID)
 		return nil
+	case tasks.StatusPlanPendingApproval:
+		return dispatchPlanApprove(ctx, opts, t)
 	case tasks.StatusPlanDone:
 		return runPlanDoneWork(ctx, opts, t)
 	case tasks.StatusWorking:
@@ -150,6 +152,8 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, t tasks.Task) e
 		return reverifyAsDetachedOrchestrator(ctx, opts, t.ID)
 	case tasks.StatusVerifying:
 		return resumeVerifyingInline(ctx, opts, t.ID)
+	case tasks.StatusNeedsClarification:
+		return dispatchClarification(ctx, opts, t)
 	case tasks.StatusFailed, tasks.StatusCompleted:
 		uitheme.NormalFprintf(opts.Stdout, "J: task %s already finished\n", t.ID)
 		return nil
@@ -258,7 +262,7 @@ func newContinueCmd() *cobra.Command {
 	cmd.Flags().String("from-task", "", "Continue the named task without showing the picker")
 	cmd.Flags().String("tool", "", "Coding agent tool for plan-done dispatch (cursor|claude)")
 	cmd.Flags().String("model", "", "Model identifier for plan-done dispatch")
-	cmd.Flags().Bool("interactive", true, "Launch the coding agent in interactive mode on plan-done dispatch")
+	cmd.Flags().Bool("interactive", false, "Launch the coding agent in interactive mode on plan-done dispatch")
 	_ = viper.BindPFlag("tasks.continue.from_task", cmd.Flags().Lookup("from-task"))
 	_ = viper.BindPFlag("tasks.continue.tool", cmd.Flags().Lookup("tool"))
 	_ = viper.BindPFlag("tasks.continue.model", cmd.Flags().Lookup("model"))

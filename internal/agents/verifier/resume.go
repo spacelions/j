@@ -102,6 +102,10 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		return nil
 	}
 
+	if !tasks.IsLegal(t.Status, tasks.EventVerifyResume) {
+		return fmt.Errorf("J: cannot resume verify on task in status %q", t.Status)
+	}
+
 	agent, ok := lookupResumeAgent(opts.Agents, t.VerifyTool)
 	if !ok {
 		return fmt.Errorf("J: unknown tool %q", t.VerifyTool)

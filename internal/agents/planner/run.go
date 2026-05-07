@@ -60,7 +60,14 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 		uitheme.DangerousDialogBox(stderr, "J: %v", resumeErr)
 	}
 
-	lc := lifecycle.BeginPlanReuse(existing, stderr, opts.Agent.Name(), opts.Model, resumeID, agentLogPath)
+	var lc *lifecycle.PlanLifecycle
+	if existing.Status == tasks.StatusPlanning {
+		lc = lifecycle.BeginPlanExisting(existing, stderr,
+			opts.Agent.Name(), opts.Model, resumeID, agentLogPath)
+	} else {
+		lc = lifecycle.BeginPlanReuse(existing, stderr,
+			opts.Agent.Name(), opts.Model, resumeID, agentLogPath)
+	}
 	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           requirementsPath,
 		Model:                  opts.Model,

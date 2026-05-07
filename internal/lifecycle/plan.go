@@ -12,6 +12,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -30,6 +31,7 @@ type PlanLifecycle struct {
 	stderr       io.Writer
 	agentLogPath string
 	task         tasks.Task
+	prevStatus   tasks.TaskStatus
 	closed       bool
 }
 
@@ -45,20 +47,34 @@ type PlanLifecycle struct {
 //
 // Best effort: failure to open the task log or to write the initial
 // row warns once on stderr and execution continues.
-func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement, resumeID, agentLogPath, linearIssue string) *PlanLifecycle {
+func NewPlanTask(stderr io.Writer, agentName, model, taskID, target,
+	requirement, resumeID, agentLogPath, linearIssue string,
+) *PlanLifecycle {
+	newStatus, err := tasks.Apply("", tasks.EventPlanBegin)
+	if err != nil {
+		panic("plan begin from zero value: " + err.Error())
+	}
 	task := tasks.Task{
 		ID:                taskID,
-		Status:            tasks.StatusPlanning,
+		Status:            newStatus,
 		PlanTool:          agentName,
 		PlanModel:         model,
 		PlanResumeSession: resumeID,
 		Summary:           tasks.Summary(requirement, target),
 		PlanBeginAt:       time.Now().UTC(),
 		LinearIssue:       linearIssue,
+		AgentLogPath:      agentLogPath,
 	}
-	lc := &PlanLifecycle{stderr: stderr, agentLogPath: agentLogPath, task: task}
+	lc := &PlanLifecycle{
+		stderr:       stderr,
+		agentLogPath: agentLogPath,
+		task:         task,
+		prevStatus:   newStatus,
+	}
 	tasks.PersistWarn(stderr, task)
-	emitPhaseBegin(agentLogPath, "plan", task)
+	tasks.Notify(tasks.Transition{
+		From: "", Event: tasks.EventPlanBegin, To: newStatus,
+	}, task)
 	return lc
 }
 
@@ -68,14 +84,16 @@ func NewPlanTask(stderr io.Writer, agentName, model, taskID, target, requirement
 // preserved verbatim when set so the row keeps its first-run
 // lineage. Tool/model and the plan resume session are refreshed so
 // the row reflects the latest re-plan invocation.
-//
-// The body / source-path are intentionally not touched: re-plan
-// reads requirements.md from the existing task directory and feeds
-// it back through agent.Plan, so the summary derivation runs again
-// in Finish.
-func BeginPlanReuse(t tasks.Task, stderr io.Writer, agentName, model, resumeID, agentLogPath string) *PlanLifecycle {
+func BeginPlanReuse(t tasks.Task, stderr io.Writer, agentName, model,
+	resumeID, agentLogPath string,
+) *PlanLifecycle {
+	prev := t.Status
+	newStatus, err := tasks.Apply(prev, tasks.EventPlanRestart)
+	if err != nil {
+		panic("plan restart: " + err.Error())
+	}
 	task := t
-	task.Status = tasks.StatusPlanning
+	task.Status = newStatus
 	task.PlanTool = agentName
 	task.PlanModel = model
 	task.PlanResumeSession = resumeID
@@ -84,21 +102,47 @@ func BeginPlanReuse(t tasks.Task, stderr io.Writer, agentName, model, resumeID, 
 	if task.PlanBeginAt.IsZero() {
 		task.PlanBeginAt = time.Now().UTC()
 	}
-	lc := &PlanLifecycle{stderr: stderr, agentLogPath: agentLogPath, task: task}
+	task.AgentLogPath = agentLogPath
+	lc := &PlanLifecycle{
+		stderr:       stderr,
+		agentLogPath: agentLogPath,
+		task:         task,
+		prevStatus:   newStatus,
+	}
 	tasks.PersistWarn(stderr, task)
-	emitPhaseBegin(agentLogPath, "plan", task)
+	tasks.Notify(tasks.Transition{
+		From: prev, Event: tasks.EventPlanRestart, To: newStatus,
+	}, task)
+	return lc
+}
+
+// BeginPlanExisting creates a PlanLifecycle for a task that is
+// already at `planning` — the seed row was written by persistStartRow
+// and the planner just needs to run the plan phase without a status
+// transition.
+func BeginPlanExisting(t tasks.Task, stderr io.Writer, agentName,
+	model, resumeID, agentLogPath string,
+) *PlanLifecycle {
+	task := t
+	task.PlanTool = agentName
+	task.PlanModel = model
+	task.PlanResumeSession = resumeID
+	task.AgentLogPath = agentLogPath
+	if task.PlanBeginAt.IsZero() {
+		task.PlanBeginAt = time.Now().UTC()
+	}
+	lc := &PlanLifecycle{
+		stderr:       stderr,
+		agentLogPath: agentLogPath,
+		task:         task,
+		prevStatus:   task.Status,
+	}
+	tasks.PersistWarn(stderr, task)
 	return lc
 }
 
 // RecordBackground stamps the spawned child's PID and the agent log
-// path on the in-memory task row and re-persists it. It is the
-// counterpart of Finish for fire-and-forget headless runs: the row
-// stays at status `planning` until the reaper in `j tasks` observes
-// the child exited and finalises it.
-//
-// RecordBackground sets the closed flag so a defensive Finish fired
-// by mistake (e.g. via a deferred guard) becomes a silent no-op and
-// does not clobber the background row with `plan-done` / `help`.
+// path on the in-memory task row and re-persists it.
 func (lc *PlanLifecycle) RecordBackground(pid int, logPath string) {
 	if lc.closed {
 		return
@@ -110,34 +154,41 @@ func (lc *PlanLifecycle) RecordBackground(pid int, logPath string) {
 }
 
 // Finish stamps plan_end_at, decides the terminal status from
-// runErr, and (when runErr is nil) re-derives Summary from the
-// refined requirements (then the plan body, then the file basename)
-// because the agent may have rewritten the requirements during the
-// session. The task is rewritten to the log even on errors so
-// `help` is observable from `j tasks`. The bbolt store is opened
-// just long enough to write the row and closed before this returns;
-// calling Finish twice is a silent no-op via the closed flag.
-func (lc *PlanLifecycle) Finish(runErr error, refinedRequirements, planMarkdown, target string) {
+// runErr and the plan-requires-approval setting, and rewrites the
+// task. Calling Finish twice is a silent no-op via the closed flag.
+func (lc *PlanLifecycle) Finish(
+	runErr error, refinedRequirements, planMarkdown, target string,
+) {
 	if lc.closed {
 		return
 	}
 	lc.closed = true
 	lc.task.PlanEndAt = time.Now().UTC()
-	outcome := "done"
+
+	var ev tasks.Event
 	if runErr != nil {
-		lc.task.Status = tasks.StatusHelp
-		outcome = "help"
+		ev = tasks.EventPlanError
 	} else {
-		lc.task.Status = tasks.StatusPlanDone
 		lc.task.Summary = tasks.Summary(
 			tasks.PickSource(refinedRequirements, planMarkdown), target)
+		approval, _ := store.LoadPlanRequiresApproval()
+		if approval {
+			ev = tasks.EventPlanAwaitApproval
+		} else {
+			ev = tasks.EventPlanDone
+		}
 	}
+	from := lc.task.Status
+	newStatus, err := tasks.Apply(from, ev)
+	if err != nil {
+		panic("plan finish: " + err.Error())
+	}
+	lc.task.Status = newStatus
 	tasks.PersistWarn(lc.stderr, lc.task)
-	emitPhaseEnd(lc.agentLogPath, "plan", lc.task.PlanBeginAt, lc.task, outcome)
+	tasks.Notify(tasks.Transition{
+		From: from, Event: ev, To: newStatus,
+	}, lc.task)
 }
 
-// Task returns the in-memory snapshot of the task row. The plan
-// flow uses this for symmetry with WorkLifecycle.Task; the field is
-// a value copy so callers cannot mutate the lifecycle's internal
-// state.
+// Task returns the in-memory snapshot of the task row.
 func (lc *PlanLifecycle) Task() tasks.Task { return lc.task }

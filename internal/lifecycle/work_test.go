@@ -292,19 +292,17 @@ func TestTask_BeginWorkResume_LeavesWorktreeAlone(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	id := seedPlanDoneTask(t, "hello")
-	dbPath, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
+	existing := tasks.Task{
+		ID:     tasks.NewTaskID(),
+		Status: tasks.StatusWorking,
+		PlanTool: "cursor",
+		WorkTool: "cursor",
+		WorkModel: "sonnet-4",
+		Summary: "hello",
 	}
-	s := tasks.Open(dbPath)
-	existing, err := s.GetTask(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
+	tasks.PersistWarn(io.Discard, existing)
 	if existing.Worktree != "" {
-		t.Fatalf("seed already has worktree %q", existing.Worktree)
+		t.Fatalf("created task already has worktree %q", existing.Worktree)
 	}
 	lc := BeginWorkResume(existing, io.Discard, "")
 	lc.Finish(nil)
@@ -341,6 +339,8 @@ func TestWorkLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 	}
 	logPath := filepath.Join(t.TempDir(), "agent.log")
 	var stderr bytes.Buffer
+	t.Cleanup(tasks.ResetHooksForTest)
+	tasks.Register(markersHook)
 	lc := NewWorkTask(&stderr, "cursor", "m", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", logPath)
 	lc.Finish(nil)
 
@@ -349,11 +349,11 @@ func TestWorkLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 		t.Fatalf("read agent.log: %v", err)
 	}
 	body := string(data)
-	if !strings.Contains(body, `"event":"phase_begin"`) {
-		t.Fatalf("agent.log missing phase_begin: %q", body)
+	if !strings.Contains(body, "work begin") {
+		t.Fatalf("agent.log missing work begin marker: %q", body)
 	}
-	if !strings.Contains(body, `"event":"phase_end"`) {
-		t.Fatalf("agent.log missing phase_end: %q", body)
+	if !strings.Contains(body, "work done") {
+		t.Fatalf("agent.log missing work done marker: %q", body)
 	}
 	if strings.Contains(stderr.String(), agentlog.Sentinel) {
 		t.Fatalf("stderr leaked phase marker: %q", stderr.String())

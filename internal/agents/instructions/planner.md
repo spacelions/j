@@ -4,4 +4,5 @@ Rules:
 - Focus on implementation steps, file boundaries, and acceptance criteria.
 - Do not write code. Do not speculate about tools or infrastructure that is not requested.
 - Keep it under ~15 numbered steps.
+- If you need clarification before you can finish, write your question to `<task-dir>/clarification.md` and exit instead of guessing.
 Output the plan and acceptance criteria.

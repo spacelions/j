@@ -14,17 +14,27 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-func persistStartRow(stderr io.Writer, target startTarget, agentLogPath string, pid int) {
+func persistStartRow(stderr io.Writer, target startTarget,
+	agentLogPath string, pid int,
+) {
 	if target.IsNew {
-		tasks.PersistWarn(stderr, tasks.Task{
+		newStatus, err := tasks.Apply("", tasks.EventPlanBegin)
+		if err != nil {
+			panic("plan begin from zero value: " + err.Error())
+		}
+		t := tasks.Task{
 			ID:            target.TaskID,
-			Status:        tasks.StatusPlanning,
+			Status:        newStatus,
 			Summary:       tasks.Summary(target.Body, target.Source),
 			PlanBeginAt:   time.Now().UTC(),
 			AgentLogPath:  agentLogPath,
 			BackgroundPID: pid,
 			LinearIssue:   target.LinearIssue,
-		})
+		}
+		tasks.PersistWarn(stderr, t)
+		tasks.Notify(tasks.Transition{
+			From: "", Event: tasks.EventPlanBegin, To: newStatus,
+		}, t)
 		return
 	}
 	stampSpawnOnRow(stderr, target.TaskID, agentLogPath, pid)

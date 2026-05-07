@@ -141,6 +141,9 @@ func TestRunForTaskFromWork_RunsWorkerVerifier(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 	id := seedChainTask(t, "scripted")
+	if err := flipToPlanDone(t, id); err != nil {
+		t.Fatal(err)
+	}
 	stub := stubChain("scripted")
 	stub.verdict = "VERDICT: PASS"
 
@@ -305,6 +308,7 @@ func seedChainTask(t *testing.T, tool string) string {
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		seedAgentBucketWithInteractive(t, bucket, tool, "m1", "false")
 	}
+	seedPlanApprovalDisabled(t)
 	writeChainTaskRow(t, tasks.Task{
 		ID:          id,
 		Status:      tasks.StatusPlanning,
@@ -312,6 +316,21 @@ func seedChainTask(t *testing.T, tool string) string {
 		Summary:     "task",
 	})
 	return id
+}
+
+func flipToPlanDone(t *testing.T, id string) error {
+	t.Helper()
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	task, err := s.GetTask(id)
+	if err != nil {
+		return err
+	}
+	task.Status = tasks.StatusPlanDone
+	return s.PutTask(task)
 }
 
 func seedAgentBucketWithInteractive(t *testing.T, bucket, tool, model, interactive string) {
@@ -425,4 +444,22 @@ func (a *stubChainAgent) Verify(_ context.Context, req codingagents.VerifyReques
 		return 0, err
 	}
 	return 0, nil
+}
+
+// seedPlanApprovalDisabled writes plan_requires_approval=false.
+func seedPlanApprovalDisabled(t *testing.T) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open settings: %v", err)
+	}
+	defer s.Close()
+	if err := s.Put(store.BucketProject,
+		store.KeyPlanRequiresApproval, "false"); err != nil {
+		t.Fatalf("Put plan_requires_approval: %v", err)
+	}
 }

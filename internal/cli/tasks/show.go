@@ -89,6 +89,12 @@ func RunShowPlan(ctx context.Context, opts ShowOptions) error {
 	return runShowFile(ctx, opts, tasks.PlanFileName)
 }
 
+// RunShowClarification is the entry point for
+// `j tasks show clarification`.
+func RunShowClarification(ctx context.Context, opts ShowOptions) error {
+	return runShowFile(ctx, opts, "clarification.md")
+}
+
 // newShowCmd builds the parent `show` cobra command and attaches
 // the requirements / plan leaves. The parent RunE renders the
 // resolved task's task.toml; the leaves render requirements.md
@@ -120,6 +126,7 @@ func newShowCmd() *cobra.Command {
 		"TASKS_SHOW_FROM_TASK")
 	cmd.AddCommand(newShowRequirementsCmd())
 	cmd.AddCommand(newShowPlanCmd())
+	cmd.AddCommand(newShowClarificationCmd())
 	return cmd
 }
 
@@ -178,5 +185,34 @@ func newShowPlanCmd() *cobra.Command {
 		cmd.Flags().Lookup("from-task"))
 	_ = viper.BindEnv("tasks.show.plan.from_task",
 		"TASKS_SHOW_PLAN_FROM_TASK")
+	return cmd
+}
+
+func newShowClarificationCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "clarification",
+		Short: "Render the task's clarification.md when present",
+		Long: "Renders <cwd>/.j/tasks/<id>/clarification.md via bat " +
+			"(when installed and stdout is a TTY) or cat. Resolves " +
+			"the task via --from-task or the shared picker; an " +
+			"unknown id prints `J: no task` and a missing file " +
+			"prints `J: clarification.md not found for task <id>`. " +
+			"Both short-circuit exits 0 with no subprocess.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return RunShowClarification(cmd.Context(), ShowOptions{
+				TaskID: viper.GetString(
+					"tasks.show.clarification.from_task"),
+				Stdin:  cmd.InOrStdin(),
+				Stdout: cmd.OutOrStdout(),
+				Stderr: cmd.ErrOrStderr(),
+			})
+		},
+	}
+	cmd.Flags().String("from-task", "",
+		"Render the named task's clarification.md (no picker)")
+	_ = viper.BindPFlag("tasks.show.clarification.from_task",
+		cmd.Flags().Lookup("from-task"))
+	_ = viper.BindEnv("tasks.show.clarification.from_task",
+		"TASKS_SHOW_CLARIFICATION_FROM_TASK")
 	return cmd
 }

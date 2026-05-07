@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"bytes"
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 	"io"
@@ -38,6 +39,7 @@ func openTestStore(t *testing.T) *tasks.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
+	storeSeedPlanApprovalDisabled(t)
 	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
@@ -109,6 +111,7 @@ func TestReap_LivePIDLeftAlone(t *testing.T) {
 // PlanEndAt is stamped, and BackgroundPID is cleared.
 func TestReap_DeadPlanning_WithArtifacts(t *testing.T) {
 	s := openTestStore(t)
+	putProjectPlanRequiresApproval(t, "false")
 	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
@@ -312,6 +315,7 @@ func TestReap_PutErrorWarns(t *testing.T) {
 // artifacts must come out as `plan-done` after `j tasks` runs.
 func TestReap_ListTasksWiresThroughCommand(t *testing.T) {
 	s := openTestStore(t)
+	putProjectPlanRequiresApproval(t, "false")
 	id := "wired-task"
 	seedTaskDir(t, id, "# wired heading\nbody", "1. step")
 	begin := time.Now().UTC().Add(-time.Hour)
@@ -367,4 +371,108 @@ func deadPID(t *testing.T) int {
 		t.Fatalf("run true: %v", err)
 	}
 	return cmd.Process.Pid
+}
+
+// TestReap_DeadPlanning_WithClarification pins the clarification branch:
+// a dead PID on a planning row with clarification.md present must flip
+// to needs-clarification, not plan-done or help.
+func TestReap_DeadPlanning_WithClarification(t *testing.T) {
+	s := openTestStore(t)
+	tasksDir, err := tasks.DefaultDir()
+	if err != nil {
+		t.Fatalf("DefaultTasksDir: %v", err)
+	}
+	id := "dead-planning-clarification"
+	dir := seedTaskDir(t, id, "# req\nbody", "1. step")
+	if err := os.WriteFile(
+		filepath.Join(dir, clarificationFileName),
+		[]byte("What do you mean?\n"), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	begin := time.Now().UTC().Add(-time.Minute)
+	in := []tasks.Task{{
+		ID:            id,
+		Status:        tasks.StatusPlanning,
+		BackgroundPID: deadPID(t),
+		PlanBeginAt:   begin,
+	}}
+	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
+	got := out[0]
+	if got.Status != tasks.StatusNeedsClarification {
+		t.Fatalf("Status = %q, want needs-clarification", got.Status)
+	}
+	if got.BackgroundPID != 0 {
+		t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
+	}
+	persisted, err := s.GetTask(id)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if persisted.Status != tasks.StatusNeedsClarification {
+		t.Fatalf("persisted Status = %q, want needs-clarification",
+			persisted.Status)
+	}
+}
+
+// TestReap_DeadWorking_WithClarification pins the clarification branch:
+// a dead PID on a working row with clarification.md present must flip
+// to needs-clarification, not work-done.
+func TestReap_DeadWorking_WithClarification(t *testing.T) {
+	s := openTestStore(t)
+	tasksDir, err := tasks.DefaultDir()
+	if err != nil {
+		t.Fatalf("DefaultTasksDir: %v", err)
+	}
+	id := "dead-working-clarification"
+	dir := seedTaskDir(t, id, "", "")
+	if err := os.WriteFile(
+		filepath.Join(dir, clarificationFileName),
+		[]byte("What branch to use?\n"), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	begin := time.Now().UTC().Add(-time.Minute)
+	in := []tasks.Task{{
+		ID:            id,
+		Status:        tasks.StatusWorking,
+		BackgroundPID: deadPID(t),
+		WorkBeginAt:   begin,
+	}}
+	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
+	got := out[0]
+	if got.Status != tasks.StatusNeedsClarification {
+		t.Fatalf("Status = %q, want needs-clarification", got.Status)
+	}
+	if got.BackgroundPID != 0 {
+		t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
+	}
+	persisted, err := s.GetTask(id)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if persisted.Status != tasks.StatusNeedsClarification {
+		t.Fatalf("persisted Status = %q, want needs-clarification",
+			persisted.Status)
+	}
+}
+
+func storeSeedPlanApprovalDisabled(t *testing.T) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.EnsureBucket(store.BucketProject); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketProject,
+		store.KeyPlanRequiresApproval, "false"); err != nil {
+		t.Fatal(err)
+	}
 }

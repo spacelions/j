@@ -25,6 +25,7 @@ func TestNewPlanTask_RecordsAndFinish(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
+	seedPlanApprovalDisabled(t)
 	id := tasks.NewTaskID()
 	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", id, "/tmp/x.md", "# heading\nbody", "plan-cursor", "", "")
 	lc.Finish(nil, "# heading\nbody", "## plan", "/tmp/x.md")
@@ -100,6 +101,7 @@ func TestPlanLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
+	seedPlanApprovalDisabled(t)
 	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 	lc.RecordBackground(11111, "/tmp/should-not-stick.log")
@@ -122,6 +124,7 @@ func TestPlanLifecycle_FinishIdempotent(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
+	seedPlanApprovalDisabled(t)
 	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 	lc.Finish(errors.New("boom"), "should not", "change", "anything")
@@ -139,7 +142,7 @@ func TestPlanLifecycle_FinishPutErrorWarns(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
-	lc := &PlanLifecycle{stderr: &stderr, task: tasks.Task{Status: tasks.StatusPlanning}}
+	lc := &PlanLifecycle{stderr: &stderr, prevStatus: tasks.StatusPlanning, task: tasks.Task{Status: tasks.StatusPlanning}}
 	lc.Finish(nil, "", "", "")
 	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
@@ -216,6 +219,7 @@ func TestTask_BeginPlanReuse_PreservesLineage(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
+	seedPlanApprovalDisabled(t)
 	id := seedPlanDoneTask(t, "seeded")
 	dbPath, err := tasks.DefaultDir()
 	if err != nil {
@@ -261,6 +265,8 @@ func TestPlanLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 	}
 	logPath := filepath.Join(t.TempDir(), "agent.log")
 	var stderr bytes.Buffer
+	t.Cleanup(tasks.ResetHooksForTest)
+	tasks.Register(markersHook)
 	lc := NewPlanTask(&stderr, "cursor", "m", tasks.NewTaskID(), "/tmp/x.md", "# heading", "", logPath, "")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 
@@ -269,11 +275,11 @@ func TestPlanLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 		t.Fatalf("read agent.log: %v", err)
 	}
 	body := string(data)
-	if !strings.Contains(body, `"event":"phase_begin"`) {
-		t.Fatalf("agent.log missing phase_begin: %q", body)
+	if !strings.Contains(body, "plan begin") {
+		t.Fatalf("agent.log missing plan begin marker: %q", body)
 	}
-	if !strings.Contains(body, `"event":"phase_end"`) {
-		t.Fatalf("agent.log missing phase_end: %q", body)
+	if !strings.Contains(body, "plan ") {
+		t.Fatalf("agent.log missing plan end marker: %q", body)
 	}
 	if strings.Contains(stderr.String(), agentlog.Sentinel) {
 		t.Fatalf("stderr leaked phase marker: %q", stderr.String())

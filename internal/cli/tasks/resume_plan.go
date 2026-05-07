@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 
@@ -70,6 +71,13 @@ func RunResumePlan(ctx context.Context, opts ResumePlanOptions) (err error) {
 	taskID, ok, err := resolveResumePlanTaskID(ctx, opts)
 	if err != nil || !ok {
 		return err
+	}
+	t, err := resolver.TaskByID(taskID)
+	if err != nil {
+		return err
+	}
+	if !tasks.IsLegal(t.Status, tasks.EventPlanResume) {
+		return fmt.Errorf("J: cannot resume-plan task in status %q", t.Status)
 	}
 	if _, err := tasks.EnsureDir(taskID); err != nil {
 		return err

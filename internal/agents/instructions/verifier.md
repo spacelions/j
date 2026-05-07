@@ -21,4 +21,5 @@ Tasks:
 
 Conventions:
 - Use the task workspace as the working directory. Do not rely on paths outside the project unless instructed (for example, worktree hints from the host).
+- If you need clarification before you can finish, write your question to `<task-dir>/clarification.md` and exit instead of guessing.
 - Be strict: partial satisfaction is **`VERDICT: FAIL`**. If uncertain, prefer **`VERDICT: FAIL`** and describe the residual risk in the bullets above the verdict line.

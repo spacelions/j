@@ -6,12 +6,34 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 )
+
+func mustSetPlanApproval(t *testing.T, val bool) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureBucket(store.BucketProject); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(store.BucketProject,
+		store.KeyPlanRequiresApproval, strconv.FormatBool(val)); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+}
 
 type planAgent struct {
 	resumeID string
@@ -78,6 +100,7 @@ func TestResolvePlanMarkdown(t *testing.T) {
 
 func TestRunPlanMarkdown(t *testing.T) {
 	setupResolverProject(t)
+	mustSetPlanApproval(t, false)
 	sourcePath := filepath.Join(t.TempDir(), "task.md")
 	if err := os.WriteFile(sourcePath, []byte("source body"), 0o644); err != nil {
 		t.Fatal(err)
