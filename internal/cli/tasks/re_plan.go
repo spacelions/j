@@ -17,7 +17,6 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/resolver"
-	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -99,6 +98,9 @@ func RunRePlan(ctx context.Context, opts RePlanOptions) (err error) {
 	if err != nil {
 		return err
 	}
+	if !tasks.IsLegal(task.Status, tasks.EventPlanRestart) {
+		return fmt.Errorf("J: cannot re-plan task in status %q", task.Status)
+	}
 	proceed, err := resolver.ConfirmStatusOverride(ctx, opts.UI, false, "re-plan", task, resolver.ReplanAllowed)
 	if err != nil {
 		return err
@@ -113,7 +115,7 @@ func RunRePlan(ctx context.Context, opts RePlanOptions) (err error) {
 	}
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 
-	interactive := resolver.Interactive(nil, opts.Stderr, store.BucketPlanner, opts.Interactive)
+	interactive := resolver.Interactive(opts.Interactive)
 
 	args := []string{
 		"tasks", "orchestrate",

@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 
@@ -56,6 +57,13 @@ func RunResumeVerify(ctx context.Context, opts ResumeVerifyOptions) (err error) 
 	taskID, ok, err := resolveResumeVerifyTaskID(ctx, opts)
 	if err != nil || !ok {
 		return err
+	}
+	t, err := resolver.TaskByID(taskID)
+	if err != nil {
+		return err
+	}
+	if !tasks.IsLegal(t.Status, tasks.EventVerifyResume) {
+		return fmt.Errorf("J: cannot resume-verify task in status %q", t.Status)
 	}
 	if _, err := tasks.EnsureDir(taskID); err != nil {
 		return err

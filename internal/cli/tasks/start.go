@@ -18,7 +18,6 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/resolver"
-	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/run"
 )
@@ -219,7 +218,7 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 		return err
 	}
 
-	interactive := resolver.Interactive(nil, opts.Stderr, store.BucketPlanner, opts.Interactive)
+	interactive := resolver.Interactive(opts.Interactive)
 
 	orchestrateArgs := []string{
 		"tasks", "orchestrate",

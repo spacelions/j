@@ -48,7 +48,7 @@ func seedResumableVerify(t *testing.T, mutate func(*tasks.Task)) (string, time.T
 	verifyEnd := verifyBegin.Add(time.Minute)
 	row := tasks.Task{
 		ID:                 id,
-		Status:             tasks.StatusFailed,
+		Status:             tasks.StatusVerifying,
 		VerifyTool:         "cursor",
 		VerifyModel:        "sonnet-4",
 		PlanResumeSession:   "plan-cursor",
@@ -302,11 +302,8 @@ func TestRunResume_StatusCompletedIsResumable(t *testing.T) {
 		Agents: []codingagents.Agent{agent},
 		UI:     &scriptedUI{},
 	})
-	if err != nil {
-		t.Fatalf("RunResume: %v", err)
-	}
-	if len(agent.verifiedReqs) != 1 {
-		t.Fatalf("verify calls = %d, want 1 (completed should be resumable)", len(agent.verifiedReqs))
+	if err == nil {
+		t.Fatal("RunResume from completed should fail")
 	}
 }
 

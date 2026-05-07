@@ -7,10 +7,6 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// finaliseVerifyFailIfStuck flips a row still pinned at `verifying`
-// to `failed` after the orchestrator's SequentialAgent drains.
-// Best-effort: any read / write error surfaces as a single warning
-// on stderr and the helper returns.
 func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
 	s, err := tasks.OpenDefault()
 	if err != nil {
@@ -22,10 +18,11 @@ func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
 	if err != nil {
 		return
 	}
-	if t.Status != tasks.StatusVerifying {
+	newStatus, fsmErr := tasks.Apply(t.Status, tasks.EventVerifyStuck)
+	if fsmErr != nil {
 		return
 	}
-	t.Status = tasks.StatusFailed
+	t.Status = newStatus
 	if err := s.PutTask(t); err != nil {
 		uitheme.DangerousDialogBox(stderr, "J: tasks put: %v", err)
 	}

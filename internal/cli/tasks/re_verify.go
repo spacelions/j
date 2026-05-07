@@ -17,7 +17,6 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/resolver"
-	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -75,6 +74,9 @@ func RunReVerify(ctx context.Context, opts ReVerifyOptions) (err error) {
 	if err != nil {
 		return err
 	}
+	if !tasks.IsLegal(task.Status, tasks.EventVerifyRestart) {
+		return fmt.Errorf("J: cannot re-verify task in status %q", task.Status)
+	}
 	proceed, err := resolver.ConfirmStatusOverride(ctx, opts.UI, false, "re-verify", task, resolver.VerifyAllowed)
 	if err != nil {
 		return err
@@ -89,7 +91,7 @@ func RunReVerify(ctx context.Context, opts ReVerifyOptions) (err error) {
 	}
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 
-	interactive := resolver.Interactive(nil, opts.Stderr, store.BucketVerifier, opts.Interactive)
+	interactive := resolver.Interactive(opts.Interactive)
 
 	args := []string{
 		"tasks", "orchestrate",

@@ -35,12 +35,13 @@ func SortTasks(tasks []Task) {
 	})
 }
 
-// taskIsActive returns true for the four "still in flight" statuses.
-// Anything else (plan-done, work-done, failed, completed, plus
-// any future inactive state) is treated as inactive by SortTasks.
+// taskIsActive returns true for "still in flight" statuses.
+// needs-clarification and plan-pending-approval are active:
+// they represent a task blocked on user input.
 func taskIsActive(s TaskStatus) bool {
 	switch s {
-	case StatusPlanning, StatusWorking, StatusVerifying, StatusHelp:
+	case StatusPlanning, StatusPlanPendingApproval, StatusWorking,
+		StatusVerifying, StatusNeedsClarification, StatusHelp:
 		return true
 	}
 	return false

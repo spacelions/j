@@ -16,7 +16,9 @@ import (
 
 // resumePlanInlineOrchestrator re-execs `j tasks orchestrate inline so
 // the planner resumes its session in the foreground.
-func resumePlanInlineOrchestrator(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
+func resumePlanInlineOrchestrator(
+	ctx context.Context, opts ContinueOptions, t tasks.Task,
+) error {
 	if _, err := resolver.StartTargetFromExistingTask(ctx, t.ID); err != nil {
 		return err
 	}
@@ -35,7 +37,9 @@ func resumePlanInlineOrchestrator(ctx context.Context, opts ContinueOptions, t t
 // resumeWorkInlineOrchestrator re-execs `j tasks orchestrate
 // --phase=from-work --interactive=true` inline so the worker resumes
 // its session in the foreground.
-func resumeWorkInlineOrchestrator(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
+func resumeWorkInlineOrchestrator(
+	ctx context.Context, opts ContinueOptions, t tasks.Task,
+) error {
 	if _, err := tasks.EnsureDir(t.ID); err != nil {
 		return fmt.Errorf("J: ensure task dir: %w", err)
 	}
@@ -78,7 +82,9 @@ func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
 // same precedence so a plan-time crash that never wrote PlanEndAt is
 // still resumable. With no usable signal the dispatch errors instead
 // of silently skipping.
-func dispatchHelp(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
+func dispatchHelp(
+	ctx context.Context, opts ContinueOptions, t tasks.Task,
+) error {
 	switch latestPhase(t) {
 	case "verify":
 		return resumeVerifyingInline(ctx, opts, t.ID)
@@ -136,9 +142,12 @@ func latestEndAt(t tasks.Task) string {
 
 // runPlanDoneWork resolves the tool/model from explicit flags and the
 // stored worker bucket, then calls worker.Execute in-process.
-func runPlanDoneWork(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
-	tool, model := resolver.ResolveToolModel(opts.Tool, opts.Model, store.BucketWorker, opts.Stderr)
-	interactive := resolver.Interactive(nil, opts.Stderr, store.BucketWorker, opts.Interactive)
+func runPlanDoneWork(
+	ctx context.Context, opts ContinueOptions, t tasks.Task,
+) error {
+	tool, model := resolver.ResolveToolModel(
+		opts.Tool, opts.Model, store.BucketWorker, opts.Stderr)
+	interactive := resolver.Interactive(opts.Interactive)
 	return worker.Execute(ctx, worker.ExecuteOptions{
 		TaskID:      t.ID,
 		Yes:         true,
@@ -150,4 +159,65 @@ func runPlanDoneWork(ctx context.Context, opts ContinueOptions, t tasks.Task) er
 		Stderr:      opts.Stderr,
 		Agents:      opts.Agents,
 	})
+}
+
+// dispatchPlanApprove fires EventPlanApprove and falls through to work
+// in the same call. Running `j tasks continue` on a
+// plan-pending-approval row IS the approval signal.
+func dispatchPlanApprove(
+	ctx context.Context, opts ContinueOptions, t tasks.Task,
+) error {
+	prev := t.Status
+	newStatus, err := tasks.Apply(prev, tasks.EventPlanApprove)
+	if err != nil {
+		return fmt.Errorf("J: cannot approve task in status %q", prev)
+	}
+	t.Status = newStatus
+	tasks.PersistWarn(opts.Stderr, t)
+	tasks.Notify(tasks.Transition{
+		From: prev, Event: tasks.EventPlanApprove, To: newStatus,
+	}, t)
+	return runPlanDoneWork(ctx, opts, t)
+}
+
+// dispatchClarification picks the right Resume event via latestPhase,
+// fires it, and launches the orchestrator inline with
+// --interactive=true (overriding the background default).
+func dispatchClarification(
+	ctx context.Context, opts ContinueOptions, t tasks.Task,
+) error {
+	var ev tasks.Event
+	switch latestPhase(t) {
+	case "verify":
+		ev = tasks.EventVerifyResume
+	case "work":
+		ev = tasks.EventWorkResume
+	case "plan":
+		ev = tasks.EventPlanResume
+	default:
+		return fmt.Errorf(
+				"J: task %s in %s has no resumable phase",
+				t.ID, tasks.StatusNeedsClarification)
+	}
+	prev := t.Status
+	newStatus, err := tasks.Apply(prev, ev)
+	if err != nil {
+		return fmt.Errorf(
+				"J: cannot resume task in status %q (event %q)",
+				prev, ev)
+	}
+	t.Status = newStatus
+	tasks.PersistWarn(opts.Stderr, t)
+	tasks.Notify(tasks.Transition{
+		From: prev, Event: ev, To: newStatus,
+	}, t)
+
+	switch ev {
+	case tasks.EventVerifyResume:
+		return resumeVerifyingInline(ctx, opts, t.ID)
+	case tasks.EventWorkResume:
+		return resumeWorkInlineOrchestrator(ctx, opts, t)
+	default:
+		return resumePlanInlineOrchestrator(ctx, opts, t)
+	}
 }

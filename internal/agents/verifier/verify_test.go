@@ -858,24 +858,10 @@ func TestRun_FromTask_StatusMismatch_YesFlagSkipsPrompt(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := s.GetTask(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got.Status = tasks.StatusVerifying
-	if err := s.PutTask(got); err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
-
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
 	ui := &scriptedUI{}
-	err = Run(context.Background(), Options{
+	err := Run(context.Background(), Options{
 		TaskID:        id,
 		Yes:           true,
 		MaxIterations: 1,
@@ -1583,10 +1569,12 @@ func startLongChild(t *testing.T) int {
 
 // resolvedForTest builds a resolved skeleton whose paths live
 // under taskDir so runVerifyLoop's reads/writes hit a writable
-// location without exercising bbolt.
+// location without exercising bbolt. Status is set to WorkDone so
+// lifecycle.BeginVerify (EventVerifyBegin) does not panic.
 func resolvedForTest(taskDir string) resolved {
 	return resolved{
-		Task:             tasks.Task{ID: "x", WorkModel: "m", WorkTool: "cursor"},
+		Task: tasks.Task{ID: "x", Status: tasks.StatusWorkDone,
+			WorkModel: "m", WorkTool: "cursor"},
 		TaskDir:          taskDir,
 		RequirementsPath: filepath.Join(taskDir, "req.md"),
 		PlanPath:         filepath.Join(taskDir, "plan.md"),

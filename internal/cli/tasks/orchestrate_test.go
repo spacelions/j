@@ -94,6 +94,7 @@ func seedOrchestrateTask(t *testing.T, tool string) string {
 		t.Fatalf("write requirements: %v", err)
 	}
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		writeBucketKey(t, store.BucketProject, store.KeyPlanRequiresApproval, "false")
 		testutil.SeedAgentBucketToolModel(t, bucket, tool, "m1")
 		writeBucketKey(t, bucket, "interactive", "false")
 	}

@@ -16,12 +16,14 @@ import (
 	"github.com/spacelions/j/internal/cli/settings"
 	"github.com/spacelions/j/internal/cli/tasks"
 	"github.com/spacelions/j/internal/cli/web"
+	"github.com/spacelions/j/internal/lifecycle"
 )
 
 // NewRoot builds the cobra root command with every subcommand wired
 // in. Reused by Execute() and by tests that need to drive the root
 // command in-process.
 func NewRoot() *cobra.Command {
+	lifecycle.Init()
 	root := &cobra.Command{
 		Use:   "j",
 		Short: "J Harness CLI",

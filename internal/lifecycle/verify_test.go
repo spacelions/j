@@ -284,7 +284,7 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 	begin := time.Now().UTC().Add(-time.Hour)
 	existing := tasks.Task{
 		ID:                 tasks.NewTaskID(),
-		Status:             tasks.StatusFailed,
+		Status:             tasks.StatusVerifying,
 		VerifyTool:         "cursor",
 		VerifyModel:        "sonnet-4",
 		VerifyResumeSession: "v-cursor",
@@ -331,6 +331,8 @@ func TestVerifyLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 	_ = s.Close()
 	logPath := filepath.Join(t.TempDir(), "agent.log")
 	var stderr bytes.Buffer
+	t.Cleanup(tasks.ResetHooksForTest)
+	tasks.Register(markersHook)
 	lc := BeginVerify(existing, &stderr, "cursor", "m", "v-cursor", logPath)
 	lc.Finish(VerifyOutcomeSuccess, nil)
 
@@ -339,11 +341,11 @@ func TestVerifyLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 		t.Fatalf("read agent.log: %v", err)
 	}
 	body := string(data)
-	if !strings.Contains(body, `"event":"phase_begin"`) {
-		t.Fatalf("agent.log missing phase_begin: %q", body)
+	if !strings.Contains(body, "verify begin") {
+		t.Fatalf("agent.log missing verify begin marker: %q", body)
 	}
-	if !strings.Contains(body, `"event":"phase_end"`) {
-		t.Fatalf("agent.log missing phase_end: %q", body)
+	if !strings.Contains(body, "verify pass") {
+		t.Fatalf("agent.log missing verify pass marker: %q", body)
 	}
 	if strings.Contains(stderr.String(), agentlog.Sentinel) {
 		t.Fatalf("stderr leaked phase marker: %q", stderr.String())
@@ -371,10 +373,9 @@ func TestVerifyLifecycle_IterationMarkersInAgentLog(t *testing.T) {
 	_ = s.Close()
 	logPath := filepath.Join(t.TempDir(), "agent.log")
 	var stderr bytes.Buffer
+	t.Cleanup(tasks.ResetHooksForTest)
+	tasks.Register(markersHook)
 	lc := BeginVerify(existing, &stderr, "cursor", "m", "v-cursor", logPath)
-	lc.IterationBegin(0, 3)
-	lc.Verdict(0, "FAIL", "/tmp/findings.md")
-	lc.IterationEnd(0, "FAIL")
 	lc.Finish(VerifyOutcomeNoRetries, nil)
 
 	data, err := os.ReadFile(logPath)
@@ -382,23 +383,14 @@ func TestVerifyLifecycle_IterationMarkersInAgentLog(t *testing.T) {
 		t.Fatalf("read agent.log: %v", err)
 	}
 	body := string(data)
-	if !strings.Contains(body, `"event":"verify_iteration_begin"`) {
-		t.Fatalf("agent.log missing verify_iteration_begin: %q", body)
+	if !strings.Contains(body, "verify begin") {
+		t.Fatalf("agent.log missing verify begin marker: %q", body)
 	}
-	if !strings.Contains(body, `"event":"verdict"`) {
-		t.Fatalf("agent.log missing verdict: %q", body)
-	}
-	if !strings.Contains(body, `"event":"verify_iteration_end"`) {
-		t.Fatalf("agent.log missing verify_iteration_end: %q", body)
-	}
-	if !strings.Contains(body, id) {
-		t.Fatalf("agent.log missing task id %q: %q", id, body)
-	}
-	if !strings.Contains(body, `"verdict":"FAIL"`) {
-		t.Fatalf("agent.log missing FAIL verdict in payload: %q", body)
+	if !strings.Contains(body, "verify fail") {
+		t.Fatalf("agent.log missing verify fail marker: %q", body)
 	}
 	if strings.Contains(stderr.String(), agentlog.Sentinel) {
-		t.Fatalf("stderr leaked iteration marker: %q", stderr.String())
+		t.Fatalf("stderr leaked phase marker: %q", stderr.String())
 	}
 }
 
@@ -411,7 +403,7 @@ func TestBeginVerifyResume_SetsBeginAtWhenZero(t *testing.T) {
 	}
 	task := tasks.Task{
 		ID:                  tasks.NewTaskID(),
-		Status:              tasks.StatusFailed,
+		Status:              tasks.StatusVerifying,
 		VerifyTool:          "cursor",
 		VerifyModel:         "m",
 		VerifyResumeSession: "v-cursor",

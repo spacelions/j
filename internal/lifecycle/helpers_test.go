@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -96,4 +97,23 @@ func seedWorkDoneTask(t *testing.T, summary string) string {
 		t.Fatalf("PutTask: %v", err)
 	}
 	return id
+}
+
+// seedPlanApprovalDisabled writes plan_requires_approval=false to the
+// project settings store so PlanLifecycle.Finish(nil) uses EventPlanDone
+// instead of the default EventPlanAwaitApproval. Call after EnsureProject.
+func seedPlanApprovalDisabled(t *testing.T) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open settings: %v", err)
+	}
+	defer s.Close()
+	if err := s.Put(store.BucketProject, store.KeyPlanRequiresApproval, "false"); err != nil {
+		t.Fatalf("Put plan_requires_approval: %v", err)
+	}
 }

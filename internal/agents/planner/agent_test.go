@@ -73,6 +73,7 @@ func TestNew_ShellOutHappyPath(t *testing.T) {
 	}
 	testutil.SeedAgentBucket(t, store.BucketPlanner, "scripted", "m1")
 	testutil.SeedTaskRow(t, tasks.Task{ID: taskID, Status: tasks.StatusPlanning, Summary: "task"})
+	seedPlanApproval(t, false)
 
 	stub := newScriptedPlanAgent("scripted")
 	a, err := New(Config{
@@ -194,4 +195,25 @@ func (a *scriptedPlanAgent) Work(context.Context, codingagents.WorkRequest) (int
 }
 func (a *scriptedPlanAgent) Verify(context.Context, codingagents.VerifyRequest) (int, error) {
 	return 0, errors.New("scriptedPlanAgent.Verify should not be called")
+}
+
+func seedPlanApproval(t *testing.T, v bool) {
+	t.Helper()
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	val := "false"
+	if v {
+		val = "true"
+	}
+	if err := s.Put(store.BucketProject,
+		store.KeyPlanRequiresApproval, val); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
 }

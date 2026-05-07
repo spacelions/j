@@ -17,7 +17,6 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/resolver"
-	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -76,6 +75,9 @@ func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 	if err != nil {
 		return err
 	}
+	if !tasks.IsLegal(task.Status, tasks.EventWorkRestart) {
+		return fmt.Errorf("J: cannot re-work task in status %q", task.Status)
+	}
 	proceed, err := resolver.ConfirmStatusOverride(ctx, opts.UI, false, "re-work", task, resolver.ReplanAllowed)
 	if err != nil {
 		return err
@@ -99,7 +101,7 @@ func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 		return err
 	}
 
-	interactive := resolver.Interactive(nil, opts.Stderr, store.BucketWorker, opts.Interactive)
+	interactive := resolver.Interactive(opts.Interactive)
 
 	args := []string{
 		"tasks", "orchestrate",

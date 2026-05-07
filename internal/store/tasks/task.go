@@ -108,6 +108,13 @@ type Task struct {
 	// preserved across re-plans so `j tasks` can keep surfacing the
 	// original Linear link.
 	LinearIssue string `toml:"linear_issue,omitempty"`
+
+	// PullRequestURL is the GitHub PR URL the worker agent produced
+	// (detected from agent.log or `gh pr list --head`). Empty until
+	// the tuiquit reconciler fills it in on TUI exit or the reaper
+	// populates it. Upstream display surfaces it as a link in the
+	// task table.
+	PullRequestURL string `toml:"pull_request_url,omitempty"`
 }
 
 // PutTask TOML-encodes t and writes it to
@@ -231,17 +238,18 @@ func (s *Store) ListTasks() ([]Task, error) {
 // row. The pair is chosen by status so each phase's values are preserved
 // independently on disk.
 //
-// For StatusHelp the deepest phase that has a non-empty tool is used so the
-// listing shows where the task was when it got stuck.
+// For StatusHelp and StatusNeedsClarification the deepest phase that
+// has a non-empty tool is used so the listing shows where the task
+// was when it got stuck.
 func (t Task) DisplayToolModel() (tool, model string) {
 	switch t.Status {
-	case StatusPlanning, StatusPlanDone:
+	case StatusPlanning, StatusPlanPendingApproval, StatusPlanDone:
 		return t.PlanTool, t.PlanModel
 	case StatusWorking, StatusWorkDone:
 		return t.WorkTool, t.WorkModel
 	case StatusVerifying, StatusFailed, StatusCompleted:
 		return t.VerifyTool, t.VerifyModel
-	case StatusHelp:
+	case StatusHelp, StatusNeedsClarification:
 		if t.VerifyTool != "" {
 			return t.VerifyTool, t.VerifyModel
 		}
