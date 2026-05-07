@@ -13,8 +13,10 @@ import (
 // the linear package's own tests stay free to define their own
 // fixtures inline. State is rendered as the nested `state.name`
 // shape on the wire when the stub responds to viewer.assignedIssues
-// queries.
+// queries. ID is the GraphQL node id used by the issueUpdate and
+// commentCreate mutations; it stays empty on the list-issues path.
 type LinearIssueStub struct {
+	ID          string `json:"id"`
 	Identifier  string `json:"identifier"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
@@ -55,8 +57,12 @@ type LinearStubResponses struct {
 // is non-zero the handler returns that status with BodyOverride as
 // the body so tests can exercise the 401 / non-2xx / malformed-JSON
 // branches.
-func NewLinearStubServer(responses LinearStubResponses) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func NewLinearStubServer(
+	responses LinearStubResponses,
+) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(
+		w http.ResponseWriter, r *http.Request,
+	) {
 		body, _ := io.ReadAll(r.Body)
 		_ = r.Body.Close()
 		if responses.HTTPStatus != 0 {
