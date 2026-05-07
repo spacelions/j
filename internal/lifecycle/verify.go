@@ -19,10 +19,11 @@ const (
 // VerifyLifecycle owns the begin/end task-log writes around a
 // single `j verify` invocation.
 type VerifyLifecycle struct {
-	stderr       io.Writer
-	agentLogPath string
-	task         tasks.Task
-	closed       bool
+	stderr        io.Writer
+	agentLogPath  string
+	task          tasks.Task
+	maxIterations int
+	closed        bool
 }
 
 // BeginVerifyRestart flips an existing task row to `verifying` for
@@ -108,16 +109,25 @@ func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
 	}
 }
 
-// IterationBegin writes one verify_iteration_begin marker.
+// IterationBegin records the iteration cap so a later FAIL Verdict
+// can render the per-iteration Linear comment with an "N/M" header.
 func (lc *VerifyLifecycle) IterationBegin(iteration, max int) {
-	// Keep existing behaviour — iteration markers are not
-	// status transitions, so they stay out of the FSM.
+	lc.maxIterations = max
 }
 
-// Verdict writes one verdict marker.
+// Verdict mirrors a per-iteration FAIL to the linked Linear issue
+// (verifier_findings.md prefixed with the iteration header). PASS
+// verdicts are skipped — the terminal hook handles the success
+// comment.
 func (lc *VerifyLifecycle) Verdict(
 	iteration int, verdict, findingsPath string,
 ) {
+	if verdict != "FAIL" {
+		return
+	}
+	PushVerifyIterationFinding(
+		lc.stderr, lc.task, iteration, lc.maxIterations,
+	)
 }
 
 // IterationEnd closes the iteration_begin/end pairing.

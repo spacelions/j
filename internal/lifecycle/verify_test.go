@@ -394,6 +394,78 @@ func TestVerifyLifecycle_IterationMarkersInAgentLog(t *testing.T) {
 	}
 }
 
+// TestVerifyLifecycle_Verdict_FailPostsToLinear pins the Verdict
+// FAIL branch: when the task carries a LinearIssue, the iteration
+// helper hits the Linear stub with a 1-based "iteration N/M" header.
+func TestVerifyLifecycle_Verdict_FailPostsToLinear(t *testing.T) {
+	id := tasks.NewTaskID()
+	env := newVerifyPushEnv(t, id, "iter findings")
+	saveAPIKey(t, "lin_api_test")
+	lc := &VerifyLifecycle{
+		stderr: io.Discard,
+		task: tasks.Task{
+			ID: id, Status: tasks.StatusVerifying,
+			LinearIssue: "ENG-1",
+		},
+	}
+	lc.IterationBegin(0, 3)
+	lc.Verdict(0, "FAIL", "")
+	got := env.recordedBodies()
+	saw := 0
+	for _, body := range got {
+		if strings.Contains(body, "commentCreate") {
+			saw++
+			if !strings.Contains(
+				commentBody(t, body),
+				"Verification iteration 1/3 failed",
+			) {
+				t.Fatalf("body header: %s", body)
+			}
+		}
+	}
+	if saw != 1 {
+		t.Fatalf("want 1 commentCreate, got %d in %v", saw, got)
+	}
+}
+
+// TestVerifyLifecycle_Verdict_PassNoPost pins the Verdict PASS
+// branch: PASS iteration verdicts are skipped — the terminal hook
+// owns the success comment.
+func TestVerifyLifecycle_Verdict_PassNoPost(t *testing.T) {
+	id := tasks.NewTaskID()
+	env := newVerifyPushEnv(t, id, "iter findings")
+	saveAPIKey(t, "lin_api_test")
+	lc := &VerifyLifecycle{
+		stderr: io.Discard,
+		task: tasks.Task{
+			ID: id, Status: tasks.StatusVerifying,
+			LinearIssue: "ENG-1",
+		},
+	}
+	lc.IterationBegin(0, 3)
+	lc.Verdict(0, "PASS", "")
+	if got := env.recordedBodies(); len(got) != 0 {
+		t.Fatalf("expected no HTTP traffic, got %v", got)
+	}
+}
+
+// TestVerifyLifecycle_Verdict_NoLinearIssue_NoPost pins the
+// non-Linear short-circuit.
+func TestVerifyLifecycle_Verdict_NoLinearIssue_NoPost(t *testing.T) {
+	id := tasks.NewTaskID()
+	env := newVerifyPushEnv(t, id, "iter findings")
+	saveAPIKey(t, "lin_api_test")
+	lc := &VerifyLifecycle{
+		stderr: io.Discard,
+		task:   tasks.Task{ID: id, Status: tasks.StatusVerifying},
+	}
+	lc.IterationBegin(0, 3)
+	lc.Verdict(0, "FAIL", "")
+	if got := env.recordedBodies(); len(got) != 0 {
+		t.Fatalf("expected no HTTP traffic, got %v", got)
+	}
+}
+
 // TestBeginVerifyResume_SetsBeginAtWhenZero covers the
 // VerifyBeginAt.IsZero() true branch in BeginVerifyResume.
 func TestBeginVerifyResume_SetsBeginAtWhenZero(t *testing.T) {
