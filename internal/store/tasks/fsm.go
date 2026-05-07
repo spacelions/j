@@ -25,6 +25,7 @@
 //	    planning --> needs-clarification : EventReaperPlanNeedsClarification
 //	    plan-pending-approval --> plan-done : EventPlanApprove
 //	    plan-pending-approval --> planning : EventPlanRestart
+//	    plan-pending-approval --> planning : EventPlanResume
 //	    plan-done --> planning : EventPlanRestart
 //	    plan-done --> planning : EventPlanResume
 //	    plan-done --> working : EventWorkBegin
@@ -133,6 +134,7 @@ var transitions = []Transition{
 
 	{StatusPlanPendingApproval, EventPlanApprove, StatusPlanDone},
 	{StatusPlanPendingApproval, EventPlanRestart, StatusPlanning},
+	{StatusPlanPendingApproval, EventPlanResume, StatusPlanning},
 
 	{StatusPlanDone, EventPlanRestart, StatusPlanning},
 	{StatusPlanDone, EventPlanResume, StatusPlanning},
