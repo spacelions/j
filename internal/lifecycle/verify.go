@@ -22,67 +22,55 @@ type VerifyLifecycle struct {
 	stderr       io.Writer
 	agentLogPath string
 	task         tasks.Task
-	prevStatus   tasks.TaskStatus
 	closed       bool
 }
 
-// BeginVerify flips an existing task row to `verifying`.
-func BeginVerify(t tasks.Task, stderr io.Writer, agentName, model,
+// BeginVerifyRestart flips an existing task row to `verifying` for
+// the re-verify / first-run flow: tool/model/resume cursor are
+// refreshed and stale verify timestamps cleared. Mirrors the
+// BeginPlanRestart / BeginWorkRestart shape so the restart vs resume
+// vocabulary is uniform across the lifecycle helpers.
+func BeginVerifyRestart(t tasks.Task, stderr io.Writer, agentName, model,
 	resumeID, agentLogPath string,
 ) *VerifyLifecycle {
-	prev := t.Status
-	newStatus, err := tasks.Apply(prev, tasks.EventVerifyBegin)
-	if err != nil {
-		panic("verify begin: " + err.Error())
-	}
 	task := t
-	task.Status = newStatus
 	task.VerifyTool = agentName
 	task.VerifyModel = model
 	task.VerifyResumeSession = resumeID
 	task.VerifyBeginAt = time.Now().UTC()
 	task.VerifyEndAt = time.Time{}
 	task.DoneAt = time.Time{}
-	return openVerifyLifecycle(stderr, task, agentLogPath, prev,
-		tasks.EventVerifyBegin)
+	return openVerifyLifecycle(stderr, task, agentLogPath,
+		tasks.EventVerifyBegin, "verify begin")
 }
 
-// BeginVerifyResume is the resume-flow companion of BeginVerify.
+// BeginVerifyResume is the resume-flow companion of BeginVerifyRestart.
 func BeginVerifyResume(t tasks.Task, stderr io.Writer,
 	agentLogPath string,
 ) *VerifyLifecycle {
-	prev := t.Status
-	newStatus, err := tasks.Apply(prev, tasks.EventVerifyResume)
-	if err != nil {
-		panic("verify resume: " + err.Error())
-	}
 	task := t
-	task.Status = newStatus
 	task.VerifyEndAt = time.Time{}
 	task.DoneAt = time.Time{}
 	if task.VerifyBeginAt.IsZero() {
 		task.VerifyBeginAt = time.Now().UTC()
 	}
-	return openVerifyLifecycle(stderr, task, agentLogPath, prev,
-		tasks.EventVerifyResume)
+	return openVerifyLifecycle(stderr, task, agentLogPath,
+		tasks.EventVerifyResume, "verify resume")
 }
 
 func openVerifyLifecycle(stderr io.Writer, task tasks.Task,
-	agentLogPath string, fromStatus tasks.TaskStatus,
-	ev tasks.Event,
+	agentLogPath string, ev tasks.Event, panicTag string,
 ) *VerifyLifecycle {
 	task.AgentLogPath = agentLogPath
-	lc := &VerifyLifecycle{
+	if _, err := tasks.ApplyAndPersistWarn(
+		stderr, &task, ev); err != nil {
+		panic(panicTag + ": " + err.Error())
+	}
+	return &VerifyLifecycle{
 		stderr:       stderr,
 		agentLogPath: agentLogPath,
 		task:         task,
-		prevStatus:   task.Status,
 	}
-	tasks.PersistWarn(stderr, task)
-	tasks.Notify(tasks.Transition{
-		From: fromStatus, Event: ev, To: task.Status,
-	}, task)
-	return lc
 }
 
 // RecordBackground stamps PID + log path on the verify task row.
@@ -114,19 +102,10 @@ func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
 	default:
 		ev = tasks.EventVerifyFail
 	}
-	from := lc.task.Status
-	newStatus, err := tasks.Apply(from, ev)
-	if err != nil {
+	if _, err := tasks.ApplyAndPersistWarn(
+		lc.stderr, &lc.task, ev); err != nil {
 		panic("verify finish: " + err.Error())
 	}
-	lc.task.Status = newStatus
-	if newStatus == tasks.StatusCompleted {
-		lc.task.DoneAt = time.Now().UTC()
-	}
-	tasks.PersistWarn(lc.stderr, lc.task)
-	tasks.Notify(tasks.Transition{
-		From: from, Event: ev, To: newStatus,
-	}, lc.task)
 }
 
 // IterationBegin writes one verify_iteration_begin marker.

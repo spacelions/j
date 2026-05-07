@@ -142,7 +142,10 @@ func TestPlanLifecycle_FinishPutErrorWarns(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
-	lc := &PlanLifecycle{stderr: &stderr, prevStatus: tasks.StatusPlanning, task: tasks.Task{Status: tasks.StatusPlanning}}
+	lc := &PlanLifecycle{
+		stderr: &stderr,
+		task:   tasks.Task{Status: tasks.StatusPlanning},
+	}
 	lc.Finish(nil, "", "", "")
 	if !strings.Contains(stderr.String(), "tasks put") {
 		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
@@ -211,10 +214,10 @@ func TestPlanLifecycle_Task(t *testing.T) {
 	}
 }
 
-// TestTask_BeginPlanReuse_PreservesLineage flips an existing plan-done
+// TestTask_BeginPlanRestart_PreservesLineage flips an existing plan-done
 // row to planning, refreshes the plan resume cursor, and preserves
 // the original PlanBeginAt while clearing PlanEndAt / DoneAt.
-func TestTask_BeginPlanReuse_PreservesLineage(t *testing.T) {
+func TestTask_BeginPlanRestart_PreservesLineage(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
@@ -233,7 +236,7 @@ func TestTask_BeginPlanReuse_PreservesLineage(t *testing.T) {
 	_ = s.Close()
 	prePlanBegin := existing.PlanBeginAt
 
-	lc := BeginPlanReuse(existing, io.Discard, "cursor", "gpt-5", "fresh-plan-cursor", "")
+	lc := BeginPlanRestart(existing, io.Discard, "cursor", "gpt-5", "fresh-plan-cursor", "")
 	lc.Finish(nil, "# refined", "## plan", "/tmp/x.md")
 	got := listAllTasks(t)[0]
 	if got.Status != tasks.StatusPlanDone {
@@ -286,11 +289,11 @@ func TestPlanLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 	}
 }
 
-// TestBeginPlanReuse_PreservesLinearIssue pins the re-plan
+// TestBeginPlanRestart_PreservesLinearIssue pins the re-plan
 // round-trip for the Linear identifier: a row whose original plan
-// stamped a LinearIssue keeps it after BeginPlanReuse mutates the
+// stamped a LinearIssue keeps it after BeginPlanRestart mutates the
 // row for a re-plan invocation.
-func TestBeginPlanReuse_PreservesLinearIssue(t *testing.T) {
+func TestBeginPlanRestart_PreservesLinearIssue(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
@@ -304,17 +307,98 @@ func TestBeginPlanReuse_PreservesLinearIssue(t *testing.T) {
 		PlanTool:    "cursor",
 		PlanModel:   "sonnet-4",
 	}
-	lc := BeginPlanReuse(original, io.Discard, "claude", "opus-4", "resume-id", "")
+	lc := BeginPlanRestart(original, io.Discard, "claude", "opus-4", "resume-id", "")
 	got := lc.Task()
 	if got.LinearIssue != "ENG-9" {
-		t.Fatalf("LinearIssue lost across BeginPlanReuse: got %q", got.LinearIssue)
+		t.Fatalf("LinearIssue lost across BeginPlanRestart: got %q", got.LinearIssue)
 	}
 }
 
-// TestBeginPlanReuse_SetsBeginAtWhenZero covers the
-// PlanBeginAt.IsZero() true branch in BeginPlanReuse (a task with
+// TestBeginPlanResume_PreservesSessionAndLineage pins the resume
+// branch: BeginPlanResume must NOT overwrite PlanResumeSession,
+// must apply EventPlanResume from a plan-pending-approval row, and
+// must preserve PlanBeginAt while clearing PlanEndAt / DoneAt.
+func TestBeginPlanResume_PreservesSessionAndLineage(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	begin := time.Now().UTC().Add(-time.Hour)
+	original := tasks.Task{
+		ID:                "id-resume",
+		Status:            tasks.StatusPlanPendingApproval,
+		LinearIssue:       "ENG-7",
+		PlanTool:          "cursor",
+		PlanModel:         "sonnet-4",
+		PlanResumeSession: "prior-cursor",
+		PlanBeginAt:       begin,
+		PlanEndAt:         time.Now().UTC(),
+	}
+	tasks.PersistWarn(io.Discard, original)
+	lc := BeginPlanResume(original, io.Discard, "cursor", "sonnet-4", "")
+	got := lc.Task()
+	if got.PlanResumeSession != "prior-cursor" {
+		t.Fatalf("PlanResumeSession = %q, want prior-cursor (resume must not mint)",
+			got.PlanResumeSession)
+	}
+	if got.Status != tasks.StatusPlanning {
+		t.Fatalf("Status = %q, want planning", got.Status)
+	}
+	if !got.PlanBeginAt.Equal(begin) {
+		t.Fatalf("PlanBeginAt = %v, want %v", got.PlanBeginAt, begin)
+	}
+	if !got.PlanEndAt.IsZero() {
+		t.Fatalf("PlanEndAt = %v, want zero", got.PlanEndAt)
+	}
+	if got.LinearIssue != "ENG-7" {
+		t.Fatalf("LinearIssue lost across BeginPlanResume: got %q", got.LinearIssue)
+	}
+}
+
+// TestBeginPlanResume_SetsBeginAtWhenZero covers the
+// PlanBeginAt.IsZero() true branch in BeginPlanResume.
+func TestBeginPlanResume_SetsBeginAtWhenZero(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	task := tasks.Task{
+		ID:                tasks.NewTaskID(),
+		Status:            tasks.StatusPlanPendingApproval,
+		PlanResumeSession: "prior",
+	}
+	tasks.PersistWarn(io.Discard, task)
+	lc := BeginPlanResume(task, io.Discard, "cursor", "m", "")
+	got := lc.Task()
+	if got.PlanBeginAt.IsZero() {
+		t.Fatal("PlanBeginAt should be stamped when zero at BeginPlanResume time")
+	}
+}
+
+// TestBeginPlanResume_IllegalTransitionPanics pins the FSM guard:
+// resume from a status without a {status, EventPlanResume, planning}
+// edge panics with the wrapped event apply error.
+func TestBeginPlanResume_IllegalTransitionPanics(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for illegal resume transition")
+		}
+	}()
+	BeginPlanResume(tasks.Task{
+		ID:                "id-bad",
+		Status:            tasks.StatusCompleted,
+		PlanResumeSession: "prior",
+	}, io.Discard, "cursor", "m", "")
+}
+
+// TestBeginPlanRestart_SetsBeginAtWhenZero covers the
+// PlanBeginAt.IsZero() true branch in BeginPlanRestart (a task with
 // no prior PlanBeginAt).
-func TestBeginPlanReuse_SetsBeginAtWhenZero(t *testing.T) {
+func TestBeginPlanRestart_SetsBeginAtWhenZero(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
@@ -326,9 +410,9 @@ func TestBeginPlanReuse_SetsBeginAtWhenZero(t *testing.T) {
 		PlanModel: "m",
 	}
 	tasks.PersistWarn(io.Discard, task)
-	lc := BeginPlanReuse(task, io.Discard, "cursor", "m", "", "")
+	lc := BeginPlanRestart(task, io.Discard, "cursor", "m", "", "")
 	got := lc.Task()
 	if got.PlanBeginAt.IsZero() {
-		t.Fatal("PlanBeginAt should be stamped when zero at BeginPlanReuse time")
+		t.Fatal("PlanBeginAt should be stamped when zero at BeginPlanRestart time")
 	}
 }

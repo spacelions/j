@@ -1570,7 +1570,7 @@ func startLongChild(t *testing.T) int {
 // resolvedForTest builds a resolved skeleton whose paths live
 // under taskDir so runVerifyLoop's reads/writes hit a writable
 // location without exercising bbolt. Status is set to WorkDone so
-// lifecycle.BeginVerify (EventVerifyBegin) does not panic.
+// lifecycle.BeginVerifyRestart (EventVerifyBegin) does not panic.
 func resolvedForTest(taskDir string) resolved {
 	return resolved{
 		Task: tasks.Task{ID: "x", Status: tasks.StatusWorkDone,
@@ -1597,7 +1597,7 @@ func TestRunVerifyLoop_VerifierWaitCtxCancelled(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
 	}()
-	lc := lifecycle.BeginVerify(res.Task, io.Discard, "cursor", "m", "id", "")
+	lc := lifecycle.BeginVerifyRestart(res.Task, io.Discard, "cursor", "m", "id", "")
 	outcome, err := runVerifyLoop(ctx, Options{
 		Interactive:   true,
 		MaxIterations: 3,
@@ -1628,7 +1628,7 @@ func TestRunVerifyLoop_WorkerWaitCtxCancelled(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
 	}()
-	lc := lifecycle.BeginVerify(res.Task, io.Discard, "cursor", "m", "id", "")
+	lc := lifecycle.BeginVerifyRestart(res.Task, io.Discard, "cursor", "m", "id", "")
 	outcome, err := runVerifyLoop(ctx, Options{
 		Interactive:   true,
 		MaxIterations: 3,

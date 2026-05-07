@@ -15,11 +15,11 @@ import (
 	"github.com/spacelions/j/internal/util/agentlog"
 )
 
-// TestTask_BeginVerify_FlipsStatusAndStampsResume pins the begin
+// TestTask_BeginVerifyRestart_FlipsStatusAndStampsResume pins the begin
 // helper: status flips to verifying, the new resume cursor lands on
 // the row, work-phase fields are preserved, and stale verify-phase /
 // done-at timestamps are cleared.
-func TestTask_BeginVerify_FlipsStatusAndStampsResume(t *testing.T) {
+func TestTask_BeginVerifyRestart_FlipsStatusAndStampsResume(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
@@ -39,7 +39,7 @@ func TestTask_BeginVerify_FlipsStatusAndStampsResume(t *testing.T) {
 	preWorkEnd := existing.WorkEndAt
 	preWorkCursor := existing.WorkResumeSession
 
-	lc := BeginVerify(existing, io.Discard, "cursor", "gpt-5", "fresh-verify-cursor", "")
+	lc := BeginVerifyRestart(existing, io.Discard, "cursor", "gpt-5", "fresh-verify-cursor", "")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 
 	got := listAllTasks(t)[0]
@@ -86,7 +86,7 @@ func TestVerifyLifecycle_FinishFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := BeginVerify(existing, io.Discard, "cursor", "m", "v-cursor", "")
+	lc := BeginVerifyRestart(existing, io.Discard, "cursor", "m", "v-cursor", "")
 	lc.Finish(VerifyOutcomeNoRetries, nil)
 	got := listAllTasks(t)[0]
 	if got.Status != tasks.StatusFailed {
@@ -114,7 +114,7 @@ func TestVerifyLifecycle_FinishErrorPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := BeginVerify(existing, io.Discard, "cursor", "m", "v-cursor", "")
+	lc := BeginVerifyRestart(existing, io.Discard, "cursor", "m", "v-cursor", "")
 	lc.Finish(VerifyOutcomeNoRetries, errors.New("boom"))
 	got := listAllTasks(t)[0]
 	if got.Status != tasks.StatusHelp {
@@ -140,7 +140,7 @@ func TestVerifyLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := BeginVerify(existing, io.Discard, "cursor", "m", "v-cursor", "")
+	lc := BeginVerifyRestart(existing, io.Discard, "cursor", "m", "v-cursor", "")
 	lc.RecordBackground(54321, "/tmp/agent.log")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 	got := listAllTasks(t)[0]
@@ -173,7 +173,7 @@ func TestVerifyLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := BeginVerify(existing, io.Discard, "cursor", "m", "v-cursor", "")
+	lc := BeginVerifyRestart(existing, io.Discard, "cursor", "m", "v-cursor", "")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 	lc.RecordBackground(99999, "/tmp/should-not-stick.log")
 	got := listAllTasks(t)[0]
@@ -202,7 +202,7 @@ func TestVerifyLifecycle_FinishIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := BeginVerify(existing, io.Discard, "cursor", "m", "v-cursor", "")
+	lc := BeginVerifyRestart(existing, io.Discard, "cursor", "m", "v-cursor", "")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 	lc.Finish(VerifyOutcomeNoRetries, errors.New("ignored"))
 	got := listAllTasks(t)[0]
@@ -211,10 +211,10 @@ func TestVerifyLifecycle_FinishIdempotent(t *testing.T) {
 	}
 }
 
-// TestBeginVerify_OpenFails forces PutTask's mkdir of the per-task
+// TestBeginVerifyRestart_OpenFails forces PutTask's mkdir of the per-task
 // directory to fail by replacing `.j/tasks` with a regular file.
-// BeginVerify and Finish each emit a warning and continue.
-func TestBeginVerify_OpenFails(t *testing.T) {
+// BeginVerifyRestart and Finish each emit a warning and continue.
+func TestBeginVerifyRestart_OpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
@@ -230,9 +230,9 @@ func TestBeginVerify_OpenFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	lc := BeginVerify(tasks.Task{ID: tasks.NewTaskID(), Status: tasks.StatusWorkDone}, &stderr, "cursor", "m", "", "")
+	lc := BeginVerifyRestart(tasks.Task{ID: tasks.NewTaskID(), Status: tasks.StatusWorkDone}, &stderr, "cursor", "m", "", "")
 	if lc == nil {
-		t.Fatal("BeginVerify returned nil")
+		t.Fatal("BeginVerifyRestart returned nil")
 	}
 	lc.Finish(VerifyOutcomeSuccess, nil)
 	if !strings.Contains(stderr.String(), "tasks") {
@@ -240,17 +240,17 @@ func TestBeginVerify_OpenFails(t *testing.T) {
 	}
 }
 
-// TestBeginVerify_PutTaskErrorWarns drives the put-error branch by
+// TestBeginVerifyRestart_PutTaskErrorWarns drives the put-error branch by
 // handing a Task with an empty ID.
-func TestBeginVerify_PutTaskErrorWarns(t *testing.T) {
+func TestBeginVerifyRestart_PutTaskErrorWarns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
-	lc := BeginVerify(tasks.Task{Status: tasks.StatusWorkDone}, &stderr, "cursor", "m", "", "")
+	lc := BeginVerifyRestart(tasks.Task{Status: tasks.StatusWorkDone}, &stderr, "cursor", "m", "", "")
 	if lc == nil {
-		t.Fatal("BeginVerify returned nil")
+		t.Fatal("BeginVerifyRestart returned nil")
 	}
 	t.Cleanup(func() { lc.Finish(VerifyOutcomeSuccess, nil) })
 	if !strings.Contains(stderr.String(), "tasks put") {
@@ -333,7 +333,7 @@ func TestVerifyLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 	var stderr bytes.Buffer
 	t.Cleanup(tasks.ResetHooksForTest)
 	tasks.Register(markersHook)
-	lc := BeginVerify(existing, &stderr, "cursor", "m", "v-cursor", logPath)
+	lc := BeginVerifyRestart(existing, &stderr, "cursor", "m", "v-cursor", logPath)
 	lc.Finish(VerifyOutcomeSuccess, nil)
 
 	data, err := os.ReadFile(logPath)
@@ -375,7 +375,7 @@ func TestVerifyLifecycle_IterationMarkersInAgentLog(t *testing.T) {
 	var stderr bytes.Buffer
 	t.Cleanup(tasks.ResetHooksForTest)
 	tasks.Register(markersHook)
-	lc := BeginVerify(existing, &stderr, "cursor", "m", "v-cursor", logPath)
+	lc := BeginVerifyRestart(existing, &stderr, "cursor", "m", "v-cursor", logPath)
 	lc.Finish(VerifyOutcomeNoRetries, nil)
 
 	data, err := os.ReadFile(logPath)

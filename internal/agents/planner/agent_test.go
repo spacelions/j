@@ -157,14 +157,121 @@ func TestNew_ShellOutDefaultsStderr(t *testing.T) {
 	}
 }
 
+// TestExecute_ResumeFromStoredSession pins the resume contract:
+// when Execute runs on a row carrying a non-empty PlanResumeSession,
+// the agent's NewResumeID MUST NOT be called, the PlanRequest MUST
+// carry Resume=true and ResumeChatID equal to the row's stored
+// value, and the row's PlanResumeSession value MUST remain
+// unchanged after the run. Mirrors the worker / verifier inference
+// pattern (resume vs fresh is read from the row, not a flag).
+func TestExecute_ResumeFromStoredSession(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := testutil.WriteFile(taskDir+"/requirements.md", "# x\nbody"); err != nil {
+		t.Fatalf("write requirements: %v", err)
+	}
+	testutil.SeedAgentBucket(t, store.BucketPlanner, "scripted", "m1")
+	testutil.SeedTaskRow(t, tasks.Task{
+		ID:                taskID,
+		Status:            tasks.StatusPlanPendingApproval,
+		PlanTool:          "scripted",
+		PlanModel:         "m1",
+		PlanResumeSession: "prior-cursor",
+		Summary:           "task",
+	})
+	seedPlanApproval(t, false)
+
+	stub := newScriptedPlanAgent("scripted")
+	stub.panicOnNewResumeID = true
+	if err := Execute(context.Background(), ExecuteOptions{
+		TaskID: taskID,
+		Agent:  stub,
+		Model:  "m1",
+		Stderr: io.Discard,
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if stub.planCalls != 1 {
+		t.Fatalf("Plan calls = %d, want 1", stub.planCalls)
+	}
+	if stub.lastReq.ResumeChatID != "prior-cursor" {
+		t.Fatalf("ResumeChatID = %q, want prior-cursor", stub.lastReq.ResumeChatID)
+	}
+	if !stub.lastReq.Resume {
+		t.Fatal("PlanRequest.Resume = false, want true on resume run")
+	}
+	got := testutil.ReadTaskRow(t, taskID)
+	if got.PlanResumeSession != "prior-cursor" {
+		t.Fatalf("PlanResumeSession = %q, want prior-cursor (must not be overwritten)",
+			got.PlanResumeSession)
+	}
+}
+
+// TestExecute_FreshFromEmptySession pins the restart contract: an
+// empty PlanResumeSession means "fresh" — Execute mints a new id via
+// NewResumeID, sets PlanRequest.Resume=false, and stamps the new id
+// into the row.
+func TestExecute_FreshFromEmptySession(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := testutil.WriteFile(taskDir+"/requirements.md", "# x\nbody"); err != nil {
+		t.Fatalf("write requirements: %v", err)
+	}
+	testutil.SeedAgentBucket(t, store.BucketPlanner, "scripted", "m1")
+	testutil.SeedTaskRow(t, tasks.Task{
+		ID:        taskID,
+		Status:    tasks.StatusPlanDone,
+		PlanTool:  "scripted",
+		PlanModel: "m1",
+		Summary:   "task",
+	})
+	seedPlanApproval(t, false)
+
+	stub := newScriptedPlanAgent("scripted")
+	if err := Execute(context.Background(), ExecuteOptions{
+		TaskID: taskID,
+		Agent:  stub,
+		Model:  "m1",
+		Stderr: io.Discard,
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if stub.lastReq.ResumeChatID != "rid" {
+		t.Fatalf("ResumeChatID = %q, want freshly-minted rid",
+			stub.lastReq.ResumeChatID)
+	}
+	if stub.lastReq.Resume {
+		t.Fatal("PlanRequest.Resume = true, want false on fresh run")
+	}
+	got := testutil.ReadTaskRow(t, taskID)
+	if got.PlanResumeSession != "rid" {
+		t.Fatalf("PlanResumeSession = %q, want rid (newly minted)",
+			got.PlanResumeSession)
+	}
+}
+
 // scriptedPlanAgent stands in for a real codingagents.Agent. Plan
 // writes the per-task requirements.md / plan.md inline so plan.Run's
 // finishPlan promotes the row to plan-done synchronously.
 type scriptedPlanAgent struct {
-	name      string
-	models    []string
-	planCalls int
-	planErr   error
+	name               string
+	models             []string
+	planCalls          int
+	planErr            error
+	lastReq            codingagents.PlanRequest
+	panicOnNewResumeID bool
 }
 
 func newScriptedPlanAgent(name string) *scriptedPlanAgent {
@@ -174,10 +281,16 @@ func newScriptedPlanAgent(name string) *scriptedPlanAgent {
 func (a *scriptedPlanAgent) Name() string                                 { return a.name }
 func (a *scriptedPlanAgent) ListModels(context.Context) ([]string, error) { return a.models, nil }
 func (a *scriptedPlanAgent) CheckLogin(context.Context) error             { return nil }
-func (a *scriptedPlanAgent) NewResumeID(context.Context) (string, error)  { return "rid", nil }
+func (a *scriptedPlanAgent) NewResumeID(context.Context) (string, error) {
+	if a.panicOnNewResumeID {
+		panic("NewResumeID must not be called on resume runs")
+	}
+	return "rid", nil
+}
 
 func (a *scriptedPlanAgent) Plan(_ context.Context, req codingagents.PlanRequest) (int, error) {
 	a.planCalls++
+	a.lastReq = req
 	if a.planErr != nil {
 		return 0, a.planErr
 	}
