@@ -115,6 +115,15 @@ func RunRePlan(ctx context.Context, opts RePlanOptions) (err error) {
 	}
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 
+	// Re-plan means "start the planner fresh"; clearing
+	// PlanResumeSession before re-execing the orchestrator is how
+	// planner.Execute distinguishes re-plan from resume-plan (the
+	// former mints a new session via NewResumeID, the latter sees
+	// the populated row and feeds the existing id into `--resume`).
+	if err := clearPlanResumeSession(task.ID); err != nil {
+		return err
+	}
+
 	interactive := resolver.Interactive(opts.Interactive)
 
 	args := []string{
@@ -141,6 +150,30 @@ func RunRePlan(ctx context.Context, opts RePlanOptions) (err error) {
 	}
 	stampSpawnOnRow(opts.Stderr, task.ID, agentLogPath, pid)
 	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", task.ID), pid, agentLogPath)
+	return nil
+}
+
+// clearPlanResumeSession blanks the task row's PlanResumeSession in
+// place. The orchestrator's planner phase treats a populated session
+// as the "resume" signal, so callers that want a fresh planner run
+// (re-plan) must drop the field before re-execing.
+func clearPlanResumeSession(taskID string) error {
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		return fmt.Errorf("J: open task store: %w", err)
+	}
+	defer func() { _ = s.Close() }()
+	row, err := s.GetTask(taskID)
+	if err != nil {
+		return fmt.Errorf("J: read task %s: %w", taskID, err)
+	}
+	if row.PlanResumeSession == "" {
+		return nil
+	}
+	row.PlanResumeSession = ""
+	if err := s.PutTask(row); err != nil {
+		return fmt.Errorf("J: clear plan resume session: %w", err)
+	}
 	return nil
 }
 

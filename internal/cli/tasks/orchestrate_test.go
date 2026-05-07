@@ -26,13 +26,16 @@ import (
 // Verify each complete inline so the synchronous lifecycle paths
 // run end to end without a real subprocess.
 type chainAgent struct {
-	name        string
-	models      []string
-	planCalls   atomic.Int32
-	workCalls   atomic.Int32
-	verifyCalls atomic.Int32
-	verdicts    []string // sequence consumed in order; last value sticks.
-	planErr     error
+	name              string
+	models            []string
+	planCalls         atomic.Int32
+	workCalls         atomic.Int32
+	verifyCalls       atomic.Int32
+	verdicts          []string // sequence consumed in order; last value sticks.
+	planErr           error
+	lastPlanReq       codingagents.PlanRequest
+	newResumeIDCalls  atomic.Int32
+	newResumeIDPanics bool
 }
 
 func newChainAgent(name string) *chainAgent {
@@ -42,10 +45,17 @@ func newChainAgent(name string) *chainAgent {
 func (a *chainAgent) Name() string                                 { return a.name }
 func (a *chainAgent) ListModels(context.Context) ([]string, error) { return a.models, nil }
 func (a *chainAgent) CheckLogin(context.Context) error             { return nil }
-func (a *chainAgent) NewResumeID(context.Context) (string, error)  { return "rid", nil }
+func (a *chainAgent) NewResumeID(context.Context) (string, error) {
+	a.newResumeIDCalls.Add(1)
+	if a.newResumeIDPanics {
+		panic("NewResumeID must not be called on resume runs")
+	}
+	return "rid", nil
+}
 
 func (a *chainAgent) Plan(_ context.Context, req codingagents.PlanRequest) (int, error) {
 	a.planCalls.Add(1)
+	a.lastPlanReq = req
 	if a.planErr != nil {
 		return 0, a.planErr
 	}
@@ -709,6 +719,73 @@ func TestRunOrchestrate_FromWorkConflictExplicitOverrideOnly(t *testing.T) {
 	}
 	if stub.planCalls.Load()+stub.workCalls.Load()+stub.verifyCalls.Load() != 0 {
 		t.Fatalf("no agent should run when conflict guard fires")
+	}
+}
+
+// TestRunOrchestrate_InfersPlanResumeFromRow pins the resume-plan
+// inference contract end to end: a row with a non-empty
+// PlanResumeSession causes the orchestrator's planner phase to (a)
+// skip the agent's NewResumeID, (b) deliver the row's stored session
+// to PlanRequest.ResumeChatID, (c) set PlanRequest.Resume=true so
+// the backend selects the resume prompt, and (d) preserve the row's
+// PlanResumeSession after the run. Mirrors how the worker /
+// verifier infer resume mode from their own *ResumeSession fields.
+func TestRunOrchestrate_InfersPlanResumeFromRow(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedOrchestrateTask(t, "scripted")
+	seedRowPlanPendingApprovalWithSession(t, id, "prior-cursor")
+	stagePlan(t, id)
+	stub := newChainAgent("scripted")
+	stub.newResumeIDPanics = true
+	stub.verdicts = []string{"VERDICT: PASS"}
+
+	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+		TaskID:               id,
+		PlanRequiresApproval: requirePlanApproval(),
+		Stdin:                strings.NewReader(""),
+		Stdout:               io.Discard,
+		Stderr:               io.Discard,
+		Agents:               []codingagents.Agent{stub},
+	}); err != nil {
+		t.Fatalf("RunOrchestrate: %v", err)
+	}
+	if stub.newResumeIDCalls.Load() != 0 {
+		t.Fatalf("NewResumeID calls = %d, want 0 on resume run",
+			stub.newResumeIDCalls.Load())
+	}
+	if stub.lastPlanReq.ResumeChatID != "prior-cursor" {
+		t.Fatalf("PlanRequest.ResumeChatID = %q, want prior-cursor",
+			stub.lastPlanReq.ResumeChatID)
+	}
+	if !stub.lastPlanReq.Resume {
+		t.Fatal("PlanRequest.Resume = false, want true")
+	}
+	row := readOrchestrateTaskRow(t, id)
+	if row.PlanResumeSession != "prior-cursor" {
+		t.Fatalf("PlanResumeSession = %q, want prior-cursor (preserved)",
+			row.PlanResumeSession)
+	}
+}
+
+// seedRowPlanPendingApprovalWithSession flips the seeded row to
+// plan-pending-approval and stamps PlanResumeSession so the
+// resume-plan branch has a session to reuse.
+func seedRowPlanPendingApprovalWithSession(t *testing.T, id, session string) {
+	t.Helper()
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	row, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row.Status = tasks.StatusPlanPendingApproval
+	row.PlanResumeSession = session
+	if err := s.PutTask(row); err != nil {
+		t.Fatalf("PutTask: %v", err)
 	}
 }
 
