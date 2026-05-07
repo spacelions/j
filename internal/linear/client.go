@@ -75,93 +75,6 @@ func NewClient(apiKey string, opts ...Option) *Client {
 	return c
 }
 
-// Issue is the shape returned by GetIssue and ListAssignedIssues.
-// Identifier is the upstream `ENG-123` form; URL is the public web
-// link the markdown footer echoes back. State is the human-readable
-// workflow state name (e.g. "In Progress"), populated by the
-// list-issues path; GetIssue does not fetch it and leaves it empty.
-// Description is set by GetIssue and empty on list responses (the
-// list view doesn't fetch bodies).
-type Issue struct {
-	Identifier  string `json:"identifier"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	URL         string `json:"url"`
-	State       string `json:"-"`
-}
-
-// Project is the shape returned by ListProjects. ID is the GraphQL
-// node id (opaque); Name is the human-readable label rendered by the
-// picker.
-type Project struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-type graphQLRequest struct {
-	Query     string         `json:"query"`
-	Variables map[string]any `json:"variables,omitempty"`
-}
-
-type graphQLError struct {
-	Message string `json:"message"`
-}
-
-const issueQuery = `query($id:String!){issue(id:$id){identifier title description url}}`
-
-const projectsQuery = `query{projects{nodes{id name}}}`
-
-const assignedIssuesQuery = `query{viewer{assignedIssues(filter:{state:{type:{nin:["completed","canceled"]}}},orderBy:updatedAt,first:50){nodes{identifier title url state{name}}}}}`
-
-const assignedIssuesByProjectQuery = `query($projectId:ID!){viewer{assignedIssues(filter:{state:{type:{nin:["completed","canceled"]}},project:{id:{eq:$projectId}}},orderBy:updatedAt,first:50){nodes{identifier title url state{name}}}}}`
-
-type issueResponse struct {
-	Data struct {
-		Issue *Issue `json:"issue"`
-	} `json:"data"`
-	Errors []graphQLError `json:"errors"`
-}
-
-type projectsResponse struct {
-	Data struct {
-		Projects struct {
-			Nodes []Project `json:"nodes"`
-		} `json:"projects"`
-	} `json:"data"`
-	Errors []graphQLError `json:"errors"`
-}
-
-// assignedIssueNode mirrors the `nodes` shape inside
-// viewer.assignedIssues. State arrives nested as `state.name` so the
-// node has its own struct; ListAssignedIssues flattens each node
-// into an Issue before returning.
-type assignedIssueNode struct {
-	Identifier string `json:"identifier"`
-	Title      string `json:"title"`
-	URL        string `json:"url"`
-	State      struct {
-		Name string `json:"name"`
-	} `json:"state"`
-}
-
-type assignedIssuesResponse struct {
-	Data struct {
-		Viewer struct {
-			AssignedIssues struct {
-				Nodes []assignedIssueNode `json:"nodes"`
-			} `json:"assignedIssues"`
-		} `json:"viewer"`
-	} `json:"data"`
-	Errors []graphQLError `json:"errors"`
-}
-
-// ListIssuesOpts narrows ListAssignedIssues. ProjectID, when set,
-// limits the result to issues whose project.id equals it; empty
-// means "any project (or none)".
-type ListIssuesOpts struct {
-	ProjectID string
-}
-
 // GetIssue fetches a single issue by its `<TEAM>-<NUM>` identifier.
 // Pre-flight: ValidateIdentifier rejects malformed input before the
 // GraphQL round-trip so a 400 is never returned for "foo". A null
@@ -173,7 +86,11 @@ func (c *Client) GetIssue(ctx context.Context, id string) (Issue, error) {
 		return Issue{}, err
 	}
 	var resp issueResponse
-	if err := c.do(ctx, graphQLRequest{Query: issueQuery, Variables: map[string]any{"id": id}}, &resp); err != nil {
+	req := graphQLRequest{
+		Query:     issueQuery,
+		Variables: map[string]any{"id": id},
+	}
+	if err := c.do(ctx, req, &resp); err != nil {
 		return Issue{}, err
 	}
 	if msg := firstGraphQLError(resp.Errors); msg != "" {
@@ -190,7 +107,8 @@ func (c *Client) GetIssue(ctx context.Context, id string) (Issue, error) {
 // list per-token so the result is the user's own projects.
 func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
 	var resp projectsResponse
-	if err := c.do(ctx, graphQLRequest{Query: projectsQuery}, &resp); err != nil {
+	req := graphQLRequest{Query: projectsQuery}
+	if err := c.do(ctx, req, &resp); err != nil {
 		return nil, err
 	}
 	if msg := firstGraphQLError(resp.Errors); msg != "" {
@@ -209,7 +127,9 @@ func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
 // Description is intentionally not requested; the list view is for
 // picking, and the per-issue body is fetched on demand by GetIssue
 // once the user picks one.
-func (c *Client) ListAssignedIssues(ctx context.Context, opts ListIssuesOpts) ([]Issue, error) {
+func (c *Client) ListAssignedIssues(
+	ctx context.Context, opts ListIssuesOpts,
+) ([]Issue, error) {
 	req := graphQLRequest{Query: assignedIssuesQuery}
 	if opts.ProjectID != "" {
 		req = graphQLRequest{
@@ -246,7 +166,8 @@ func (c *Client) do(ctx context.Context, req graphQLRequest, out any) error {
 	if err != nil {
 		return fmt.Errorf("linear: marshal: %w", err)
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("linear: new request: %w", err)
 	}
@@ -273,9 +194,3 @@ func (c *Client) do(ctx context.Context, req graphQLRequest, out any) error {
 	return nil
 }
 
-func firstGraphQLError(errs []graphQLError) string {
-	if len(errs) == 0 {
-		return ""
-	}
-	return errs[0].Message
-}
