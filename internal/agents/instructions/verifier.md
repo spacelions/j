@@ -17,7 +17,9 @@ Tasks:
 6. If the result is **`VERDICT: PASS`**, manually run all existing cases under the repository `testcases/` directory from the project root.
    - If any fail, set **`VERDICT: FAIL`**, document them, and follow step 5.
    - If all pass, move your new test-case files from the workspace into `testcases/` at the project root.
-7. Open a pull or merge request.
+7. Near the end of your session
+   - rebase `origin/main` and solve conflicts.
+   - run `gh pr create` to open a pull request for your changes.
 
 Conventions:
 - Use the task workspace as the working directory. Do not rely on paths outside the project unless instructed (for example, worktree hints from the host).
