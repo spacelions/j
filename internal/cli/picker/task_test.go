@@ -14,7 +14,7 @@ func TestFormatTaskLabels_StatusAndSummary(t *testing.T) {
 		{ID: "01A", Status: tasks.StatusPlanDone, Summary: "first"},
 		{ID: "01B", Status: tasks.StatusWorking, Summary: "second"},
 	}
-	labels, byLabel := formatTaskLabels(rows)
+	labels, byLabel := FormatTaskLabels(rows)
 	want := []string{
 		"01A — plan-done — first",
 		"01B — working — second",
@@ -43,7 +43,7 @@ func TestFormatTaskLabels_EmptySummaryFallback(t *testing.T) {
 		{ID: "01A", Status: tasks.StatusPlanning, Summary: ""},
 		{ID: "01B", Status: tasks.StatusHelp, Summary: "   \t\n"},
 	}
-	labels, _ := formatTaskLabels(rows)
+	labels, _ := FormatTaskLabels(rows)
 	for _, got := range labels {
 		if !strings.HasSuffix(got, "(no summary)") {
 			t.Fatalf("label = %q, want trailing (no summary)", got)
@@ -52,7 +52,7 @@ func TestFormatTaskLabels_EmptySummaryFallback(t *testing.T) {
 }
 
 func TestFormatTaskLabels_EmptyInput(t *testing.T) {
-	labels, byLabel := formatTaskLabels(nil)
+	labels, byLabel := FormatTaskLabels(nil)
 	if len(labels) != 0 {
 		t.Fatalf("labels = %v, want empty", labels)
 	}

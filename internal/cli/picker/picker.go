@@ -74,12 +74,30 @@ func (p *Picker) choose(ctx context.Context, title string, options []string) (st
 		return "", fmt.Errorf("%s: no options available", strings.ToLower(title))
 	}
 	var v string
-	if err := p.run(ctx, huh.NewSelect[string]().
-		Title(title).
-		Options(huh.NewOptions(options...)...).
-		Filtering(true).
-		Value(&v)); err != nil {
+	if err := p.run(ctx, SelectField(title, options, &v)); err != nil {
 		return "", err
 	}
 	return v, nil
+}
+
+// SelectField returns the huh.Select used by every leaf picker
+// (PickTask, PickMarkdownInCwd, PickLinearProject, etc.). Exposed so
+// teatest-style tests can build the same form the production path
+// renders. The caller is responsible for wrapping it in a huh.Form
+// (use SelectForm) and for setting Submit/Cancel commands when
+// driving it via teatest.NewTestModel.
+func SelectField(title string, options []string, value *string) huh.Field {
+	return huh.NewSelect[string]().
+		Title(title).
+		Options(huh.NewOptions(options...)...).
+		Filtering(true).
+		Value(value)
+}
+
+// SelectForm wraps SelectField in a huh.Form themed identically to the
+// production picker. teatest tests pass the result to
+// teatest.NewTestModel after setting SubmitCmd / CancelCmd.
+func SelectForm(title string, options []string, value *string) *huh.Form {
+	return huh.NewForm(huh.NewGroup(SelectField(title, options, value))).
+		WithTheme(uitheme.Theme())
 }
