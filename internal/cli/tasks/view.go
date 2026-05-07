@@ -25,15 +25,6 @@ type Viewer func(
 	out, errw io.Writer,
 ) error
 
-// Tailer streams a growing file (path) to out. Same shape as
-// Viewer; the production implementation execs `tail -f`.
-type Tailer func(
-	ctx context.Context,
-	path string,
-	in io.Reader,
-	out, errw io.Writer,
-) error
-
 // lookPath is a package-private var defaulting to exec.LookPath so
 // view tests can shadow it without introducing a configuration
 // seam (per AGENTS.md: allowlist, not interface).
@@ -90,24 +81,6 @@ func copyFileTo(path string, out io.Writer) error {
 	defer func() { _ = f.Close() }()
 	if _, err := io.Copy(out, f); err != nil {
 		return fmt.Errorf("copy %q: %w", path, err)
-	}
-	return nil
-}
-
-// defaultTailer execs `tail -f <path>`. Wraps the exec failure with
-// a deterministic prefix so callers can grep stderr.
-func defaultTailer(
-	ctx context.Context,
-	path string,
-	in io.Reader,
-	out, errw io.Writer,
-) error {
-	cmd := exec.CommandContext(ctx, "tail", "-f", path)
-	cmd.Stdin = in
-	cmd.Stdout = out
-	cmd.Stderr = errw
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("tail -f %q: %w", path, err)
 	}
 	return nil
 }
@@ -169,7 +142,7 @@ func resolveTaskFile(
 // absolute tasks root so the caller can join `<root>/<id>/
 // <filename>` without re-opening. The store is closed before
 // returning so the file lock is released ahead of any long-running
-// renderer / tailer.
+// renderer.
 func openAndResolveTaskID(
 	ctx context.Context,
 	opts fileResolveOptions,

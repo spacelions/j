@@ -10,8 +10,8 @@ import (
 
 // TestTasksLogs_UnknownID pins the acceptance bullet:
 // `j tasks logs --from-task <unknown-id>` short-circuits to the
-// no-task branch, prints `J: no task`, and exits 0 with no `tail`
-// subprocess.
+// no-task branch, prints `J: no task`, and exits 0 with no
+// renderer subprocess.
 func TestTasksLogs_UnknownID(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)

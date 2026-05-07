@@ -24,47 +24,47 @@ func TestRunLogs_DirectIDHappyPath(t *testing.T) {
 	}
 	seedTaskWithFile(t, "id-log", "x",
 		tasks.AgentLogFileName, "log line\n")
-	tailer := &fakeTailer{}
+	viewer := &fakeViewer{}
 	err = RunLogs(context.Background(), LogsOptions{
 		TaskID: "id-log",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     &fakeUI{},
-		Tailer: withFakeTailer(tailer),
+		Viewer: withFakeViewer(viewer),
 	})
 	if err != nil {
 		t.Fatalf("RunLogs: %v", err)
 	}
-	if tailer.calls != 1 {
-		t.Fatalf("Tailer calls = %d, want 1", tailer.calls)
+	if viewer.calls != 1 {
+		t.Fatalf("Viewer calls = %d, want 1", viewer.calls)
 	}
 	want := filepath.Join(
 		cwd, ".j", tasks.DirName, "id-log",
 		tasks.AgentLogFileName,
 	)
-	if tailer.lastPath != want {
-		t.Fatalf("Tailer path = %q, want %q",
-			tailer.lastPath, want)
+	if viewer.lastPath != want {
+		t.Fatalf("Viewer path = %q, want %q",
+			viewer.lastPath, want)
 	}
 }
 
 func TestRunLogs_DirectIDUnknown(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
-	tailer := &fakeTailer{}
+	viewer := &fakeViewer{}
 	var stdout bytes.Buffer
 	err := RunLogs(context.Background(), LogsOptions{
 		TaskID: "ghost",
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     &fakeUI{},
-		Tailer: withFakeTailer(tailer),
+		Viewer: withFakeViewer(viewer),
 	})
 	if err != nil {
 		t.Fatalf("RunLogs: %v", err)
 	}
-	if tailer.calls != 0 {
-		t.Fatalf("Tailer calls = %d, want 0", tailer.calls)
+	if viewer.calls != 0 {
+		t.Fatalf("Viewer calls = %d, want 0", viewer.calls)
 	}
 	line := strings.TrimRight(stdout.String(), "\n")
 	if line != noTaskMessage {
@@ -75,20 +75,20 @@ func TestRunLogs_DirectIDUnknown(t *testing.T) {
 func TestRunLogs_DirectIDFileMissing(t *testing.T) {
 	t.Chdir(t.TempDir())
 	seedTaskWithFile(t, "id-no-log", "x", "", "")
-	tailer := &fakeTailer{}
+	viewer := &fakeViewer{}
 	var stdout bytes.Buffer
 	err := RunLogs(context.Background(), LogsOptions{
 		TaskID: "id-no-log",
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     &fakeUI{},
-		Tailer: withFakeTailer(tailer),
+		Viewer: withFakeViewer(viewer),
 	})
 	if err != nil {
 		t.Fatalf("RunLogs: %v", err)
 	}
-	if tailer.calls != 0 {
-		t.Fatalf("Tailer calls = %d, want 0", tailer.calls)
+	if viewer.calls != 0 {
+		t.Fatalf("Viewer calls = %d, want 0", viewer.calls)
 	}
 	want := "J: " + tasks.AgentLogFileName +
 		" not found for task id-no-log"
@@ -101,21 +101,21 @@ func TestRunLogs_DirectIDFileMissing(t *testing.T) {
 func TestRunLogs_NoIDEmptyStore(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
-	tailer := &fakeTailer{}
+	viewer := &fakeViewer{}
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
 	err := RunLogs(context.Background(), LogsOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
-		Tailer: withFakeTailer(tailer),
+		Viewer: withFakeViewer(viewer),
 	})
 	if err != nil {
 		t.Fatalf("RunLogs: %v", err)
 	}
-	if tailer.calls != 0 || ui.pickCalls != 0 {
-		t.Fatalf("tailer=%d picker=%d, want 0,0",
-			tailer.calls, ui.pickCalls)
+	if viewer.calls != 0 || ui.pickCalls != 0 {
+		t.Fatalf("viewer=%d picker=%d, want 0,0",
+			viewer.calls, ui.pickCalls)
 	}
 	line := strings.TrimRight(stdout.String(), "\n")
 	if line != emptyMessage {
@@ -132,12 +132,12 @@ func TestRunLogs_NoIDPickerHappyPath(t *testing.T) {
 	seedTaskWithFile(t, "id-pk", "x",
 		tasks.AgentLogFileName, "body")
 	ui := &fakeUI{pickReturn: "id-pk"}
-	tailer := &fakeTailer{}
+	viewer := &fakeViewer{}
 	err = RunLogs(context.Background(), LogsOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     ui,
-		Tailer: withFakeTailer(tailer),
+		Viewer: withFakeViewer(viewer),
 	})
 	if err != nil {
 		t.Fatalf("RunLogs: %v", err)
@@ -145,16 +145,16 @@ func TestRunLogs_NoIDPickerHappyPath(t *testing.T) {
 	if ui.pickCalls != 1 {
 		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
 	}
-	if tailer.calls != 1 {
-		t.Fatalf("Tailer calls = %d, want 1", tailer.calls)
+	if viewer.calls != 1 {
+		t.Fatalf("Viewer calls = %d, want 1", viewer.calls)
 	}
 	want := filepath.Join(
 		cwd, ".j", tasks.DirName, "id-pk",
 		tasks.AgentLogFileName,
 	)
-	if tailer.lastPath != want {
-		t.Fatalf("Tailer path = %q, want %q",
-			tailer.lastPath, want)
+	if viewer.lastPath != want {
+		t.Fatalf("Viewer path = %q, want %q",
+			viewer.lastPath, want)
 	}
 }
 
@@ -163,13 +163,13 @@ func TestRunLogs_NoIDPickerAbort(t *testing.T) {
 	seedTaskWithFile(t, "id-abort", "x",
 		tasks.AgentLogFileName, "")
 	ui := &fakeUI{}
-	tailer := &fakeTailer{}
+	viewer := &fakeViewer{}
 	var stdout bytes.Buffer
 	err := RunLogs(context.Background(), LogsOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
-		Tailer: withFakeTailer(tailer),
+		Viewer: withFakeViewer(viewer),
 	})
 	if err != nil {
 		t.Fatalf("RunLogs: %v", err)
@@ -177,25 +177,25 @@ func TestRunLogs_NoIDPickerAbort(t *testing.T) {
 	if ui.pickCalls != 1 {
 		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
 	}
-	if tailer.calls != 0 {
-		t.Fatalf("Tailer calls = %d, want 0", tailer.calls)
+	if viewer.calls != 0 {
+		t.Fatalf("Viewer calls = %d, want 0", viewer.calls)
 	}
 	if stdout.String() != "" {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
 }
 
-func TestRunLogs_TailerErrorPropagates(t *testing.T) {
+func TestRunLogs_ViewerErrorPropagates(t *testing.T) {
 	t.Chdir(t.TempDir())
-	seedTaskWithFile(t, "id-t-err", "x",
+	seedTaskWithFile(t, "id-v-err", "x",
 		tasks.AgentLogFileName, "")
-	boom := errors.New("tailer boom")
+	boom := errors.New("viewer boom")
 	err := RunLogs(context.Background(), LogsOptions{
-		TaskID: "id-t-err",
+		TaskID: "id-v-err",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     &fakeUI{},
-		Tailer: withFakeTailer(&fakeTailer{returnErr: boom}),
+		Viewer: withFakeViewer(&fakeViewer{returnErr: boom}),
 	})
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want %v", err, boom)
@@ -271,17 +271,17 @@ func TestLogsOptions_WithDefaults_FillsAllNilStreams(t *testing.T) {
 	if o.UI == nil {
 		t.Error("UI was not defaulted")
 	}
-	if o.Tailer == nil {
-		t.Error("Tailer was not defaulted")
+	if o.Viewer == nil {
+		t.Error("Viewer was not defaulted")
 	}
 }
 
 func TestLogsOptions_WithDefaults_KeepsProvided(t *testing.T) {
 	customUI := &fakeUI{}
-	customTailer := withFakeTailer(&fakeTailer{})
+	customViewer := withFakeViewer(&fakeViewer{})
 	o := LogsOptions{
 		UI:     customUI,
-		Tailer: customTailer,
+		Viewer: customViewer,
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -289,7 +289,7 @@ func TestLogsOptions_WithDefaults_KeepsProvided(t *testing.T) {
 	if o.UI != customUI {
 		t.Errorf("UI = %v, want custom", o.UI)
 	}
-	if o.Tailer == nil {
-		t.Error("Tailer was wiped")
+	if o.Viewer == nil {
+		t.Error("Viewer was wiped")
 	}
 }

@@ -44,26 +44,6 @@ func (f *fakeViewer) View(
 
 func withFakeViewer(f *fakeViewer) Viewer { return f.View }
 
-// fakeTailer mirrors fakeViewer but for the Tailer func type.
-type fakeTailer struct {
-	calls     int
-	lastPath  string
-	returnErr error
-}
-
-func (f *fakeTailer) Tail(
-	_ context.Context,
-	path string,
-	_ io.Reader,
-	_, _ io.Writer,
-) error {
-	f.calls++
-	f.lastPath = path
-	return f.returnErr
-}
-
-func withFakeTailer(f *fakeTailer) Tailer { return f.Tail }
-
 // withLookPath shadows the package lookPath var for the lifetime of
 // the test and restores the production hook on cleanup.
 func withLookPath(t *testing.T, fn func(string) (string, error)) {
@@ -257,19 +237,6 @@ func TestDefaultViewer_ExecError(t *testing.T) {
 	}
 }
 
-func TestDefaultTailer_ExecErrorOnMissingFile(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires POSIX tail")
-	}
-	missing := filepath.Join(t.TempDir(), "nope.log")
-	err := defaultTailer(
-		context.Background(), missing, nil, io.Discard, io.Discard,
-	)
-	if err == nil || !strings.Contains(err.Error(), "tail -f") {
-		t.Fatalf("err = %v, want wrapped tail error", err)
-	}
-}
-
 func TestResolveTaskFile_DirectIDHappyPath(t *testing.T) {
 	t.Chdir(t.TempDir())
 	cwd, err := os.Getwd()
@@ -459,26 +426,6 @@ func TestResolveTaskFile_StatNonNotExistError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "stat") {
 		t.Fatalf("err = %v, want wrapped 'stat' prefix", err)
-	}
-}
-
-func TestDefaultTailer_HappyPath(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires POSIX tail")
-	}
-	stubDir := t.TempDir()
-	stub := filepath.Join(stubDir, "tail")
-	body := "#!/bin/sh\nexit 0\n"
-	if err := os.WriteFile(stub, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+
-		os.Getenv("PATH"))
-	if err := defaultTailer(
-		context.Background(), "/tmp/anywhere",
-		nil, io.Discard, io.Discard,
-	); err != nil {
-		t.Fatalf("defaultTailer happy path: %v", err)
 	}
 }
 

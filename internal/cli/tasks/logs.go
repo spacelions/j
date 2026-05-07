@@ -11,9 +11,10 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// LogsOptions configures `j tasks logs`. Same shape as ShowOptions
-// but the renderer is a Tailer (no bat/cat fallback): the leaf
-// always execs `tail -f <agent.log>`.
+// LogsOptions configures `j tasks logs`. Same shape as ShowOptions:
+// Stdin/Stdout/Stderr default to the process streams; UI defaults to
+// the huh-backed picker; Viewer defaults to defaultViewer (bat -> cat
+// -> io.Copy). Tests pass scripted fakes for both UI and Viewer.
 type LogsOptions struct {
 	TaskID string
 
@@ -22,7 +23,7 @@ type LogsOptions struct {
 	Stderr io.Writer
 
 	UI     UI
-	Tailer Tailer
+	Viewer Viewer
 }
 
 func (o LogsOptions) withDefaults() LogsOptions {
@@ -38,16 +39,17 @@ func (o LogsOptions) withDefaults() LogsOptions {
 	if o.UI == nil {
 		o.UI = newHuhUI(o.Stdin, o.Stderr)
 	}
-	if o.Tailer == nil {
-		o.Tailer = defaultTailer
+	if o.Viewer == nil {
+		o.Viewer = defaultViewer
 	}
 	return o
 }
 
 // RunLogs implements `j tasks logs`. Resolves <cwd>/.j/tasks/<id>/
 // agent.log via resolveTaskFile and hands the absolute path to the
-// injected Tailer. Missing log -> "J: agent.log not found for task
-// <id>" + exit 0 with no subprocess (matches the read leaves).
+// injected Viewer (bat -> cat -> io.Copy). Missing log -> "J:
+// agent.log not found for task <id>" + exit 0 with no subprocess
+// (matches the show leaves).
 func RunLogs(ctx context.Context, opts LogsOptions) error {
 	opts = opts.withDefaults()
 	path, ok, err := resolveTaskFile(ctx, fileResolveOptions{
@@ -60,7 +62,7 @@ func RunLogs(ctx context.Context, opts LogsOptions) error {
 	if err != nil || !ok {
 		return err
 	}
-	return opts.Tailer(
+	return opts.Viewer(
 		ctx, path, opts.Stdin, opts.Stdout, opts.Stderr,
 	)
 }
@@ -68,13 +70,13 @@ func RunLogs(ctx context.Context, opts LogsOptions) error {
 func newLogsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "logs",
-		Short: "Tail the resolved task's agent.log",
-		Long: "Resolves a task (via --from-task or the shared " +
-			"picker) and execs `tail -f <agent.log>` against " +
-			"<cwd>/.j/tasks/<id>/agent.log. An unknown id prints " +
-			"`J: no task` and a missing log prints `J: agent.log " +
-			"not found for task <id>`. Both short-circuit exits 0 " +
-			"with no subprocess. Read-only.",
+		Short: "Render the resolved task's agent.log",
+		Long: "Renders <cwd>/.j/tasks/<id>/agent.log via bat (when " +
+			"installed and stdout is a TTY) or cat. Resolves the " +
+			"task via --from-task or the shared picker; an unknown " +
+			"id prints `J: no task` and a missing file prints " +
+			"`J: agent.log not found for task <id>`. Both short-" +
+			"circuit exits 0 with no subprocess. Read-only.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return RunLogs(cmd.Context(), LogsOptions{
 				TaskID: viper.GetString("tasks.logs.from_task"),
@@ -85,7 +87,7 @@ func newLogsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().String("from-task", "",
-		"Tail the named task's agent.log (no picker)")
+		"Render the named task's agent.log (no picker)")
 	_ = viper.BindPFlag("tasks.logs.from_task",
 		cmd.Flags().Lookup("from-task"))
 	_ = viper.BindEnv("tasks.logs.from_task", "TASKS_LOGS_FROM_TASK")
