@@ -53,13 +53,23 @@ func DecidePlan(taskDir string, requireApproval bool) (tasks.Event, error) {
 func DecideWork(
 	ctx context.Context, taskDir, branch, agentLogPath string,
 ) (tasks.Event, string) {
-	if url := prURLInAgentLog(agentLogPath); url != "" {
-		return tasks.EventWorkDone, url
-	}
-	if url := runGhPRList(ctx, branch); url != "" {
+	if url := DetectPullRequestURL(
+		ctx, branch, agentLogPath); url != "" {
 		return tasks.EventWorkDone, url
 	}
 	return tasks.EventWorkQuit, ""
+}
+
+// DetectPullRequestURL runs the same two-pass detection used by
+// DecideWork: agent.log first, then `gh pr list --head <branch>`.
+// Returns the URL or "" on any failure.
+func DetectPullRequestURL(
+	ctx context.Context, branch, agentLogPath string,
+) string {
+	if url := prURLInAgentLog(agentLogPath); url != "" {
+		return url
+	}
+	return runGhPRList(ctx, branch)
 }
 
 // DecideVerify returns the event based on the last non-empty line of
