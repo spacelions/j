@@ -443,6 +443,85 @@ func TestWorkLifecycle_Finish_ErrorPath_StillDetectsURL(t *testing.T) {
 	}
 }
 
+// writeWorkClarification drops `clarification.md` into
+// `<cwd>/.j/tasks/<id>/` so WorkLifecycle.Finish's clarification
+// branch fires. Mirrors the planner-side helper.
+func writeWorkClarification(t *testing.T, id, body string) {
+	t.Helper()
+	dir, err := tasks.EnsureDir(id)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	path := filepath.Join(dir, tasks.ClarificationFileName)
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write clarification.md: %v", err)
+	}
+}
+
+// TestWorkLifecycle_Finish_ClarificationPresent pins the foreground
+// worker-clarification branch: a clean Finish that finds
+// `clarification.md` on disk lands the row in `needs-clarification`
+// instead of `work-done`, mirroring PlanLifecycle.
+func TestWorkLifecycle_Finish_ClarificationPresent(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := tasks.NewTaskID()
+	lc := NewWorkTask(io.Discard, "cursor", "m", id,
+		"/tmp/x.plan.md", "", "body", "", "")
+	writeWorkClarification(t, id, "need answer X\n")
+	lc.Finish(nil)
+
+	got := listAllTasks(t)[0]
+	if got.Status != tasks.StatusNeedsClarification {
+		t.Fatalf("Status = %q, want needs-clarification",
+			got.Status)
+	}
+	if got.WorkEndAt.IsZero() {
+		t.Fatalf("WorkEndAt should be stamped")
+	}
+}
+
+// TestWorkLifecycle_Finish_ErrorTrumpsClarification pins the
+// precedence rule: a non-nil runErr emits EventWorkError even when
+// `clarification.md` is on disk, matching PlanLifecycle.
+func TestWorkLifecycle_Finish_ErrorTrumpsClarification(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := tasks.NewTaskID()
+	lc := NewWorkTask(io.Discard, "cursor", "m", id,
+		"/tmp/x.plan.md", "", "body", "", "")
+	writeWorkClarification(t, id, "stale\n")
+	lc.Finish(errors.New("boom"))
+
+	got := listAllTasks(t)[0]
+	if got.Status != tasks.StatusHelp {
+		t.Fatalf("Status = %q, want help", got.Status)
+	}
+}
+
+// TestWorkLifecycle_Finish_ClarificationAbsent_KeepsWorkDone pins
+// that the historical default holds when no clarification.md is
+// present: a clean Finish lands the row in `work-done`.
+func TestWorkLifecycle_Finish_ClarificationAbsent_KeepsWorkDone(
+	t *testing.T,
+) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	lc := NewWorkTask(io.Discard, "cursor", "m", tasks.NewTaskID(),
+		"/tmp/x.plan.md", "", "body", "", "")
+	lc.Finish(nil)
+	got := listAllTasks(t)[0]
+	if got.Status != tasks.StatusWorkDone {
+		t.Fatalf("Status = %q, want work-done", got.Status)
+	}
+}
+
 // TestWorkLifecycle_MarkersGoToAgentLogNotStderr is the regression
 // pin for "phase markers must never reach the user's terminal".
 func TestWorkLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {

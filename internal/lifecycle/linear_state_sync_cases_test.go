@@ -723,3 +723,29 @@ func TestLinearStateSync_NeedsClarification_ForegroundPlan_PostsCommentAndRemind
 	assertVarStr(t, got[3], "body", "please clarify foo")
 	assertVarStr(t, got[4], "id", "node-1")
 }
+
+// TestLinearStateSync_NeedsClarification_ForegroundWork_PostsCommentAndReminder
+// pins the foreground worker-exit edge: the new event mirrors the
+// reaper-driven cases above, so the call order is identical and the
+// comment body matches the on-disk clarification.md content.
+func TestLinearStateSync_NeedsClarification_ForegroundWork_PostsCommentAndReminder(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	logPath := writeClarification(t, "please clarify bar")
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", logPath,
+		tasks.StatusWorking, tasks.StatusNeedsClarification,
+		tasks.EventWorkNeedsClarification)
+	got := env.recordedBodies()
+	want := []string{
+		"issue", "states", "issueUpdate", "commentCreate", "reminder",
+	}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	assertVarStr(t, got[2], "stateId", "s-prog")
+	assertVarStr(t, got[3], "body", "please clarify bar")
+	assertVarStr(t, got[4], "id", "node-1")
+}

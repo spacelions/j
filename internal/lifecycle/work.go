@@ -3,6 +3,8 @@ package lifecycle
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spacelions/j/internal/lifecycle/tuiquit"
@@ -109,7 +111,12 @@ func (lc *WorkLifecycle) RecordBackground(pid int, logPath string) {
 	tasks.PersistWarn(lc.stderr, lc.task)
 }
 
-// Finish stamps work_end_at, picks the terminal status from runErr.
+// Finish stamps work_end_at and decides the terminal event from
+// runErr and the on-disk clarification.md (mirroring PlanLifecycle).
+// runErr always wins over the clarification check; a clean run that
+// left a clarification.md routes to `needs-clarification` so the
+// orchestrator skips the verifier and the user can answer the
+// question before a resume.
 func (lc *WorkLifecycle) Finish(runErr error) {
 	if lc.closed {
 		return
@@ -118,14 +125,39 @@ func (lc *WorkLifecycle) Finish(runErr error) {
 	lc.task.WorkEndAt = time.Now().UTC()
 	lc.detectPullRequestURL()
 
-	ev := tasks.EventWorkDone
-	if runErr != nil {
-		ev = tasks.EventWorkError
-	}
+	ev := lc.pickFinishEvent(runErr)
 	if _, err := tasks.ApplyAndPersistWarn(
 		lc.stderr, &lc.task, ev); err != nil {
 		panic("work finish: " + err.Error())
 	}
+}
+
+// pickFinishEvent decides which event drives the work-finish
+// transition. Error path takes precedence over the clarification
+// check, matching PlanLifecycle.pickFinishEvent's contract.
+func (lc *WorkLifecycle) pickFinishEvent(runErr error) tasks.Event {
+	if runErr != nil {
+		return tasks.EventWorkError
+	}
+	if lc.clarificationPresent() {
+		return tasks.EventWorkNeedsClarification
+	}
+	return tasks.EventWorkDone
+}
+
+// clarificationPresent reports whether the worker left
+// `<tasksDir>/<task.ID>/clarification.md` on disk. A missing tasks
+// dir or any other stat error counts as "absent" so the historical
+// work-done default is preserved.
+func (lc *WorkLifecycle) clarificationPresent() bool {
+	tasksDir, err := tasks.DefaultDir()
+	if err != nil {
+		return false
+	}
+	path := filepath.Join(
+		tasksDir, lc.task.ID, tasks.ClarificationFileName)
+	_, err = os.Stat(path)
+	return err == nil
 }
 
 func (lc *WorkLifecycle) detectPullRequestURL() {

@@ -97,6 +97,8 @@ func eventToPhaseVerb(e tasks.Event) (phase, verb string) {
 		return "work", "quit"
 	case tasks.EventWorkError:
 		return "work", "error"
+	case tasks.EventWorkNeedsClarification:
+		return "work", "needs clarification"
 	case tasks.EventReaperWorkDone:
 		return "work", "done"
 	case tasks.EventReaperWorkNeedsClarification:

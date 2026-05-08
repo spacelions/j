@@ -81,6 +81,11 @@ func TestMarkers_ReaperAndStuckEvents(t *testing.T) {
 		{"work_resume", tasks.EventWorkResume, "work resume"},
 		{"work_done", tasks.EventWorkDone, "work done"},
 		{"work_error", tasks.EventWorkError, "work error"},
+		{
+			"work_needs_clarification",
+			tasks.EventWorkNeedsClarification,
+			"work needs clarification",
+		},
 		{"verify_begin", tasks.EventVerifyBegin, "verify begin"},
 		{"verify_resume", tasks.EventVerifyResume, "verify resume"},
 		{"verify_pass", tasks.EventVerifyPass, "verify pass"},
