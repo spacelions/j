@@ -1,11 +1,13 @@
 # j
 
-`j` is the **J Harness CLI**: a local tool that ties together **plan → work → verify** for tasks under a per-project `.j/` directory (BoltDB task list, task workspaces, and coding-agent backends such as Cursor).
+`j` is the **J Harness CLI**: a local tool that orchestrates the **plan → work → verify** lifecycle for coding tasks. It stores tasks under a per-project `.j/` directory (BoltDB task list, per-task workspaces) and shells out to coding-agent backends such as Cursor or Claude.
 
 ## Prerequisites
 
 - **Go** matching [`.go-version`](.go-version) (see [`go.mod`](go.mod)).
-- For real plan/work/verify runs: a supported **coding agent** on `PATH` (for example `cursor-agent`), installed and authenticated the way your backend expects.
+- A supported **coding agent** on `PATH` for real plan/work/verify runs:
+  - `cursor-agent` — run `cursor-agent login` to authenticate
+  - `claude` — run `claude auth login` to authenticate
 - A **TTY** when using interactive pickers (huh forms); non-interactive flows use flags and IDs.
 
 ## Build and install (from source)
@@ -21,74 +23,109 @@ Other useful targets: `make test`, `make race`, `make clean`, `make coverage`, `
 
 Commands are scoped to the **current working directory**: each project gets its own `<cwd>/.j/`.
 
-### Let's start!
+### Getting started
 
-1. **Initialize the project** with `j init`. That creates `.j/`, the task store, and settings under the directory you run it in. Typical non-interactive setup:
+1. **Initialize the project** with `j init`. Creates `.j/`, the task store, and settings in the current directory.
 
    ```bash
    j init --yes --must-read=AGENTS.md
    ```
 
-   Adjust `--must-read` to the files coding agents must read first, or use `--must-read=""` for an explicit empty list. See `j init --help` for `--plan-requires-approval` and behavior when `.j/` already exists.
+   Adjust `--must-read` to files coding agents must read first. See `j init --help` for `--plan-requires-approval` and behavior when `.j/` already exists.
 
-2. **Ask the customer to write a markdown file** that captures the ask: task description, acceptance criteria, links, and so on. Save it in the project, for example `task.md`.
+2. **Write a markdown file** capturing the task: description, acceptance criteria, links, etc. Save it in the project (e.g. `task.md`).
 
-3. **Run `j tasks start`** from a shell in that project (with `j` on `PATH`). Point at your file with **`--from-file` / `-f`**, or omit `-f` to use the same interactive **source** picker as `j plan`. You will be prompted to choose **tool and model** for the **planner**, **worker**, and **verifier** if anything is still unset. Optional **`--plan-requires-approval`** / env **`TASKS_START_PLAN_REQUIRES_APPROVAL`** overrides the project’s `plan_requires_approval` for that run. The command returns after starting a **detached background process** that continues **plan → work → verify**; that process appends stdout/stderr to **`<cwd>/.j/tasks/<id>/agent.log`**.
+3. **Run `j tasks start`** to create a task and launch a detached background orchestrator:
 
-4. **Run `j tasks`** (no subcommand) to print a tabular status list from `list.db` (ID, STATUS, TOOL, MODEL, SUMMARY). Rows can refresh after a background run has exited.
+   ```bash
+   j tasks start -f task.md
+   ```
 
-5. **Stay in the loop.** When a phase needs you again—or you want to drive the next step—run **`j tasks continue`** (interactive task picker on a TTY, or **`--from-task <id>`** to pick a row without the picker). `continue` **dispatches on status** to the right `plan` / `work` / `verify` run or resume. Already-finished tasks print `J: task <id> already finished` and stop. Repeat **list → continue** until the task reaches **failed** / **completed** or you stop work.
+   Source options:
+   - `-f / --from-file <path>` — load requirement from a markdown file
+   - `--from-linear <ID>` — load from a Linear issue (e.g. `ENG-123`); requires `linear.api_key` in settings
+   - Omit both to use the interactive source picker
 
-### Plan a task (manual, step-by-step)
+   You will be prompted for **tool** and **model** for each phase if not already set in settings. The command returns immediately; the background process appends to **`<cwd>/.j/tasks/<id>/agent.log`**.
 
-Use this when you want to drive **planning alone** or mix phases by hand instead of **`j tasks start`** / **`continue`** (see **Let's start!** above).
+4. **Run `j tasks`** (no subcommand) to list task status. On a TTY this renders a live-updating table; use `--simple` for plain tabwriter output suitable for pipes.
+
+5. **Stay in the loop.** When a phase needs input—or you want to drive the next step manually—run:
+
+   ```bash
+   j tasks continue                   # interactive task picker
+   j tasks continue --from-task <id>  # skip the picker
+   ```
+
+   `continue` dispatches on the current task status to the right `plan` / `work` / `verify` run or resume. Repeat **list → continue** until the task reaches **failed** or **completed**.
+
+### Manual phase control
+
+Use these when you want to drive individual phases instead of the automated orchestrator.
 
 ```bash
-j plan -f path/to/task.md          # or interactive source selection
-j plan resume --help                 # resume an in-flight plan session
-```
+j plan -f path/to/task.md     # plan phase (interactive source selection if no -f)
+j plan resume --help           # resume an in-flight plan session
 
-Artifacts land under `.j/tasks/<id>/` (for example `requirements.md`, `plan.md`).
-
-### Run the coder against a planned task
-
-```bash
-j work --help
+j work --help                  # work phase against a planned task
 j work resume --help
-```
 
-### Verify after work is done
-
-```bash
-j verify --help
+j verify --help                # verify phase after work is done
 j verify resume --help
 ```
 
-The verifier loop expects a final line in findings of exactly `VERDICT: PASS` or `VERDICT: FAIL`.
+The verifier expects a final line of exactly `VERDICT: PASS` or `VERDICT: FAIL` in its findings.
+
+Artifacts land under `.j/tasks/<id>/`: `requirements.md`, `plan.md`, `agent.log`, `verifier_findings.md`.
+
+### `j tasks` subcommands
+
+| Subcommand | Purpose |
+|------------|---------|
+| `start` | Create task, spawn detached orchestrator |
+| `continue` | Resume or advance the current phase |
+| `enter` | Open a git worktree for the task's work phase |
+| `discard` | Mark a task as discarded |
+| `logs` | Print or tail `agent.log` |
+| `show` | Render task files (`requirements`, `plan`, `clarification`, …) |
+| `re-plan` / `resume-plan` | Replan or resume an interrupted planning phase |
+| `re-work` / `resume-work` | Rework or resume an interrupted work phase |
+| `re-verify` / `resume-verify` | Reverify or resume an interrupted verification phase |
+| `orchestrate` | Run plan/work/verify sequentially (used internally by `start`) |
 
 ### Other commands
 
 | Command | Purpose |
-|--------|---------|
-| `j tasks` | List tasks and lifecycle helpers (`start`, `continue`, `enter`, `discard`, …); **`start` / `continue`** are in **Let's start!** above. See `j tasks --help`. |
-| `j settings` | List / set / reset keys in the local j store (`j settings --help`) |
+|---------|---------|
+| `j settings` | List / set / reset keys in the local j store |
+| `j run` | Launch the agent in the ADK console (interactive) |
+| `j web` | Launch the ADK web UI |
 
-End-to-end checklists for manual TTY flows live under [`testcases/`](testcases/).
+### Linear integration
+
+`j` can pull tasks from and sync state back to [Linear](https://linear.app):
+
+```bash
+j settings set linear.api_key <your-api-key>
+j tasks start --from-linear ENG-123
+```
+
+On task state changes, `j` syncs the Linear issue state and posts comments with phase transitions and the final verdict.
 
 ---
 
 ## Working locally on **this** repository
 
-Use a **separate clone or directory** for dogfooding `j` so your experiments under `.j/` do not clutter the harness repo itself, unless you intend to track `.j/` for debugging.
+Use a **separate clone or directory** for dogfooding `j` so your experiments under `.j/` don't clutter the harness repo itself.
 
 ### Everyday loop
 
 ```bash
-make test                 # same as CI (`go test ./...`)
-make race                 # optional race detector
+make test    # same as CI (`go test ./...`)
+make race    # optional race detector
 ```
 
-Before committing, run **`make install-hooks`** once so Lefthook runs the same checks locally as in pre-commit (including the **300-line file cap** and `make test`).
+Run **`make install-hooks`** once before committing so Lefthook enforces the same checks locally as in CI (300-line file cap, `make test`).
 
 `make coverage` runs `internal/...` tests with a coverage profile and enforces an allowlist: anything not at 100% must be explicitly listed in the `Makefile` regex allowlist, or the target fails.
 
@@ -101,10 +138,13 @@ See [`AGENTS.md`](AGENTS.md): high test coverage, no test-only packages (use `in
 | Area | Role |
 |------|------|
 | [`cmd/j`](cmd/j) | `main` entrypoint |
-| [`internal/cli`](internal/cli) | Cobra commands (`plan`, `work`, `verify`, `tasks`, …) |
-| [`internal/agents`](internal/agents) | Planner / worker / verifier sub-agents and prompts |
-| [`internal/lifecycle`](internal/lifecycle) | Per-phase lifecycle helpers and the SequentialAgent orchestrator |
-| [`internal/coding-agents`](internal/coding-agents) | Backends (Cursor, Claude, …) |
+| [`internal/cli`](internal/cli) | Cobra commands (`plan`, `work`, `verify`, `tasks`, `settings`, `run`, `web`) |
+| [`internal/agents`](internal/agents) | Planner / worker / verifier sub-agents and embedded prompt instructions |
+| [`internal/lifecycle`](internal/lifecycle) | Per-phase lifecycle markers, Linear state sync, PR URL reaping |
+| [`internal/lifecycle/orchestrator`](internal/lifecycle/orchestrator) | Google ADK sequential/loop agent wiring |
+| [`internal/coding-agents`](internal/coding-agents) | Coding backends: Cursor and Claude |
+| [`internal/linear`](internal/linear) | GraphQL client for Linear issue queries and mutations |
+| [`internal/resolver`](internal/resolver) | Source resolution (markdown, Linear), task lookup, verdict parsing |
 | [`internal/store`](internal/store) | BoltDB task and settings persistence |
 | [`testcases/`](testcases/) | Human-readable manual test steps |
 
