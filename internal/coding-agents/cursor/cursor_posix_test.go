@@ -944,13 +944,15 @@ func TestWork_Interactive_FixFindings(t *testing.T) {
 	if err := os.WriteFile(plan, []byte("1. step one"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	findings := filepath.Join(dir, "verifier_findings.md")
 	calls := installStub(t, "", 0)
 
 	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
-		PlanPath:    plan,
-		Model:       "composer-2-fast",
-		Interactive: true,
-		FixFindings: true,
+		PlanPath:                   plan,
+		Model:                      "composer-2-fast",
+		Interactive:                true,
+		FixFindings:                true,
+		VerifierFindingsOutputPath: findings,
 	})
 	if err != nil {
 		t.Fatalf("Work: %v", err)
@@ -960,7 +962,7 @@ func TestWork_Interactive_FixFindings(t *testing.T) {
 	}
 	argv := readCalls(t, calls)
 	prompt := argv[len(argv)-1]
-	for _, want := range []string{plan, "verifier_findings.md", "Address every item"} {
+	for _, want := range []string{plan, findings, "Address every item"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("fix prompt missing %q: %q", want, prompt)
 		}

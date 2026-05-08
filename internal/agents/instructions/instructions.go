@@ -103,3 +103,16 @@ var VerifierWorktree string
 //
 //go:embed mustread_header.md
 var MustReadHeader string
+
+// Clarification is the canonical "if you cannot proceed, write your
+// question to <path> and exit" escape hatch every role must honour.
+// The prompts package's appendClarification helper renders it once
+// at the very end of every composed prompt (planner save suffix,
+// worker fresh / resume / fix, verifier fresh / resume) so a custom
+// planner.md / worker.md / verifier.md override body cannot drop
+// the contract and a future tweak lands in exactly one file.
+// Carries one %q placeholder for the per-task clarification.md
+// absolute path.
+//
+//go:embed clarification.md
+var Clarification string

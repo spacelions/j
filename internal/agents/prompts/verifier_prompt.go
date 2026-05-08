@@ -25,20 +25,31 @@ import (
 // and the builder simply does not surface it in the prompt because
 // the agent learns the path through the same instruction body that
 // drives the save behaviour.
+//
+// clarificationPath is the per-task absolute path the agent must
+// write to instead of guessing if it gets stuck; the contract is
+// rendered by appendClarification at the very end of the prompt.
+// The `VERDICT: PASS|FAIL` last-line contract that depends on
+// findingsPath also lives in verifier_request.md so a custom
+// verifier.md cannot drop it.
 func BuildVerifier(
 	reqPath, planPath, verifierPlanPath, findingsPath, worktree string,
-	mustRead []string,
+	mustRead []string, clarificationPath string,
 ) string {
 	_ = verifierPlanPath
-	return appendVerifierWorktreeLine(
-		fmt.Sprintf(
-			"%s%s\n\n"+strings.TrimSpace(instructions.VerifierRequest),
-			strings.TrimSpace(Resolve(store.BucketVerifier)),
-			mustReadSuffix(mustRead),
-			reqPath, planPath,
-			findingsPath,
+	return appendClarification(
+		appendVerifierWorktreeLine(
+			prependMustRead(
+				fmt.Sprintf(
+					"%s\n\n"+strings.TrimSpace(instructions.VerifierRequest),
+					strings.TrimSpace(Resolve(store.BucketVerifier)),
+					reqPath, planPath, findingsPath,
+				),
+				mustRead,
+			),
+			worktree,
 		),
-		worktree,
+		clarificationPath,
 	)
 }
 
@@ -47,7 +58,9 @@ func BuildVerifier(
 // what was already done, summarise the prior progress for the user,
 // and then continue only the outstanding verification work. The
 // requirement / plan paths are referenced for context only — there
-// is no instruction to re-verify from scratch.
+// is no instruction to re-verify from scratch. clarificationPath
+// carries the per-task escape hatch onto the resume turn (rendered
+// by appendClarification).
 //
 // The full instructions.Verifier body is embedded so the resumed
 // session has the same review rules available as the first-run
@@ -57,21 +70,26 @@ func BuildVerifier(
 // rather than emitting a duplicate sentence.
 //
 // mustRead, when non-empty, is rendered as a bulleted "Before
-// starting, read these project files…" block between the
-// instruction and the resume framing line (mirroring
-// BuildPlannerResume). An empty / nil mustRead leaves the prompt
-// byte-identical to the pre-must-read output.
+// starting, read these project files…" block at the very top of the
+// prompt (mirroring BuildVerifier). An empty / nil mustRead leaves
+// the prompt byte-identical to the pre-must-read output.
 func BuildVerifierResume(
 	reqPath, planPath, worktree string, mustRead []string,
+	clarificationPath string,
 ) string {
-	return appendVerifierWorktreeLine(
-		fmt.Sprintf(
-			"%s%s\n\n"+strings.TrimSpace(instructions.VerifierResume),
-			strings.TrimSpace(Resolve(store.BucketVerifier)),
-			mustReadSuffix(mustRead),
-			reqPath, planPath,
+	return appendClarification(
+		appendVerifierWorktreeLine(
+			prependMustRead(
+				fmt.Sprintf(
+					"%s\n\n"+strings.TrimSpace(instructions.VerifierResume),
+					strings.TrimSpace(Resolve(store.BucketVerifier)),
+					reqPath, planPath,
+				),
+				mustRead,
+			),
+			worktree,
 		),
-		worktree,
+		clarificationPath,
 	)
 }
 
@@ -81,20 +99,28 @@ func BuildVerifierResume(
 // listed findings without re-planning. The plan path is referenced
 // for context, the findings path is the action list — both are read
 // from disk by the agent rather than being inlined into the prompt.
+// clarificationPath carries the same per-task escape hatch that
+// BuildWorker uses (rendered by appendClarification) so a custom
+// worker.md cannot silently drop it.
 //
 // A fix loop runs the worker (not the verifier), so the full
 // instructions.Worker body is embedded. The instruction text itself
 // opens with "You are the worker in a planner/worker/verifier
 // workflow.", so this builder relies on that opening as the role
 // preamble rather than emitting a duplicate sentence.
-func BuildVerifierFix(planPath, findingsPath, worktree string) string {
-	return appendWorktreeLine(
-		fmt.Sprintf(
-			"%s\n\n"+strings.TrimSpace(instructions.VerifierFix),
-			strings.TrimSpace(Resolve(store.BucketWorker)),
-			planPath, findingsPath,
+func BuildVerifierFix(
+	planPath, findingsPath, worktree, clarificationPath string,
+) string {
+	return appendClarification(
+		appendWorktreeLine(
+			fmt.Sprintf(
+				"%s\n\n"+strings.TrimSpace(instructions.VerifierFix),
+				strings.TrimSpace(Resolve(store.BucketWorker)),
+				planPath, findingsPath,
+			),
+			worktree,
 		),
-		worktree,
+		clarificationPath,
 	)
 }
 

@@ -109,10 +109,15 @@ func TestBuildPlannerResume(t *testing.T) {
 // TestAppendPlannerSaveSuffix pins the canonical save-and-exit
 // wording the cursor and claude backends both rely on. Cited path
 // arguments must round-trip through %q quoting; the suffix must
-// carry both numbered steps, the one-line-summary rule, and the
-// "Then exit." terminator.
+// carry both numbered steps, the one-line-summary rule, the
+// PM/QA-tone contract for requirements.md, the clarification
+// escape hatch (with the per-task absolute path threaded in), and
+// the "Then exit." terminator.
 func TestAppendPlannerSaveSuffix(t *testing.T) {
-	got := AppendPlannerSaveSuffix("BASE", "/tmp/req.md", "/tmp/plan.md")
+	got := AppendPlannerSaveSuffix(
+		"BASE", "/tmp/req.md", "/tmp/plan.md",
+		"/tmp/clarification.md",
+	)
 	if !strings.HasPrefix(got, "BASE\n\n") {
 		t.Fatalf("suffix should follow base verbatim with two newlines: %q", got)
 	}
@@ -124,6 +129,10 @@ func TestAppendPlannerSaveSuffix(t *testing.T) {
 		"# Requirements",
 		"Save the plan to",
 		"\"/tmp/plan.md\"",
+		"PM/QA-style spec",
+		"acceptance criteria",
+		"plan.md is the technical companion",
+		"\"/tmp/clarification.md\"",
 		"Then exit.",
 	} {
 		if !strings.Contains(got, want) {
@@ -132,13 +141,37 @@ func TestAppendPlannerSaveSuffix(t *testing.T) {
 	}
 }
 
+// TestAppendPlannerSaveSuffix_PMToneNoImplDetail pins the AC: the
+// PM/QA-tone contract carried by the suffix explicitly forbids
+// implementation detail (file paths, function signatures,
+// architecture) inside requirements.md. This is the tone half of
+// what the user asked for; combined with the one-line-summary rule
+// it guarantees requirements.md is product-shaped.
+func TestAppendPlannerSaveSuffix_PMToneNoImplDetail(t *testing.T) {
+	got := AppendPlannerSaveSuffix(
+		"BASE", "/tmp/req.md", "/tmp/plan.md", "/tmp/c.md",
+	)
+	for _, want := range []string{
+		"behavioral",
+		"file paths",
+		"function signatures",
+		"belong in plan.md",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("suffix missing PM-tone marker %q: %q", want, got)
+		}
+	}
+}
+
 // TestBuildPlannerResume_WithMustRead mirrors
 // TestBuildPlanner_WithMustRead for the resume builder: the bulleted
 // must-read block must appear exactly once, preserve case verbatim,
-// and sit between the instructions.Planner body and the resume
-// framing line ("You are resuming…").
+// and sit at the very top — above both the instructions.Planner
+// body and the resume framing line.
 func TestBuildPlannerResume_WithMustRead(t *testing.T) {
-	got := BuildPlannerResume("/tmp/feature.md", []string{"AGENTS.md", "CLAUDE.md"})
+	got := BuildPlannerResume(
+		"/tmp/feature.md", []string{"AGENTS.md", "CLAUDE.md"},
+	)
 
 	const header = "Before starting, read these project files for required context:"
 	if strings.Count(got, header) != 1 {
@@ -157,7 +190,7 @@ func TestBuildPlannerResume_WithMustRead(t *testing.T) {
 	if strings.Index(got, header) > strings.Index(got, framing) {
 		t.Fatalf("must-read block must precede resume framing line: %q", got)
 	}
-	if strings.Index(got, strings.TrimSpace(instructions.Planner)) > strings.Index(got, header) {
-		t.Fatalf("must-read block must follow instructions.Planner body: %q", got)
+	if strings.Index(got, header) > strings.Index(got, strings.TrimSpace(instructions.Planner)) {
+		t.Fatalf("must-read block must precede instructions.Planner body: %q", got)
 	}
 }

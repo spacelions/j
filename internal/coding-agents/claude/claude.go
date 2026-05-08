@@ -15,7 +15,6 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/util/run"
-	"github.com/spacelions/j/internal/agents/prompts"
 )
 
 // Binary is the claude executable name.
@@ -67,16 +66,26 @@ func (*Agent) ListModels(_ context.Context) ([]string, error) {
 func (*Agent) CheckLogin(ctx context.Context) error {
 	out, err := run.Output(ctx, Binary, "auth", "status")
 	if err != nil {
-		return fmt.Errorf("claude auth status failed: %w (run 'claude auth login')", err)
+		return fmt.Errorf(
+			"claude auth status failed: %w "+
+				"(run 'claude auth login')",
+			err,
+		)
 	}
 	var status struct {
 		LoggedIn bool `json:"loggedIn"`
 	}
-	if jsonErr := json.Unmarshal([]byte(strings.TrimSpace(out)), &status); jsonErr != nil {
-		return errors.New("claude reports not logged in; run 'claude auth login'")
+	if jsonErr := json.Unmarshal(
+		[]byte(strings.TrimSpace(out)), &status,
+	); jsonErr != nil {
+		return errors.New(
+			"claude reports not logged in; run 'claude auth login'",
+		)
 	}
 	if !status.LoggedIn {
-		return errors.New("claude reports not logged in; run 'claude auth login'")
+		return errors.New(
+			"claude reports not logged in; run 'claude auth login'",
+		)
 	}
 	return nil
 }
@@ -102,25 +111,50 @@ func (*Agent) CheckLogin(ctx context.Context) error {
 //
 // cmd.Dir is set to the per-task workspace dir so claude's CLAUDE.md
 // auto-discovery and tool scope land where the user expects.
-func (a *Agent) Plan(ctx context.Context, req codingagents.PlanRequest) (int, error) {
+func (a *Agent) Plan(
+	ctx context.Context, req codingagents.PlanRequest,
+) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.FromFilePath)
 	prompt := buildPlanPrompt(req)
 
 	if req.Interactive {
-		args := append(sessionArgs(req.ResumeChatID, req.Resume), "--permission-mode", "plan", "--model", req.Model, prompt)
-		if err := run.RunIn(ctx, workspace, Binary, args...); err != nil {
+		args := append(
+			sessionArgs(req.ResumeChatID, req.Resume),
+			"--permission-mode", "plan",
+			"--model", req.Model, prompt,
+		)
+		if err := run.RunIn(
+			ctx, workspace, Binary, args...,
+		); err != nil {
 			return 0, fmt.Errorf("claude: %w", err)
 		}
 		return 0, nil
 	}
 
-	hargs := append(sessionArgs(req.ResumeChatID, req.Resume),
-		"--print", "--output-format", "text", "--dangerously-skip-permissions", "--model", req.Model, "--", prompt)
-	pid, err := run.SpawnIn(ctx, workspace, req.AgentLogPath, Binary, hargs...)
+	hargs := append(
+		sessionArgs(req.ResumeChatID, req.Resume),
+		headlessArgs(req.Model, prompt)...,
+	)
+	pid, err := run.SpawnIn(
+		ctx, workspace, req.AgentLogPath, Binary, hargs...,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
 	}
 	return pid, nil
+}
+
+// headlessArgs returns the argv tail used by Plan / Work / Verify
+// in headless mode: `--print --output-format text
+// --dangerously-skip-permissions --model <m> -- <prompt>`. The
+// literal `--` pins the prompt as a positional so a leading `-` /
+// `--` line in the user's spec body is not mis-parsed as a flag.
+func headlessArgs(model, prompt string) []string {
+	return []string{
+		"--print", "--output-format", "text",
+		"--dangerously-skip-permissions",
+		"--model", model, "--", prompt,
+	}
 }
 
 // Work runs claude against a previously generated plan markdown. The
@@ -133,21 +167,32 @@ func (a *Agent) Plan(ctx context.Context, req codingagents.PlanRequest) (int, er
 //     --model <m>`, fire-and-forget. claude's stdout/stderr are
 //     redirected to req.AgentLogPath via run.SpawnIn and the spawned
 //     PID is returned so `j work` can record it for later reaping.
-func (a *Agent) Work(ctx context.Context, req codingagents.WorkRequest) (int, error) {
+func (a *Agent) Work(
+	ctx context.Context, req codingagents.WorkRequest,
+) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.PlanPath)
 	prompt := buildWorkPrompt(req)
 
 	if req.Interactive {
-		args := append(sessionArgs(req.ResumeChatID, req.Resume), "--model", req.Model, prompt)
-		if err := run.RunIn(ctx, workspace, Binary, args...); err != nil {
+		args := append(
+			sessionArgs(req.ResumeChatID, req.Resume),
+			"--model", req.Model, prompt,
+		)
+		if err := run.RunIn(
+			ctx, workspace, Binary, args...,
+		); err != nil {
 			return 0, fmt.Errorf("claude: %w", err)
 		}
 		return 0, nil
 	}
 
-	pargs := append(sessionArgs(req.ResumeChatID, req.Resume),
-		"--print", "--output-format", "text", "--dangerously-skip-permissions", "--model", req.Model, "--", prompt)
-	pid, err := run.SpawnIn(ctx, workspace, req.AgentLogPath, Binary, pargs...)
+	pargs := append(
+		sessionArgs(req.ResumeChatID, req.Resume),
+		headlessArgs(req.Model, prompt)...,
+	)
+	pid, err := run.SpawnIn(
+		ctx, workspace, req.AgentLogPath, Binary, pargs...,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
 	}
@@ -160,21 +205,32 @@ func (a *Agent) Work(ctx context.Context, req codingagents.WorkRequest) (int, er
 // `--permission-mode plan` is intentionally absent because the
 // verifier needs to write verifier_plan.md / verifier_findings.md
 // (and edit project files on FAIL).
-func (a *Agent) Verify(ctx context.Context, req codingagents.VerifyRequest) (int, error) {
+func (a *Agent) Verify(
+	ctx context.Context, req codingagents.VerifyRequest,
+) (int, error) {
 	workspace := codingagents.ProjectRootWorkspace()
 	prompt := buildVerifyPrompt(req)
 
 	if req.Interactive {
-		args := append(sessionArgs(req.ResumeChatID, req.Resume), "--model", req.Model, prompt)
-		if err := run.RunIn(ctx, workspace, Binary, args...); err != nil {
+		args := append(
+			sessionArgs(req.ResumeChatID, req.Resume),
+			"--model", req.Model, prompt,
+		)
+		if err := run.RunIn(
+			ctx, workspace, Binary, args...,
+		); err != nil {
 			return 0, fmt.Errorf("claude: %w", err)
 		}
 		return 0, nil
 	}
 
-	pargs := append(sessionArgs(req.ResumeChatID, req.Resume),
-		"--print", "--output-format", "text", "--dangerously-skip-permissions", "--model", req.Model, "--", prompt)
-	pid, err := run.SpawnIn(ctx, workspace, req.AgentLogPath, Binary, pargs...)
+	pargs := append(
+		sessionArgs(req.ResumeChatID, req.Resume),
+		headlessArgs(req.Model, prompt)...,
+	)
+	pid, err := run.SpawnIn(
+		ctx, workspace, req.AgentLogPath, Binary, pargs...,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
 	}
@@ -196,50 +252,3 @@ func sessionArgs(id string, resume bool) []string {
 	return []string{"--session-id", id}
 }
 
-// buildPlanPrompt picks the right planner prompt for req. Mirrors the
-// cursor backend: a fresh run composes the planner instruction; a
-// resume run switches to the resume-only template that asks the
-// previous session to inspect / report / continue. Both branches
-// receive the same save-and-exit suffix via
-// prompts.AppendPlannerSaveSuffix so the reaper sees identical
-// artifacts in either case (a help-status row whose first run
-// skipped the artifacts must still produce them on resume).
-func buildPlanPrompt(req codingagents.PlanRequest) string {
-	base := prompts.BuildPlanner(req.FromFilePath, req.MustRead)
-	if req.Resume {
-		base = prompts.BuildPlannerResume(req.FromFilePath, req.MustRead)
-	}
-	return prompts.AppendPlannerSaveSuffix(base, req.RequirementsOutputPath, req.PlanOutputPath)
-}
-
-// buildWorkPrompt picks the right worker prompt for req. The
-// fix-findings branch wins first (FixFindings=true means the outer
-// verify loop wants the previous worker session to address a
-// concrete set of verifier findings — read by the agent from the
-// per-task verifier_findings.md — without re-planning), then
-// resume, then first-run.
-func buildWorkPrompt(req codingagents.WorkRequest) string {
-	if req.FixFindings {
-		return prompts.BuildVerifierFix(req.PlanPath, "verifier_findings.md", req.Worktree)
-	}
-	if req.Resume {
-		return prompts.BuildWorkerResume(req.PlanPath, req.Worktree, req.MustRead)
-	}
-	return prompts.BuildWorker(req.PlanPath, req.Worktree, req.MustRead)
-}
-
-// buildVerifyPrompt picks the right verifier prompt for req. Resume
-// runs switch to the resume-only template; first-run uses the full
-// verifier instruction with the save-plan / save-findings suffix.
-func buildVerifyPrompt(req codingagents.VerifyRequest) string {
-	if req.Resume {
-		return prompts.BuildVerifierResume(req.RequirementsPath, req.PlanPath, req.Worktree, req.MustRead)
-	}
-	return prompts.BuildVerifier(
-		req.RequirementsPath,
-		req.PlanPath,
-		req.VerifierPlanOutputPath, req.VerifierFindingsOutputPath,
-		req.Worktree,
-		req.MustRead,
-	)
-}

@@ -877,21 +877,26 @@ func TestWork_Headless_SpawnError(t *testing.T) {
 
 // TestWork_Interactive_FixFindings pins the fix-findings branch in
 // buildWorkPrompt: FixFindings=true switches to BuildVerifierFix,
-// which cites the per-task verifier_findings.md path (the agent
-// reads it from disk) and forbids re-planning.
+// which cites the per-task verifier_findings.md absolute path
+// (threaded in via WorkRequest.VerifierFindingsOutputPath) and
+// forbids re-planning. The absolute path assertion guards against
+// regressing back to the bare `"verifier_findings.md"` literal that
+// would not resolve from the agent's current working directory.
 func TestWork_Interactive_FixFindings(t *testing.T) {
 	dir := t.TempDir()
 	plan := filepath.Join(dir, "spec.plan.md")
 	if err := os.WriteFile(plan, []byte("1. step one"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	findings := filepath.Join(dir, "verifier_findings.md")
 	calls, _ := installStub(t, "", 0)
 
 	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
-		PlanPath:    plan,
-		Model:       "sonnet",
-		Interactive: true,
-		FixFindings: true,
+		PlanPath:                   plan,
+		Model:                      "sonnet",
+		Interactive:                true,
+		FixFindings:                true,
+		VerifierFindingsOutputPath: findings,
 	})
 	if err != nil {
 		t.Fatalf("Work: %v", err)
@@ -901,7 +906,7 @@ func TestWork_Interactive_FixFindings(t *testing.T) {
 	}
 	argv := readCalls(t, calls)
 	prompt := argv[len(argv)-1]
-	for _, want := range []string{plan, "verifier_findings.md", "Address every item"} {
+	for _, want := range []string{plan, findings, "Address every item"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("fix prompt missing %q: %q", want, prompt)
 		}

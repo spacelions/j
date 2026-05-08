@@ -19,18 +19,33 @@ import (
 // leaves the prompt unchanged so the worker behaves as before.
 //
 // mustRead, when non-empty, is rendered as a bulleted "Before
-// starting, read these project files…" block between the instruction
-// and the read-the-plan line. An empty / nil mustRead leaves the
+// starting, read these project files…" block at the very top of the
+// prompt (above the role body). An empty / nil mustRead leaves the
 // prompt unchanged.
-func BuildWorker(planPath, worktree string, mustRead []string) string {
-	return appendWorktreeLine(
-		fmt.Sprintf(
-			"%s%s\n\n"+strings.TrimSpace(instructions.WorkerPlan),
-			strings.TrimSpace(Resolve(store.BucketWorker)),
-			mustReadSuffix(mustRead),
-			planPath,
+//
+// clarificationPath is the per-task absolute path the agent must
+// write a clarification question to — and exit — instead of
+// guessing. The contract is rendered by appendClarification (whose
+// text lives in instructions/clarification.md), keeping it out of
+// the user-overridable worker.md body so a custom worker.md cannot
+// silently drop the escape hatch.
+func BuildWorker(
+	planPath, worktree string, mustRead []string,
+	clarificationPath string,
+) string {
+	return appendClarification(
+		appendWorktreeLine(
+			prependMustRead(
+				fmt.Sprintf(
+					"%s\n\n"+strings.TrimSpace(instructions.WorkerPlan),
+					strings.TrimSpace(Resolve(store.BucketWorker)),
+					planPath,
+				),
+				mustRead,
+			),
+			worktree,
 		),
-		worktree,
+		clarificationPath,
 	)
 }
 
@@ -39,6 +54,8 @@ func BuildWorker(planPath, worktree string, mustRead []string) string {
 // implemented, summarises it for the user, and continues only the
 // outstanding work. The plan path is referenced for context only —
 // there is no instruction to re-implement from scratch.
+// clarificationPath carries the same per-task escape hatch
+// BuildWorker uses, rendered by appendClarification.
 //
 // The full instructions.Worker body is embedded so the resumed
 // session has the same coding rules available as the first-run
@@ -49,19 +66,26 @@ func BuildWorker(planPath, worktree string, mustRead []string) string {
 // appends the same worktree-direction line as BuildWorker.
 //
 // mustRead, when non-empty, is rendered as a bulleted "Before
-// starting, read these project files…" block between the
-// instruction and the resume framing line (mirroring
-// BuildPlannerResume). An empty / nil mustRead leaves the prompt
-// byte-identical to the pre-must-read output.
-func BuildWorkerResume(planPath, worktree string, mustRead []string) string {
-	return appendWorktreeLine(
-		fmt.Sprintf(
-			"%s%s\n\n"+strings.TrimSpace(instructions.WorkerResume),
-			strings.TrimSpace(Resolve(store.BucketWorker)),
-			mustReadSuffix(mustRead),
-			planPath,
+// starting, read these project files…" block at the very top of
+// the prompt (mirroring BuildWorker). An empty / nil mustRead
+// leaves the prompt byte-identical to the pre-must-read output.
+func BuildWorkerResume(
+	planPath, worktree string, mustRead []string,
+	clarificationPath string,
+) string {
+	return appendClarification(
+		appendWorktreeLine(
+			prependMustRead(
+				fmt.Sprintf(
+					"%s\n\n"+strings.TrimSpace(instructions.WorkerResume),
+					strings.TrimSpace(Resolve(store.BucketWorker)),
+					planPath,
+				),
+				mustRead,
+			),
+			worktree,
 		),
-		worktree,
+		clarificationPath,
 	)
 }
 

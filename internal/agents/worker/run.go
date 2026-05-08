@@ -149,15 +149,19 @@ func runWorker(
 	if mustReadErr != nil {
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
+	clarificationPath := filepath.Join(
+		filepath.Dir(res.PlanPath), tasks.ClarificationFileName,
+	)
 	pid, workErr := agent.Work(ctx, codingagents.WorkRequest{
-		PlanPath:     res.PlanPath,
-		Model:        model,
-		Interactive:  opts.Interactive,
-		ResumeChatID: resumeID,
-		Resume:       resumeMode,
-		Worktree:     lc.Task().Worktree,
-		AgentLogPath: agentLogPath,
-		MustRead:     mustReadFiles,
+		PlanPath:          res.PlanPath,
+		Model:             model,
+		ClarificationPath: clarificationPath,
+		Interactive:       opts.Interactive,
+		ResumeChatID:      resumeID,
+		Resume:            resumeMode,
+		Worktree:          lc.Task().Worktree,
+		AgentLogPath:      agentLogPath,
+		MustRead:          mustReadFiles,
 	})
 	if workErr == nil && pid > 0 {
 		if opts.WaitForCompletion {

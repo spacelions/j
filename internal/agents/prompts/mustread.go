@@ -6,20 +6,23 @@ import (
 	"github.com/spacelions/j/internal/agents/instructions"
 )
 
-// mustReadSuffix renders the project-wide must-read list as a leading
-// "\n\n"-prefixed bulleted block ready to be concatenated into a
-// first-run planner / worker / verifier prompt. Empty or nil input
-// returns "" so callers keep prompts byte-identical to the
-// pre-mustread output when no files are configured. File names are
-// rendered verbatim (no normalisation, no case-folding) because
-// `AGENTS.md` and `agents.md` resolve to different files on
-// case-sensitive filesystems.
-func mustReadSuffix(files []string) string {
+// prependMustRead prefixes prompt with the project-wide must-read
+// header followed by a bulleted list of files, then a blank line.
+// The "read these files first" hint sits at the top of every
+// composed prompt so the agent knows what to load before reading
+// the role body and per-phase instructions.
+//
+// Empty / nil files returns prompt unchanged so existing
+// "no must-read configured" output stays byte-identical.
+//
+// File names are rendered verbatim (no normalisation, no
+// case-folding) because `AGENTS.md` and `agents.md` resolve to
+// different files on case-sensitive filesystems.
+func prependMustRead(prompt string, files []string) string {
 	if len(files) == 0 {
-		return ""
+		return prompt
 	}
 	var b strings.Builder
-	b.WriteString("\n\n")
 	b.WriteString(strings.TrimSpace(instructions.MustReadHeader))
 	b.WriteString("\n")
 	for i, f := range files {
@@ -29,5 +32,7 @@ func mustReadSuffix(files []string) string {
 		b.WriteString("- ")
 		b.WriteString(f)
 	}
+	b.WriteString("\n\n")
+	b.WriteString(prompt)
 	return b.String()
 }

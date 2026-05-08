@@ -22,7 +22,8 @@ import (
 // ResumeOptions configures RunResume. Stdin/Stdout/Stderr default to
 // the process streams; UI defaults to the huh implementation; Agents
 // must be supplied by the caller (the cobra wiring injects
-// `[]codingagents.Agent{cursor.New(), claude.New()}`, tests inject scripted ones).
+// `[]codingagents.Agent{cursor.New(), claude.New()}`, tests inject
+// scripted ones).
 //
 // TaskID short-circuits the selector: when non-empty Run loads that
 // task directly. Otherwise Run lists every task whose
@@ -92,34 +93,55 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	if len(opts.Agents) == 0 {
 		return errors.New("no coding agents configured")
 	}
-
 	t, ok, err := resolveResumeTask(ctx, opts)
 	if err != nil {
 		return err
 	}
 	if !ok {
-		uitheme.NormalFprintln(opts.Stdout, "J: there are no resumable verify sessions")
+		uitheme.NormalFprintln(
+			opts.Stdout,
+			"J: there are no resumable verify sessions",
+		)
 		return nil
 	}
-
 	if !tasks.IsLegal(t.Status, tasks.EventVerifyResume) {
-		return fmt.Errorf("cannot resume verify on task in status %q", t.Status)
+		return fmt.Errorf(
+			"cannot resume verify on task in status %q", t.Status,
+		)
 	}
-
 	agent, ok := lookupResumeAgent(opts.Agents, t.VerifyTool)
 	if !ok {
 		return fmt.Errorf("unknown tool %q", t.VerifyTool)
 	}
+	return runVerifyResume(ctx, opts, t, agent)
+}
 
+// runVerifyResume drives the always-interactive verifier resume
+// turn. Split out of RunResume so the entry point stays under the
+// 80-line method cap while the picker / agent-lookup branch keeps
+// its early-exit shape.
+func runVerifyResume(
+	ctx context.Context, opts ResumeOptions,
+	t tasks.Task, agent codingagents.Agent,
+) error {
 	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		return err
 	}
 	taskDir := filepath.Join(tasksDir, t.ID)
 	planPath := filepath.Join(taskDir, tasks.PlanFileName)
-	requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
-	verifierPlanPath := filepath.Join(taskDir, tasks.VerifierPlanFileName)
-	findingsPath := filepath.Join(taskDir, tasks.VerifierFindingsFileName)
+	requirementsPath := filepath.Join(
+		taskDir, tasks.RequirementsFileName,
+	)
+	verifierPlanPath := filepath.Join(
+		taskDir, tasks.VerifierPlanFileName,
+	)
+	findingsPath := filepath.Join(
+		taskDir, tasks.VerifierFindingsFileName,
+	)
+	clarificationPath := filepath.Join(
+		taskDir, tasks.ClarificationFileName,
+	)
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 
 	lc := lifecycle.BeginVerifyResume(t, opts.Stderr, agentLogPath)
@@ -127,16 +149,12 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 	if mustReadErr != nil {
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
-	// Resume always runs interactive — the verifier bucket's
-	// `interactive` value is intentionally ignored on resume.
-	// PID is always 0 here (interactive backends run synchronously
-	// and do not detach), so WaitForExit below is a no-op; the call
-	// is preserved for symmetry with the first-run flow.
 	pid, runErr := agent.Verify(ctx, codingagents.VerifyRequest{
 		RequirementsPath:           requirementsPath,
 		PlanPath:                   planPath,
 		VerifierPlanOutputPath:     verifierPlanPath,
 		VerifierFindingsOutputPath: findingsPath,
+		ClarificationPath:          clarificationPath,
 		Model:                      t.VerifyModel,
 		Interactive:                true,
 		ResumeChatID:               t.VerifyResumeSession,
@@ -147,15 +165,17 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 		runErr = run.WaitForExit(ctx, pid)
 	}
 	outcome := lifecycle.VerifyOutcomeNoRetries
-	if runErr == nil && resolver.ParseVerdict(findingsPath) == "PASS" {
+	if runErr == nil &&
+		resolver.ParseVerdict(findingsPath) == "PASS" {
 		outcome = lifecycle.VerifyOutcomeSuccess
 	}
 	lc.Finish(outcome, runErr)
 	if runErr != nil {
 		return runErr
 	}
-
-	uitheme.NormalFprintf(opts.Stdout, "J: verify resume on task %s\n", t.ID)
+	uitheme.NormalFprintf(
+		opts.Stdout, "J: verify resume on task %s\n", t.ID,
+	)
 	return nil
 }
 
@@ -164,7 +184,9 @@ func RunResume(ctx context.Context, opts ResumeOptions) (err error) {
 // is false (with nil error) when no eligible tasks exist; callers
 // should print the "no resumable verify sessions" line and return
 // nil.
-func resolveResumeTask(ctx context.Context, opts ResumeOptions) (tasks.Task, bool, error) {
+func resolveResumeTask(
+	ctx context.Context, opts ResumeOptions,
+) (tasks.Task, bool, error) {
 	if opts.TaskID != "" {
 		return resolveResumeByID(opts.TaskID)
 	}
@@ -178,7 +200,9 @@ func resolveResumeTask(ctx context.Context, opts ResumeOptions) (tasks.Task, boo
 	case 1:
 		return rows[0], true, nil
 	}
-	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to resume verifying", rows)
+	chosen, ok, err := opts.UI.PickTask(
+		ctx, "Select a task to resume verifying", rows,
+	)
 	if err != nil {
 		return tasks.Task{}, false, err
 	}
