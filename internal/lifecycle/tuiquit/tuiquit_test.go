@@ -182,6 +182,27 @@ func TestRunGhPRList_EmptyBranch(t *testing.T) {
 	}
 }
 
+func TestDetectPullRequestURL_AgentLogHit(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "agent.log")
+	writeFile(t, logPath,
+		"opened https://github.com/o/r/pull/7\n")
+
+	got := DetectPullRequestURL(t.Context(), "", logPath)
+	if got != "https://github.com/o/r/pull/7" {
+		t.Errorf("DetectPullRequestURL = %q", got)
+	}
+}
+
+func TestDetectPullRequestURL_MissingLog(t *testing.T) {
+	dir := t.TempDir()
+	got := DetectPullRequestURL(t.Context(), "",
+		filepath.Join(dir, "no.log"))
+	if got != "" {
+		t.Errorf("DetectPullRequestURL = %q, want empty", got)
+	}
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

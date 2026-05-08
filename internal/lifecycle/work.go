@@ -1,12 +1,18 @@
 package lifecycle
 
 import (
+	"context"
 	"io"
 	"time"
 
+	"github.com/spacelions/j/internal/lifecycle/tuiquit"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 )
+
+// prDetectTimeout bounds the work-end PR-URL detection (matches
+// the gh-fallback budget in tuiquit).
+const prDetectTimeout = 5 * time.Second
 
 // WorkLifecycle owns the begin/end task-log writes around a single
 // agent.Work invocation. Mirrors PlanLifecycle.
@@ -110,6 +116,7 @@ func (lc *WorkLifecycle) Finish(runErr error) {
 	}
 	lc.closed = true
 	lc.task.WorkEndAt = time.Now().UTC()
+	lc.detectPullRequestURL()
 
 	ev := tasks.EventWorkDone
 	if runErr != nil {
@@ -118,6 +125,20 @@ func (lc *WorkLifecycle) Finish(runErr error) {
 	if _, err := tasks.ApplyAndPersistWarn(
 		lc.stderr, &lc.task, ev); err != nil {
 		panic("work finish: " + err.Error())
+	}
+}
+
+func (lc *WorkLifecycle) detectPullRequestURL() {
+	if lc.task.PullRequestURL != "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(
+		context.Background(), prDetectTimeout)
+	defer cancel()
+	url := tuiquit.DetectPullRequestURL(
+		ctx, lc.task.Worktree, lc.agentLogPath)
+	if url != "" {
+		lc.task.PullRequestURL = url
 	}
 }
 

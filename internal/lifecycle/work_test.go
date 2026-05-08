@@ -330,6 +330,119 @@ func TestWorkLifecycle_Task(t *testing.T) {
 	}
 }
 
+// TestWorkLifecycle_Finish_PopulatesPullRequestURLFromAgentLog pins
+// the new behaviour: a GitHub PR URL line in agent.log is detected
+// and stamped on the persisted task row before EventWorkDone fires.
+func TestWorkLifecycle_Finish_PopulatesPullRequestURLFromAgentLog(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
+	}
+	logPath := filepath.Join(t.TempDir(), "agent.log")
+	prURL := "https://github.com/owner/repo/pull/77"
+	if err := os.WriteFile(logPath,
+		[]byte("Created pull request "+prURL+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lc := NewWorkTask(io.Discard, "cursor", "m",
+		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", logPath)
+	lc.Finish(nil)
+
+	if got := lc.Task().PullRequestURL; got != prURL {
+		t.Fatalf("Task().PullRequestURL = %q, want %q", got, prURL)
+	}
+	got := listAllTasks(t)[0]
+	if got.PullRequestURL != prURL {
+		t.Fatalf("persisted PullRequestURL = %q, want %q",
+			got.PullRequestURL, prURL)
+	}
+	if got.Status != tasks.StatusWorkDone {
+		t.Fatalf("Status = %q, want work-done", got.Status)
+	}
+}
+
+// TestWorkLifecycle_Finish_NoPRURL_LeavesFieldEmpty pins the
+// "no PR detected" branch: agent.log without a URL + empty branch
+// → field stays empty and the run still terminates with work-done.
+func TestWorkLifecycle_Finish_NoPRURL_LeavesFieldEmpty(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
+	}
+	logPath := filepath.Join(t.TempDir(), "agent.log")
+	if err := os.WriteFile(logPath, []byte("no PR here\n"),
+		0o644); err != nil {
+		t.Fatal(err)
+	}
+	lc := NewWorkTask(io.Discard, "cursor", "m",
+		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", logPath)
+	lc.task.Worktree = ""
+	lc.Finish(nil)
+
+	got := listAllTasks(t)[0]
+	if got.PullRequestURL != "" {
+		t.Fatalf("PullRequestURL = %q, want empty",
+			got.PullRequestURL)
+	}
+	if got.Status != tasks.StatusWorkDone {
+		t.Fatalf("Status = %q, want work-done", got.Status)
+	}
+}
+
+// TestWorkLifecycle_Finish_PreservesExistingPullRequestURL pins that
+// a pre-set PullRequestURL is not overwritten by a log scan result.
+func TestWorkLifecycle_Finish_PreservesExistingPullRequestURL(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
+	}
+	logPath := filepath.Join(t.TempDir(), "agent.log")
+	if err := os.WriteFile(logPath,
+		[]byte("https://github.com/owner/repo/pull/2\n"),
+		0o644); err != nil {
+		t.Fatal(err)
+	}
+	lc := NewWorkTask(io.Discard, "cursor", "m",
+		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", logPath)
+	lc.task.PullRequestURL = "https://github.com/owner/repo/pull/1"
+	lc.Finish(nil)
+
+	got := listAllTasks(t)[0]
+	want := "https://github.com/owner/repo/pull/1"
+	if got.PullRequestURL != want {
+		t.Fatalf("PullRequestURL = %q, want %q",
+			got.PullRequestURL, want)
+	}
+}
+
+// TestWorkLifecycle_Finish_ErrorPath_StillDetectsURL pins that a URL
+// in agent.log is stamped on the task row even when runErr drives
+// the EventWorkError branch.
+func TestWorkLifecycle_Finish_ErrorPath_StillDetectsURL(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
+	}
+	logPath := filepath.Join(t.TempDir(), "agent.log")
+	prURL := "https://github.com/owner/repo/pull/42"
+	if err := os.WriteFile(logPath,
+		[]byte("see "+prURL+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lc := NewWorkTask(io.Discard, "cursor", "m",
+		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", logPath)
+	lc.Finish(errors.New("boom"))
+
+	got := listAllTasks(t)[0]
+	if got.PullRequestURL != prURL {
+		t.Fatalf("PullRequestURL = %q, want %q",
+			got.PullRequestURL, prURL)
+	}
+	if got.Status != tasks.StatusHelp {
+		t.Fatalf("Status = %q, want help", got.Status)
+	}
+}
+
 // TestWorkLifecycle_MarkersGoToAgentLogNotStderr is the regression
 // pin for "phase markers must never reach the user's terminal".
 func TestWorkLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
