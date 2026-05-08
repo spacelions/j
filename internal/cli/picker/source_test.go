@@ -220,7 +220,7 @@ func TestPickSource_Linear_EmptyIssueList(t *testing.T) {
 	stubAssignedIssuesServer(t)
 	ui := &scriptedSourceUI{source: SourceLinear}
 	_, err := PickSource(context.Background(), ui, []Source{SourceLinear}, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "no Linear issues assigned") {
+	if err == nil || err.Error() != "no Linear issues assigned to you." {
 		t.Fatalf("err = %v, want empty-list error", err)
 	}
 	if ui.pickedIssueCalls != 0 {
