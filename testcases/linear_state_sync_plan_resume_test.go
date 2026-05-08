@@ -34,8 +34,8 @@ func TestLinearStateSync_PlanResume_MovesToTodoNoReminder(
 		t.Fatalf("issueUpdate stateId = %q, want s-todo", v)
 	}
 	for _, b := range got {
-		if strings.Contains(b, "issueRemindMe") {
-			t.Fatalf("unexpected issueRemindMe on plan-resume: %v",
+		if strings.Contains(b, "issueReminder") {
+			t.Fatalf("unexpected issueReminder on plan-resume: %v",
 				got)
 		}
 	}

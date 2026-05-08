@@ -12,7 +12,7 @@ import (
 // "re-plan from any source state moves the linked Linear issue back
 // to Todo, with no inbox reminder" acceptance criterion. Re-plan is
 // user-initiated, so the only outbound mutation must be issueUpdate
-// pointing at the s-todo workflow state — no issueRemindMe.
+// pointing at the s-todo workflow state — no issueReminder.
 func TestLinearStateSync_PlanRestart_MovesToTodoNoReminder(
 	t *testing.T,
 ) {
@@ -34,8 +34,8 @@ func TestLinearStateSync_PlanRestart_MovesToTodoNoReminder(
 		t.Fatalf("issueUpdate stateId = %q, want s-todo", v)
 	}
 	for _, b := range got {
-		if strings.Contains(b, "issueRemindMe") {
-			t.Fatalf("unexpected issueRemindMe on plan-restart: %v",
+		if strings.Contains(b, "issueReminder") {
+			t.Fatalf("unexpected issueReminder on plan-restart: %v",
 				got)
 		}
 	}

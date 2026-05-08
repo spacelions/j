@@ -219,7 +219,7 @@ func TestRemindOnIssue_OK(t *testing.T) {
 		seenBody, _ = io.ReadAll(r.Body)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
-				"issueRemindMe": map[string]any{"success": true},
+				"issueReminder": map[string]any{"success": true},
 			},
 		})
 	})
@@ -230,24 +230,24 @@ func TestRemindOnIssue_OK(t *testing.T) {
 		t.Fatalf("RemindOnIssue: %v", err)
 	}
 	after := time.Now().UTC().Add(time.Second)
-	if !strings.Contains(string(seenBody), "issueRemindMe") {
-		t.Fatalf("body missing issueRemindMe: %s", seenBody)
+	if !strings.Contains(string(seenBody), "issueReminder") {
+		t.Fatalf("body missing issueReminder: %s", seenBody)
 	}
 	req := decodeReq(t, seenBody)
 	if req.Variables["id"] != "node-id-3" {
 		t.Fatalf("id var = %v", req.Variables["id"])
 	}
-	raw, ok := req.Variables["remindAt"].(string)
+	raw, ok := req.Variables["reminderAt"].(string)
 	if !ok {
-		t.Fatalf("remindAt var = %v (%T)",
-			req.Variables["remindAt"], req.Variables["remindAt"])
+		t.Fatalf("reminderAt var = %v (%T)",
+			req.Variables["reminderAt"], req.Variables["reminderAt"])
 	}
 	got, err := time.Parse(time.RFC3339, raw)
 	if err != nil {
-		t.Fatalf("remindAt parse: %v (raw=%q)", err, raw)
+		t.Fatalf("reminderAt parse: %v (raw=%q)", err, raw)
 	}
 	if got.Before(before) || got.After(after) {
-		t.Fatalf("remindAt = %v, want within [%v, %v]",
+		t.Fatalf("reminderAt = %v, want within [%v, %v]",
 			got, before, after)
 	}
 }
@@ -256,7 +256,7 @@ func TestRemindOnIssue_GraphQLError(t *testing.T) {
 	srv := issueServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
-				"issueRemindMe": map[string]any{"success": false},
+				"issueReminder": map[string]any{"success": false},
 			},
 			"errors": []map[string]string{{"message": "no remind"}},
 		})

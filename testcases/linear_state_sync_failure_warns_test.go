@@ -28,7 +28,7 @@ func TestLinearStateSync_UpdateFails_StillRemindsAndWarns(
 
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "remindMe",
+		"issue", "states", "issueUpdate", "reminder",
 	}
 	if !equalSlices(bodyKindList(got), want) {
 		t.Fatalf("call order = %v, want %v",

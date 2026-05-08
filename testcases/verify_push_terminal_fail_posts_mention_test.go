@@ -13,7 +13,7 @@ import (
 // acceptance criterion: EventVerifyFail posts verifier_findings.md
 // as a plain comment with the
 // "Verification failed (retries exhausted)" header and does NOT
-// call issueRemindMe.
+// call issueReminder.
 func TestLinearVerifyPush_TerminalFail_PostsPlainComment(t *testing.T) {
 	id := tasks.NewTaskID()
 	env := newVerifyPushAcceptanceEnv(t, id, "findings body")
@@ -37,8 +37,8 @@ func TestLinearVerifyPush_TerminalFail_PostsPlainComment(t *testing.T) {
 		t.Fatalf("commentCreate body = %q, want %q", body, want)
 	}
 	for _, b := range got {
-		if strings.Contains(b, "issueRemindMe") {
-			t.Fatalf("unexpected issueRemindMe: %v", got)
+		if strings.Contains(b, "issueReminder") {
+			t.Fatalf("unexpected issueReminder: %v", got)
 		}
 	}
 }

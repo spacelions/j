@@ -26,11 +26,11 @@ const commentCreateMutation = `mutation($id:String!,$body:String!){` +
 const issueUpdateStateMutation = `mutation($id:String!,$stateId:String!){` +
 	`issueUpdate(id:$id,input:{stateId:$stateId}){success}}`
 
-// issueRemindMeMutation schedules a Linear inbox reminder for the
-// API-key owner on the issue addressed by node id. `remindAt` is an
+// issueReminderMutation schedules a Linear inbox reminder for the
+// API-key owner on the issue addressed by node id. `reminderAt` is an
 // RFC3339 timestamp; passing "now" surfaces the reminder immediately.
-const issueRemindMeMutation = `mutation($id:String!,$remindAt:DateTime!){` +
-	`issueRemindMe(id:$id,remindAt:$remindAt){success}}`
+const issueReminderMutation = `mutation($id:String!,$reminderAt:DateTime!){` +
+	`issueReminder(id:$id,reminderAt:$reminderAt){success}}`
 
 // mutationResponse captures only the part of a mutation response
 // the client cares about — Linear's `success` field is informational
@@ -99,10 +99,10 @@ func (c *Client) RemindOnIssue(
 ) error {
 	var resp mutationResponse
 	req := graphQLRequest{
-		Query: issueRemindMeMutation,
+		Query: issueReminderMutation,
 		Variables: map[string]any{
-			"id":       issueID,
-			"remindAt": time.Now().UTC().Format(time.RFC3339),
+			"id":         issueID,
+			"reminderAt": time.Now().UTC().Format(time.RFC3339),
 		},
 	}
 	if err := c.do(ctx, req, &resp); err != nil {

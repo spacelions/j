@@ -15,7 +15,7 @@ import (
 // `Verification iteration N/M failed` followed by
 // verifier_findings.md inline. The 1-based rendering (iteration 2/3
 // from a 0-based iteration index of 1) is part of the contract; no
-// `@<viewer>` prefix and no issueRemindMe round-trip.
+// `@<viewer>` prefix and no issueReminder round-trip.
 func TestLinearVerifyPush_IterationFail_PostsPlainComment(t *testing.T) {
 	id := tasks.NewTaskID()
 	env := newVerifyPushAcceptanceEnv(t, id, "iter findings")
@@ -35,8 +35,8 @@ func TestLinearVerifyPush_IterationFail_PostsPlainComment(t *testing.T) {
 		t.Fatalf("commentCreate body = %q, want %q", body, want)
 	}
 	for _, b := range got {
-		if strings.Contains(b, "issueRemindMe") {
-			t.Fatalf("unexpected issueRemindMe: %v", got)
+		if strings.Contains(b, "issueReminder") {
+			t.Fatalf("unexpected issueReminder: %v", got)
 		}
 	}
 	if msg := env.stderrText(t); strings.Contains(msg, "linear verify") {

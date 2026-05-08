@@ -115,8 +115,8 @@ func (e *stateSyncEnv) handle(
 	switch {
 	case strings.Contains(q, "team{states"):
 		writeStatesResp(w, e.states, e.statesErrors)
-	case strings.Contains(q, "issueRemindMe"):
-		writeMutation(w, "issueRemindMe", e.remindErrors)
+	case strings.Contains(q, "issueReminder"):
+		writeMutation(w, "issueReminder", e.remindErrors)
 	case strings.Contains(q, "issueUpdate"):
 		writeMutation(w, "issueUpdate", e.updateErrors)
 	case strings.Contains(q, "commentCreate"):
@@ -197,8 +197,8 @@ func classifyBody(body string) string {
 	switch {
 	case strings.Contains(body, "team{states"):
 		return "states"
-	case strings.Contains(body, "issueRemindMe"):
-		return "remindMe"
+	case strings.Contains(body, "issueReminder"):
+		return "reminder"
 	case strings.Contains(body, "issueUpdate"):
 		return "issueUpdate"
 	case strings.Contains(body, "commentCreate"):
