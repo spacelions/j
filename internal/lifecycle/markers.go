@@ -28,9 +28,9 @@ func markersHook(tr tasks.Transition, task tasks.Task) {
 		return
 	}
 	defer func() {
-		if err := f.Close(); err != nil {
-			// Intentionally ignored: marker logging is best-effort and must not affect transitions.
-		}
+		// Best-effort logging: a Close error must not affect the
+		// transition the hook is observing.
+		_ = f.Close()
 	}()
 
 	phase, verb := eventToPhaseVerb(tr.Event)
@@ -72,6 +72,8 @@ func eventToPhaseVerb(e tasks.Event) (phase, verb string) {
 		return "plan", "quit"
 	case tasks.EventPlanError:
 		return "plan", "error"
+	case tasks.EventPlanNeedsClarification:
+		return "plan", "needs clarification"
 	case tasks.EventPlanResume:
 		return "plan", "resume"
 	case tasks.EventReaperPlanDone:

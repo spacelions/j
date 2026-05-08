@@ -395,6 +395,138 @@ func TestBeginPlanResume_IllegalTransitionPanics(t *testing.T) {
 	}, io.Discard, "cursor", "m", "")
 }
 
+// writePlanClarification drops `clarification.md` into
+// `<cwd>/.j/tasks/<id>/` so PlanLifecycle.Finish's clarification
+// branch fires. Mirrors the layout the planner contract produces.
+func writePlanClarification(t *testing.T, id, body string) {
+	t.Helper()
+	dir, err := tasks.EnsureDir(id)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	path := filepath.Join(dir, tasks.ClarificationFileName)
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write clarification.md: %v", err)
+	}
+}
+
+// TestPlanLifecycle_Finish_ClarificationPresent_NoApproval pins the
+// foreground clarification branch: a clean run that wrote
+// `clarification.md` lands the row in `needs-clarification` instead of
+// `plan-done`, stamps PlanEndAt, and leaves Summary alone (refined
+// inputs are typically empty there).
+func TestPlanLifecycle_Finish_ClarificationPresent_NoApproval(
+	t *testing.T,
+) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	seedPlanApprovalDisabled(t)
+	id := tasks.NewTaskID()
+	lc := NewPlanTask(io.Discard, "cursor", "m", id, "/tmp/x.md",
+		"# heading\nbody", "", "", "")
+	wantSummary := lc.Task().Summary
+	writePlanClarification(t, id, "what next?\n")
+	lc.Finish(nil, "", "", "/tmp/x.md")
+	rows := listAllTasks(t)
+	if len(rows) != 1 || rows[0].ID != id {
+		t.Fatalf("tasks = %+v", rows)
+	}
+	got := rows[0]
+	if got.Status != tasks.StatusNeedsClarification {
+		t.Fatalf("Status = %q, want needs-clarification", got.Status)
+	}
+	if got.PlanEndAt.IsZero() {
+		t.Fatalf("PlanEndAt should be stamped")
+	}
+	if got.Summary != wantSummary {
+		t.Fatalf("Summary = %q, want %q (begin-time, untouched)",
+			got.Summary, wantSummary)
+	}
+}
+
+// TestPlanLifecycle_Finish_ClarificationPresent_ApprovalGate pins
+// that clarification.md takes precedence over the approval gate: even
+// with `plan_requires_approval=true`, the row lands in
+// `needs-clarification` rather than `plan-pending-approval`.
+func TestPlanLifecycle_Finish_ClarificationPresent_ApprovalGate(
+	t *testing.T,
+) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	seedPlanApprovalEnabled(t)
+	id := tasks.NewTaskID()
+	lc := NewPlanTask(io.Discard, "cursor", "m", id, "/tmp/x.md",
+		"# heading\nbody", "", "", "")
+	writePlanClarification(t, id, "still ambiguous\n")
+	lc.Finish(nil, "", "", "/tmp/x.md")
+	got := listAllTasks(t)[0]
+	if got.Status != tasks.StatusNeedsClarification {
+		t.Fatalf("Status = %q, want needs-clarification", got.Status)
+	}
+}
+
+// TestPlanLifecycle_Finish_ClarificationAbsent_KeepsPlanDoneMatrix
+// pins that the plan-done / plan-pending-approval matrix is unchanged
+// when clarification.md is absent: approval off → plan-done; approval
+// on → plan-pending-approval.
+func TestPlanLifecycle_Finish_ClarificationAbsent_KeepsPlanDoneMatrix(
+	t *testing.T,
+) {
+	cases := []struct {
+		name     string
+		approval bool
+		want     tasks.TaskStatus
+	}{
+		{"approval-off", false, tasks.StatusPlanDone},
+		{"approval-on", true, tasks.StatusPlanPendingApproval},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			if err := store.EnsureProject(); err != nil {
+				t.Fatalf("EnsureProject: %v", err)
+			}
+			if c.approval {
+				seedPlanApprovalEnabled(t)
+			} else {
+				seedPlanApprovalDisabled(t)
+			}
+			id := tasks.NewTaskID()
+			lc := NewPlanTask(io.Discard, "cursor", "m", id,
+				"/tmp/x.md", "# heading", "", "", "")
+			lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
+			got := listAllTasks(t)[0]
+			if got.Status != c.want {
+				t.Fatalf("Status = %q, want %q", got.Status, c.want)
+			}
+		})
+	}
+}
+
+// TestPlanLifecycle_Finish_ErrorTrumpsClarification pins the
+// precedence rule: a non-nil runErr emits EventPlanError even when
+// clarification.md is on disk.
+func TestPlanLifecycle_Finish_ErrorTrumpsClarification(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := tasks.NewTaskID()
+	lc := NewPlanTask(io.Discard, "cursor", "m", id, "/tmp/x.md",
+		"# heading", "", "", "")
+	writePlanClarification(t, id, "what next?\n")
+	lc.Finish(errors.New("boom"), "", "", "/tmp/x.md")
+	got := listAllTasks(t)[0]
+	if got.Status != tasks.StatusHelp {
+		t.Fatalf("Status = %q, want help (error precedence)",
+			got.Status)
+	}
+}
+
 // TestBeginPlanRestart_SetsBeginAtWhenZero covers the
 // PlanBeginAt.IsZero() true branch in BeginPlanRestart (a task with
 // no prior PlanBeginAt).

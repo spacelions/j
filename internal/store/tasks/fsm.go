@@ -14,6 +14,7 @@
 //	    planning --> help : EventPlanError
 //	    planning --> help : EventReaperPlanFail
 //	    planning --> help : EventPlanQuit
+//	    planning --> needs-clarification : EventPlanNeedsClarification
 //	    planning --> needs-clarification : EventReaperPlanNeedsClarification
 //	    plan-pending-approval --> plan-done : EventPlanApprove
 //	    plan-pending-approval --> planning : EventPlanRestart
@@ -84,12 +85,12 @@ const (
 	EventPlanApprove                 Event = "plan_approve"
 	EventPlanQuit                    Event = "plan_quit"
 	EventPlanError                   Event = "plan_error"
+	EventPlanNeedsClarification      Event = "plan_needs_clarification"
 	EventPlanResume                  Event = "plan_resume"
 	EventReaperPlanDone              Event = "reaper_plan_done"
 	EventReaperPlanAwaitApproval     Event = "reaper_plan_await_approval"
 	EventReaperPlanFail              Event = "reaper_plan_fail"
 	EventReaperPlanNeedsClarification Event = "reaper_plan_needs_clarification"
-
 	EventWorkBegin                   Event = "work_begin"
 	EventWorkRestart                 Event = "work_restart"
 	EventWorkResume                  Event = "work_resume"
@@ -98,7 +99,6 @@ const (
 	EventWorkError                   Event = "work_error"
 	EventReaperWorkDone              Event = "reaper_work_done"
 	EventReaperWorkNeedsClarification Event = "reaper_work_needs_clarification"
-
 	EventVerifyBegin                 Event = "verify_begin"
 	EventVerifyRestart               Event = "verify_restart"
 	EventVerifyResume                Event = "verify_resume"
@@ -127,6 +127,7 @@ var transitions = []Transition{
 	{StatusPlanning, EventReaperPlanDone, StatusPlanDone},
 	{StatusPlanning, EventReaperPlanAwaitApproval, StatusPlanPendingApproval},
 	{StatusPlanning, EventReaperPlanFail, StatusHelp},
+	{StatusPlanning, EventPlanNeedsClarification, StatusNeedsClarification},
 	{StatusPlanning, EventReaperPlanNeedsClarification, StatusNeedsClarification},
 
 	{StatusPlanning, EventPlanRestart, StatusPlanning},

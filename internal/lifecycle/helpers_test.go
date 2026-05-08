@@ -104,6 +104,18 @@ func seedWorkDoneTask(t *testing.T, summary string) string {
 // instead of the default EventPlanAwaitApproval. Call after EnsureProject.
 func seedPlanApprovalDisabled(t *testing.T) {
 	t.Helper()
+	seedPlanApproval(t, "false")
+}
+
+// seedPlanApprovalEnabled writes plan_requires_approval=true so
+// PlanLifecycle.Finish(nil) routes to EventPlanAwaitApproval.
+func seedPlanApprovalEnabled(t *testing.T) {
+	t.Helper()
+	seedPlanApproval(t, "true")
+}
+
+func seedPlanApproval(t *testing.T, value string) {
+	t.Helper()
 	path, err := store.DefaultPath()
 	if err != nil {
 		t.Fatalf("DefaultPath: %v", err)
@@ -113,7 +125,8 @@ func seedPlanApprovalDisabled(t *testing.T) {
 		t.Fatalf("Open settings: %v", err)
 	}
 	defer s.Close()
-	if err := s.Put(store.BucketProject, store.KeyPlanRequiresApproval, "false"); err != nil {
+	if err := s.Put(store.BucketProject,
+		store.KeyPlanRequiresApproval, value); err != nil {
 		t.Fatalf("Put plan_requires_approval: %v", err)
 	}
 }

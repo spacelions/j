@@ -10,6 +10,8 @@ package lifecycle
 
 import (
 	"io"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spacelions/j/internal/store"
@@ -176,8 +178,13 @@ func (lc *PlanLifecycle) RecordBackground(pid int, logPath string) {
 }
 
 // Finish stamps plan_end_at, decides the terminal status from
-// runErr and the plan-requires-approval setting, and rewrites the
-// task. Calling Finish twice is a silent no-op via the closed flag.
+// runErr, the on-disk clarification.md, and the plan-requires-approval
+// setting, and rewrites the task. Calling Finish twice is a silent
+// no-op via the closed flag. A clean run that wrote `clarification.md`
+// (planner contract for "I need a human") routes to
+// `needs-clarification` instead of `plan-done` so linear_push.go does
+// not try to upload a missing plan.md. runErr always wins over the
+// clarification check.
 func (lc *PlanLifecycle) Finish(
 	runErr error, refinedRequirements, planMarkdown, target string,
 ) {
@@ -187,23 +194,51 @@ func (lc *PlanLifecycle) Finish(
 	lc.closed = true
 	lc.task.PlanEndAt = time.Now().UTC()
 
-	var ev tasks.Event
-	if runErr != nil {
-		ev = tasks.EventPlanError
-	} else {
-		lc.task.Summary = tasks.Summary(
-			tasks.PickSource(refinedRequirements, planMarkdown), target)
-		approval, _ := store.LoadPlanRequiresApproval()
-		if approval {
-			ev = tasks.EventPlanAwaitApproval
-		} else {
-			ev = tasks.EventPlanDone
-		}
-	}
+	ev := lc.pickFinishEvent(runErr, refinedRequirements, planMarkdown,
+		target)
 	if _, err := tasks.ApplyAndPersistWarn(
 		lc.stderr, &lc.task, ev); err != nil {
 		panic("plan finish: " + err.Error())
 	}
+}
+
+// pickFinishEvent decides which event drives the plan-finish
+// transition. Error path takes precedence over the clarification
+// check; clarification.md presence wins over the approval gate.
+// Summary is only refreshed on the plan-done / plan-await-approval
+// branches — the clarification branch leaves the begin-time summary
+// alone because refined inputs are typically empty there.
+func (lc *PlanLifecycle) pickFinishEvent(
+	runErr error, refinedRequirements, planMarkdown, target string,
+) tasks.Event {
+	if runErr != nil {
+		return tasks.EventPlanError
+	}
+	if lc.clarificationPresent() {
+		return tasks.EventPlanNeedsClarification
+	}
+	lc.task.Summary = tasks.Summary(
+		tasks.PickSource(refinedRequirements, planMarkdown), target)
+	approval, _ := store.LoadPlanRequiresApproval()
+	if approval {
+		return tasks.EventPlanAwaitApproval
+	}
+	return tasks.EventPlanDone
+}
+
+// clarificationPresent reports whether the planner left
+// `<tasksDir>/<task.ID>/clarification.md` on disk. A missing tasks
+// dir or any other stat error counts as "absent" so the historical
+// plan-done / plan-await-approval matrix stays the default.
+func (lc *PlanLifecycle) clarificationPresent() bool {
+	tasksDir, err := tasks.DefaultDir()
+	if err != nil {
+		return false
+	}
+	path := filepath.Join(
+		tasksDir, lc.task.ID, tasks.ClarificationFileName)
+	_, err = os.Stat(path)
+	return err == nil
 }
 
 // Task returns the in-memory snapshot of the task row.

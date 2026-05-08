@@ -76,6 +76,22 @@ func TestIsLegal(t *testing.T) {
 	}
 }
 
+// TestApply_ForegroundPlanNeedsClarification pins the foreground
+// planner-exit edge: from `planning` the new event lands the row in
+// `needs-clarification`, mirroring the existing reaper-event entry.
+func TestApply_ForegroundPlanNeedsClarification(t *testing.T) {
+	got, err := Apply(StatusPlanning, EventPlanNeedsClarification)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if got != StatusNeedsClarification {
+		t.Fatalf("Apply = %q, want needs-clarification", got)
+	}
+	if !IsLegal(StatusPlanning, EventPlanNeedsClarification) {
+		t.Fatal("IsLegal returned false for foreground edge")
+	}
+}
+
 func TestIsLegal_PlanResumeFromPendingApproval(t *testing.T) {
 	if !IsLegal(StatusPlanPendingApproval, EventPlanResume) {
 		t.Error(
@@ -131,6 +147,7 @@ func TestLegalEvents(t *testing.T) {
 	want := []Event{
 		EventPlanDone, EventPlanAwaitApproval,
 		EventPlanError, EventPlanQuit,
+		EventPlanNeedsClarification,
 		EventReaperPlanDone, EventReaperPlanAwaitApproval,
 		EventReaperPlanFail, EventReaperPlanNeedsClarification,
 	}
