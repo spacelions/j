@@ -215,7 +215,7 @@ func pickLinearSource(ctx context.Context, ui SourceUI) (SourceResult, error) {
 		return SourceResult{}, err
 	}
 	if len(issues) == 0 {
-		return SourceResult{}, errors.New("no Linear issues assigned to you.")
+		return SourceResult{}, errors.New("no Linear issues assigned to you")
 	}
 	chosen, ok, err := ui.PickLinearIssue(ctx, issues)
 	if err != nil {

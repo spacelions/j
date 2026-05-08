@@ -120,7 +120,7 @@ func NormalForkDialog(w io.Writer, subject string, pid int, absLogPath string) {
 		subjectStyle.Render(fmt.Sprintf(
 			"J: %s running in background (PID=%d)", subject, pid)),
 		"",
-		tailStyle.Render(fmt.Sprintf("tail -f %s", displayLogPath(absLogPath))),
+		tailStyle.Render("tail -f " + displayLogPath(absLogPath)),
 	}, "\n")
 	fmt.Fprintln(w, boxStyle.Render(block))
 }

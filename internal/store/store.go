@@ -12,8 +12,10 @@
 package store
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -171,7 +173,7 @@ func (s *Store) List(bucket string) ([]KV, error) {
 	if err != nil {
 		return nil, err
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	slices.SortFunc(out, func(a, b KV) int { return cmp.Compare(a.Key, b.Key) })
 	return out, nil
 }
 

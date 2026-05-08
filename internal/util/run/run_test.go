@@ -16,7 +16,8 @@ import (
 )
 
 func TestOutput_Success(t *testing.T) {
-	out, err := Output(context.Background(), "echo", "hi")
+	t.Parallel()
+	out, err := Output(t.Context(), "echo", "hi")
 	if err != nil {
 		t.Fatalf("Output: %v", err)
 	}
@@ -26,10 +27,11 @@ func TestOutput_Success(t *testing.T) {
 }
 
 func TestOutput_Failure_WithStderr(t *testing.T) {
+	t.Parallel()
 	// `ls /no/such/path` exits non-zero and writes a clear error to
 	// stderr across BSD and GNU coreutils, so the wrapped message is
 	// exercised.
-	_, err := Output(context.Background(), "ls", "/no/such/path/should/not/exist")
+	_, err := Output(t.Context(), "ls", "/no/such/path/should/not/exist")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -39,9 +41,10 @@ func TestOutput_Failure_WithStderr(t *testing.T) {
 }
 
 func TestOutput_Failure_StdoutOnly(t *testing.T) {
+	t.Parallel()
 	// A shell snippet that fails non-zero and writes to stdout but not
 	// stderr exercises the stderr-empty-but-stdout-nonempty fallback.
-	_, err := Output(context.Background(), "sh", "-c", "echo stdoutmsg; exit 1")
+	_, err := Output(t.Context(), "sh", "-c", "echo stdoutmsg; exit 1")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -51,9 +54,10 @@ func TestOutput_Failure_StdoutOnly(t *testing.T) {
 }
 
 func TestOutput_Failure_NoStderr(t *testing.T) {
+	t.Parallel()
 	// `false` exits non-zero with no stdout/stderr, exercising the
 	// both-empty fallback path.
-	_, err := Output(context.Background(), "false")
+	_, err := Output(t.Context(), "false")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -63,16 +67,18 @@ func TestOutput_Failure_NoStderr(t *testing.T) {
 }
 
 func TestRun_Success(t *testing.T) {
+	t.Parallel()
 	// `true` inherits stdin/stdout/stderr (so nothing is written) and
 	// exits zero; exercises the success path of Run.
-	if err := Run(context.Background(), "true"); err != nil {
+	if err := Run(t.Context(), "true"); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 }
 
 func TestRun_Failure(t *testing.T) {
+	t.Parallel()
 	// `false` exits non-zero with no output; exercises Run's error wrap.
-	err := Run(context.Background(), "false")
+	err := Run(t.Context(), "false")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -88,9 +94,10 @@ func TestRun_Failure(t *testing.T) {
 // background goroutine inside Spawn calls cmd.Wait so the kernel
 // reaps the child instead of leaving a zombie behind).
 func TestSpawn_Success(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "out.log")
-	pid, err := Spawn(context.Background(), logPath, "sh", "-c", "echo hello-spawn; echo world >&2")
+	pid, err := Spawn(t.Context(), logPath, "sh", "-c", "echo hello-spawn; echo world >&2")
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
@@ -118,13 +125,14 @@ func TestSpawn_Success(t *testing.T) {
 // worker→verifier loop), and tests downstream rely on the earlier
 // phase's bytes surviving.
 func TestSpawn_AppendsAcrossInvocations(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "out.log")
-	if _, err := Spawn(context.Background(), logPath, "sh", "-c", "echo first-line"); err != nil {
+	if _, err := Spawn(t.Context(), logPath, "sh", "-c", "echo first-line"); err != nil {
 		t.Fatalf("first Spawn: %v", err)
 	}
 	waitForLogContains(t, logPath, "first-line")
-	if _, err := Spawn(context.Background(), logPath, "sh", "-c", "echo second-line"); err != nil {
+	if _, err := Spawn(t.Context(), logPath, "sh", "-c", "echo second-line"); err != nil {
 		t.Fatalf("second Spawn: %v", err)
 	}
 	waitForLogContains(t, logPath, "second-line")
@@ -163,7 +171,8 @@ func waitForLogContains(t *testing.T, logPath, needle string) {
 
 // TestSpawn_EmptyLogPath pins the empty-path guard.
 func TestSpawn_EmptyLogPath(t *testing.T) {
-	_, err := Spawn(context.Background(), "", "true")
+	t.Parallel()
+	_, err := Spawn(t.Context(), "", "true")
 	if err == nil || !strings.Contains(err.Error(), "empty log path") {
 		t.Fatalf("err = %v", err)
 	}
@@ -173,8 +182,9 @@ func TestSpawn_EmptyLogPath(t *testing.T) {
 // branch: OpenFile rejects the path, so Spawn returns before fork
 // and the wrapped error mentions the path.
 func TestSpawn_LogOpenFails(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	if _, err := Spawn(context.Background(), dir, "true"); err == nil {
+	if _, err := Spawn(t.Context(), dir, "true"); err == nil {
 		t.Fatal("expected open error when logPath is a directory")
 	}
 }
@@ -183,9 +193,10 @@ func TestSpawn_LogOpenFails(t *testing.T) {
 // non-existent binary on PATH fails fork/exec and the wrapped error
 // mentions the requested name.
 func TestSpawn_MissingBinary(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "out.log")
-	_, err := Spawn(context.Background(), logPath, "/no/such/cursor-agent-binary-xyzzy")
+	_, err := Spawn(t.Context(), logPath, "/no/such/cursor-agent-binary-xyzzy")
 	if err == nil {
 		t.Fatal("expected error from missing binary")
 	}
@@ -201,6 +212,7 @@ func TestSpawn_MissingBinary(t *testing.T) {
 // of when the child is reaped, so the alive→dead transition observed
 // by IsAlive is deterministic.
 func TestIsAlive_LiveAndDead(t *testing.T) {
+	t.Parallel()
 	cmd := exec.Command("sleep", "5")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("Start sleep: %v", err)
@@ -226,9 +238,10 @@ func TestIsAlive_LiveAndDead(t *testing.T) {
 // test runs in `go test` so stdout is captured; instead the child
 // records cwd to a file via shell redirection).
 func TestRunIn_Success_PlumbsCwd(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	out := filepath.Join(dir, "cwd.txt")
-	if err := RunIn(context.Background(), dir, "sh", "-c", "pwd > "+out); err != nil {
+	if err := RunIn(t.Context(), dir, "sh", "-c", "pwd > "+out); err != nil {
 		t.Fatalf("RunIn: %v", err)
 	}
 	got, err := os.ReadFile(out)
@@ -252,7 +265,8 @@ func TestRunIn_Success_PlumbsCwd(t *testing.T) {
 // passing "" leaves cmd.Dir empty so the child inherits the parent's
 // CWD (the same behaviour as Run).
 func TestRunIn_EmptyDir_InheritsParentCwd(t *testing.T) {
-	if err := RunIn(context.Background(), "", "true"); err != nil {
+	t.Parallel()
+	if err := RunIn(t.Context(), "", "true"); err != nil {
 		t.Fatalf("RunIn: %v", err)
 	}
 }
@@ -261,9 +275,10 @@ func TestRunIn_EmptyDir_InheritsParentCwd(t *testing.T) {
 // child. The child writes pwd to the log path, which the parent
 // polls for the expected directory.
 func TestSpawnIn_PlumbsCwd(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "out.log")
-	pid, err := SpawnIn(context.Background(), dir, logPath, "sh", "-c", "pwd")
+	pid, err := SpawnIn(t.Context(), dir, logPath, "sh", "-c", "pwd")
 	if err != nil {
 		t.Fatalf("SpawnIn: %v", err)
 	}
@@ -308,7 +323,7 @@ var markerLine = regexp.MustCompile(
 // firstNonMarkerLine returns the first non-empty line of data that is
 // not an agentlog marker (RFC3339Z + two spaces).
 func firstNonMarkerLine(data string) string {
-	for _, line := range strings.Split(data, "\n") {
+	for line := range strings.SplitSeq(data, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || markerLine.MatchString(trimmed) {
 			continue
@@ -323,9 +338,10 @@ func firstNonMarkerLine(data string) string {
 // append one human-readable `child exit` marker line to the same log
 // so a tailer can see the child's exit code without opening bbolt.
 func TestSpawn_AppendsChildExitMarker(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "out.log")
-	pid, err := Spawn(context.Background(), logPath, "sh", "-c", "exit 0")
+	pid, err := Spawn(t.Context(), logPath, "sh", "-c", "exit 0")
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
@@ -354,7 +370,8 @@ func TestSpawn_AppendsChildExitMarker(t *testing.T) {
 // TestSpawnIn_EmptyLogPath pins the empty-log-path guard, mirroring
 // TestSpawn_EmptyLogPath.
 func TestSpawnIn_EmptyLogPath(t *testing.T) {
-	_, err := SpawnIn(context.Background(), "", "", "true")
+	t.Parallel()
+	_, err := SpawnIn(t.Context(), "", "", "true")
 	if err == nil || !strings.Contains(err.Error(), "empty log path") {
 		t.Fatalf("err = %v", err)
 	}
@@ -363,10 +380,11 @@ func TestSpawnIn_EmptyLogPath(t *testing.T) {
 // TestWaitForExit_ZeroPid pins the immediate-nil branch for the
 // "synchronous / nothing to wait on" sentinel.
 func TestWaitForExit_ZeroPid(t *testing.T) {
-	if err := WaitForExit(context.Background(), 0); err != nil {
+	t.Parallel()
+	if err := WaitForExit(t.Context(), 0); err != nil {
 		t.Fatalf("WaitForExit(0) = %v, want nil", err)
 	}
-	if err := WaitForExit(context.Background(), -1); err != nil {
+	if err := WaitForExit(t.Context(), -1); err != nil {
 		t.Fatalf("WaitForExit(-1) = %v, want nil", err)
 	}
 }
@@ -376,11 +394,12 @@ func TestWaitForExit_ZeroPid(t *testing.T) {
 // Pid 0x7fffffff is reserved well above any plausible kernel
 // max-pid, mirroring TestIsAlive_KnownDead.
 func TestWaitForExit_AlreadyDead(t *testing.T) {
+	t.Parallel()
 	const unlikely = 0x7fffffff
 	if IsAlive(unlikely) {
 		t.Skip("PID 0x7fffffff is unexpectedly alive on this system")
 	}
-	if err := WaitForExit(context.Background(), unlikely); err != nil {
+	if err := WaitForExit(t.Context(), unlikely); err != nil {
 		t.Fatalf("WaitForExit(dead) = %v, want nil", err)
 	}
 }
@@ -390,6 +409,7 @@ func TestWaitForExit_AlreadyDead(t *testing.T) {
 // the Spawn contract (no zombie), and asserts WaitForExit blocks
 // until the child exits.
 func TestWaitForExit_LiveExitsDuringPoll(t *testing.T) {
+	t.Parallel()
 	cmd := exec.Command("sleep", "0.3")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("Start sleep: %v", err)
@@ -403,7 +423,7 @@ func TestWaitForExit_LiveExitsDuringPoll(t *testing.T) {
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- cmd.Wait() }()
 	start := time.Now()
-	if err := WaitForExit(context.Background(), pid); err != nil {
+	if err := WaitForExit(t.Context(), pid); err != nil {
 		t.Fatalf("WaitForExit: %v", err)
 	}
 	if time.Since(start) < 50*time.Millisecond {
@@ -425,16 +445,17 @@ func TestWaitForExit_LiveExitsDuringPoll(t *testing.T) {
 // (well under the ctx deadline) on a real Spawned child that exits
 // quickly. Without the fix this would hang until the deadline.
 func TestSpawn_AndWaitForExit_ReapsZombie(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "out.log")
-	pid, err := Spawn(context.Background(), logPath, "sh", "-c", "sleep 0.1")
+	pid, err := Spawn(t.Context(), logPath, "sh", "-c", "sleep 0.1")
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
 	if pid <= 0 {
 		t.Fatalf("pid = %d, want > 0", pid)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	start := time.Now()
 	if err := WaitForExit(ctx, pid); err != nil {
@@ -453,6 +474,7 @@ func TestSpawn_AndWaitForExit_ReapsZombie(t *testing.T) {
 // running sleep is started, then the parent context is cancelled
 // before the child exits. WaitForExit must return ctx.Err().
 func TestWaitForExit_CtxCancelled(t *testing.T) {
+	t.Parallel()
 	cmd := exec.Command("sleep", "5")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("Start sleep: %v", err)
@@ -462,7 +484,7 @@ func TestWaitForExit_CtxCancelled(t *testing.T) {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 	})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
 		time.Sleep(150 * time.Millisecond)
 		cancel()
@@ -478,6 +500,7 @@ func TestWaitForExit_CtxCancelled(t *testing.T) {
 
 // TestIsAlive_NonPositive covers the pid <= 0 short-circuit.
 func TestIsAlive_NonPositive(t *testing.T) {
+	t.Parallel()
 	if IsAlive(0) {
 		t.Fatal("IsAlive(0) should be false")
 	}
@@ -491,6 +514,7 @@ func TestIsAlive_NonPositive(t *testing.T) {
 // kernel max-pid), so signal(0) returns ESRCH and the helper reports
 // dead. If a system somehow has that PID assigned the test skips.
 func TestIsAlive_KnownDead(t *testing.T) {
+	t.Parallel()
 	const unlikely = 0x7fffffff
 	if IsAlive(unlikely) {
 		t.Skip("PID 0x7fffffff is unexpectedly alive on this system")

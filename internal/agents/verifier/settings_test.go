@@ -2,7 +2,6 @@ package verifier
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"os"
 	"strings"
@@ -57,7 +56,7 @@ func TestRun_FromStore_NilStore_LazyOpenSucceeds(t *testing.T) {
 	agent.verifyVerdicts = []string{"PASS"}
 	ui := &scriptedUI{}
 	var stderr bytes.Buffer
-	err = Run(context.Background(), Options{
+	err = Run(t.Context(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: &stderr,
@@ -101,7 +100,7 @@ func TestRun_FromStore_NilStore_SettingsOpenFails(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
 	var stderr bytes.Buffer
-	err = Run(context.Background(), Options{
+	err = Run(t.Context(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: &stderr,

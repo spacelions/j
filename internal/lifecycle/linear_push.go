@@ -35,8 +35,9 @@ func isPlanSuccessEvent(e tasks.Event) bool {
 		tasks.EventReaperPlanDone,
 		tasks.EventReaperPlanAwaitApproval:
 		return true
+	default:
+		return false
 	}
-	return false
 }
 
 // linearPushHook reads `requirements.md` / `plan.md` from the per-

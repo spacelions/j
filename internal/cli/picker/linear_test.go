@@ -1,7 +1,6 @@
 package picker
 
 import (
-	"context"
 	"io"
 	"strings"
 	"testing"
@@ -15,7 +14,7 @@ import (
 // allowlist).
 func TestPickLinearProject_Empty(t *testing.T) {
 	p := New(strings.NewReader(""), io.Discard)
-	prj, ok, err := p.PickLinearProject(context.Background(), nil)
+	prj, ok, err := p.PickLinearProject(t.Context(), nil)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}

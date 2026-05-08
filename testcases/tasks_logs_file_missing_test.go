@@ -35,7 +35,7 @@ func TestTasksLogs_AgentLogMissing(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	stdout, _, err := testutil.RunCobra(
+	stdout, _, err := testutil.RunCobra(t,
 		clitasks.New(), "logs", "--from-task", "id-no-log",
 	)
 	if err != nil {

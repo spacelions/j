@@ -1,7 +1,6 @@
 package testcases_test
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -87,7 +86,7 @@ func TestVerify_RePlan_ClearsPlanResumeSession(t *testing.T) {
 
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	if err := clitasks.RunRePlan(
-		context.Background(),
+		t.Context(),
 		clitasks.RePlanOptions{
 			FromTask: id,
 			Stdin:    strings.NewReader(""),

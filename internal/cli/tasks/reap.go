@@ -36,8 +36,9 @@ func maybeReap(s *tasks.Store, stderr io.Writer, tasksDir string,
 		return finalisePlanReap(s, stderr, tasksDir, t)
 	case tasks.StatusWorking:
 		return finaliseWorkReap(s, stderr, tasksDir, t)
+	default:
+		return t
 	}
-	return t
 }
 
 func finalisePlanReap(s *tasks.Store, stderr io.Writer, tasksDir string,

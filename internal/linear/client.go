@@ -219,4 +219,3 @@ func (c *Client) do(ctx context.Context, req graphQLRequest, out any) error {
 	}
 	return nil
 }
-

@@ -283,12 +283,12 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 	}
 	begin := time.Now().UTC().Add(-time.Hour)
 	existing := tasks.Task{
-		ID:                 tasks.NewTaskID(),
-		Status:             tasks.StatusVerifying,
-		VerifyTool:         "cursor",
-		VerifyModel:        "sonnet-4",
+		ID:                  tasks.NewTaskID(),
+		Status:              tasks.StatusVerifying,
+		VerifyTool:          "cursor",
+		VerifyModel:         "sonnet-4",
 		VerifyResumeSession: "v-cursor",
-		VerifyBeginAt:      begin,
+		VerifyBeginAt:       begin,
 	}
 	if err := store.EnsureProject(); err != nil {
 		t.Fatal(err)

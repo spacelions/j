@@ -17,7 +17,7 @@ func TestTasksEmpty_PrintsNoTasksLine(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	stdout, stderr, err := testutil.RunCobra(tasks.New())
+	stdout, stderr, err := testutil.RunCobra(t, tasks.New())
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

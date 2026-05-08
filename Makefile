@@ -3,11 +3,14 @@ SHELL := /bin/bash
 BIN_DIR := bin
 BIN     := $(BIN_DIR)/j
 
-.PHONY: build clean coverage test e2e race install-hooks
+.PHONY: build clean coverage test e2e race lint lint-fix install-hooks
+
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS := -ldflags "-X github.com/spacelions/j/internal/cli/version.Version=$(VERSION)"
 
 build:
 	@mkdir -p $(BIN_DIR)
-	go build -o $(BIN) ./cmd/j
+	go build $(LDFLAGS) -o $(BIN) ./cmd/j
 
 clean:
 	rm -rf $(BIN_DIR) cover.out
@@ -20,6 +23,12 @@ e2e:
 
 race:
 	go test -race ./...
+
+lint:
+	go tool golangci-lint run ./...
+
+lint-fix:
+	go tool golangci-lint run --fix ./...
 
 install-hooks:
 	@go tool lefthook install --reset-hooks-path

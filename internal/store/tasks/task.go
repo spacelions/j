@@ -1,12 +1,13 @@
 package tasks
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
@@ -60,11 +61,11 @@ type Task struct {
 	ID     string     `toml:"id"`
 	Status TaskStatus `toml:"status"`
 
-	PlanTool   string `toml:"plan_tool,omitempty"`
-	PlanModel  string `toml:"plan_model,omitempty"`
-	WorkTool   string `toml:"work_tool,omitempty"`
-	WorkModel  string `toml:"work_model,omitempty"`
-	VerifyTool string `toml:"verify_tool,omitempty"`
+	PlanTool    string `toml:"plan_tool,omitempty"`
+	PlanModel   string `toml:"plan_model,omitempty"`
+	WorkTool    string `toml:"work_tool,omitempty"`
+	WorkModel   string `toml:"work_model,omitempty"`
+	VerifyTool  string `toml:"verify_tool,omitempty"`
 	VerifyModel string `toml:"verify_model,omitempty"`
 	// Worktree is the bare git-worktree name (no slashes, no path)
 	// the worker and verifier should operate against for this task.
@@ -230,7 +231,7 @@ func (s *Store) ListTasks() ([]Task, error) {
 		}
 		out = append(out, t)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	slices.SortFunc(out, func(a, b Task) int { return cmp.Compare(a.ID, b.ID) })
 	return out, nil
 }
 

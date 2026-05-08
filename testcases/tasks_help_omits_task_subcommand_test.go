@@ -16,7 +16,7 @@ func TestTasksHelp_OmitsTaskSubcommand(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	stdout, _, err := testutil.RunCobra(tasks.New(), "--help")
+	stdout, _, err := testutil.RunCobra(t, tasks.New(), "--help")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestTasksHelp_OmitsTaskSubcommand(t *testing.T) {
 		t.Fatalf("could not find Available Commands block in: %q",
 			stdout)
 	}
-	for _, line := range strings.Split(cmds, "\n") {
+	for line := range strings.SplitSeq(cmds, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) > 0 && fields[0] == "task" {
 			t.Fatalf(
@@ -37,7 +37,7 @@ func TestTasksHelp_OmitsTaskSubcommand(t *testing.T) {
 	}
 	for _, want := range []string{"show", "logs"} {
 		found := false
-		for _, line := range strings.Split(cmds, "\n") {
+		for line := range strings.SplitSeq(cmds, "\n") {
 			fields := strings.Fields(line)
 			if len(fields) > 0 && fields[0] == want {
 				found = true
@@ -59,14 +59,14 @@ func TestTasksHelp_OmitsTaskSubcommand(t *testing.T) {
 // "" when the heading is missing.
 func availableCommandsBlock(help string) string {
 	const header = "Available Commands:"
-	idx := strings.Index(help, header)
-	if idx < 0 {
+	_, after, ok := strings.Cut(help, header)
+	if !ok {
 		return ""
 	}
-	rest := help[idx+len(header):]
-	end := strings.Index(rest, "\n\n")
-	if end < 0 {
+	rest := after
+	before0, _, ok0 := strings.Cut(rest, "\n\n")
+	if !ok0 {
 		return rest
 	}
-	return rest[:end]
+	return before0
 }

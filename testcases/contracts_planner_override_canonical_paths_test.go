@@ -31,7 +31,7 @@ func TestContracts_PlannerOverride_CanonicalPaths(t *testing.T) {
 	); err != nil {
 		t.Fatalf("write override: %v", err)
 	}
-	if _, _, err := testutil.RunCobra(
+	if _, _, err := testutil.RunCobra(t,
 		settings.New(), "set", "planner.prompt="+override,
 	); err != nil {
 		t.Fatalf("set planner.prompt: %v", err)

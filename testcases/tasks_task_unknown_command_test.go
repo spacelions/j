@@ -16,7 +16,7 @@ func TestTasksTask_UnknownCommand(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	stdout, stderr, err := testutil.RunCobra(tasks.New(), "task")
+	stdout, stderr, err := testutil.RunCobra(t, tasks.New(), "task")
 	if err == nil {
 		t.Fatalf(
 			"`j tasks task` returned nil; want unknown-command "+

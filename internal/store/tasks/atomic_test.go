@@ -30,7 +30,6 @@ func TestWriteFileAtomic_RenameError(t *testing.T) {
 		t.Skip("root bypasses file permissions")
 	}
 	dir := t.TempDir()
-	target := filepath.Join(dir, "out.toml")
 
 	// Pre-create the file so its dir is writable during temp-file creation.
 	// Then lock the directory after the write but before the rename by
@@ -39,7 +38,7 @@ func TestWriteFileAtomic_RenameError(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	target = filepath.Join(sub, "out.toml")
+	target := filepath.Join(sub, "out.toml")
 
 	// First write succeeds (sub is writable).
 	if err := writeFileAtomic(target, []byte("x = 1"), 0o644); err != nil {

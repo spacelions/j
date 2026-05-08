@@ -92,16 +92,16 @@ func TestTaskAllowlists(t *testing.T) {
 func TestConfirmStatusOverride(t *testing.T) {
 	ui := &taskUI{confirm: true}
 	task := tasks.Task{ID: "t1", Status: tasks.StatusWorking}
-	ok, err := ConfirmStatusOverride(context.Background(), ui, false, "work", task, ReplanAllowed)
+	ok, err := ConfirmStatusOverride(t.Context(), ui, false, "work", task, ReplanAllowed)
 	if err != nil || !ok {
 		t.Fatalf("ConfirmStatusOverride = %v, %v", ok, err)
 	}
 	ui.confirm = false
-	ok, err = ConfirmStatusOverride(context.Background(), ui, true, "work", task, ReplanAllowed)
+	ok, err = ConfirmStatusOverride(t.Context(), ui, true, "work", task, ReplanAllowed)
 	if err != nil || !ok {
 		t.Fatalf("yes override = %v, %v", ok, err)
 	}
-	ok, err = ConfirmStatusOverride(context.Background(), ui, false, "work", tasks.Task{Status: tasks.StatusPlanDone}, ReplanAllowed)
+	ok, err = ConfirmStatusOverride(t.Context(), ui, false, "work", tasks.Task{Status: tasks.StatusPlanDone}, ReplanAllowed)
 	if err != nil || !ok {
 		t.Fatalf("allowed status = %v, %v", ok, err)
 	}
@@ -110,7 +110,7 @@ func TestConfirmStatusOverride(t *testing.T) {
 func TestResolveWorkPlan(t *testing.T) {
 	setupResolverProject(t)
 	seedResolverTask(t, tasks.Task{ID: "a", Status: tasks.StatusPlanDone}, "plan", "req")
-	res, ok, err := ResolveWorkPlan(context.Background(), WorkPlanOptions{TaskID: "a", UI: &taskUI{}})
+	res, ok, err := ResolveWorkPlan(t.Context(), WorkPlanOptions{TaskID: "a", UI: &taskUI{}})
 	if err != nil || !ok {
 		t.Fatalf("ResolveWorkPlan by id = %+v, %v, %v", res, ok, err)
 	}
@@ -124,7 +124,7 @@ func TestResolveWorkPlanAutoPicksSingleAllowedTask(t *testing.T) {
 	seedResolverTask(t, tasks.Task{ID: "a", Status: tasks.StatusPlanning}, "a plan", "")
 	seedResolverTask(t, tasks.Task{ID: "b", Status: tasks.StatusPlanDone}, "b plan", "")
 	ui := &taskUI{err: errors.New("picker should not run")}
-	res, ok, err := ResolveWorkPlan(context.Background(), WorkPlanOptions{UI: ui})
+	res, ok, err := ResolveWorkPlan(t.Context(), WorkPlanOptions{UI: ui})
 	if err != nil || !ok || res.Task.ID != "b" {
 		t.Fatalf("auto resolve = %+v, %v, %v", res, ok, err)
 	}
@@ -135,17 +135,17 @@ func TestResolveWorkPlanPickerPaths(t *testing.T) {
 	seedResolverTask(t, tasks.Task{ID: "a", Status: tasks.StatusPlanning}, "a plan", "")
 	seedResolverTask(t, tasks.Task{ID: "b", Status: tasks.StatusWorking}, "b plan", "")
 	ui := &taskUI{pickID: "b", ok: true}
-	res, ok, err := ResolveWorkPlan(context.Background(), WorkPlanOptions{UI: ui})
+	res, ok, err := ResolveWorkPlan(t.Context(), WorkPlanOptions{UI: ui})
 	if err != nil || !ok || res.Task.ID != "b" {
 		t.Fatalf("picker resolve = %+v, %v, %v", res, ok, err)
 	}
 	ui = &taskUI{ok: false}
-	_, ok, err = ResolveWorkPlan(context.Background(), WorkPlanOptions{UI: ui})
+	_, ok, err = ResolveWorkPlan(t.Context(), WorkPlanOptions{UI: ui})
 	if err != nil || ok {
 		t.Fatalf("cancel = %v, %v", ok, err)
 	}
 	ui = &taskUI{err: errors.New("pick failed")}
-	_, _, err = ResolveWorkPlan(context.Background(), WorkPlanOptions{UI: ui})
+	_, _, err = ResolveWorkPlan(t.Context(), WorkPlanOptions{UI: ui})
 	if err == nil || !strings.Contains(err.Error(), "pick failed") {
 		t.Fatalf("picker err = %v", err)
 	}
@@ -153,16 +153,16 @@ func TestResolveWorkPlanPickerPaths(t *testing.T) {
 
 func TestResolveWorkPlanEmptyAndMissing(t *testing.T) {
 	setupResolverProject(t)
-	_, _, err := ResolveWorkPlan(context.Background(), WorkPlanOptions{UI: &taskUI{}})
+	_, _, err := ResolveWorkPlan(t.Context(), WorkPlanOptions{UI: &taskUI{}})
 	if err == nil || !strings.Contains(err.Error(), "no tasks to work") {
 		t.Fatalf("empty err = %v", err)
 	}
-	_, _, err = ResolveWorkPlan(context.Background(), WorkPlanOptions{TaskID: "missing", UI: &taskUI{}})
+	_, _, err = ResolveWorkPlan(t.Context(), WorkPlanOptions{TaskID: "missing", UI: &taskUI{}})
 	if err == nil || !strings.Contains(err.Error(), `task "missing" not found`) {
 		t.Fatalf("missing err = %v", err)
 	}
 	seedResolverTask(t, tasks.Task{ID: "noplan", Status: tasks.StatusPlanDone}, "", "")
-	_, _, err = ResolveWorkPlan(context.Background(), WorkPlanOptions{TaskID: "noplan", UI: &taskUI{}})
+	_, _, err = ResolveWorkPlan(t.Context(), WorkPlanOptions{TaskID: "noplan", UI: &taskUI{}})
 	if err == nil || !strings.Contains(err.Error(), "work: read plan") {
 		t.Fatalf("missing plan err = %v", err)
 	}
@@ -171,7 +171,7 @@ func TestResolveWorkPlanEmptyAndMissing(t *testing.T) {
 func TestResolveVerifyTask(t *testing.T) {
 	setupResolverProject(t)
 	seedResolverTask(t, tasks.Task{ID: "v1", Status: tasks.StatusWorkDone}, "plan", "")
-	res, ok, err := ResolveVerifyTask(context.Background(), VerifyTaskOptions{TaskID: "v1", UI: &taskUI{}})
+	res, ok, err := ResolveVerifyTask(t.Context(), VerifyTaskOptions{TaskID: "v1", UI: &taskUI{}})
 	if err != nil || !ok {
 		t.Fatalf("ResolveVerifyTask by id = %+v, %v, %v", res, ok, err)
 	}
@@ -185,7 +185,7 @@ func TestResolveVerifyTaskAutoPicksSingleAllowedTask(t *testing.T) {
 	seedResolverTask(t, tasks.Task{ID: "a", Status: tasks.StatusPlanDone}, "a plan", "")
 	seedResolverTask(t, tasks.Task{ID: "b", Status: tasks.StatusWorkDone}, "b plan", "")
 	ui := &taskUI{err: errors.New("picker should not run")}
-	res, ok, err := ResolveVerifyTask(context.Background(), VerifyTaskOptions{UI: ui})
+	res, ok, err := ResolveVerifyTask(t.Context(), VerifyTaskOptions{UI: ui})
 	if err != nil || !ok || res.Task.ID != "b" {
 		t.Fatalf("auto verify = %+v, %v, %v", res, ok, err)
 	}
@@ -196,17 +196,17 @@ func TestResolveVerifyTaskPickerPaths(t *testing.T) {
 	seedResolverTask(t, tasks.Task{ID: "a", Status: tasks.StatusPlanning}, "a plan", "")
 	seedResolverTask(t, tasks.Task{ID: "b", Status: tasks.StatusWorking}, "b plan", "")
 	ui := &taskUI{pickID: "b", ok: true}
-	res, ok, err := ResolveVerifyTask(context.Background(), VerifyTaskOptions{UI: ui})
+	res, ok, err := ResolveVerifyTask(t.Context(), VerifyTaskOptions{UI: ui})
 	if err != nil || !ok || res.Task.ID != "b" {
 		t.Fatalf("picker resolve = %+v, %v, %v", res, ok, err)
 	}
 	ui = &taskUI{ok: false}
-	_, ok, err = ResolveVerifyTask(context.Background(), VerifyTaskOptions{UI: ui})
+	_, ok, err = ResolveVerifyTask(t.Context(), VerifyTaskOptions{UI: ui})
 	if err != nil || ok {
 		t.Fatalf("cancel = %v, %v", ok, err)
 	}
 	ui = &taskUI{err: errors.New("pick failed")}
-	_, _, err = ResolveVerifyTask(context.Background(), VerifyTaskOptions{UI: ui})
+	_, _, err = ResolveVerifyTask(t.Context(), VerifyTaskOptions{UI: ui})
 	if err == nil || !strings.Contains(err.Error(), "pick failed") {
 		t.Fatalf("picker err = %v", err)
 	}
@@ -214,16 +214,16 @@ func TestResolveVerifyTaskPickerPaths(t *testing.T) {
 
 func TestResolveVerifyTaskEmptyAndMissing(t *testing.T) {
 	setupResolverProject(t)
-	_, _, err := ResolveVerifyTask(context.Background(), VerifyTaskOptions{UI: &taskUI{}})
+	_, _, err := ResolveVerifyTask(t.Context(), VerifyTaskOptions{UI: &taskUI{}})
 	if err == nil || !strings.Contains(err.Error(), "no tasks to verify") {
 		t.Fatalf("empty err = %v", err)
 	}
-	_, _, err = ResolveVerifyTask(context.Background(), VerifyTaskOptions{TaskID: "missing", UI: &taskUI{}})
+	_, _, err = ResolveVerifyTask(t.Context(), VerifyTaskOptions{TaskID: "missing", UI: &taskUI{}})
 	if err == nil || !strings.Contains(err.Error(), `task "missing" not found`) {
 		t.Fatalf("missing err = %v", err)
 	}
 	seedResolverTask(t, tasks.Task{ID: "noplan", Status: tasks.StatusWorkDone}, "", "")
-	_, _, err = ResolveVerifyTask(context.Background(), VerifyTaskOptions{TaskID: "noplan", UI: &taskUI{}})
+	_, _, err = ResolveVerifyTask(t.Context(), VerifyTaskOptions{TaskID: "noplan", UI: &taskUI{}})
 	if err == nil || !strings.Contains(err.Error(), "verify: read plan") {
 		t.Fatalf("missing plan err = %v", err)
 	}

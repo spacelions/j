@@ -86,10 +86,10 @@ func newLogsCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("from-task", "",
+	cmd.Flags().String(flagKeyFromTask, "",
 		"Render the named task's agent.log (no picker)")
 	_ = viper.BindPFlag("tasks.logs.from_task",
-		cmd.Flags().Lookup("from-task"))
+		cmd.Flags().Lookup(flagKeyFromTask))
 	_ = viper.BindEnv("tasks.logs.from_task", "TASKS_LOGS_FROM_TASK")
 	return cmd
 }

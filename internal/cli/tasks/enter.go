@@ -42,6 +42,7 @@ func defaultSpawner(
 	if shell == "" {
 		shell = "/bin/sh"
 	}
+	//nolint:gosec // shell is the user's $SHELL; intentional for a developer CLI
 	cmd := exec.CommandContext(ctx, shell)
 	cmd.Dir = dir
 	cmd.Stdin = in

@@ -13,8 +13,10 @@ import (
 // plan.md produces EventPlanDone when approval is not required.
 func TestCase_DecidePlan_ArtifactPresent_Success(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, tasks.PlanFileName),
-		[]byte("# Plan content"), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, tasks.PlanFileName),
+		[]byte("# Plan content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	ev, err := tuiquit.DecidePlan(dir, false)
 	if err != nil {
@@ -29,8 +31,10 @@ func TestCase_DecidePlan_ArtifactPresent_Success(t *testing.T) {
 // yields EventPlanAwaitApproval.
 func TestCase_DecidePlan_ApprovalRequired(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, tasks.PlanFileName),
-		[]byte("# Plan"), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, tasks.PlanFileName),
+		[]byte("# Plan"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	ev, err := tuiquit.DecidePlan(dir, true)
 	if err != nil {
@@ -56,8 +60,10 @@ func TestCase_DecidePlan_ArtifactMissing(t *testing.T) {
 func TestCase_DecideWork_URLInAgentLog(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "agent.log")
-	os.WriteFile(logPath,
-		[]byte("Created https://github.com/org/repo/pull/99\n"), 0o644)
+	if err := os.WriteFile(logPath,
+		[]byte("Created https://github.com/org/repo/pull/99\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	ev, url := tuiquit.DecideWork(t.Context(), dir, "branch", logPath)
 	if ev != tasks.EventWorkDone {
@@ -72,7 +78,9 @@ func TestCase_DecideWork_URLInAgentLog(t *testing.T) {
 func TestCase_DecideWork_NoPR(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "agent.log")
-	os.WriteFile(logPath, []byte("no PR here\n"), 0o644)
+	if err := os.WriteFile(logPath, []byte("no PR here\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	ev, url := tuiquit.DecideWork(t.Context(), dir, "branch", logPath)
 	if ev != tasks.EventWorkQuit {
@@ -86,8 +94,10 @@ func TestCase_DecideWork_NoPR(t *testing.T) {
 // TestCase_DecideVerify_Pass detects VERDICT: PASS in findings file.
 func TestCase_DecideVerify_Pass(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, tasks.VerifierFindingsFileName),
-		[]byte("findings\nVERDICT: PASS\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, tasks.VerifierFindingsFileName),
+		[]byte("findings\nVERDICT: PASS\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	ev := tuiquit.DecideVerify(dir)
 	if ev != tasks.EventVerifyPass {
@@ -98,8 +108,10 @@ func TestCase_DecideVerify_Pass(t *testing.T) {
 // TestCase_DecideVerify_Fail detects VERDICT: FAIL in findings file.
 func TestCase_DecideVerify_Fail(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, tasks.VerifierFindingsFileName),
-		[]byte("issues\nVERDICT: FAIL\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, tasks.VerifierFindingsFileName),
+		[]byte("issues\nVERDICT: FAIL\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	ev := tuiquit.DecideVerify(dir)
 	if ev != tasks.EventVerifyFail {

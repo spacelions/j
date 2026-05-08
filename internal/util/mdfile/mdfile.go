@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -96,10 +96,11 @@ func ListInDir(dir string) ([]string, error) {
 		}
 		out = append(out, filepath.Join(absDir, name))
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		a := strings.ToLower(filepath.Base(out[i]))
-		b := strings.ToLower(filepath.Base(out[j]))
-		return a < b
+	slices.SortStableFunc(out, func(a, b string) int {
+		return strings.Compare(
+			strings.ToLower(filepath.Base(a)),
+			strings.ToLower(filepath.Base(b)),
+		)
 	})
 	return out, nil
 }

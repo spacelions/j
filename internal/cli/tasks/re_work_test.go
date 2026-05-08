@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"path/filepath"
 	"strings"
@@ -19,7 +18,7 @@ func TestRunReWork_NoTasks(t *testing.T) {
 	setupContinueEnv(t)
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunReWork(context.Background(), ReWorkOptions{
+	err := RunReWork(t.Context(), ReWorkOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -36,7 +35,7 @@ func TestRunReWork_NoTasks(t *testing.T) {
 
 func TestRunReWork_FromTaskNotFound(t *testing.T) {
 	setupContinueEnv(t)
-	err := RunReWork(context.Background(), ReWorkOptions{
+	err := RunReWork(t.Context(), ReWorkOptions{
 		FromTask: "ghost",
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -55,7 +54,7 @@ func TestRunReWork_StatusOverrideDeclined(t *testing.T) {
 		task.Status = tasks.StatusWorking
 	})
 	ui := &fakeUI{statusReturn: false}
-	if err := RunReWork(context.Background(), ReWorkOptions{
+	if err := RunReWork(t.Context(), ReWorkOptions{
 		FromTask: id,
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -74,15 +73,15 @@ func TestRunReWork_HappyPath(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, nil) // plan-done
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
-	if err := RunReWork(context.Background(), ReWorkOptions{
-		FromTask: id,
-		Stdin:    strings.NewReader(""),
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{newContinueAgent()},
-		UI:       &fakeUI{},
-		Interactive: boolPtr(false),
-		JBinary:  argvJBinary(t, argvPath),
+	if err := RunReWork(t.Context(), ReWorkOptions{
+		FromTask:    id,
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{newContinueAgent()},
+		UI:          &fakeUI{},
+		Interactive: new(false),
+		JBinary:     argvJBinary(t, argvPath),
 	}); err != nil {
 		t.Fatalf("RunReWork: %v", err)
 	}
@@ -97,9 +96,9 @@ func TestRunReWork_InteractiveRunsInline(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, nil)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
-	err := RunReWork(context.Background(), ReWorkOptions{
+	err := RunReWork(t.Context(), ReWorkOptions{
 		FromTask:    id,
-		Interactive: boolPtr(true),
+		Interactive: new(true),
 		Stdin:       strings.NewReader(""),
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
@@ -119,7 +118,7 @@ func TestRunReWork_InteractiveRunsInline(t *testing.T) {
 func TestRunReWork_SpawnFails(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, nil)
-	err := RunReWork(context.Background(), ReWorkOptions{
+	err := RunReWork(t.Context(), ReWorkOptions{
 		FromTask: id,
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -198,9 +197,9 @@ func TestRunReWork_FromCompletedSpawnsAfterConfirm(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{statusReturn: true}
-	if err := RunReWork(context.Background(), ReWorkOptions{
+	if err := RunReWork(t.Context(), ReWorkOptions{
 		FromTask:    id,
-		Interactive: boolPtr(false),
+		Interactive: new(false),
 		Stdin:       strings.NewReader(""),
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
@@ -229,9 +228,9 @@ func TestRunReWork_FromFailedSpawnsAfterConfirm(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{statusReturn: true}
-	if err := RunReWork(context.Background(), ReWorkOptions{
+	if err := RunReWork(t.Context(), ReWorkOptions{
 		FromTask:    id,
-		Interactive: boolPtr(false),
+		Interactive: new(false),
 		Stdin:       strings.NewReader(""),
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
@@ -307,7 +306,7 @@ func TestClearWorkResumeSession_UnknownID(t *testing.T) {
 func TestNewReWorkCmd_RunE_NoTasks(t *testing.T) {
 	setupContinueEnv(t)
 	cmd := newReWorkCmd()
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(io.Discard)
@@ -325,7 +324,7 @@ func TestNewReWorkCmd_RunE_InteractiveFlag(t *testing.T) {
 	t.Cleanup(viper.Reset)
 	setupContinueEnv(t)
 	cmd := newReWorkCmd()
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(io.Discard)

@@ -69,7 +69,7 @@ func (u *recordingStartUI) PickLinearIssue(
 func TestTasksStart_SourcePickerListsLinearFirst(t *testing.T) {
 	ui := &recordingStartUI{}
 	_, err := resolver.ResolveStartTarget(
-		context.Background(), ui, bytes.NewBuffer(nil), "",
+		t.Context(), ui, bytes.NewBuffer(nil), "",
 	)
 	if err == nil {
 		t.Fatal("expected sentinel error from fake SelectSource")
@@ -102,7 +102,7 @@ func TestTasksStart_SourcePickerListsLinearFirst(t *testing.T) {
 func TestTasksStart_FromFileBypassesPicker(t *testing.T) {
 	ui := &recordingStartUI{}
 	_, _ = resolver.ResolveStartTarget(
-		context.Background(), ui, bytes.NewBuffer(nil),
+		t.Context(), ui, bytes.NewBuffer(nil),
 		"/nonexistent/path-bypasses-picker.md",
 	)
 	if ui.captured != nil {

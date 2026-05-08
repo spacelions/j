@@ -2,7 +2,6 @@ package testcases_test
 
 import (
 	"bytes"
-	"context"
 	"strings"
 	"testing"
 
@@ -47,9 +46,8 @@ func TestHelpRoot(t *testing.T) {
 		{name: "flag", args: []string{"--help"}},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := runRoot(tc.args)
+			out, err := runRoot(t, tc.args)
 			if err != nil {
 				t.Fatalf("Execute: %v", err)
 			}
@@ -61,12 +59,13 @@ func TestHelpRoot(t *testing.T) {
 // runRoot drives cli.NewRoot in-process with stdout / stderr captured
 // to a single buffer (cobra writes the help text to stdout via
 // SetOut). The returned string is the full stdout payload.
-func runRoot(args []string) (string, error) {
+func runRoot(t *testing.T, args []string) (string, error) {
+	t.Helper()
 	cmd := cli.NewRoot()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetArgs(args)
 	err := cmd.Execute()
 	return buf.String(), err

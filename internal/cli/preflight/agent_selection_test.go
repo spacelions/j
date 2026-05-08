@@ -2,7 +2,6 @@ package preflight
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"io"
 	"os"
@@ -28,7 +27,7 @@ func TestEnsureAgentSelections_AllBucketsPopulated(t *testing.T) {
 		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	sel := &testutil.SelectorFake{}
-	err := EnsureAgentSelections(context.Background(), AgentCheckOptions{
+	err := EnsureAgentSelections(t.Context(), AgentCheckOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -56,7 +55,7 @@ func TestEnsureAgentSelections_AllBucketsEmpty(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	sel := &testutil.SelectorFake{Tool: "cursor", Model: "sonnet-4"}
-	err := EnsureAgentSelections(context.Background(), AgentCheckOptions{
+	err := EnsureAgentSelections(t.Context(), AgentCheckOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -85,7 +84,7 @@ func TestEnsureAgentSelections_PartialBuckets(t *testing.T) {
 	mustInit(t)
 	testutil.SeedAgentBucketToolModel(t, store.BucketPlanner, "cursor", "gpt-5")
 	sel := &testutil.SelectorFake{Tool: "cursor", Model: "sonnet-4"}
-	err := EnsureAgentSelections(context.Background(), AgentCheckOptions{
+	err := EnsureAgentSelections(t.Context(), AgentCheckOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -111,7 +110,7 @@ func TestEnsureAgentSelections_PartialBuckets(t *testing.T) {
 }
 
 func TestEnsureAgentSelections_NoAgents(t *testing.T) {
-	err := EnsureAgentSelections(context.Background(), AgentCheckOptions{
+	err := EnsureAgentSelections(t.Context(), AgentCheckOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 	})
@@ -124,7 +123,7 @@ func TestEnsureAgentSelections_SelectorAborts(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	sel := &testutil.SelectorFake{ToolErr: huh.ErrUserAborted}
-	err := EnsureAgentSelections(context.Background(), AgentCheckOptions{
+	err := EnsureAgentSelections(t.Context(), AgentCheckOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -140,7 +139,7 @@ func TestEnsureAgentSelections_FromStoreUnknownTool(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	testutil.SeedAgentBucketToolModel(t, store.BucketPlanner, "ghost", "sonnet-4")
-	err := EnsureAgentSelections(context.Background(), AgentCheckOptions{
+	err := EnsureAgentSelections(t.Context(), AgentCheckOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -158,7 +157,7 @@ func TestEnsureAgentSelections_AppliesDefaults(t *testing.T) {
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
-	if err := EnsureAgentSelections(context.Background(), AgentCheckOptions{
+	if err := EnsureAgentSelections(t.Context(), AgentCheckOptions{
 		Agents: []codingagents.Agent{testutil.NewScriptedAgent()},
 	}); err != nil {
 		t.Fatalf("EnsureAgentSelections: %v", err)
@@ -177,7 +176,7 @@ func TestEnsureAgentSelections_StoreOpenFailure(t *testing.T) {
 	}
 	sel := &testutil.SelectorFake{Tool: "cursor", Model: "sonnet-4"}
 	var stderr bytes.Buffer
-	err = EnsureAgentSelections(context.Background(), AgentCheckOptions{
+	err = EnsureAgentSelections(t.Context(), AgentCheckOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: &stderr,

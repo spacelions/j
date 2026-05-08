@@ -3,7 +3,6 @@ package resolver
 import (
 	"errors"
 	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -71,7 +70,7 @@ func TestMustRead(t *testing.T) {
 
 func TestMustReadOpenError(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := os.WriteFile(filepath.Join(".j"), []byte("not a dir"), 0o644); err != nil {
+	if err := os.WriteFile(".j", []byte("not a dir"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := MustRead(); err == nil {

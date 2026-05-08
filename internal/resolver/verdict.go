@@ -4,15 +4,23 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
+// VerdictPass and VerdictFail are the two canonical verdict strings
+// written by the verifier agent and parsed back by ParseVerdict.
+const (
+	VerdictPass = "PASS"
+	VerdictFail = "FAIL"
+)
+
 func ReadVerdictForTask(taskID string) string {
 	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
-		return "FAIL"
+		return VerdictFail
 	}
 	return ParseVerdict(filepath.Join(
 		tasksDir, taskID, tasks.VerifierFindingsFileName))
@@ -23,19 +31,19 @@ var verdictRegexp = regexp.MustCompile(`(?i)^\s*VERDICT:\s*(PASS|FAIL)\s*$`)
 func ParseVerdict(path string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "FAIL"
+		return VerdictFail
 	}
 	lines := strings.Split(string(data), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimRight(lines[i], "\r")
+	for _, v := range slices.Backward(lines) {
+		line := strings.TrimRight(v, "\r")
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		m := verdictRegexp.FindStringSubmatch(line)
 		if m == nil {
-			return "FAIL"
+			return VerdictFail
 		}
 		return strings.ToUpper(m[1])
 	}
-	return "FAIL"
+	return VerdictFail
 }

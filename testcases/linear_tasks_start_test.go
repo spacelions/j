@@ -1,7 +1,6 @@
 package testcases_test
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -50,7 +49,7 @@ func clearStartEnv(t *testing.T) {
 func TestLinearTasksStart_HelpMentionsFromLinear(t *testing.T) {
 	freshInit(t)
 
-	stdout, _, err := testutil.RunCobra(tasks.New(), "start", "--help")
+	stdout, _, err := testutil.RunCobra(t, tasks.New(), "start", "--help")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -81,7 +80,7 @@ func TestLinearTasksStart_FromLinearNoAPIKey(t *testing.T) {
 	clearStartEnv(t)
 	installCursorAgentLoginStub(t)
 
-	_, _, err := testutil.RunCobra(tasks.New(),
+	_, _, err := testutil.RunCobra(t, tasks.New(),
 		"start", "--from-linear", "ENG-123",
 	)
 	if err == nil {
@@ -91,7 +90,7 @@ func TestLinearTasksStart_FromLinearNoAPIKey(t *testing.T) {
 		t.Fatalf("err = %v, want linear.ErrNoAPIKey", err)
 	}
 
-	listing, _, lerr := testutil.RunCobra(tasks.New())
+	listing, _, lerr := testutil.RunCobra(t, tasks.New())
 	if lerr != nil {
 		t.Fatalf("tasks listing: %v", lerr)
 	}
@@ -115,7 +114,7 @@ func TestLinearTasksStart_FromLinearInvalidIdentifier(t *testing.T) {
 		t.Fatalf("SaveAPIKey: %v", err)
 	}
 
-	_, _, err := testutil.RunCobra(tasks.New(),
+	_, _, err := testutil.RunCobra(t, tasks.New(),
 		"start", "--from-linear", "foo",
 	)
 	if err == nil {
@@ -125,7 +124,7 @@ func TestLinearTasksStart_FromLinearInvalidIdentifier(t *testing.T) {
 		t.Fatalf("err = %v, want linear.ErrInvalidIdentifier", err)
 	}
 
-	listing, _, lerr := testutil.RunCobra(tasks.New())
+	listing, _, lerr := testutil.RunCobra(t, tasks.New())
 	if lerr != nil {
 		t.Fatalf("tasks listing: %v", lerr)
 	}
@@ -164,7 +163,7 @@ func TestLinearTasksStart_PickerFiltersBacklogOnly(t *testing.T) {
 
 	c := linear.NewClient("lin_api_test")
 	if _, err := c.ListAssignedIssues(
-		context.Background(), linear.ListIssuesOpts{}); err != nil {
+		t.Context(), linear.ListIssuesOpts{}); err != nil {
 		t.Fatalf("ListAssignedIssues: %v", err)
 	}
 	if !strings.Contains(seen, `state:{type:{eq:\"backlog\"}}`) {
@@ -189,7 +188,7 @@ func TestLinearTasksStart_FromLinearEnvVar(t *testing.T) {
 	installCursorAgentLoginStub(t)
 	t.Setenv("TASKS_START_FROM_LINEAR", "foo")
 
-	_, _, err := testutil.RunCobra(tasks.New(), "start")
+	_, _, err := testutil.RunCobra(t, tasks.New(), "start")
 	if err == nil {
 		t.Fatal("expected error from env-var binding")
 	}
@@ -200,7 +199,7 @@ func TestLinearTasksStart_FromLinearEnvVar(t *testing.T) {
 			err)
 	}
 
-	listing, _, lerr := testutil.RunCobra(tasks.New())
+	listing, _, lerr := testutil.RunCobra(t, tasks.New())
 	if lerr != nil {
 		t.Fatalf("tasks listing: %v", lerr)
 	}

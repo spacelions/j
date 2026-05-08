@@ -48,7 +48,7 @@ func WorktreeNameFor(project string, t Task) string {
 // a single `-`, trims leading/trailing `-`, and clips the result to
 // max runes. An empty or pure-separator input yields "" so callers
 // can fall back to a secondary id.
-func slugify(s string, max int) string {
+func slugify(s string, limit int) string {
 	s = strings.ToLower(s)
 	var b strings.Builder
 	b.Grow(len(s))
@@ -65,5 +65,5 @@ func slugify(s string, max int) string {
 		}
 	}
 	out := strings.TrimRight(b.String(), "-")
-	return truncateRunes(out, max)
+	return truncateRunes(out, limit)
 }

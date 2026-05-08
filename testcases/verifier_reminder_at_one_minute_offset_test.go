@@ -1,7 +1,6 @@
 package testcases_test
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -40,7 +39,7 @@ func TestVerifier_RemindOnIssue_ReminderAtIsAboutOneMinuteAhead(
 	c := linear.NewClient("k", linear.WithEndpoint(srv.URL))
 	callBefore := time.Now().UTC()
 	if err := c.RemindOnIssue(
-		context.Background(), "node-id-offset",
+		t.Context(), "node-id-offset",
 	); err != nil {
 		t.Fatalf("RemindOnIssue: %v", err)
 	}

@@ -16,7 +16,7 @@ import (
 // preflight prompt. The caller supplies a list of tea.Msg to send
 // (typed runes + the final tea.KeyEnter). The captured value pointer
 // and final rendered output are returned for assertions.
-func driveMustReadForm(t *testing.T, type_ string, finalKey tea.KeyType) (string, []byte) {
+func driveMustReadForm(t *testing.T, typed string, finalKey tea.KeyType) (string, []byte) {
 	t.Helper()
 	var v string
 	form := preflight.MustReadForm(&v)
@@ -24,8 +24,8 @@ func driveMustReadForm(t *testing.T, type_ string, finalKey tea.KeyType) (string
 	form.CancelCmd = tea.Interrupt
 
 	tm := teatest.NewTestModel(t, form, teatest.WithInitialTermSize(120, 40))
-	if type_ != "" {
-		tm.Type(type_)
+	if typed != "" {
+		tm.Type(typed)
 	}
 	tm.Send(tea.KeyMsg{Type: finalKey})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))

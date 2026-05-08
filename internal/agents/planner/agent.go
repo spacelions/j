@@ -18,8 +18,8 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
-	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/agents/prompts"
+	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )

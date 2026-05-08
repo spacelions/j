@@ -7,13 +7,13 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/preflight"
 	"github.com/spacelions/j/internal/cli/uitheme"
-	"path/filepath"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
@@ -184,13 +184,13 @@ func reverifyAsDetachedOrchestrator(
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 	pid, err := spawnDetachedOrchestrator(
 		ctx, opts.JBinary, agentLogPath,
-		[]string{"tasks", "orchestrate", "--id", taskID, "--phase=verify-only"})
+		[]string{cmdTasks, cmdOrchestrate, flagID, taskID, flagPhaseVerifyOnly})
 	if err != nil {
 		return err
 	}
 	stampSpawnOnRow(opts.Stderr, taskID, agentLogPath, pid)
 	uitheme.NormalForkDialog(opts.Stdout,
-		fmt.Sprintf("task %s", taskID), pid, agentLogPath)
+		"task "+taskID, pid, agentLogPath)
 	return nil
 }
 
@@ -201,8 +201,8 @@ func resumeVerifyingInline(
 		return err
 	}
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
-		"tasks", "orchestrate", "--id", taskID,
-		"--phase=verify-only", "--interactive=true",
+		cmdTasks, cmdOrchestrate, flagID, taskID,
+		flagPhaseVerifyOnly, flagInteractiveTrue,
 	})
 }
 
@@ -258,7 +258,7 @@ func newContinueCmd() *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var interactive *bool
-			if cmd.Flags().Changed("interactive") ||
+			if cmd.Flags().Changed(flagKeyInteractive) ||
 				envSet("TASKS_CONTINUE_INTERACTIVE") {
 				v := viper.GetBool("tasks.continue.interactive")
 				interactive = &v
@@ -281,18 +281,20 @@ func newContinueCmd() *cobra.Command {
 
 func bindContinueFlags(cmd *cobra.Command) {
 	f := cmd.Flags()
-	f.String("from-task", "", "Continue the named task without showing the picker")
+	f.String(flagKeyFromTask, "",
+		"Continue the named task without showing the picker")
 	f.String("tool", "",
 		"Coding agent tool for plan-done dispatch (cursor|claude)")
 	f.String("model", "", "Model identifier for plan-done dispatch")
-	f.Bool("interactive", false,
+	f.Bool(flagKeyInteractive, false,
 		"Launch the coding agent in interactive mode on plan-done dispatch")
 	bind := func(key, flag, env string) {
 		_ = viper.BindPFlag(key, f.Lookup(flag))
 		_ = viper.BindEnv(key, env)
 	}
-	bind("tasks.continue.from_task", "from-task", "TASKS_CONTINUE_FROM_TASK")
+	bind("tasks.continue.from_task", flagKeyFromTask, "TASKS_CONTINUE_FROM_TASK")
 	bind("tasks.continue.tool", "tool", "TASKS_CONTINUE_TOOL")
 	bind("tasks.continue.model", "model", "TASKS_CONTINUE_MODEL")
-	bind("tasks.continue.interactive", "interactive", "TASKS_CONTINUE_INTERACTIVE")
+	bind("tasks.continue.interactive", flagKeyInteractive,
+		"TASKS_CONTINUE_INTERACTIVE")
 }

@@ -2,7 +2,6 @@ package testcases_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -22,7 +21,7 @@ import (
 // reaches the cli.Execute print boundary that root.go uses
 // (`uitheme.DangerousFprintf(os.Stderr, "J: %v\n", err)`) and the
 // user-visible payload, with ANSI styling stripped, is exactly
-// `J: no Linear issues assigned to you.\n`.
+// `J: no Linear issues assigned to you\n`.
 //
 // Black-box: drives picker.PickSource against a stubbed empty-list
 // Linear endpoint, then formats the error through the same helper
@@ -59,7 +58,7 @@ func TestLinearPickerEmptyAssignedCLIRender(t *testing.T) {
 
 	ui := &emptyAssignedIssuesUI{}
 	_, err := picker.PickSource(
-		context.Background(), ui,
+		t.Context(), ui,
 		[]picker.Source{picker.SourceLinear}, nil, nil,
 	)
 	if err == nil {
@@ -74,11 +73,11 @@ func TestLinearPickerEmptyAssignedCLIRender(t *testing.T) {
 	}
 
 	stripped := ansi.Strip(buf.String())
-	const want = "J: no Linear issues assigned to you.\n"
+	const want = "J: no Linear issues assigned to you\n"
 	if stripped != want {
 		t.Fatalf("stripped CLI render = %q, want %q", stripped, want)
 	}
-	if strings.Contains(stripped, "J: J:") {
+	if strings.Contains(stripped, "J: J:") { //nolint:dupword // intentionally checking for a double-prefix bug
 		t.Fatalf("stripped CLI render has double J: prefix: %q",
 			stripped)
 	}

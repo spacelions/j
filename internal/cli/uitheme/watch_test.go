@@ -38,7 +38,10 @@ func TestWatchModel_TickAdvancesNowAndReturnsCmd(t *testing.T) {
 	m := newTestWatchModel(nil, start)
 	next := start.Add(time.Second)
 	updated, cmd := m.Update(tickMsg(next))
-	mm := updated.(watchModel)
+	mm, ok := updated.(watchModel)
+	if !ok {
+		t.Fatal("Update returned unexpected model type")
+	}
 	if !mm.now.Equal(next) {
 		t.Fatalf("now = %v, want %v", mm.now, next)
 	}
@@ -52,7 +55,10 @@ func TestWatchModel_TasksMsgReplacesAndClearsErr(t *testing.T) {
 	m.err = errors.New("stale")
 	fresh := []tsk.Task{{ID: "abc", Status: tsk.StatusPlanDone}}
 	updated, cmd := m.Update(tasksMsg(fresh))
-	mm := updated.(watchModel)
+	mm, ok := updated.(watchModel)
+	if !ok {
+		t.Fatal("Update returned unexpected model type")
+	}
 	if !reflect.DeepEqual(mm.taskRows, fresh) {
 		t.Fatalf("taskRows = %#v, want %#v", mm.taskRows, fresh)
 	}
@@ -68,7 +74,10 @@ func TestWatchModel_ErrMsgDoesNotQuit(t *testing.T) {
 	m := newTestWatchModel(nil, time.Now())
 	want := errors.New("reload broke")
 	updated, cmd := m.Update(errMsg(want))
-	mm := updated.(watchModel)
+	mm, ok := updated.(watchModel)
+	if !ok {
+		t.Fatal("Update returned unexpected model type")
+	}
 	if !errors.Is(mm.err, want) {
 		t.Fatalf("err = %v, want %v", mm.err, want)
 	}
@@ -111,7 +120,10 @@ func TestWatchModel_OtherKeyIgnored(t *testing.T) {
 func TestWatchModel_WindowSizeMsgUpdatesWidth(t *testing.T) {
 	m := newTestWatchModel(nil, time.Now())
 	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
-	mm := updated.(watchModel)
+	mm, ok := updated.(watchModel)
+	if !ok {
+		t.Fatal("Update returned unexpected model type")
+	}
 	if mm.width != 60 {
 		t.Fatalf("width = %d, want 60", mm.width)
 	}
@@ -124,12 +136,12 @@ func TestWatchModel_View_WithTasksAndQuitHint(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 5, 0, 0, time.UTC)
 	begin := now.Add(-80 * time.Second)
 	rows := []tsk.Task{{
-		ID:           "active-1",
-		Status:       tsk.StatusPlanning,
-		PlanTool:  "cursor",
-		PlanModel: "sonnet-4",
-		Summary:      "draft idea",
-		PlanBeginAt:  begin,
+		ID:          "active-1",
+		Status:      tsk.StatusPlanning,
+		PlanTool:    "cursor",
+		PlanModel:   "sonnet-4",
+		Summary:     "draft idea",
+		PlanBeginAt: begin,
 	}}
 	m := newTestWatchModel(rows, now)
 	out := m.View()

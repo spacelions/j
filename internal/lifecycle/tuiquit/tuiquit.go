@@ -83,7 +83,7 @@ func DecideVerify(taskDir string) tasks.Event {
 	if err != nil {
 		return tasks.EventVerifyQuit
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	last := lastNonEmptyLine(f)
 	switch {
 	case strings.Contains(last, "VERDICT: PASS"):
@@ -111,7 +111,7 @@ func prURLInAgentLog(agentLogPath string) string {
 	if err != nil {
 		return ""
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return parseAgentLogForPR(f)
 }
 

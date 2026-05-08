@@ -100,7 +100,7 @@ func TestEnsure_AlreadyInitialized(t *testing.T) {
 	putMustRead(t, "AGENTS.md;CLAUDE.md")
 	ui := &scriptedUI{}
 	var stderr bytes.Buffer
-	if err := Ensure(context.Background(), ui, &stderr); err != nil {
+	if err := Ensure(t.Context(), ui, &stderr); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	if ui.calls != 0 {
@@ -144,7 +144,7 @@ func TestEnsure_MissingArtifacts(t *testing.T) {
 			}
 			ui := &scriptedUI{confirm: true}
 			var stderr bytes.Buffer
-			err := Ensure(context.Background(), ui, &stderr)
+			err := Ensure(t.Context(), ui, &stderr)
 			if !errors.Is(err, ErrNeedsRetry) {
 				t.Fatalf("err = %v, want ErrNeedsRetry", err)
 			}
@@ -173,7 +173,7 @@ func TestEnsure_DeclinePathReturnsNotInitialized(t *testing.T) {
 	t.Chdir(dir)
 	ui := &scriptedUI{confirm: false}
 	var stderr bytes.Buffer
-	err := Ensure(context.Background(), ui, &stderr)
+	err := Ensure(t.Context(), ui, &stderr)
 	if !errors.Is(err, ErrNotInitialized) {
 		t.Fatalf("err = %v, want ErrNotInitialized", err)
 	}
@@ -186,7 +186,7 @@ func TestEnsure_DeclinePathReturnsNotInitialized(t *testing.T) {
 func TestEnsure_UIError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	boom := errors.New("ui boom")
-	err := Ensure(context.Background(), &scriptedUI{err: boom}, &bytes.Buffer{})
+	err := Ensure(t.Context(), &scriptedUI{err: boom}, &bytes.Buffer{})
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want %v", err, boom)
 	}
@@ -201,7 +201,7 @@ func TestEnsure_EnsureProjectFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	ui := &scriptedUI{confirm: true}
-	err := Ensure(context.Background(), ui, &bytes.Buffer{})
+	err := Ensure(t.Context(), ui, &bytes.Buffer{})
 	if err == nil || errors.Is(err, ErrNeedsRetry) {
 		t.Fatalf("err = %v, want EnsureProject failure", err)
 	}
@@ -226,7 +226,7 @@ func TestEnsure_PropagatesProjectInitializedError(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(jdir, 0o755) })
-	if err := Ensure(context.Background(), &scriptedUI{}, &bytes.Buffer{}); err == nil {
+	if err := Ensure(t.Context(), &scriptedUI{}, &bytes.Buffer{}); err == nil {
 		t.Fatal("expected stat error to propagate")
 	}
 }
@@ -245,7 +245,7 @@ func TestPreRunE_Initialized(t *testing.T) {
 	cmd.SetIn(&bytes.Buffer{})
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	if err := PreRunE(cmd, nil); err != nil {
 		t.Fatalf("PreRunE: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestEnsure_PromptsForMustReadWhenMissing(t *testing.T) {
 	}
 	ui := &scriptedUI{mustReadValue: "AGENTS.md;CLAUDE.md"}
 	var stderr bytes.Buffer
-	if err := Ensure(context.Background(), ui, &stderr); err != nil {
+	if err := Ensure(t.Context(), ui, &stderr); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	if ui.mustReadCalls != 1 {
@@ -305,7 +305,7 @@ func TestEnsure_BlankMustReadIsPersisted(t *testing.T) {
 		t.Fatalf("EnsureProject: %v", err)
 	}
 	ui := &scriptedUI{mustReadValue: ""}
-	if err := Ensure(context.Background(), ui, &bytes.Buffer{}); err != nil {
+	if err := Ensure(t.Context(), ui, &bytes.Buffer{}); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	if ui.mustReadCalls != 1 {
@@ -315,7 +315,7 @@ func TestEnsure_BlankMustReadIsPersisted(t *testing.T) {
 	if !set || got != "" {
 		t.Fatalf("readMustRead = (%q, %v), want (\"\", true)", got, set)
 	}
-	if err := Ensure(context.Background(), ui, &bytes.Buffer{}); err != nil {
+	if err := Ensure(t.Context(), ui, &bytes.Buffer{}); err != nil {
 		t.Fatalf("Ensure (second): %v", err)
 	}
 	if ui.mustReadCalls != 1 {
@@ -332,7 +332,7 @@ func TestEnsure_DoesNotPromptWhenMustReadSet(t *testing.T) {
 	}
 	putMustRead(t, "AGENTS.md")
 	ui := &scriptedUI{}
-	if err := Ensure(context.Background(), ui, &bytes.Buffer{}); err != nil {
+	if err := Ensure(t.Context(), ui, &bytes.Buffer{}); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	if ui.mustReadCalls != 0 {
@@ -349,7 +349,7 @@ func TestEnsure_MustReadUIError(t *testing.T) {
 	}
 	boom := errors.New("mustRead boom")
 	ui := &scriptedUI{mustReadErr: boom}
-	err := Ensure(context.Background(), ui, &bytes.Buffer{})
+	err := Ensure(t.Context(), ui, &bytes.Buffer{})
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want %v", err, boom)
 	}

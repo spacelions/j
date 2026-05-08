@@ -36,7 +36,7 @@ func TestTasksShow_RendersTaskToml(t *testing.T) {
 		t.Fatalf("EnsureDir: %v", err)
 	}
 
-	stdout, _, err := testutil.RunCobra(
+	stdout, _, err := testutil.RunCobra(t,
 		clitasks.New(), "show", "--from-task", "id-show",
 	)
 	if err != nil {

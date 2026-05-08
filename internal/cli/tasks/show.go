@@ -126,10 +126,10 @@ func newShowCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("from-task", "",
+	cmd.Flags().String(flagKeyFromTask, "",
 		"Render the named task's task.toml (no picker)")
 	_ = viper.BindPFlag("tasks.show.from_task",
-		cmd.Flags().Lookup("from-task"))
+		cmd.Flags().Lookup(flagKeyFromTask))
 	_ = viper.BindEnv("tasks.show.from_task",
 		"TASKS_SHOW_FROM_TASK")
 	cmd.AddCommand(newShowRequirementsCmd())
@@ -159,10 +159,10 @@ func newShowRequirementsCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("from-task", "",
+	cmd.Flags().String(flagKeyFromTask, "",
 		"Render the named task's requirements.md (no picker)")
 	_ = viper.BindPFlag("tasks.show.requirements.from_task",
-		cmd.Flags().Lookup("from-task"))
+		cmd.Flags().Lookup(flagKeyFromTask))
 	_ = viper.BindEnv("tasks.show.requirements.from_task",
 		"TASKS_SHOW_REQUIREMENTS_FROM_TASK")
 	return cmd
@@ -170,7 +170,7 @@ func newShowRequirementsCmd() *cobra.Command {
 
 func newShowPlanCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "plan",
+		Use:   cmdPlan,
 		Short: "Render the resolved task's plan.md",
 		Long: "Renders <cwd>/.j/tasks/<id>/plan.md via bat (when " +
 			"installed and stdout is a TTY) or cat. Resolves the " +
@@ -188,10 +188,10 @@ func newShowPlanCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("from-task", "",
+	cmd.Flags().String(flagKeyFromTask, "",
 		"Render the named task's plan.md (no picker)")
 	_ = viper.BindPFlag("tasks.show.plan.from_task",
-		cmd.Flags().Lookup("from-task"))
+		cmd.Flags().Lookup(flagKeyFromTask))
 	_ = viper.BindEnv("tasks.show.plan.from_task",
 		"TASKS_SHOW_PLAN_FROM_TASK")
 	return cmd
@@ -217,10 +217,10 @@ func newShowClarificationCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("from-task", "",
+	cmd.Flags().String(flagKeyFromTask, "",
 		"Render the named task's clarification.md (no picker)")
 	_ = viper.BindPFlag("tasks.show.clarification.from_task",
-		cmd.Flags().Lookup("from-task"))
+		cmd.Flags().Lookup(flagKeyFromTask))
 	_ = viper.BindEnv("tasks.show.clarification.from_task",
 		"TASKS_SHOW_CLARIFICATION_FROM_TASK")
 	return cmd
@@ -247,10 +247,10 @@ func newShowFindingsCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("from-task", "",
+	cmd.Flags().String(flagKeyFromTask, "",
 		"Render the named task's verifier_findings.md (no picker)")
 	_ = viper.BindPFlag("tasks.show.findings.from_task",
-		cmd.Flags().Lookup("from-task"))
+		cmd.Flags().Lookup(flagKeyFromTask))
 	_ = viper.BindEnv("tasks.show.findings.from_task",
 		"TASKS_SHOW_FINDINGS_FROM_TASK")
 	return cmd

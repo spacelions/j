@@ -2,10 +2,6 @@ package tasks
 
 import (
 	"bytes"
-	"github.com/spacelions/j/internal/lifecycle"
-	"github.com/spacelions/j/internal/store"
-	"github.com/spacelions/j/internal/store/tasks"
-	"github.com/spacelions/j/internal/testutil"
 	"io"
 	"os"
 	"os/exec"
@@ -13,6 +9,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spacelions/j/internal/lifecycle"
+	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // spawnSleepingChild forks a `sleep 10` and returns its PID so a
@@ -462,14 +463,14 @@ func TestReap_DeadWorking_WithClarification(t *testing.T) {
 // (a) the in-memory status flip, (b) one marker line in the per-task
 // agent.log via the registered markersHook, and (c) the persisted row.
 type reaperMarkerCase struct {
-	name        string
-	status      tasks.TaskStatus
-	wantStatus  tasks.TaskStatus
-	wantMarker  string
-	approval    bool
+	name         string
+	status       tasks.TaskStatus
+	wantStatus   tasks.TaskStatus
+	wantMarker   string
+	approval     bool
 	requirements string
-	plan        string
-	clarif      string
+	plan         string
+	clarif       string
 }
 
 // TestReap_TransitionsEmitMarkers covers every reaper-driven event

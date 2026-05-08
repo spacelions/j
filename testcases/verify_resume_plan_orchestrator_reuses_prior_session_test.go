@@ -33,9 +33,11 @@ type resumePlanChainAgent struct {
 	plannerEntered       atomic.Bool
 }
 
-func (a *resumePlanChainAgent) Name() string                                 { return "scripted" }
-func (a *resumePlanChainAgent) ListModels(context.Context) ([]string, error) { return []string{"m1"}, nil }
-func (a *resumePlanChainAgent) CheckLogin(context.Context) error             { return nil }
+func (a *resumePlanChainAgent) Name() string { return "scripted" }
+func (a *resumePlanChainAgent) ListModels(context.Context) ([]string, error) {
+	return []string{"m1"}, nil
+}
+func (a *resumePlanChainAgent) CheckLogin(context.Context) error { return nil }
 
 func (a *resumePlanChainAgent) NewResumeID(context.Context) (string, error) {
 	if a.plannerEntered.Load() {
@@ -135,7 +137,7 @@ func TestVerify_ResumePlan_OrchestratorReusesPriorSession(t *testing.T) {
 	agent := &resumePlanChainAgent{}
 
 	if err := clitasks.RunOrchestrate(
-		context.Background(),
+		t.Context(),
 		clitasks.OrchestrateOptions{
 			TaskID: id,
 			Stdin:  strings.NewReader(""),
@@ -180,4 +182,3 @@ func TestVerify_ResumePlan_OrchestratorReusesPriorSession(t *testing.T) {
 		)
 	}
 }
-

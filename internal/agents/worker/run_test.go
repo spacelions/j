@@ -39,6 +39,7 @@ func (a *runTestAgent) CheckLogin(context.Context) error             { return ni
 func (a *runTestAgent) Plan(context.Context, codingagents.PlanRequest) (int, error) {
 	return 0, errors.New("should not be called")
 }
+
 func (a *runTestAgent) Verify(context.Context, codingagents.VerifyRequest) (int, error) {
 	return 0, errors.New("should not be called")
 }
@@ -118,7 +119,7 @@ func seedPlanDoneTask(t *testing.T) string {
 }
 
 func TestRun_NoAgentsError(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	err := Execute(ctx, ExecuteOptions{Stdout: io.Discard, Stderr: io.Discard})
 	if err == nil || !strings.Contains(err.Error(), "no coding agents") {
 		t.Fatalf("err = %v, want 'no coding agents' error", err)
@@ -130,7 +131,7 @@ func TestRun_HappyPath(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
 	var stdout bytes.Buffer
-	err := Execute(context.Background(), ExecuteOptions{
+	err := Execute(t.Context(), ExecuteOptions{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -161,7 +162,7 @@ func TestRun_WorkErrorPromotesToHelp(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
 	agent.workErr = errors.New("worker boom")
-	err := Execute(context.Background(), ExecuteOptions{
+	err := Execute(t.Context(), ExecuteOptions{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -188,7 +189,7 @@ func TestRun_ConfirmStatusOverrideDeclined(t *testing.T) {
 	row.Status = tasks.StatusCompleted
 	testutil.SeedTaskRow(t, row)
 	agent := newRunTestAgent("cursor")
-	err := Execute(context.Background(), ExecuteOptions{
+	err := Execute(t.Context(), ExecuteOptions{
 		TaskID: id,
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -212,7 +213,7 @@ func TestRun_BackgroundPID(t *testing.T) {
 	agent := newRunTestAgent("cursor")
 	agent.workPid = 42
 	var stdout bytes.Buffer
-	err := Execute(context.Background(), ExecuteOptions{
+	err := Execute(t.Context(), ExecuteOptions{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -240,7 +241,7 @@ func TestRun_WaitForCompletion_Success(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
 	agent.workPid = 0
-	err := Execute(context.Background(), ExecuteOptions{
+	err := Execute(t.Context(), ExecuteOptions{
 		TaskID:            id,
 		Yes:               true,
 		Stdin:             strings.NewReader(""),
@@ -284,7 +285,7 @@ func TestRun_ExplicitToolModelSkipsPersistence(t *testing.T) {
 	setupRunEnv(t)
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
-	err := Execute(context.Background(), ExecuteOptions{
+	err := Execute(t.Context(), ExecuteOptions{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -306,7 +307,7 @@ func TestRun_ExplicitToolModelSkipsPersistence(t *testing.T) {
 func TestRun_NoPlanTasks(t *testing.T) {
 	setupRunEnv(t)
 	agent := newRunTestAgent("cursor")
-	err := Execute(context.Background(), ExecuteOptions{
+	err := Execute(t.Context(), ExecuteOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -328,7 +329,7 @@ func TestRun_NewResumeIDError(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
 	agent.resumeIDErr = errors.New("resume id failure")
-	err := Execute(context.Background(), ExecuteOptions{
+	err := Execute(t.Context(), ExecuteOptions{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -354,7 +355,7 @@ func TestRun_ConfirmStatusOverrideError(t *testing.T) {
 	row.Status = tasks.StatusCompleted
 	testutil.SeedTaskRow(t, row)
 	agent := newRunTestAgent("cursor")
-	err := Execute(context.Background(), ExecuteOptions{
+	err := Execute(t.Context(), ExecuteOptions{
 		TaskID: id,
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -377,7 +378,7 @@ func TestRun_WaitForCompletion_PIDZero(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
 	agent.workPid = 0
-	err := Execute(context.Background(), ExecuteOptions{
+	err := Execute(t.Context(), ExecuteOptions{
 		TaskID:            id,
 		Yes:               true,
 		Stdin:             strings.NewReader(""),

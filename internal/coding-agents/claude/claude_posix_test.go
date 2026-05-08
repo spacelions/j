@@ -3,17 +3,17 @@
 package claude
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/agents/instructions"
+	codingagents "github.com/spacelions/j/internal/coding-agents"
 )
 
 // spawnWaitTimeout bounds the polling helpers below. The claude stub
@@ -210,7 +210,7 @@ func assertCwd(t *testing.T, want, got string) {
 // returns JSON with `loggedIn: true` and CheckLogin returns nil.
 func TestCheckLogin_LoggedIn(t *testing.T) {
 	calls, _ := installStub(t, `{"loggedIn": true, "authMethod": "claude.ai"}`, 0)
-	if err := New().CheckLogin(context.Background()); err != nil {
+	if err := New().CheckLogin(t.Context()); err != nil {
 		t.Fatalf("CheckLogin: %v", err)
 	}
 	if argv := readCalls(t, calls); !reflect.DeepEqual(argv, []string{"auth", "status"}) {
@@ -221,7 +221,7 @@ func TestCheckLogin_LoggedIn(t *testing.T) {
 // TestCheckLogin_LoggedOut covers the JSON loggedIn=false branch.
 func TestCheckLogin_LoggedOut(t *testing.T) {
 	installStub(t, `{"loggedIn": false}`, 0)
-	err := New().CheckLogin(context.Background())
+	err := New().CheckLogin(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "not logged in") {
 		t.Fatalf("err = %v", err)
 	}
@@ -232,7 +232,7 @@ func TestCheckLogin_LoggedOut(t *testing.T) {
 // parse as JSON, so CheckLogin treats it as logged-out.
 func TestCheckLogin_BadJSON(t *testing.T) {
 	installStub(t, "not json at all", 0)
-	err := New().CheckLogin(context.Background())
+	err := New().CheckLogin(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "not logged in") {
 		t.Fatalf("err = %v", err)
 	}
@@ -242,7 +242,7 @@ func TestCheckLogin_BadJSON(t *testing.T) {
 // wrapped error mentions claude and the remediation hint.
 func TestCheckLogin_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
-	err := New().CheckLogin(context.Background())
+	err := New().CheckLogin(t.Context())
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -268,7 +268,7 @@ func TestPlan_Interactive(t *testing.T) {
 	planOut := filepath.Join(dir, "plan.md")
 	calls, cwdPath := installStub(t, "", 0)
 
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  "sonnet",
 		RequirementsOutputPath: reqOut,
@@ -324,7 +324,7 @@ func TestPlan_Interactive_FirstRun_SessionID(t *testing.T) {
 	}
 	calls, _ := installStub(t, "", 0)
 	rid := "22222222-2222-4222-8222-222222222222"
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  "sonnet",
 		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
@@ -352,7 +352,7 @@ func TestPlan_Interactive_FirstRun_SessionID(t *testing.T) {
 
 func TestPlan_Interactive_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           "/tmp/x.md",
 		Model:                  "m",
 		RequirementsOutputPath: "/tmp/requirements.md",
@@ -381,7 +381,7 @@ func TestPlan_Headless(t *testing.T) {
 	logPath := filepath.Join(dir, "agent.log")
 	calls, cwdPath := installStub(t, "ok\n", 0)
 
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  "sonnet",
 		RequirementsOutputPath: reqOut,
@@ -434,7 +434,7 @@ func TestPlan_Headless_FirstRun_SessionID(t *testing.T) {
 	}
 	calls, _ := installStub(t, "ok\n", 0)
 	rid := "33333333-3333-4333-8333-333333333333"
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  "sonnet",
 		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
@@ -477,7 +477,7 @@ func TestPlan_Headless_SpawnError(t *testing.T) {
 	if err := os.MkdirAll(logPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           "/tmp/x.md",
 		Model:                  "m",
 		RequirementsOutputPath: "/tmp/requirements.md",
@@ -508,7 +508,7 @@ func TestPlan_Interactive_Resume(t *testing.T) {
 	planOut := filepath.Join(dir, "plan.md")
 	calls, _ := installStub(t, "", 0)
 	rid := "66666666-6666-4666-8666-666666666666"
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  "sonnet",
 		RequirementsOutputPath: reqOut,
@@ -573,7 +573,7 @@ func TestPlan_Interactive_Resume_WithMustRead(t *testing.T) {
 	planOut := filepath.Join(dir, "plan.md")
 	calls, _ := installStub(t, "", 0)
 	rid := "66666666-6666-4666-8666-666666666667"
-	_, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	_, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  "sonnet",
 		RequirementsOutputPath: reqOut,
@@ -621,7 +621,7 @@ func TestWork_Interactive(t *testing.T) {
 	}
 	calls, cwdPath := installStub(t, "", 0)
 
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:    plan,
 		Model:       "sonnet",
 		Interactive: true,
@@ -670,7 +670,7 @@ func TestWork_Interactive_Resume(t *testing.T) {
 	}
 	calls, _ := installStub(t, "", 0)
 	rid := "77777777-7777-4777-8777-777777777777"
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:     plan,
 		Model:        "sonnet",
 		Interactive:  true,
@@ -717,7 +717,7 @@ func TestWork_Interactive_Resume_WithMustRead(t *testing.T) {
 	}
 	calls, _ := installStub(t, "", 0)
 	rid := "77777777-7777-4777-8777-777777777769"
-	_, err := New().Work(context.Background(), codingagents.WorkRequest{
+	_, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:     plan,
 		Model:        "sonnet",
 		Interactive:  true,
@@ -759,7 +759,7 @@ func TestWork_Headless(t *testing.T) {
 	logPath := filepath.Join(dir, "agent.log")
 	calls, cwdPath := installStub(t, "ok\n", 0)
 
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:     plan,
 		Model:        "sonnet",
 		Interactive:  false,
@@ -806,7 +806,7 @@ func TestWork_Headless_Resume(t *testing.T) {
 	}
 	calls, _ := installStub(t, "ok\n", 0)
 	rid := "55555555-5555-4555-8555-555555555555"
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:     plan,
 		Model:        "sonnet",
 		Interactive:  false,
@@ -841,7 +841,7 @@ func TestWork_Headless_Resume(t *testing.T) {
 
 func TestWork_Interactive_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:    "/tmp/x.plan.md",
 		Model:       "m",
 		Interactive: true,
@@ -861,7 +861,7 @@ func TestWork_Headless_SpawnError(t *testing.T) {
 	if err := os.MkdirAll(logPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:     "/tmp/x.plan.md",
 		Model:        "m",
 		Interactive:  false,
@@ -891,7 +891,7 @@ func TestWork_Interactive_FixFindings(t *testing.T) {
 	findings := filepath.Join(dir, "verifier_findings.md")
 	calls, _ := installStub(t, "", 0)
 
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:                   plan,
 		Model:                      "sonnet",
 		Interactive:                true,
@@ -931,7 +931,7 @@ func TestWork_FixFindings_BeatsResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls, _ := installStub(t, "", 0)
-	_, err := New().Work(context.Background(), codingagents.WorkRequest{
+	_, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:    plan,
 		Model:       "m",
 		Interactive: true,
@@ -974,7 +974,7 @@ func TestVerify_Interactive(t *testing.T) {
 	findingsPath := filepath.Join(dir, "verifier_findings.md")
 	calls, cwdPath := installStub(t, "", 0)
 
-	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	pid, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           reqPath,
 		PlanPath:                   planPath,
 		VerifierPlanOutputPath:     verifierPlan,
@@ -1033,7 +1033,7 @@ func TestVerify_Interactive_Resume(t *testing.T) {
 	calls, _ := installStub(t, "", 0)
 	rid := "99999999-9999-4999-8999-999999999999"
 
-	_, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	_, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           filepath.Join(dir, "requirements.md"),
 		PlanPath:                   filepath.Join(dir, "plan.md"),
 		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
@@ -1069,7 +1069,7 @@ func TestVerify_Interactive_Resume_WithMustRead(t *testing.T) {
 	t.Chdir(dir)
 	calls, _ := installStub(t, "", 0)
 	rid := "99999999-9999-4999-8999-999999999991"
-	_, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	_, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           filepath.Join(dir, "requirements.md"),
 		PlanPath:                   filepath.Join(dir, "plan.md"),
 		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
@@ -1107,7 +1107,7 @@ func TestVerify_Interactive_Resume_WithMustRead(t *testing.T) {
 
 func TestVerify_Interactive_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
-	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	pid, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           "/tmp/req.md",
 		PlanPath:                   "/tmp/plan.md",
 		VerifierPlanOutputPath:     "/tmp/verifier_plan.md",
@@ -1134,7 +1134,7 @@ func TestVerify_Headless(t *testing.T) {
 	logPath := filepath.Join(dir, "agent.log")
 	calls, cwdPath := installStub(t, "ok\n", 0)
 
-	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	pid, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           filepath.Join(dir, "requirements.md"),
 		PlanPath:                   filepath.Join(dir, "plan.md"),
 		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
@@ -1183,7 +1183,7 @@ func TestVerify_Headless_Resume(t *testing.T) {
 	calls, _ := installStub(t, "ok\n", 0)
 	rid := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
-	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	pid, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           filepath.Join(dir, "requirements.md"),
 		PlanPath:                   filepath.Join(dir, "plan.md"),
 		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
@@ -1226,7 +1226,7 @@ func TestVerify_Headless_SpawnError(t *testing.T) {
 	if err := os.MkdirAll(logPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	pid, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           "/tmp/req.md",
 		PlanPath:                   "/tmp/plan.md",
 		VerifierPlanOutputPath:     "/tmp/verifier_plan.md",
@@ -1252,10 +1252,8 @@ func waitForArgvContains(t *testing.T, callsPath, want string) {
 	deadline := time.Now().Add(spawnWaitTimeout)
 	for {
 		argv := readCallsBestEffort(callsPath)
-		for _, a := range argv {
-			if a == want {
-				return
-			}
+		if slices.Contains(argv, want) {
+			return
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("timeout waiting for argv to contain %q at %s; argv=%v",
@@ -1281,7 +1279,7 @@ func TestPlan_Headless_RegressionGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	logPath := filepath.Join(dir, "agent.log")
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  "sonnet",
 		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
@@ -1306,7 +1304,7 @@ func TestWork_Headless_RegressionGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	logPath := filepath.Join(dir, "agent.log")
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:     plan,
 		Model:        "sonnet",
 		Interactive:  false,
@@ -1326,7 +1324,7 @@ func TestVerify_Headless_RegressionGuard(t *testing.T) {
 	t.Chdir(dir)
 	calls := installHeadlessRegressionStub(t)
 	logPath := filepath.Join(dir, "agent.log")
-	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	pid, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           filepath.Join(dir, "requirements.md"),
 		PlanPath:                   filepath.Join(dir, "plan.md"),
 		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),

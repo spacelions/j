@@ -50,6 +50,7 @@ func (a *resumePlanCaptureAgent) Plan(_ context.Context, req codingagents.PlanRe
 func (a *resumePlanCaptureAgent) Work(context.Context, codingagents.WorkRequest) (int, error) {
 	return 0, errors.New("Work should not be called")
 }
+
 func (a *resumePlanCaptureAgent) Verify(context.Context, codingagents.VerifyRequest) (int, error) {
 	return 0, errors.New("Verify should not be called")
 }
@@ -85,7 +86,7 @@ func TestVerify_PlannerResume_UsesStoredSession(t *testing.T) {
 	})
 
 	stub := &resumePlanCaptureAgent{}
-	if err := planner.Execute(context.Background(),
+	if err := planner.Execute(t.Context(),
 		planner.ExecuteOptions{
 			TaskID: id,
 			Agent:  stub,

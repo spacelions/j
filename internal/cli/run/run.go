@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/lifecycle/orchestrator"
+	"github.com/spacelions/j/internal/store"
 )
 
 // New returns the `j run` cobra subcommand.

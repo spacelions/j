@@ -388,7 +388,7 @@ func TestReset_MultiArg_Mixed(t *testing.T) {
 	if idxPlanner < 0 || idxWorker < 0 || idxVerifier < 0 {
 		t.Fatalf("missing line in out = %q", out)
 	}
-	if !(idxPlanner < idxWorker && idxWorker < idxVerifier) {
+	if idxPlanner >= idxWorker || idxWorker >= idxVerifier {
 		t.Fatalf("out = %q, want planner < worker.model < verifier", out)
 	}
 	p, _ := store.DefaultPath()

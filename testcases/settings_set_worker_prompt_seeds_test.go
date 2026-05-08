@@ -23,7 +23,7 @@ func TestSettingsSet_WorkerPromptSeedsBundled(t *testing.T) {
 	}
 	dest := filepath.Join(dir, "custom-worker.md")
 
-	stdout, _, err := testutil.RunCobra(settings.New(),
+	stdout, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "worker.prompt="+dest,
 	)
 	if err != nil {

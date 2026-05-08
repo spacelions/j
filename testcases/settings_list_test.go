@@ -42,7 +42,7 @@ const emptyInitListing = "[project]\n" +
 func TestSettingsList_FreshInit(t *testing.T) {
 	freshInit(t)
 
-	stdout, _, err := testutil.RunCobra(settings.New())
+	stdout, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -68,12 +68,12 @@ func TestSettingsList_FreshInit(t *testing.T) {
 func TestSettingsList_KeysSortedWithinSection(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "worker.tool=cursor", "worker.model=gpt-5", "worker.interactive=false",
 	); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	stdout, _, err := testutil.RunCobra(settings.New())
+	stdout, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -95,17 +95,17 @@ func TestSettingsList_KeysSortedWithinSection(t *testing.T) {
 func TestSettingsList_MatchesTOMLExample(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "project.must_read=path/one;path/two",
 	); err != nil {
 		t.Fatalf("set must_read: %v", err)
 	}
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "planner.tool=cursor", "planner.model=opus", "planner.interactive=false",
 	); err != nil {
 		t.Fatalf("set planner: %v", err)
 	}
-	stdout, _, err := testutil.RunCobra(settings.New())
+	stdout, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -137,22 +137,22 @@ func TestSettingsList_MatchesTOMLExample(t *testing.T) {
 func TestSettingsList_ResetKeyThenList(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "planner.tool=cursor",
 	); err != nil {
 		t.Fatalf("set tool: %v", err)
 	}
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "planner.model=sonnet-4",
 	); err != nil {
 		t.Fatalf("set model: %v", err)
 	}
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"reset", "planner.tool",
 	); err != nil {
 		t.Fatalf("reset tool: %v", err)
 	}
-	stdout, _, err := testutil.RunCobra(settings.New())
+	stdout, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -174,17 +174,17 @@ func TestSettingsList_ResetKeyThenList(t *testing.T) {
 func TestSettingsList_UnknownBucketAfterKnown(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "zeta.k=v",
 	); err != nil {
 		t.Fatalf("set zeta: %v", err)
 	}
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "alpha.x=y",
 	); err != nil {
 		t.Fatalf("set alpha: %v", err)
 	}
-	stdout, _, err := testutil.RunCobra(settings.New())
+	stdout, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

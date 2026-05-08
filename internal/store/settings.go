@@ -183,6 +183,7 @@ func LoadTaskConfig() (TaskConfig, error) {
 	if err != nil || n == 0 {
 		return cfg, nil
 	}
+	//nolint:gosec // MaxIterations is a small config value; overflow unrealistic
 	cfg.MaxIterations = int(n)
 	return cfg, nil
 }

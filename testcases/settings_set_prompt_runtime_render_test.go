@@ -34,7 +34,7 @@ func TestSettingsSet_PromptRuntimeRender(t *testing.T) {
 		{"verifier", filepath.Join(dir, "v.md"), "VERIFIER OVR BODY"},
 	}
 	for _, r := range roles {
-		if _, _, err := testutil.RunCobra(settings.New(),
+		if _, _, err := testutil.RunCobra(t, settings.New(),
 			"set", r.bucket+".prompt="+r.path,
 		); err != nil {
 			t.Fatalf("set %s: %v", r.bucket, err)

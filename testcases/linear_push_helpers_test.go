@@ -170,9 +170,9 @@ func saveLinearAPIKey(t *testing.T, token string) {
 func firePlanDone(taskID, linearIssue string, ev tasks.Event) {
 	tasks.Notify(
 		tasks.Transition{
-			From: tasks.StatusPlanning,
+			From:  tasks.StatusPlanning,
 			Event: ev,
-			To: tasks.StatusPlanDone,
+			To:    tasks.StatusPlanDone,
 		},
 		tasks.Task{
 			ID: taskID, Status: tasks.StatusPlanDone,

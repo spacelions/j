@@ -31,16 +31,18 @@ func ReplanAllowed(t tasks.Task) bool {
 	switch t.Status {
 	case tasks.StatusPlanDone, tasks.StatusHelp:
 		return true
+	default:
+		return false
 	}
-	return false
 }
 
 func VerifyAllowed(t tasks.Task) bool {
 	switch t.Status {
 	case tasks.StatusWorkDone, tasks.StatusFailed, tasks.StatusHelp:
 		return true
+	default:
+		return false
 	}
-	return false
 }
 
 type WorkPlanUI interface {
@@ -64,8 +66,7 @@ type WorkPlan struct {
 func ResolveWorkPlan(
 	ctx context.Context, opts WorkPlanOptions,
 ) (WorkPlan, bool, error) {
-	switch {
-	case opts.TaskID != "":
+	if opts.TaskID != "" {
 		r, err := resolveWorkByTaskID(opts.TaskID)
 		return r, err == nil, err
 	}

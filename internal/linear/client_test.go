@@ -75,7 +75,7 @@ func TestGetIssue_Success(t *testing.T) {
 		})
 	})
 	c := NewClient("lin_api_test", WithEndpoint(srv.URL))
-	got, err := c.GetIssue(context.Background(), "ENG-1")
+	got, err := c.GetIssue(t.Context(), "ENG-1")
 	if err != nil {
 		t.Fatalf("GetIssue: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestGetIssue_Success(t *testing.T) {
 
 func TestGetIssue_InvalidIdentifier(t *testing.T) {
 	c := NewClient("k")
-	_, err := c.GetIssue(context.Background(), "foo")
+	_, err := c.GetIssue(t.Context(), "foo")
 	if !errors.Is(err, ErrInvalidIdentifier) {
 		t.Fatalf("err = %v, want ErrInvalidIdentifier", err)
 	}
@@ -97,7 +97,7 @@ func TestGetIssue_NotFound(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"issue": nil}})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	_, err := c.GetIssue(context.Background(), "ZZZ-9999")
+	_, err := c.GetIssue(t.Context(), "ZZZ-9999")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
@@ -112,7 +112,7 @@ func TestGetIssue_Unauthorized(t *testing.T) {
 		_, _ = w.Write([]byte("nope"))
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	_, err := c.GetIssue(context.Background(), "ENG-1")
+	_, err := c.GetIssue(t.Context(), "ENG-1")
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("err = %v, want ErrUnauthorized", err)
 	}
@@ -126,7 +126,7 @@ func TestGetIssue_GraphQLErrors(t *testing.T) {
 		})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	_, err := c.GetIssue(context.Background(), "ENG-1")
+	_, err := c.GetIssue(t.Context(), "ENG-1")
 	if err == nil || !strings.Contains(err.Error(), "bad query") {
 		t.Fatalf("err = %v, want graphql 'bad query'", err)
 	}
@@ -138,7 +138,7 @@ func TestGetIssue_NonOKStatus(t *testing.T) {
 		_, _ = w.Write([]byte("server gone"))
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	_, err := c.GetIssue(context.Background(), "ENG-1")
+	_, err := c.GetIssue(t.Context(), "ENG-1")
 	var hErr *HTTPError
 	if !errors.As(err, &hErr) || hErr.Status != http.StatusInternalServerError {
 		t.Fatalf("err = %v, want *HTTPError with 500", err)
@@ -150,7 +150,7 @@ func TestGetIssue_MalformedJSON(t *testing.T) {
 		_, _ = w.Write([]byte("{not valid json"))
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	_, err := c.GetIssue(context.Background(), "ENG-1")
+	_, err := c.GetIssue(t.Context(), "ENG-1")
 	if err == nil || !strings.Contains(err.Error(), "decode") {
 		t.Fatalf("err = %v, want decode error", err)
 	}
@@ -158,7 +158,7 @@ func TestGetIssue_MalformedJSON(t *testing.T) {
 
 func TestGetIssue_TransportError(t *testing.T) {
 	c := NewClient("k", WithEndpoint("http://127.0.0.1:1"))
-	_, err := c.GetIssue(context.Background(), "ENG-1")
+	_, err := c.GetIssue(t.Context(), "ENG-1")
 	if err == nil || !strings.Contains(err.Error(), "linear: http") {
 		t.Fatalf("err = %v, want transport error", err)
 	}
@@ -169,7 +169,7 @@ func TestGetIssue_ContextCancelled(t *testing.T) {
 		<-r.Context().Done()
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err := c.GetIssue(ctx, "ENG-1")
 	if err == nil {
@@ -191,7 +191,7 @@ func TestListProjects_Success(t *testing.T) {
 		})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	got, err := c.ListProjects(context.Background())
+	got, err := c.ListProjects(t.Context())
 	if err != nil {
 		t.Fatalf("ListProjects: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestListProjects_GraphQLErrors(t *testing.T) {
 		})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	_, err := c.ListProjects(context.Background())
+	_, err := c.ListProjects(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "no scope") {
 		t.Fatalf("err = %v", err)
 	}
@@ -216,7 +216,7 @@ func TestListProjects_GraphQLErrors(t *testing.T) {
 
 func TestListProjects_TransportError(t *testing.T) {
 	c := NewClient("k", WithEndpoint("http://127.0.0.1:1"))
-	_, err := c.ListProjects(context.Background())
+	_, err := c.ListProjects(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "linear: http") {
 		t.Fatalf("err = %v", err)
 	}
@@ -251,7 +251,7 @@ func TestListAssignedIssues_Success(t *testing.T) {
 		})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	got, err := c.ListAssignedIssues(context.Background(), ListIssuesOpts{})
+	got, err := c.ListAssignedIssues(t.Context(), ListIssuesOpts{})
 	if err != nil {
 		t.Fatalf("ListAssignedIssues: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestListAssignedIssues_EmptyList(t *testing.T) {
 		})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	got, err := c.ListAssignedIssues(context.Background(), ListIssuesOpts{})
+	got, err := c.ListAssignedIssues(t.Context(), ListIssuesOpts{})
 	if err != nil {
 		t.Fatalf("ListAssignedIssues: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestListAssignedIssues_ProjectFilterForwarded(t *testing.T) {
 		})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	if _, err := c.ListAssignedIssues(context.Background(), ListIssuesOpts{ProjectID: "proj-uuid"}); err != nil {
+	if _, err := c.ListAssignedIssues(t.Context(), ListIssuesOpts{ProjectID: "proj-uuid"}); err != nil {
 		t.Fatalf("ListAssignedIssues: %v", err)
 	}
 	if !strings.Contains(seenBody, "$projectId:ID!") {
@@ -325,7 +325,7 @@ func TestListAssignedIssues_GraphQLErrors(t *testing.T) {
 		})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	_, err := c.ListAssignedIssues(context.Background(), ListIssuesOpts{})
+	_, err := c.ListAssignedIssues(t.Context(), ListIssuesOpts{})
 	if err == nil || !strings.Contains(err.Error(), "no scope") {
 		t.Fatalf("err = %v, want graphql 'no scope'", err)
 	}
@@ -336,7 +336,7 @@ func TestListAssignedIssues_Unauthorized(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	_, err := c.ListAssignedIssues(context.Background(), ListIssuesOpts{})
+	_, err := c.ListAssignedIssues(t.Context(), ListIssuesOpts{})
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("err = %v, want ErrUnauthorized", err)
 	}
@@ -344,7 +344,7 @@ func TestListAssignedIssues_Unauthorized(t *testing.T) {
 
 func TestListAssignedIssues_TransportError(t *testing.T) {
 	c := NewClient("k", WithEndpoint("http://127.0.0.1:1"))
-	_, err := c.ListAssignedIssues(context.Background(), ListIssuesOpts{})
+	_, err := c.ListAssignedIssues(t.Context(), ListIssuesOpts{})
 	if err == nil || !strings.Contains(err.Error(), "linear: http") {
 		t.Fatalf("err = %v", err)
 	}

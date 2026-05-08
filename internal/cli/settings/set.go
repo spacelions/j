@@ -15,10 +15,8 @@ func newSetCmd() *cobra.Command {
 		Use: "set <bucket.key=value> [bucket.key=value ...]",
 		Short: "Set one or more values under bucket.key " +
 			"in the local settings database",
-		Args:  cobra.MinimumNArgs(1),
-		RunE: func(c *cobra.Command, args []string) error {
-			return runSet(c, args)
-		},
+		Args: cobra.MinimumNArgs(1),
+		RunE: runSet,
 	}
 }
 
@@ -58,18 +56,18 @@ func runSet(cmd *cobra.Command, args []string) error {
 // The bucket.key portion is delegated to parseBucketKey so the
 // reset path keeps using the same validation.
 func parseKeyValue(arg string) (bucket, key, value string, err error) {
-	i := strings.IndexByte(arg, '=')
-	if i < 0 {
+	before, after, ok := strings.Cut(arg, "=")
+	if !ok {
 		return "", "", "", fmt.Errorf(
 			"settings: %q is not a valid key=value (missing '=')",
 			arg,
 		)
 	}
-	bucket, key, err = parseBucketKey(arg[:i])
+	bucket, key, err = parseBucketKey(before)
 	if err != nil {
 		return "", "", "", err
 	}
-	return bucket, key, arg[i+1:], nil
+	return bucket, key, after, nil
 }
 
 // parseBucketKey splits a `bucket.key` argument into its parts. The
@@ -78,14 +76,14 @@ func parseKeyValue(arg string) (bucket, key, value string, err error) {
 // *store.Store so the on-disk row uses the canonical camelCase name
 // while the echo-back / error wording keeps the form the user typed.
 func parseBucketKey(s string) (bucket, key string, err error) {
-	i := strings.IndexByte(s, '.')
-	if i < 0 {
+	before, after, ok := strings.Cut(s, ".")
+	if !ok {
 		return "", "", fmt.Errorf(
 			"settings: %q is not a valid bucket.key (missing '.')",
 			s,
 		)
 	}
-	bucket, key = s[:i], s[i+1:]
+	bucket, key = before, after
 	if bucket == "" {
 		return "", "", fmt.Errorf("settings: bucket name must be non-empty in %q", s)
 	}

@@ -16,11 +16,24 @@ import (
 // Binary is the cursor-agent executable name.
 const Binary = "cursor-agent"
 
+const (
+	argPrint            = "--print"
+	argOutputFormat     = "--output-format"
+	argOutputFormatText = "text"
+	argForce            = "--force"
+	argTrust            = "--trust"
+	argWorkspace        = "--workspace"
+	argResume           = "--resume"
+	argModel            = "--model"
+)
+
 // Agent is a Cursor-backed planner. It is stateless: every method shells
 // out to the real cursor-agent binary on PATH via the run package's
 // package-level helpers. Tests drive it with a stub binary on PATH
 // rather than an injected runner (see AGENTS.md "no test seams" rule).
 type Agent struct{}
+
+var _ codingagents.Agent = (*Agent)(nil)
 
 // New returns a Cursor agent that shells out to the cursor-agent CLI.
 func New() *Agent { return &Agent{} }
@@ -119,11 +132,11 @@ func (*Agent) Plan(
 	if req.Interactive {
 		var args []string
 		if req.ResumeChatID != "" {
-			args = append(args, "--resume", req.ResumeChatID)
+			args = append(args, argResume, req.ResumeChatID)
 		}
 		args = append(args,
-			"--mode", "plan", "--model", req.Model,
-			"--workspace", workspace, prompt,
+			"--mode", "plan", argModel, req.Model,
+			argWorkspace, workspace, prompt,
 		)
 		if err := run.Run(ctx, Binary, args...); err != nil {
 			return 0, fmt.Errorf("cursor-agent: %w", err)
@@ -133,12 +146,12 @@ func (*Agent) Plan(
 
 	var hargs []string
 	if req.ResumeChatID != "" {
-		hargs = append(hargs, "--resume", req.ResumeChatID)
+		hargs = append(hargs, argResume, req.ResumeChatID)
 	}
 	hargs = append(hargs,
-		"--print", "--output-format", "text",
-		"--force", "--trust", "--model", req.Model,
-		"--workspace", workspace, prompt,
+		argPrint, argOutputFormat, argOutputFormatText,
+		argForce, argTrust, argModel, req.Model,
+		argWorkspace, workspace, prompt,
 	)
 	pid, err := run.Spawn(ctx, req.AgentLogPath, Binary, hargs...)
 	if err != nil {
@@ -176,11 +189,11 @@ func (*Agent) Work(
 	if req.Interactive {
 		var wargs []string
 		if req.ResumeChatID != "" {
-			wargs = append(wargs, "--resume", req.ResumeChatID)
+			wargs = append(wargs, argResume, req.ResumeChatID)
 		}
 		wargs = append(wargs,
-			"--model", req.Model,
-			"--workspace", workspace, prompt,
+			argModel, req.Model,
+			argWorkspace, workspace, prompt,
 		)
 		if err := run.Run(ctx, Binary, wargs...); err != nil {
 			return 0, fmt.Errorf("cursor-agent: %w", err)
@@ -189,12 +202,12 @@ func (*Agent) Work(
 	}
 
 	pargs := []string{
-		"--print", "--output-format", "text",
-		"--force", "--trust", "--model", req.Model,
-		"--workspace", workspace, prompt,
+		argPrint, argOutputFormat, argOutputFormatText,
+		argForce, argTrust, argModel, req.Model,
+		argWorkspace, workspace, prompt,
 	}
 	if req.ResumeChatID != "" {
-		pargs = append([]string{"--resume", req.ResumeChatID}, pargs...)
+		pargs = append([]string{argResume, req.ResumeChatID}, pargs...)
 	}
 	pid, err := run.Spawn(ctx, req.AgentLogPath, Binary, pargs...)
 	if err != nil {
@@ -233,11 +246,11 @@ func (*Agent) Verify(
 	if req.Interactive {
 		var args []string
 		if req.ResumeChatID != "" {
-			args = append(args, "--resume", req.ResumeChatID)
+			args = append(args, argResume, req.ResumeChatID)
 		}
 		args = append(args,
-			"--model", req.Model,
-			"--workspace", workspace, prompt,
+			argModel, req.Model,
+			argWorkspace, workspace, prompt,
 		)
 		if err := run.Run(ctx, Binary, args...); err != nil {
 			return 0, fmt.Errorf("cursor-agent: %w", err)
@@ -246,12 +259,12 @@ func (*Agent) Verify(
 	}
 
 	pargs := []string{
-		"--print", "--output-format", "text",
-		"--force", "--trust", "--model", req.Model,
-		"--workspace", workspace, prompt,
+		argPrint, argOutputFormat, argOutputFormatText,
+		argForce, argTrust, argModel, req.Model,
+		argWorkspace, workspace, prompt,
 	}
 	if req.ResumeChatID != "" {
-		pargs = append([]string{"--resume", req.ResumeChatID}, pargs...)
+		pargs = append([]string{argResume, req.ResumeChatID}, pargs...)
 	}
 	pid, err := run.Spawn(ctx, req.AgentLogPath, Binary, pargs...)
 	if err != nil {
@@ -267,7 +280,7 @@ func (*Agent) Verify(
 // noise and skipped; for matching lines we keep only the id.
 func parseModels(out string) []string {
 	var ids []string
-	for _, raw := range strings.Split(out, "\n") {
+	for raw := range strings.SplitSeq(out, "\n") {
 		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue

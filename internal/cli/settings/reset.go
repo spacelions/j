@@ -3,7 +3,6 @@ package settings
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -21,9 +20,7 @@ func newResetCmd() *cobra.Command {
 		Short: "Remove all project settings, a whole bucket, " +
 			"or one bucket.key (multiple targets allowed)",
 		Args: cobra.ArbitraryArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReset(cmd, args)
-		},
+		RunE: runReset,
 	}
 	cmd.Flags().BoolP(
 		"yes", "y", false,
@@ -137,7 +134,7 @@ func parseResetTargets(args []string) ([]resetTarget, error) {
 	out := make([]resetTarget, 0, len(args))
 	for _, arg := range args {
 		if arg == "" {
-			return nil, fmt.Errorf("settings: empty reset target")
+			return nil, errors.New("settings: empty reset target")
 		}
 		if strings.ContainsRune(arg, '.') {
 			bucket, key, err := parseBucketKey(arg)

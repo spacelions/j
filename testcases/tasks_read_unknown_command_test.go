@@ -15,7 +15,7 @@ func TestTasksRead_IsUnknownCommand(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	_, stderr, err := testutil.RunCobra(clitasks.New(), "read")
+	_, stderr, err := testutil.RunCobra(t, clitasks.New(), "read")
 	if err == nil {
 		t.Fatal("expected `j tasks read` to fail as unknown command")
 	}

@@ -70,10 +70,10 @@ func RunResumeWork(ctx context.Context, opts ResumeWorkOptions) (err error) {
 		return err
 	}
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
-		"tasks", "orchestrate",
-		"--id", taskID,
-		"--phase=from-work",
-		"--interactive=true",
+		cmdTasks, cmdOrchestrate,
+		flagID, taskID,
+		flagPhaseFromWork,
+		flagInteractiveTrue,
 	})
 }
 

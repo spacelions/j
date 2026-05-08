@@ -83,10 +83,10 @@ func RunResumePlan(ctx context.Context, opts ResumePlanOptions) (err error) {
 		return err
 	}
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
-		"tasks", "orchestrate",
-		"--id", taskID,
-		"--plan-requires-approval=true",
-		"--interactive=true",
+		cmdTasks, cmdOrchestrate,
+		flagID, taskID,
+		flagPlanRequiresApprovalTrue,
+		flagInteractiveTrue,
 	})
 }
 

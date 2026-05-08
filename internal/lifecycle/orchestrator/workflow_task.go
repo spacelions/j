@@ -288,4 +288,3 @@ func newWorkVerify(
 	}
 	return workerAgent, guarded, nil
 }
-

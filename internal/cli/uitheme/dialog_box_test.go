@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -31,7 +32,7 @@ func TestDangerousText(t *testing.T) {
 
 func TestNormalFprintln(t *testing.T) {
 	var buf bytes.Buffer
-	NormalFprintln(&buf, "J: no tasks")
+	_, _ = NormalFprintln(&buf, "J: no tasks")
 	if stripped := ansi.Strip(buf.String()); stripped != "J: no tasks\n" {
 		t.Fatalf("ansi.Strip(NormalFprintln output) = %q, want %q", stripped, "J: no tasks\n")
 	}
@@ -39,8 +40,8 @@ func TestNormalFprintln(t *testing.T) {
 
 func TestNormalFprintAndFprintf(t *testing.T) {
 	var buf bytes.Buffer
-	NormalFprint(&buf, "J: ", "hello")
-	NormalFprintf(&buf, " %s", "world")
+	_, _ = NormalFprint(&buf, "J: ", "hello")
+	_, _ = NormalFprintf(&buf, " %s", "world")
 	if stripped := ansi.Strip(buf.String()); stripped != "J: hello world" {
 		t.Fatalf("ansi.Strip(output) = %q", stripped)
 	}
@@ -48,7 +49,7 @@ func TestNormalFprintAndFprintf(t *testing.T) {
 
 func TestDangerousFprintln(t *testing.T) {
 	var buf bytes.Buffer
-	DangerousFprintln(&buf, "J: tasks put: nope")
+	_, _ = DangerousFprintln(&buf, "J: tasks put: nope")
 	if stripped := ansi.Strip(buf.String()); stripped != "J: tasks put: nope\n" {
 		t.Fatalf("ansi.Strip(DangerousFprintln output) = %q, want %q",
 			stripped, "J: tasks put: nope\n")
@@ -71,8 +72,8 @@ func TestDangerousDialogBox(t *testing.T) {
 
 func TestDangerousFprintAndFprintf(t *testing.T) {
 	var buf bytes.Buffer
-	DangerousFprint(&buf, "J: ", "warning")
-	DangerousFprintf(&buf, ": %s", "boom")
+	_, _ = DangerousFprint(&buf, "J: ", "warning")
+	_, _ = DangerousFprintf(&buf, ": %s", "boom")
 	if stripped := ansi.Strip(buf.String()); stripped != "J: warning: boom" {
 		t.Fatalf("ansi.Strip(output) = %q", stripped)
 	}
@@ -162,14 +163,7 @@ func TestDisplayLogPath_GetwdError(t *testing.T) {
 	if err := os.Mkdir(child, 0o755); err != nil {
 		t.Fatalf("Mkdir: %v", err)
 	}
-	original, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(original) })
-	if err := os.Chdir(child); err != nil {
-		t.Fatalf("Chdir(child): %v", err)
-	}
+	t.Chdir(child)
 	t.Setenv("PWD", "")
 	if err := os.RemoveAll(parent); err != nil {
 		t.Skipf("RemoveAll(parent) failed; cannot drive Getwd error: %v", err)
@@ -276,10 +270,8 @@ func hasBoldSGR(s string) bool {
 		if end < 0 {
 			return false
 		}
-		for _, param := range strings.Split(s[:end], ";") {
-			if param == "1" {
-				return true
-			}
+		if slices.Contains(strings.Split(s[:end], ";"), "1") {
+			return true
 		}
 		s = s[end+1:]
 	}

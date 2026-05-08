@@ -19,12 +19,12 @@ const linearAPIKey = "lin_api_TESTTOKEN"
 func TestLinearSettings_SetAPIKeyMasked(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "linear.api_key="+linearAPIKey,
 	); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -45,12 +45,12 @@ func TestLinearSettings_SetAPIKeyMasked(t *testing.T) {
 func TestLinearSettings_SetAPIKeyKebabForm(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "linear.api-key=lin_api_KEBAB",
 	); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -67,12 +67,12 @@ func TestLinearSettings_SetAPIKeyKebabForm(t *testing.T) {
 func TestLinearSettings_SetProjectRoundtrip(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "linear.project=my-default-project",
 	); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -89,12 +89,12 @@ func TestLinearSettings_SetProjectRoundtrip(t *testing.T) {
 func TestLinearSettings_ResetAPIKey(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "linear.api_key="+linearAPIKey, "linear.project=p-1",
 	); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	stdout, _, err := testutil.RunCobra(settings.New(),
+	stdout, _, err := testutil.RunCobra(t, settings.New(),
 		"reset", "linear.api_key",
 	)
 	if err != nil {
@@ -103,7 +103,7 @@ func TestLinearSettings_ResetAPIKey(t *testing.T) {
 	if !strings.Contains(stdout, "unset linear.api_key\n") {
 		t.Fatalf("stdout = %q, want unset linear.api_key echo", stdout)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

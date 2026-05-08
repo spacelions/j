@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -25,7 +24,7 @@ func TestRunResumePlan_NoActiveSession(t *testing.T) {
 	})
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	if err := RunResumePlan(context.Background(), ResumePlanOptions{
+	if err := RunResumePlan(t.Context(), ResumePlanOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -48,7 +47,7 @@ func TestRunResumePlan_NoTasksAtAll(t *testing.T) {
 	setupContinueEnv(t)
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	if err := RunResumePlan(context.Background(), ResumePlanOptions{
+	if err := RunResumePlan(t.Context(), ResumePlanOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -73,7 +72,7 @@ func TestRunResumePlan_PickerOnlyShowsRowsWithSession(t *testing.T) {
 		task.PlanResumeSession = ""
 	})
 	ui := &fakeUI{} // empty pickReturn -> picker abort
-	if err := RunResumePlan(context.Background(), ResumePlanOptions{
+	if err := RunResumePlan(t.Context(), ResumePlanOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -102,7 +101,7 @@ func TestRunResumePlan_PickerAbort(t *testing.T) {
 		task.PlanResumeSession = "active-cursor"
 	})
 	ui := &fakeUI{}
-	if err := RunResumePlan(context.Background(), ResumePlanOptions{
+	if err := RunResumePlan(t.Context(), ResumePlanOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -130,7 +129,7 @@ func TestRunResumePlan_HappyPath(t *testing.T) {
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}
 	var stdout bytes.Buffer
-	if err := RunResumePlan(context.Background(), ResumePlanOptions{
+	if err := RunResumePlan(t.Context(), ResumePlanOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  &stdout,
 		Stderr:  io.Discard,
@@ -167,7 +166,7 @@ func TestRunResumePlan_HappyPath_PlanPendingApproval(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}
-	if err := RunResumePlan(context.Background(), ResumePlanOptions{
+	if err := RunResumePlan(t.Context(), ResumePlanOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -195,7 +194,7 @@ func TestRunResumePlan_SpawnFails(t *testing.T) {
 		task.PlanResumeSession = "active-cursor"
 	})
 	ui := &fakeUI{pickReturn: id}
-	err := RunResumePlan(context.Background(), ResumePlanOptions{
+	err := RunResumePlan(t.Context(), ResumePlanOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -217,7 +216,7 @@ func TestRunResumePlan_PickerErrorPropagates(t *testing.T) {
 	})
 	boom := errInjected("picker boom")
 	ui := &fakeUI{pickErr: boom}
-	err := RunResumePlan(context.Background(), ResumePlanOptions{
+	err := RunResumePlan(t.Context(), ResumePlanOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -247,7 +246,7 @@ func TestRunResumePlan_ListDecodeError(t *testing.T) {
 		t.Fatal(err)
 	}
 	ui := &fakeUI{}
-	if err := RunResumePlan(context.Background(), ResumePlanOptions{
+	if err := RunResumePlan(t.Context(), ResumePlanOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -267,7 +266,7 @@ func TestRunResumePlan_ListDecodeError(t *testing.T) {
 // not panic and returns nil.
 func TestRunResumePlan_AppliesDefaults(t *testing.T) {
 	setupContinueEnv(t)
-	if err := RunResumePlan(context.Background(), ResumePlanOptions{
+	if err := RunResumePlan(t.Context(), ResumePlanOptions{
 		Agents: []codingagents.Agent{newContinueAgent()},
 	}); err != nil {
 		t.Fatalf("RunResumePlan: %v", err)
@@ -296,7 +295,7 @@ func TestNewResumePlanCmd_RunE_EmptyStore(t *testing.T) {
 	t.Cleanup(viper.Reset)
 	t.Chdir(t.TempDir())
 	cmd := newResumePlanCmd()
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(io.Discard)
@@ -318,7 +317,7 @@ func TestNewResumePlanCmd_PreRunE_DefaultedAgents(t *testing.T) {
 	setupContinueEnv(t)
 	installCursorAgentLoginStub(t)
 	cmd := newResumePlanCmd()
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetIn(strings.NewReader(""))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -338,7 +337,7 @@ func TestRunResumePlan_HappyPath_Completed(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}
-	if err := RunResumePlan(context.Background(), ResumePlanOptions{
+	if err := RunResumePlan(t.Context(), ResumePlanOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -368,7 +367,7 @@ func TestRunResumePlan_HappyPath_Failed(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}
-	if err := RunResumePlan(context.Background(), ResumePlanOptions{
+	if err := RunResumePlan(t.Context(), ResumePlanOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,

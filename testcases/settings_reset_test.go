@@ -15,22 +15,22 @@ import (
 func TestSettingsReset_Key(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "plan.tool=cursor",
 	); err != nil {
 		t.Fatalf("set tool: %v", err)
 	}
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "plan.model=sonnet-4",
 	); err != nil {
 		t.Fatalf("set model: %v", err)
 	}
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"reset", "plan.tool",
 	); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -50,12 +50,12 @@ func TestSettingsReset_Key(t *testing.T) {
 func TestSettingsReset_Bucket(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "planner.tool=cursor", "planner.model=opus",
 	); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	stdout, _, err := testutil.RunCobra(settings.New(), "reset", "planner")
+	stdout, _, err := testutil.RunCobra(t, settings.New(), "reset", "planner")
 	if err != nil {
 		t.Fatalf("reset: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestSettingsReset_Bucket(t *testing.T) {
 	if strings.Count(stdout, "unset planner") != 1 {
 		t.Fatalf("expected exactly one unset line, got %q", stdout)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestSettingsReset_Bucket(t *testing.T) {
 		t.Fatalf("listing = %q, want empty [planner] between [project] and [worker]", listing)
 	}
 	// Re-running is a no-op success.
-	stdout, _, err = testutil.RunCobra(settings.New(), "reset", "planner")
+	stdout, _, err = testutil.RunCobra(t, settings.New(), "reset", "planner")
 	if err != nil {
 		t.Fatalf("reset (second): %v", err)
 	}
@@ -90,14 +90,14 @@ func TestSettingsReset_Bucket(t *testing.T) {
 func TestSettingsReset_BucketMissingNoop(t *testing.T) {
 	freshInit(t)
 
-	stdout, _, err := testutil.RunCobra(settings.New(), "reset", "planner")
+	stdout, _, err := testutil.RunCobra(t, settings.New(), "reset", "planner")
 	if err != nil {
 		t.Fatalf("reset planner: %v", err)
 	}
 	if !strings.Contains(stdout, "unset planner\n") {
 		t.Fatalf("stdout = %q, want `unset planner`", stdout)
 	}
-	stdout, _, err = testutil.RunCobra(settings.New(), "reset", "bucket.ghost")
+	stdout, _, err = testutil.RunCobra(t, settings.New(), "reset", "bucket.ghost")
 	if err != nil {
 		t.Fatalf("reset bucket.ghost: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestSettingsReset_BucketMissingNoop(t *testing.T) {
 func TestSettingsReset_MultiArgs(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set",
 		"planner.tool=cursor", "planner.model=opus",
 		"worker.model=sonnet",
@@ -121,7 +121,7 @@ func TestSettingsReset_MultiArgs(t *testing.T) {
 	); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	stdout, _, err := testutil.RunCobra(settings.New(),
+	stdout, _, err := testutil.RunCobra(t, settings.New(),
 		"reset", "planner", "worker.model", "verifier",
 	)
 	if err != nil {
@@ -140,10 +140,10 @@ func TestSettingsReset_MultiArgs(t *testing.T) {
 	pp := strings.Index(stdout, "unset planner")
 	pw := strings.Index(stdout, "unset worker.model")
 	pv := strings.Index(stdout, "unset verifier")
-	if !(pp < pw && pw < pv) {
+	if pp >= pw || pw >= pv {
 		t.Fatalf("echo lines out of order: %q", stdout)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -162,12 +162,12 @@ func TestSettingsReset_MultiArgs(t *testing.T) {
 func TestSettingsReset_CommaNotSeparator(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "planner.tool=cursor", "worker.model=sonnet",
 	); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	stdout, _, err := testutil.RunCobra(settings.New(),
+	stdout, _, err := testutil.RunCobra(t, settings.New(),
 		"reset", "planner,worker.model",
 	)
 	if err != nil {
@@ -176,7 +176,7 @@ func TestSettingsReset_CommaNotSeparator(t *testing.T) {
 	if !strings.Contains(stdout, "unset planner,worker.model\n") {
 		t.Fatalf("stdout = %q, want literal target echo", stdout)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -195,12 +195,12 @@ func TestSettingsReset_CommaNotSeparator(t *testing.T) {
 func TestSettingsReset_ParseFailFast(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "worker.model=sonnet", "planner.tool=cursor",
 	); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	_, _, err := testutil.RunCobra(settings.New(),
+	_, _, err := testutil.RunCobra(t, settings.New(),
 		"reset", "worker.model", ".key",
 	)
 	if err == nil {
@@ -209,7 +209,7 @@ func TestSettingsReset_ParseFailFast(t *testing.T) {
 	if !strings.Contains(err.Error(), `bucket name must be non-empty in ".key"`) {
 		t.Fatalf("err = %v, want bucket-non-empty diagnostic", err)
 	}
-	listing, _, lerr := testutil.RunCobra(settings.New())
+	listing, _, lerr := testutil.RunCobra(t, settings.New())
 	if lerr != nil {
 		t.Fatalf("list: %v", lerr)
 	}
@@ -229,32 +229,32 @@ func TestSettingsReset_ParseFailFast(t *testing.T) {
 func TestSettingsReset_RepickPath(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "planner.tool=cursor", "planner.model=sonnet-4",
 	); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("first list: %v", err)
 	}
 	if !strings.Contains(listing, "[planner]\n  model = sonnet-4\n  tool = cursor\n") {
 		t.Fatalf("setup state wrong: %q", listing)
 	}
-	if _, _, err := testutil.RunCobra(settings.New(), "reset", "planner.tool"); err != nil {
+	if _, _, err := testutil.RunCobra(t, settings.New(), "reset", "planner.tool"); err != nil {
 		t.Fatalf("reset tool: %v", err)
 	}
-	listing, _, err = testutil.RunCobra(settings.New())
+	listing, _, err = testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("second list: %v", err)
 	}
 	if !strings.Contains(listing, "[planner]\n  model = sonnet-4\n") || strings.Contains(listing, "tool = cursor") {
 		t.Fatalf("intermediate state wrong: %q", listing)
 	}
-	if _, _, err := testutil.RunCobra(settings.New(), "reset", "planner.model"); err != nil {
+	if _, _, err := testutil.RunCobra(t, settings.New(), "reset", "planner.model"); err != nil {
 		t.Fatalf("reset model: %v", err)
 	}
-	listing, _, err = testutil.RunCobra(settings.New())
+	listing, _, err = testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("final list: %v", err)
 	}

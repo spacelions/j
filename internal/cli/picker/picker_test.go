@@ -1,7 +1,6 @@
 package picker
 
 import (
-	"context"
 	"io"
 	"strings"
 	"testing"
@@ -16,7 +15,7 @@ func TestNew(t *testing.T) {
 
 func TestChoose_EmptyOptions(t *testing.T) {
 	p := New(strings.NewReader(""), io.Discard)
-	_, err := p.choose(context.Background(), "Select model", nil)
+	_, err := p.choose(t.Context(), "Select model", nil)
 	if err == nil || !strings.Contains(err.Error(), "no options") {
 		t.Fatalf("err = %v, want 'no options'", err)
 	}
@@ -24,7 +23,7 @@ func TestChoose_EmptyOptions(t *testing.T) {
 
 func TestSelectTool_EmptyOptions(t *testing.T) {
 	p := New(strings.NewReader(""), io.Discard)
-	_, err := p.SelectTool(context.Background(), nil)
+	_, err := p.SelectTool(t.Context(), nil)
 	if err == nil || !strings.Contains(err.Error(), "no options") {
 		t.Fatalf("err = %v", err)
 	}
@@ -32,7 +31,7 @@ func TestSelectTool_EmptyOptions(t *testing.T) {
 
 func TestSelectModel_EmptyOptions(t *testing.T) {
 	p := New(strings.NewReader(""), io.Discard)
-	_, err := p.SelectModel(context.Background(), nil)
+	_, err := p.SelectModel(t.Context(), nil)
 	if err == nil || !strings.Contains(err.Error(), "no options") {
 		t.Fatalf("err = %v", err)
 	}
@@ -40,7 +39,7 @@ func TestSelectModel_EmptyOptions(t *testing.T) {
 
 func TestSelectSource_EmptyAllowed(t *testing.T) {
 	p := New(strings.NewReader(""), io.Discard)
-	_, err := p.SelectSource(context.Background(), nil)
+	_, err := p.SelectSource(t.Context(), nil)
 	if err == nil || !strings.Contains(err.Error(), "no sources") {
 		t.Fatalf("err = %v, want 'no sources'", err)
 	}
@@ -49,7 +48,7 @@ func TestSelectSource_EmptyAllowed(t *testing.T) {
 func TestPickMarkdownInCwd_NoFiles(t *testing.T) {
 	t.Chdir(t.TempDir())
 	p := New(strings.NewReader(""), io.Discard)
-	_, err := p.PickMarkdownInCwd(context.Background())
+	_, err := p.PickMarkdownInCwd(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "no markdown files") {
 		t.Fatalf("err = %v, want 'no markdown files'", err)
 	}

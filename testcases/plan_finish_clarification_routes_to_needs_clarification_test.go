@@ -1,7 +1,6 @@
 package testcases_test
 
 import (
-	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -22,7 +21,7 @@ func TestPlanFinish_ClarificationPresent_LandsNeedsClarification(
 ) {
 	t.Chdir(t.TempDir())
 	mustRead := ""
-	if err := initcmd.Run(context.Background(), initcmd.Options{
+	if err := initcmd.Run(t.Context(), initcmd.Options{
 		Yes: true, MustRead: &mustRead,
 		Stdin: nil, Stdout: io.Discard, Stderr: io.Discard,
 	}); err != nil {
@@ -72,7 +71,7 @@ func TestPlanFinish_ClarificationPresent_LandsNeedsClarification(
 func TestPlanFinish_ClarificationAbsent_LandsPlanDone(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustRead := ""
-	if err := initcmd.Run(context.Background(), initcmd.Options{
+	if err := initcmd.Run(t.Context(), initcmd.Options{
 		Yes: true, MustRead: &mustRead,
 		Stdin: nil, Stdout: io.Discard, Stderr: io.Discard,
 	}); err != nil {

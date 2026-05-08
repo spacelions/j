@@ -171,7 +171,7 @@ func ensureMustRead(ctx context.Context, ui UI) error {
 	if err != nil {
 		return err
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	_, set, err := s.Get(store.BucketProject, resolver.KeyMustRead)
 	if err != nil {
 		return fmt.Errorf("preflight: load must_read: %w", err)

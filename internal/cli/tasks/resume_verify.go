@@ -71,10 +71,10 @@ func RunResumeVerify(
 		return err
 	}
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
-		"tasks", "orchestrate",
-		"--id", taskID,
-		"--phase=verify-only",
-		"--interactive=true",
+		cmdTasks, cmdOrchestrate,
+		flagID, taskID,
+		flagPhaseVerifyOnly,
+		flagInteractiveTrue,
 	})
 }
 

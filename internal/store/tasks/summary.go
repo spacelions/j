@@ -17,7 +17,7 @@ const summaryMaxRunes = 80
 // an empty summary so callers can decide whether to substitute a
 // placeholder.
 func SummarizeMarkdown(body string) string {
-	for _, raw := range strings.Split(body, "\n") {
+	for raw := range strings.SplitSeq(body, "\n") {
 		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue
@@ -31,12 +31,12 @@ func SummarizeMarkdown(body string) string {
 // truncateRunes returns s if it is at most max runes long, otherwise
 // the first max runes. Operating on runes (not bytes) keeps multibyte
 // UTF-8 input from being cut mid-codepoint.
-func truncateRunes(s string, max int) string {
+func truncateRunes(s string, limit int) string {
 	runes := []rune(s)
-	if len(runes) <= max {
+	if len(runes) <= limit {
 		return s
 	}
-	return string(runes[:max])
+	return string(runes[:limit])
 }
 
 // Summary picks a one-line summary in this order:

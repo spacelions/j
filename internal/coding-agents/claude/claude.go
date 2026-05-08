@@ -20,11 +20,20 @@ import (
 // Binary is the claude executable name.
 const Binary = "claude"
 
+const (
+	argPrint                      = "--print"
+	argOutputFormat               = "--output-format"
+	argOutputFormatText           = "text"
+	argDangerouslySkipPermissions = "--dangerously-skip-permissions"
+	argModel                      = "--model"
+)
+
 // defaultModels is the picker list shown for `j plan / j work / j verify`.
 // Claude has no `--list-models` equivalent so we surface the stable set
 // of latest-model aliases the CLI accepts via `--model`. Users who want
 // to pin a specific full id (e.g. `claude-opus-4-7`) can record it via
 // `j settings set model <id>`.
+//nolint:goconst // "sonnet" count inflated by test files; 1 production use
 var defaultModels = []string{"opus", "sonnet", "haiku"}
 
 // Agent is a Claude-backed worker. It is stateless: every method shells
@@ -32,6 +41,8 @@ var defaultModels = []string{"opus", "sonnet", "haiku"}
 // package-level helpers. Tests drive it with a stub binary on PATH
 // rather than an injected runner (see AGENTS.md "no test seams" rule).
 type Agent struct{}
+
+var _ codingagents.Agent = (*Agent)(nil)
 
 // New returns a Claude agent that shells out to the claude CLI.
 func New() *Agent { return &Agent{} }
@@ -121,7 +132,7 @@ func (a *Agent) Plan(
 		args := append(
 			sessionArgs(req.ResumeChatID, req.Resume),
 			"--permission-mode", "plan",
-			"--model", req.Model, prompt,
+			argModel, req.Model, prompt,
 		)
 		if err := run.RunIn(
 			ctx, workspace, Binary, args...,
@@ -151,9 +162,9 @@ func (a *Agent) Plan(
 // `--` line in the user's spec body is not mis-parsed as a flag.
 func headlessArgs(model, prompt string) []string {
 	return []string{
-		"--print", "--output-format", "text",
-		"--dangerously-skip-permissions",
-		"--model", model, "--", prompt,
+		argPrint, argOutputFormat, argOutputFormatText,
+		argDangerouslySkipPermissions,
+		argModel, model, "--", prompt,
 	}
 }
 
@@ -176,7 +187,7 @@ func (a *Agent) Work(
 	if req.Interactive {
 		args := append(
 			sessionArgs(req.ResumeChatID, req.Resume),
-			"--model", req.Model, prompt,
+			argModel, req.Model, prompt,
 		)
 		if err := run.RunIn(
 			ctx, workspace, Binary, args...,
@@ -214,7 +225,7 @@ func (a *Agent) Verify(
 	if req.Interactive {
 		args := append(
 			sessionArgs(req.ResumeChatID, req.Resume),
-			"--model", req.Model, prompt,
+			argModel, req.Model, prompt,
 		)
 		if err := run.RunIn(
 			ctx, workspace, Binary, args...,
@@ -251,4 +262,3 @@ func sessionArgs(id string, resume bool) []string {
 	}
 	return []string{"--session-id", id}
 }
-

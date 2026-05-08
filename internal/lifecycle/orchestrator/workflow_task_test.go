@@ -19,7 +19,7 @@ import (
 
 // TestRunForTask_RequiresTaskID pins the empty-id guard.
 func TestRunForTask_RequiresTaskID(t *testing.T) {
-	err := RunForTask(context.Background(), store.TaskConfig{}, "", []codingagents.Agent{stubChain("scripted")}, io.Discard, PhaseOverrides{})
+	err := RunForTask(t.Context(), store.TaskConfig{}, "", []codingagents.Agent{stubChain("scripted")}, io.Discard, PhaseOverrides{})
 	if err == nil || !strings.Contains(err.Error(), "task id required") {
 		t.Fatalf("err = %v", err)
 	}
@@ -27,7 +27,7 @@ func TestRunForTask_RequiresTaskID(t *testing.T) {
 
 // TestRunForTask_RequiresAgents pins the no-agents guard.
 func TestRunForTask_RequiresAgents(t *testing.T) {
-	err := RunForTask(context.Background(), store.TaskConfig{}, "t1", nil, io.Discard, PhaseOverrides{})
+	err := RunForTask(t.Context(), store.TaskConfig{}, "t1", nil, io.Discard, PhaseOverrides{})
 	if err == nil || !strings.Contains(err.Error(), "no coding agents") {
 		t.Fatalf("err = %v", err)
 	}
@@ -43,7 +43,7 @@ func TestRunForTask_PassFlow(t *testing.T) {
 	stub := stubChain("scripted")
 	stub.verdict = "VERDICT: PASS"
 
-	if err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, PhaseOverrides{}); err != nil {
+	if err := RunForTask(t.Context(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, PhaseOverrides{}); err != nil {
 		t.Fatalf("RunForTask: %v", err)
 	}
 	row := readChainTaskRow(t, id)
@@ -66,7 +66,7 @@ func TestRunForTask_FailFlow(t *testing.T) {
 	stub := stubChain("scripted")
 	stub.verdict = "VERDICT: FAIL"
 
-	if err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, PhaseOverrides{}); err != nil {
+	if err := RunForTask(t.Context(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, PhaseOverrides{}); err != nil {
 		t.Fatalf("RunForTask: %v", err)
 	}
 	row := readChainTaskRow(t, id)
@@ -105,7 +105,7 @@ func TestRunForTask_WorkClarificationStopsBeforeVerify(t *testing.T) {
 	stub.workClarification = "need answer X\n"
 	stub.verdict = "VERDICT: PASS"
 
-	if err := RunForTask(context.Background(),
+	if err := RunForTask(t.Context(),
 		store.TaskConfig{MaxIterations: 1}, id,
 		[]codingagents.Agent{stub}, io.Discard,
 		PhaseOverrides{}); err != nil {
@@ -137,7 +137,7 @@ func TestRunForTaskFromWork_ClarificationStopsBeforeVerify(
 	stub.workClarification = "halt at work\n"
 	stub.verdict = "VERDICT: PASS"
 
-	if err := RunForTaskFromWork(context.Background(),
+	if err := RunForTaskFromWork(t.Context(),
 		store.TaskConfig{MaxIterations: 1}, id,
 		[]codingagents.Agent{stub}, io.Discard,
 		PhaseOverrides{}); err != nil {
@@ -206,7 +206,7 @@ func TestRunForTaskFromWork_RunsWorkerVerifier(t *testing.T) {
 	stub := stubChain("scripted")
 	stub.verdict = "VERDICT: PASS"
 
-	if err := RunForTaskFromWork(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, PhaseOverrides{}); err != nil {
+	if err := RunForTaskFromWork(t.Context(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, PhaseOverrides{}); err != nil {
 		t.Fatalf("RunForTaskFromWork: %v", err)
 	}
 	if stub.planCalls.Load() != 0 {
@@ -227,7 +227,7 @@ func TestRunForTaskWithGate_PlanOnly(t *testing.T) {
 	id := seedChainTask(t, "scripted")
 	stub := stubChain("scripted")
 
-	if err := RunForTaskWithGate(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, true, PhaseOverrides{}); err != nil {
+	if err := RunForTaskWithGate(t.Context(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, true, PhaseOverrides{}); err != nil {
 		t.Fatalf("RunForTaskWithGate: %v", err)
 	}
 	row := readChainTaskRow(t, id)
@@ -250,7 +250,7 @@ func TestRunForTask_PlanFailsStopsChain(t *testing.T) {
 	stub := stubChain("scripted")
 	stub.planErr = errors.New("planning boom")
 
-	err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, PhaseOverrides{})
+	err := RunForTask(t.Context(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, PhaseOverrides{})
 	if err == nil || !strings.Contains(err.Error(), "planning boom") {
 		t.Fatalf("err = %v, want planning boom propagation", err)
 	}
@@ -271,7 +271,7 @@ func TestRunForTask_NilStderrDefaultsDiscard(t *testing.T) {
 	id := seedChainTask(t, "scripted")
 	stub := stubChain("scripted")
 	stub.verdict = "VERDICT: PASS"
-	if err := RunForTask(context.Background(), store.TaskConfig{}, id, []codingagents.Agent{stub}, nil, PhaseOverrides{}); err != nil {
+	if err := RunForTask(t.Context(), store.TaskConfig{}, id, []codingagents.Agent{stub}, nil, PhaseOverrides{}); err != nil {
 		t.Fatalf("RunForTask: %v", err)
 	}
 }
@@ -287,7 +287,7 @@ func TestRunForTask_StderrReceivesPhaseOutput(t *testing.T) {
 	stub.verdict = "VERDICT: PASS"
 
 	var stderr bytes.Buffer
-	if err := RunForTask(context.Background(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, &stderr, PhaseOverrides{}); err != nil {
+	if err := RunForTask(t.Context(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, &stderr, PhaseOverrides{}); err != nil {
 		t.Fatalf("RunForTask: %v", err)
 	}
 	// The exact line is owned by plan / work / verify so we don't
@@ -435,10 +435,10 @@ func seedChainTask(t *testing.T, tool string) string {
 	}
 	seedPlanApprovalDisabled(t)
 	writeChainTaskRow(t, tasks.Task{
-		ID:          id,
-		Status:      tasks.StatusPlanning,
-		PlanTool:    tool,
-		Summary:     "task",
+		ID:       id,
+		Status:   tasks.StatusPlanning,
+		PlanTool: tool,
+		Summary:  "task",
 	})
 	return id
 }

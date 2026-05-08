@@ -1,7 +1,6 @@
 package linear
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -53,7 +52,7 @@ func TestListTeamWorkflowStates_OK(t *testing.T) {
 		})
 	c := NewClient("k", WithEndpoint(srv.URL))
 	got, err := c.ListTeamWorkflowStates(
-		context.Background(), "node-1")
+		t.Context(), "node-1")
 	if err != nil {
 		t.Fatalf("ListTeamWorkflowStates: %v", err)
 	}
@@ -71,7 +70,7 @@ func TestListTeamWorkflowStates_NotFound(t *testing.T) {
 		})
 	c := NewClient("k", WithEndpoint(srv.URL))
 	_, err := c.ListTeamWorkflowStates(
-		context.Background(), "node-x")
+		t.Context(), "node-x")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
@@ -87,7 +86,7 @@ func TestListTeamWorkflowStates_GraphQLError(t *testing.T) {
 		})
 	c := NewClient("k", WithEndpoint(srv.URL))
 	_, err := c.ListTeamWorkflowStates(
-		context.Background(), "node-x")
+		t.Context(), "node-x")
 	if err == nil || !strings.Contains(err.Error(), "scope") {
 		t.Fatalf("err = %v", err)
 	}
@@ -100,9 +99,8 @@ func TestListTeamWorkflowStates_Unauthorized(t *testing.T) {
 		})
 	c := NewClient("k", WithEndpoint(srv.URL))
 	_, err := c.ListTeamWorkflowStates(
-		context.Background(), "id")
+		t.Context(), "id")
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("err = %v, want ErrUnauthorized", err)
 	}
 }
-

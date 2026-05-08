@@ -19,8 +19,8 @@ import (
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 
-	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/agents/prompts"
+	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 )
@@ -172,7 +172,7 @@ func verdictEvent(
 			}},
 		},
 	}
-	if verdict == "PASS" {
+	if verdict == resolver.VerdictPass {
 		ev.Actions.Escalate = true
 	}
 	return ev

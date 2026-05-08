@@ -298,6 +298,8 @@ func TestTransitionTable_TerminalStates(t *testing.T) {
 				t.Errorf("%s state has non-restart/resume edge: %q",
 					tr.From, tr.Event)
 			}
+		default:
+			// non-terminal states may have any edge type
 		}
 	}
 }

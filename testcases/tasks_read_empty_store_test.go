@@ -16,7 +16,7 @@ func TestTasksShowRequirements_EmptyStore(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	stdout, _, err := testutil.RunCobra(
+	stdout, _, err := testutil.RunCobra(t,
 		tasks.New(), "show", "requirements",
 	)
 	if err != nil {
@@ -33,7 +33,7 @@ func TestTasksShowPlan_EmptyStore(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	stdout, _, err := testutil.RunCobra(
+	stdout, _, err := testutil.RunCobra(t,
 		tasks.New(), "show", "plan",
 	)
 	if err != nil {

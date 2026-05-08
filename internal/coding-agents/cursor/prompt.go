@@ -1,8 +1,8 @@
 package cursor
 
 import (
-	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/agents/prompts"
+	codingagents "github.com/spacelions/j/internal/coding-agents"
 )
 
 // buildPlanPrompt picks the right planner prompt for req. On a fresh

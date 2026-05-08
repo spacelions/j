@@ -16,7 +16,7 @@ func TestTasksShow_UnknownID(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	stdout, _, err := testutil.RunCobra(
+	stdout, _, err := testutil.RunCobra(t,
 		tasks.New(), "show", "--from-task", "ghost-id",
 	)
 	if err != nil {

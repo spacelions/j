@@ -111,8 +111,8 @@ func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
 
 // IterationBegin records the iteration cap so a later FAIL Verdict
 // can render the per-iteration Linear comment with an "N/M" header.
-func (lc *VerifyLifecycle) IterationBegin(iteration, max int) {
-	lc.maxIterations = max
+func (lc *VerifyLifecycle) IterationBegin(iteration, iterMax int) {
+	lc.maxIterations = iterMax
 }
 
 // Verdict mirrors a per-iteration FAIL to the linked Linear issue

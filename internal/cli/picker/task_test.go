@@ -1,7 +1,6 @@
 package picker
 
 import (
-	"context"
 	"io"
 	"strings"
 	"testing"
@@ -63,7 +62,7 @@ func TestFormatTaskLabels_EmptyInput(t *testing.T) {
 
 func TestPickTask_EmptyTasks(t *testing.T) {
 	p := New(strings.NewReader(""), io.Discard)
-	id, ok, err := p.PickTask(context.Background(), "Select a task", nil)
+	id, ok, err := p.PickTask(t.Context(), "Select a task", nil)
 	if err != nil {
 		t.Fatalf("err = %v, want nil", err)
 	}

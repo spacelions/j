@@ -52,7 +52,7 @@ func TestAllRolesOverridden_ContractsSurvive(t *testing.T) {
 		{"worker", workerPath},
 		{"verifier", verifierPath},
 	} {
-		if _, _, err := testutil.RunCobra(settings.New(),
+		if _, _, err := testutil.RunCobra(t, settings.New(),
 			"set", kv.bucket+".prompt="+kv.path,
 		); err != nil {
 			t.Fatalf("set %s: %v", kv.bucket, err)
@@ -144,4 +144,3 @@ func TestAllRolesOverridden_ContractsSurvive(t *testing.T) {
 			verifierOut)
 	}
 }
-

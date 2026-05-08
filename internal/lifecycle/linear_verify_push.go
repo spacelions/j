@@ -56,10 +56,10 @@ func linearVerifyPushHook(tr tasks.Transition, task tasks.Task) {
 // FAIL verdict; iteration is 0-based and is rendered as 1-based in
 // the comment header for human readability.
 func PushVerifyIterationFinding(
-	stderr io.Writer, task tasks.Task, iteration, max int,
+	stderr io.Writer, task tasks.Task, iteration, iterMax int,
 ) {
 	header := fmt.Sprintf(
-		"Verification iteration %d/%d failed", iteration+1, max,
+		"Verification iteration %d/%d failed", iteration+1, iterMax,
 	)
 	pushFindings(stderr, task, header)
 }

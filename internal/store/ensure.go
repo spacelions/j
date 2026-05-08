@@ -128,7 +128,7 @@ func ensureGitignoreEntry(jDir string) error {
 		}
 		return fmt.Errorf("store: read %q: %w", gitignorePath, err)
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == dirName || trimmed == dirName+"/" {
 			return nil
@@ -138,6 +138,7 @@ func ensureGitignoreEntry(jDir string) error {
 	if len(data) > 0 && data[len(data)-1] != '\n' {
 		prefix = "\n"
 	}
+	//nolint:gocritic // intentional new slice; data preserved to check last byte
 	updated := append(data, []byte(prefix+dirName+"\n")...)
 	// os.WriteFile preserves existing perms on update.
 	if err := os.WriteFile(gitignorePath, updated, 0o600); err != nil {

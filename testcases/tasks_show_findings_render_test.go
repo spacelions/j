@@ -48,7 +48,7 @@ func TestTasksShowFindings_RendersFile(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	stdout, _, err := testutil.RunCobra(
+	stdout, _, err := testutil.RunCobra(t,
 		clitasks.New(), "show", "findings",
 		"--from-task", "id-find",
 	)

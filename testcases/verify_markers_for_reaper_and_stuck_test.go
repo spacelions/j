@@ -65,7 +65,6 @@ func TestVerify_MarkersFireForReaperAndStuckTransitions(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
 			logPath := filepath.Join(t.TempDir(), "agent.log")
 			task := tasks.Task{ID: "x", AgentLogPath: logPath}

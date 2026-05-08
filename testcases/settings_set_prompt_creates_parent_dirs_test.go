@@ -25,7 +25,7 @@ func TestSettingsSet_PromptCreatesParentDirs(t *testing.T) {
 		t.Fatalf("precondition: parent should not exist yet")
 	}
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "worker.prompt="+nested,
 	); err != nil {
 		t.Fatalf("set: %v", err)

@@ -5,7 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/spacelions/j/internal/store")
+	"github.com/spacelions/j/internal/store"
+)
 
 // crockfordBase32 is the Crockford base32 alphabet used by ULID
 // (uppercase, with I/L/O/U excluded). It is duplicated here on

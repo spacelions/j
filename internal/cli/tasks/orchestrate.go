@@ -128,7 +128,7 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 // error fires only when the caller deliberately set the override.
 var errPhaseConflictsWithApproval = errors.New(
 	"tasks: --phase=from-work / verify-only is incompatible with " +
-		"--plan-requires-approval=true")
+		flagPlanRequiresApprovalTrue)
 
 // emitSessionStart writes one `session_start` marker into the agent
 // log at the very top of orchestrate so a tailer can pin the task id,
@@ -174,7 +174,7 @@ func (o OrchestrateOptions) withDefaults() OrchestrateOptions {
 // (both with env bindings for completeness).
 func newOrchestrateCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "orchestrate",
+		Use:    cmdOrchestrate,
 		Short:  "Drive planner → worker → verifier for a seeded task (internal)",
 		Hidden: true,
 		Long: "Internal command invoked by the detached child that " +
@@ -194,7 +194,7 @@ func newOrchestrateCmd() *cobra.Command {
 				return err
 			}
 			var interactive bool
-			if cmd.Flags().Changed("interactive") ||
+			if cmd.Flags().Changed(flagKeyInteractive) ||
 				envSet("TASKS_ORCHESTRATE_INTERACTIVE") {
 				interactive = viper.GetBool("tasks.orchestrate.interactive")
 			}
@@ -219,9 +219,9 @@ func newOrchestrateCmd() *cobra.Command {
 		"Resolved project.plan_requires_approval value")
 	cmd.Flags().String("phase", string(orchestrator.RunPhaseFull),
 		"Which slice of the chain to run: full | from-work | verify-only")
-	cmd.Flags().String("tool", "", "Planner tool override (cursor|claude)")
-	cmd.Flags().String("model", "", "Planner model override")
-	cmd.Flags().Bool("interactive", false,
+	cmd.Flags().String(flagKeyTool, "", "Planner tool override (cursor|claude)")
+	cmd.Flags().String(flagKeyModel, "", "Planner model override")
+	cmd.Flags().Bool(flagKeyInteractive, false,
 		"Run the active phase (planner on full, worker on from-work) in TUI mode")
 	cmd.Flags().Bool("yes", false,
 		"Skip status-mismatch confirmation in the planner")
@@ -233,12 +233,13 @@ func newOrchestrateCmd() *cobra.Command {
 		"TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL")
 	_ = viper.BindPFlag("tasks.orchestrate.phase", cmd.Flags().Lookup("phase"))
 	_ = viper.BindEnv("tasks.orchestrate.phase", "TASKS_ORCHESTRATE_PHASE")
-	_ = viper.BindPFlag("tasks.orchestrate.tool", cmd.Flags().Lookup("tool"))
+	_ = viper.BindPFlag("tasks.orchestrate.tool", cmd.Flags().Lookup(flagKeyTool))
 	_ = viper.BindEnv("tasks.orchestrate.tool", "TASKS_ORCHESTRATE_TOOL")
-	_ = viper.BindPFlag("tasks.orchestrate.model", cmd.Flags().Lookup("model"))
+	_ = viper.BindPFlag("tasks.orchestrate.model",
+		cmd.Flags().Lookup(flagKeyModel))
 	_ = viper.BindEnv("tasks.orchestrate.model", "TASKS_ORCHESTRATE_MODEL")
 	_ = viper.BindPFlag("tasks.orchestrate.interactive",
-		cmd.Flags().Lookup("interactive"))
+		cmd.Flags().Lookup(flagKeyInteractive))
 	_ = viper.BindEnv("tasks.orchestrate.interactive",
 		"TASKS_ORCHESTRATE_INTERACTIVE")
 	_ = viper.BindPFlag("tasks.orchestrate.yes", cmd.Flags().Lookup("yes"))

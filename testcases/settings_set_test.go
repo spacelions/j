@@ -16,7 +16,7 @@ import (
 func TestSettingsSet_SingleArg(t *testing.T) {
 	freshInit(t)
 
-	stdout, _, err := testutil.RunCobra(settings.New(),
+	stdout, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "planner.tool=cursor",
 	)
 	if err != nil {
@@ -25,7 +25,7 @@ func TestSettingsSet_SingleArg(t *testing.T) {
 	if !strings.Contains(stdout, "set planner.tool = cursor") {
 		t.Fatalf("stdout = %q, want echo line", stdout)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestSettingsSet_SingleArg(t *testing.T) {
 func TestSettingsSet_MultiPair(t *testing.T) {
 	freshInit(t)
 
-	stdout, _, err := testutil.RunCobra(settings.New(),
+	stdout, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "a.b=1", "c.d=2",
 	)
 	if err != nil {
@@ -53,7 +53,7 @@ func TestSettingsSet_MultiPair(t *testing.T) {
 	if !strings.Contains(stdout, "set c.d = 2") {
 		t.Fatalf("stdout missing second echo: %q", stdout)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestSettingsSet_MultiPair(t *testing.T) {
 func TestSettingsSet_DuplicateKeyLastWins(t *testing.T) {
 	freshInit(t)
 
-	stdout, _, err := testutil.RunCobra(settings.New(),
+	stdout, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "dup.k=1", "dup.k=2",
 	)
 	if err != nil {
@@ -85,7 +85,7 @@ func TestSettingsSet_DuplicateKeyLastWins(t *testing.T) {
 	if !strings.Contains(stdout, "set dup.k = 1") || !strings.Contains(stdout, "set dup.k = 2") {
 		t.Fatalf("stdout missing both echo lines: %q", stdout)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestSettingsSet_DuplicateKeyLastWins(t *testing.T) {
 func TestSettingsSet_NoArgs(t *testing.T) {
 	freshInit(t)
 
-	_, stderr, err := testutil.RunCobra(settings.New(), "set")
+	_, stderr, err := testutil.RunCobra(t, settings.New(), "set")
 	if err == nil {
 		t.Fatal("expected error for missing args")
 	}
@@ -121,7 +121,7 @@ func TestSettingsSet_NoArgs(t *testing.T) {
 func TestSettingsSet_ParseFailsBeforeWrites(t *testing.T) {
 	freshInit(t)
 
-	_, _, err := testutil.RunCobra(settings.New(),
+	_, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "a.b=1", "bad-no-equals", "c.d=2",
 	)
 	if err == nil {
@@ -130,7 +130,7 @@ func TestSettingsSet_ParseFailsBeforeWrites(t *testing.T) {
 	if !strings.Contains(err.Error(), `"bad-no-equals"`) || !strings.Contains(err.Error(), "missing '='") {
 		t.Fatalf("err=%v, want mention of bad arg + missing '='", err)
 	}
-	listing, _, lerr := testutil.RunCobra(settings.New())
+	listing, _, lerr := testutil.RunCobra(t, settings.New())
 	if lerr != nil {
 		t.Fatalf("list: %v", lerr)
 	}
@@ -148,12 +148,12 @@ func TestSettingsSet_ParseFailsBeforeWrites(t *testing.T) {
 func TestSettingsSet_MustReadOverwrite(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "project.must_read=AGENTS.md;CLAUDE.md",
 	); err != nil {
 		t.Fatalf("first set: %v", err)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("first list: %v", err)
 	}
@@ -161,12 +161,12 @@ func TestSettingsSet_MustReadOverwrite(t *testing.T) {
 		t.Fatalf("listing = %q, want multi-path must_read", listing)
 	}
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "project.must_read=AGENTS.md",
 	); err != nil {
 		t.Fatalf("second set: %v", err)
 	}
-	listing, _, err = testutil.RunCobra(settings.New())
+	listing, _, err = testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("second list: %v", err)
 	}
@@ -178,12 +178,12 @@ func TestSettingsSet_MustReadOverwrite(t *testing.T) {
 	}
 
 	// Mixed-case value must be preserved verbatim.
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "project.must_read=AGENTS.md;ClAuDe.MD",
 	); err != nil {
 		t.Fatalf("mixed-case set: %v", err)
 	}
-	listing, _, err = testutil.RunCobra(settings.New())
+	listing, _, err = testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("mixed-case list: %v", err)
 	}
@@ -200,12 +200,12 @@ func TestSettingsSet_MustReadOverwrite(t *testing.T) {
 func TestSettingsSet_AndList(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "plan.tool=cursor",
 	); err != nil {
 		t.Fatalf("set tool: %v", err)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("first list: %v", err)
 	}
@@ -213,12 +213,12 @@ func TestSettingsSet_AndList(t *testing.T) {
 		t.Fatalf("listing = %q, want [plan] tool row", listing)
 	}
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "plan.model=sonnet-4",
 	); err != nil {
 		t.Fatalf("set model: %v", err)
 	}
-	listing, _, err = testutil.RunCobra(settings.New())
+	listing, _, err = testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("second list: %v", err)
 	}

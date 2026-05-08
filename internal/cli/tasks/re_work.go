@@ -105,9 +105,9 @@ func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 	interactive := resolver.Interactive(opts.Interactive)
 
 	args := []string{
-		"tasks", "orchestrate",
-		"--id", task.ID,
-		"--phase=from-work",
+		cmdTasks, cmdOrchestrate,
+		flagID, task.ID,
+		flagPhaseFromWork,
 		"--interactive=" + strconv.FormatBool(interactive),
 	}
 	if opts.Tool != "" {
@@ -129,7 +129,7 @@ func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 	}
 	stampSpawnOnRow(opts.Stderr, task.ID, agentLogPath, pid)
 	uitheme.NormalForkDialog(
-		opts.Stdout, fmt.Sprintf("task %s", task.ID), pid, agentLogPath)
+		opts.Stdout, "task "+task.ID, pid, agentLogPath)
 	return nil
 }
 
@@ -187,7 +187,7 @@ func newReWorkCmd() *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var interactive *bool
-			if cmd.Flags().Changed("interactive") ||
+			if cmd.Flags().Changed(flagKeyInteractive) ||
 				envSet("TASKS_REWORK_INTERACTIVE") {
 				v := viper.GetBool("tasks.rework.interactive")
 				interactive = &v
@@ -204,23 +204,23 @@ func newReWorkCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("from-task", "",
+	cmd.Flags().String(flagKeyFromTask, "",
 		"Existing task id to re-work (empty triggers the picker)")
-	cmd.Flags().String("tool", "",
+	cmd.Flags().String(flagKeyTool, "",
 		"Worker tool override (cursor|claude); does not update the bucket")
-	cmd.Flags().String("model", "",
+	cmd.Flags().String(flagKeyModel, "",
 		"Worker model override; does not update the bucket")
-	cmd.Flags().Bool("interactive", false,
+	cmd.Flags().Bool(flagKeyInteractive, false,
 		"Run worker in interactive (TUI) mode")
 	_ = viper.BindPFlag(
-		"tasks.rework.from_task", cmd.Flags().Lookup("from-task"))
+		"tasks.rework.from_task", cmd.Flags().Lookup(flagKeyFromTask))
 	_ = viper.BindEnv("tasks.rework.from_task", "TASKS_REWORK_FROM_TASK")
-	_ = viper.BindPFlag("tasks.rework.tool", cmd.Flags().Lookup("tool"))
+	_ = viper.BindPFlag("tasks.rework.tool", cmd.Flags().Lookup(flagKeyTool))
 	_ = viper.BindEnv("tasks.rework.tool", "TASKS_REWORK_TOOL")
-	_ = viper.BindPFlag("tasks.rework.model", cmd.Flags().Lookup("model"))
+	_ = viper.BindPFlag("tasks.rework.model", cmd.Flags().Lookup(flagKeyModel))
 	_ = viper.BindEnv("tasks.rework.model", "TASKS_REWORK_MODEL")
 	_ = viper.BindPFlag(
-		"tasks.rework.interactive", cmd.Flags().Lookup("interactive"))
+		"tasks.rework.interactive", cmd.Flags().Lookup(flagKeyInteractive))
 	_ = viper.BindEnv("tasks.rework.interactive", "TASKS_REWORK_INTERACTIVE")
 	return cmd
 }

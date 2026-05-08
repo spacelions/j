@@ -3,15 +3,14 @@ package resolver
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/linear"
@@ -62,7 +61,7 @@ func TestResolveStartTargetFromFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("# task"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	target, err := ResolveStartTarget(context.Background(), sourceUI{}, bytes.NewBuffer(nil), path)
+	target, err := ResolveStartTarget(t.Context(), sourceUI{}, bytes.NewBuffer(nil), path)
 	if err != nil {
 		t.Fatalf("ResolveStartTarget: %v", err)
 	}
@@ -77,13 +76,13 @@ func TestResolveStartTargetSources(t *testing.T) {
 	if err := os.WriteFile(path, []byte("body"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	target, err := ResolveStartTarget(context.Background(), sourceUI{source: picker.SourceMarkdown, md: path}, bytes.NewBuffer(nil), "")
+	target, err := ResolveStartTarget(t.Context(), sourceUI{source: picker.SourceMarkdown, md: path}, bytes.NewBuffer(nil), "")
 	if err != nil || !target.IsNew || target.Body != "body" {
 		t.Fatalf("markdown target = %+v, %v", target, err)
 	}
 
 	seedResolverTask(t, tasks.Task{ID: "existing", Status: tasks.StatusPlanDone}, "plan", "# req\nbody")
-	target, err = ResolveStartTarget(context.Background(), sourceUI{source: picker.SourceTask, taskID: "existing", ok: true}, bytes.NewBuffer(nil), "")
+	target, err = ResolveStartTarget(t.Context(), sourceUI{source: picker.SourceTask, taskID: "existing", ok: true}, bytes.NewBuffer(nil), "")
 	if err != nil || target.TaskID != "existing" || target.IsNew {
 		t.Fatalf("task target = %+v, %v", target, err)
 	}
@@ -112,7 +111,7 @@ func TestResolveStartTargetSources(t *testing.T) {
 	t.Cleanup(func() { linear.TestEndpoint = prev })
 
 	target, err = ResolveStartTarget(
-		context.Background(),
+		t.Context(),
 		sourceUI{
 			source:        picker.SourceLinear,
 			pickedIssue:   linear.Issue{Identifier: "ENG-1", Title: "from picker", State: "In Progress"},
@@ -136,12 +135,12 @@ func TestFetchLinearBody_Errors(t *testing.T) {
 	setupResolverProject(t)
 
 	// Invalid identifier: short-circuit before LoadAPIKey runs.
-	if _, _, err := FetchLinearBody(context.Background(), "foo"); !errors.Is(err, linear.ErrInvalidIdentifier) {
+	if _, _, err := FetchLinearBody(t.Context(), "foo"); !errors.Is(err, linear.ErrInvalidIdentifier) {
 		t.Fatalf("invalid id err = %v", err)
 	}
 
 	// Valid identifier but no token: ErrNoAPIKey.
-	if _, _, err := FetchLinearBody(context.Background(), "ENG-1"); !errors.Is(err, linear.ErrNoAPIKey) {
+	if _, _, err := FetchLinearBody(t.Context(), "ENG-1"); !errors.Is(err, linear.ErrNoAPIKey) {
 		t.Fatalf("no key err = %v", err)
 	}
 
@@ -156,7 +155,7 @@ func TestFetchLinearBody_Errors(t *testing.T) {
 	prev := linear.TestEndpoint
 	linear.TestEndpoint = srv.URL
 	t.Cleanup(func() { linear.TestEndpoint = prev })
-	if _, _, err := FetchLinearBody(context.Background(), "ENG-1"); !errors.Is(err, linear.ErrUnauthorized) {
+	if _, _, err := FetchLinearBody(t.Context(), "ENG-1"); !errors.Is(err, linear.ErrUnauthorized) {
 		t.Fatalf("401 err = %v", err)
 	}
 }
@@ -180,7 +179,7 @@ func TestStartTargetFromLinear_Success(t *testing.T) {
 	linear.TestEndpoint = srv.URL
 	t.Cleanup(func() { linear.TestEndpoint = prev })
 
-	target, err := StartTargetFromLinear(context.Background(), "ENG-2")
+	target, err := StartTargetFromLinear(t.Context(), "ENG-2")
 	if err != nil {
 		t.Fatalf("StartTargetFromLinear: %v", err)
 	}
@@ -199,7 +198,7 @@ func TestStartTargetFromLinear_Success(t *testing.T) {
 // no API key stored, helper surfaces ErrNoAPIKey verbatim.
 func TestStartTargetFromLinear_PropagatesError(t *testing.T) {
 	setupResolverProject(t)
-	_, err := StartTargetFromLinear(context.Background(), "ENG-1")
+	_, err := StartTargetFromLinear(t.Context(), "ENG-1")
 	if !errors.Is(err, linear.ErrNoAPIKey) {
 		t.Fatalf("err = %v, want ErrNoAPIKey", err)
 	}
@@ -275,18 +274,18 @@ func newLinearStubServer(responses stubLinearResponses) *httptest.Server {
 
 func TestResolveStartTargetErrorsAndCancel(t *testing.T) {
 	setupResolverProject(t)
-	_, err := ResolveStartTarget(context.Background(), sourceUI{err: errors.New("select failed")}, bytes.NewBuffer(nil), "")
+	_, err := ResolveStartTarget(t.Context(), sourceUI{err: errors.New("select failed")}, bytes.NewBuffer(nil), "")
 	if err == nil || !strings.Contains(err.Error(), "select failed") {
 		t.Fatalf("select err = %v", err)
 	}
 
 	seedResolverTask(t, tasks.Task{ID: "existing", Status: tasks.StatusPlanDone}, "plan", "")
-	target, err := ResolveStartTarget(context.Background(), sourceUI{source: picker.SourceTask, ok: false}, bytes.NewBuffer(nil), "")
+	target, err := ResolveStartTarget(t.Context(), sourceUI{source: picker.SourceTask, ok: false}, bytes.NewBuffer(nil), "")
 	if err != nil || target.TaskID != "" {
 		t.Fatalf("cancel target = %+v, %v", target, err)
 	}
 
-	_, err = ResolveStartTarget(context.Background(), sourceUI{source: picker.Source("bad")}, bytes.NewBuffer(nil), "")
+	_, err = ResolveStartTarget(t.Context(), sourceUI{source: picker.Source("bad")}, bytes.NewBuffer(nil), "")
 	if err == nil || !strings.Contains(err.Error(), "unsupported source") {
 		t.Fatalf("bad source err = %v", err)
 	}

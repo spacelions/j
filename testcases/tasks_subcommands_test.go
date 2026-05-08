@@ -17,7 +17,7 @@ import (
 func TestTasksDiscard_UnknownID(t *testing.T) {
 	freshInit(t)
 
-	stdout, _, err := testutil.RunCobra(tasks.New(),
+	stdout, _, err := testutil.RunCobra(t, tasks.New(),
 		"discard", "--id", "ghost-id", "--yes",
 	)
 	if err != nil {
@@ -37,7 +37,7 @@ func TestTasksDiscard_UnknownID(t *testing.T) {
 func TestTasksEnter_EmptyStore(t *testing.T) {
 	freshInit(t)
 
-	stdout, _, err := testutil.RunCobra(tasks.New(), "enter")
+	stdout, _, err := testutil.RunCobra(t, tasks.New(), "enter")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

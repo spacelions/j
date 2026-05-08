@@ -28,7 +28,7 @@ func MustRead() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolver: open store: %w", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	value, set, err := s.Get(store.BucketProject, KeyMustRead)
 	if err != nil {
 		return nil, fmt.Errorf("resolver: load must-read: %w", err)

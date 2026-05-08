@@ -3,7 +3,6 @@
 package cursor
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/agents/instructions"
+	codingagents "github.com/spacelions/j/internal/coding-agents"
 )
 
 // spawnWaitTimeout bounds the polling helpers below. The cursor stub
@@ -136,7 +135,7 @@ func readCalls(t *testing.T, path string) []string {
 func TestListModels(t *testing.T) {
 	calls := installStub(t, sampleListModels, 0)
 
-	got, err := New().ListModels(context.Background())
+	got, err := New().ListModels(t.Context())
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -151,14 +150,14 @@ func TestListModels(t *testing.T) {
 
 func TestListModels_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
-	if _, err := New().ListModels(context.Background()); err == nil {
+	if _, err := New().ListModels(t.Context()); err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestListModels_EmptyList(t *testing.T) {
 	installStub(t, "Available models\n\n", 0)
-	_, err := New().ListModels(context.Background())
+	_, err := New().ListModels(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "no models") {
 		t.Fatalf("err = %v", err)
 	}
@@ -166,7 +165,7 @@ func TestListModels_EmptyList(t *testing.T) {
 
 func TestCreateChatID(t *testing.T) {
 	calls := installStub(t, "  2b43f90a-b742-4d4b-9f0c-e1ee8ad43f83  \n", 0)
-	id, err := CreateChatID(context.Background())
+	id, err := CreateChatID(t.Context())
 	if err != nil {
 		t.Fatalf("CreateChatID: %v", err)
 	}
@@ -180,7 +179,7 @@ func TestCreateChatID(t *testing.T) {
 
 func TestCreateChatID_EmptyOutput(t *testing.T) {
 	installStub(t, "  \n  \t  ", 0)
-	_, err := CreateChatID(context.Background())
+	_, err := CreateChatID(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "empty id") {
 		t.Fatalf("err = %v", err)
 	}
@@ -188,7 +187,7 @@ func TestCreateChatID_EmptyOutput(t *testing.T) {
 
 func TestCreateChatID_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
-	_, err := CreateChatID(context.Background())
+	_, err := CreateChatID(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "create-chat") {
 		t.Fatalf("err = %v", err)
 	}
@@ -196,7 +195,7 @@ func TestCreateChatID_RunnerError(t *testing.T) {
 
 func TestNewResumeID_DelegatesToCreateChat(t *testing.T) {
 	calls := installStub(t, "  abc-id  \n", 0)
-	id, err := New().NewResumeID(context.Background())
+	id, err := New().NewResumeID(t.Context())
 	if err != nil {
 		t.Fatalf("NewResumeID: %v", err)
 	}
@@ -210,7 +209,7 @@ func TestNewResumeID_DelegatesToCreateChat(t *testing.T) {
 
 func TestNewResumeID_PropagatesError(t *testing.T) {
 	installStub(t, "", 1)
-	if _, err := New().NewResumeID(context.Background()); err == nil {
+	if _, err := New().NewResumeID(t.Context()); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -234,7 +233,7 @@ func TestCheckLogin(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := installStub(t, tc.out, tc.exitCode)
-			err := New().CheckLogin(context.Background())
+			err := New().CheckLogin(t.Context())
 			if tc.wantErr && err == nil {
 				t.Fatal("expected error")
 			}
@@ -264,7 +263,7 @@ func TestPlan_Interactive(t *testing.T) {
 	planOut := filepath.Join(dir, "plan.md")
 	calls := installStub(t, "", 0)
 
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  "composer-2-fast",
 		RequirementsOutputPath: reqOut,
@@ -322,7 +321,7 @@ func TestPlan_Interactive_ResumeChatID(t *testing.T) {
 	}
 	calls := installStub(t, "", 0)
 	rid := "22222222-2222-4222-8222-222222222222"
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  "composer-2-fast",
 		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
@@ -350,7 +349,7 @@ func TestPlan_Interactive_ResumeChatID(t *testing.T) {
 
 func TestPlan_Interactive_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           "/tmp/x.md",
 		Model:                  "m",
 		RequirementsOutputPath: "/tmp/requirements.md",
@@ -384,7 +383,7 @@ func TestPlan_Headless(t *testing.T) {
 	logPath := filepath.Join(dir, "agent.log")
 	calls := installStub(t, "ok\n", 0)
 
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  "sonnet-4",
 		RequirementsOutputPath: reqOut,
@@ -441,7 +440,7 @@ func TestPlan_Headless_ResumeChatID(t *testing.T) {
 	}
 	calls := installStub(t, "ok\n", 0)
 	rid := "33333333-3333-4333-8333-333333333333"
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  "sonnet-4",
 		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
@@ -492,7 +491,7 @@ func TestPlan_Headless_SpawnError(t *testing.T) {
 	if err := os.MkdirAll(logPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           "/tmp/x.md",
 		Model:                  "m",
 		RequirementsOutputPath: "/tmp/requirements.md",
@@ -516,7 +515,7 @@ func TestWork_Interactive(t *testing.T) {
 	}
 	calls := installStub(t, "", 0)
 
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:    plan,
 		Model:       "composer-2-fast",
 		Interactive: true,
@@ -564,7 +563,7 @@ func TestWork_Interactive_ResumeChatID(t *testing.T) {
 	}
 	calls := installStub(t, "", 0)
 	rid := "44444444-4444-4444-8444-444444444444"
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:     plan,
 		Model:        "composer-2-fast",
 		Interactive:  true,
@@ -597,7 +596,7 @@ func TestWork_Headless(t *testing.T) {
 	logPath := filepath.Join(dir, "agent.log")
 	calls := installStub(t, "ok\n", 0)
 
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:     plan,
 		Model:        "sonnet-4",
 		Interactive:  false,
@@ -642,7 +641,7 @@ func TestWork_Headless_ResumeChatID(t *testing.T) {
 	}
 	calls := installStub(t, "ok\n", 0)
 	rid := "55555555-5555-4555-8555-555555555555"
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:     plan,
 		Model:        "sonnet-4",
 		Interactive:  false,
@@ -677,7 +676,7 @@ func TestWork_Headless_ResumeChatID(t *testing.T) {
 
 func TestWork_Interactive_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:    "/tmp/x.plan.md",
 		Model:       "m",
 		Interactive: true,
@@ -702,7 +701,7 @@ func TestWork_Headless_SpawnError(t *testing.T) {
 	if err := os.MkdirAll(logPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:     "/tmp/x.plan.md",
 		Model:        "m",
 		Interactive:  false,
@@ -734,7 +733,7 @@ func TestPlan_Interactive_Resume(t *testing.T) {
 	planOut := filepath.Join(dir, "plan.md")
 	calls := installStub(t, "", 0)
 	rid := "66666666-6666-4666-8666-666666666666"
-	pid, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	pid, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  "composer-2-fast",
 		RequirementsOutputPath: reqOut,
@@ -800,7 +799,7 @@ func TestPlan_Interactive_Resume_WithMustRead(t *testing.T) {
 	planOut := filepath.Join(dir, "plan.md")
 	calls := installStub(t, "", 0)
 	rid := "66666666-6666-4666-8666-666666666667"
-	_, err := New().Plan(context.Background(), codingagents.PlanRequest{
+	_, err := New().Plan(t.Context(), codingagents.PlanRequest{
 		FromFilePath:           target,
 		Model:                  "composer-2-fast",
 		RequirementsOutputPath: reqOut,
@@ -854,7 +853,7 @@ func TestWork_Interactive_Resume_WithMustRead(t *testing.T) {
 	}
 	calls := installStub(t, "", 0)
 	rid := "77777777-7777-4777-8777-777777777768"
-	_, err := New().Work(context.Background(), codingagents.WorkRequest{
+	_, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:     plan,
 		Model:        "composer-2-fast",
 		Interactive:  true,
@@ -895,7 +894,7 @@ func TestVerify_Interactive_Resume_WithMustRead(t *testing.T) {
 	dir := t.TempDir()
 	calls := installStub(t, "", 0)
 	rid := "99999999-9999-4999-8999-999999999990"
-	_, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	_, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           filepath.Join(dir, "requirements.md"),
 		PlanPath:                   filepath.Join(dir, "plan.md"),
 		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
@@ -947,7 +946,7 @@ func TestWork_Interactive_FixFindings(t *testing.T) {
 	findings := filepath.Join(dir, "verifier_findings.md")
 	calls := installStub(t, "", 0)
 
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:                   plan,
 		Model:                      "composer-2-fast",
 		Interactive:                true,
@@ -989,7 +988,7 @@ func TestWork_FixFindings_BeatsResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := installStub(t, "", 0)
-	_, err := New().Work(context.Background(), codingagents.WorkRequest{
+	_, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:    plan,
 		Model:       "m",
 		Interactive: true,
@@ -1039,7 +1038,7 @@ func TestVerify_Interactive(t *testing.T) {
 	findingsPath := filepath.Join(dir, "verifier_findings.md")
 	calls := installStub(t, "", 0)
 
-	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	pid, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           reqPath,
 		PlanPath:                   planPath,
 		VerifierPlanOutputPath:     verifierPlan,
@@ -1106,7 +1105,7 @@ func TestVerify_Interactive_ResumeChatID(t *testing.T) {
 	calls := installStub(t, "", 0)
 	rid := "88888888-8888-4888-8888-888888888888"
 
-	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	pid, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           filepath.Join(dir, "requirements.md"),
 		PlanPath:                   filepath.Join(dir, "plan.md"),
 		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
@@ -1142,7 +1141,7 @@ func TestVerify_Interactive_Resume(t *testing.T) {
 	calls := installStub(t, "", 0)
 	rid := "99999999-9999-4999-8999-999999999999"
 
-	_, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	_, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           filepath.Join(dir, "requirements.md"),
 		PlanPath:                   filepath.Join(dir, "plan.md"),
 		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
@@ -1181,7 +1180,7 @@ func TestVerify_Interactive_Resume(t *testing.T) {
 // TestPlan_Interactive_RunnerError / TestWork_Interactive_RunnerError.
 func TestVerify_Interactive_RunnerError(t *testing.T) {
 	installStub(t, "", 1)
-	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	pid, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           "/tmp/req.md",
 		PlanPath:                   "/tmp/plan.md",
 		VerifierPlanOutputPath:     "/tmp/verifier_plan.md",
@@ -1213,7 +1212,7 @@ func TestVerify_Headless(t *testing.T) {
 	logPath := filepath.Join(dir, "agent.log")
 	calls := installStub(t, "ok\n", 0)
 
-	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	pid, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           filepath.Join(dir, "requirements.md"),
 		PlanPath:                   filepath.Join(dir, "plan.md"),
 		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
@@ -1267,7 +1266,7 @@ func TestVerify_Headless_ResumeChatID(t *testing.T) {
 	calls := installStub(t, "ok\n", 0)
 	rid := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
-	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	pid, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           filepath.Join(dir, "requirements.md"),
 		PlanPath:                   filepath.Join(dir, "plan.md"),
 		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
@@ -1312,7 +1311,7 @@ func TestVerify_Headless_SpawnError(t *testing.T) {
 	if err := os.MkdirAll(logPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	pid, err := New().Verify(context.Background(), codingagents.VerifyRequest{
+	pid, err := New().Verify(t.Context(), codingagents.VerifyRequest{
 		RequirementsPath:           "/tmp/req.md",
 		PlanPath:                   "/tmp/plan.md",
 		VerifierPlanOutputPath:     "/tmp/verifier_plan.md",
@@ -1339,7 +1338,7 @@ func TestWork_Interactive_Resume(t *testing.T) {
 	}
 	calls := installStub(t, "", 0)
 	rid := "77777777-7777-4777-8777-777777777777"
-	pid, err := New().Work(context.Background(), codingagents.WorkRequest{
+	pid, err := New().Work(t.Context(), codingagents.WorkRequest{
 		PlanPath:     plan,
 		Model:        "composer-2-fast",
 		Interactive:  true,

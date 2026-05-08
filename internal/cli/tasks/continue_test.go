@@ -99,18 +99,18 @@ func seedTaskFull(t *testing.T, mutate func(*tasks.Task)) string {
 	begin := time.Now().UTC().Add(-2 * time.Hour)
 	end := begin.Add(time.Hour)
 	task := tasks.Task{
-		ID:               id,
-		Status:           tasks.StatusPlanDone,
-		PlanTool:         "cursor",
-		PlanModel:        "sonnet-4",
-		WorkTool:         "cursor",
-		WorkModel:        "sonnet-4",
-		VerifyTool:       "cursor",
-		VerifyModel:      "sonnet-4",
+		ID:                id,
+		Status:            tasks.StatusPlanDone,
+		PlanTool:          "cursor",
+		PlanModel:         "sonnet-4",
+		WorkTool:          "cursor",
+		WorkModel:         "sonnet-4",
+		VerifyTool:        "cursor",
+		VerifyModel:       "sonnet-4",
 		PlanResumeSession: "plan-cursor",
-		Summary:          "seed",
-		PlanBeginAt:      begin,
-		PlanEndAt:        end,
+		Summary:           "seed",
+		PlanBeginAt:       begin,
+		PlanEndAt:         end,
 	}
 	if mutate != nil {
 		mutate(&task)
@@ -165,7 +165,7 @@ func TestRunContinue_PlanningShowsTooltip(t *testing.T) {
 	})
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID: id,
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
@@ -195,7 +195,7 @@ func TestRunContinue_PlanDoneDispatchesToOrchestratorFromWork(t *testing.T) {
 	id := seedTaskFull(t, nil) // default is plan-done
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID:  id,
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
@@ -235,7 +235,7 @@ func TestRunContinue_PlanDoneForwardsToolModel(t *testing.T) {
 	id := seedTaskFull(t, nil)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID:  id,
 		Tool:    "claude",
 		Model:   "opus-4",
@@ -266,7 +266,7 @@ func TestRunContinue_PlanDoneForwardsToolModel(t *testing.T) {
 func TestRunContinue_PlanDoneSpawnFails(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, nil)
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID:  id,
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
@@ -288,9 +288,9 @@ func TestRunContinue_PlanDoneInlineWhenInteractive(t *testing.T) {
 	id := seedTaskFull(t, nil)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID:      id,
-		Interactive: boolPtr(true),
+		Interactive: new(true),
 		Stdin:       strings.NewReader(""),
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
@@ -326,7 +326,7 @@ func TestRunContinue_WorkingShowsTooltip(t *testing.T) {
 	})
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID: id,
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
@@ -358,7 +358,7 @@ func TestRunContinue_WorkDoneDispatchesToVerify(t *testing.T) {
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID:  id,
 		Stdin:   strings.NewReader(""),
 		Stdout:  &stdout,
@@ -397,7 +397,7 @@ func TestRunContinue_VerifyingDispatchesToVerifyResume(t *testing.T) {
 	})
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID:  id,
 		Stdin:   strings.NewReader(""),
 		Stdout:  &stdout,
@@ -424,7 +424,7 @@ func TestRunContinue_FailedShortCircuits(t *testing.T) {
 	})
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID: id,
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
@@ -454,7 +454,7 @@ func TestRunContinue_CompletedShortCircuits(t *testing.T) {
 	})
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID: id,
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
@@ -491,7 +491,7 @@ func TestRunContinue_HelpFromVerifyEnd(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
-	if err := RunContinue(context.Background(), ContinueOptions{
+	if err := RunContinue(t.Context(), ContinueOptions{
 		TaskID:  id,
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
@@ -527,7 +527,7 @@ func TestRunContinue_HelpFromWorkEnd(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
-	if err := RunContinue(context.Background(), ContinueOptions{
+	if err := RunContinue(t.Context(), ContinueOptions{
 		TaskID:  id,
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
@@ -561,7 +561,7 @@ func TestRunContinue_HelpFromPlanEnd(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
-	if err := RunContinue(context.Background(), ContinueOptions{
+	if err := RunContinue(t.Context(), ContinueOptions{
 		TaskID:  id,
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
@@ -596,7 +596,7 @@ func TestRunContinue_HelpFromCursorFallback(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
-	if err := RunContinue(context.Background(), ContinueOptions{
+	if err := RunContinue(t.Context(), ContinueOptions{
 		TaskID:  id,
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
@@ -630,7 +630,7 @@ func TestRunContinue_HelpNoSignal(t *testing.T) {
 		task.VerifyResumeSession = ""
 	})
 	agent := newContinueAgent()
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID: id,
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -649,7 +649,7 @@ func TestRunContinue_MissingTaskFromFlag(t *testing.T) {
 	setupContinueEnv(t)
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID: "ghost-id",
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
@@ -675,7 +675,7 @@ func TestRunContinue_PickerCancel(t *testing.T) {
 	seedTaskFull(t, nil)
 	seedTaskFull(t, nil)
 	agent := newContinueAgent()
-	if err := RunContinue(context.Background(), ContinueOptions{
+	if err := RunContinue(t.Context(), ContinueOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -699,7 +699,7 @@ func TestRunContinue_PickerHappy(t *testing.T) {
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
 	ui := &fakeUI{pickReturn: id}
-	if err := RunContinue(context.Background(), ContinueOptions{
+	if err := RunContinue(t.Context(), ContinueOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -729,7 +729,7 @@ func TestRunContinue_NoTasksFile(t *testing.T) {
 	// Do NOT call mustInit so list.db never gets created.
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
-	if err := RunContinue(context.Background(), ContinueOptions{
+	if err := RunContinue(t.Context(), ContinueOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -745,7 +745,7 @@ func TestRunContinue_NoTasksFile(t *testing.T) {
 
 // TestRunContinue_NoAgents pins the no-agents-configured branch.
 func TestRunContinue_NoAgents(t *testing.T) {
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 	})
@@ -757,7 +757,7 @@ func TestRunContinue_NoAgents(t *testing.T) {
 // TestRunContinue_AppliesDefaults exercises ContinueOptions.withDefaults.
 func TestRunContinue_AppliesDefaults(t *testing.T) {
 	setupContinueEnv(t)
-	if err := RunContinue(context.Background(), ContinueOptions{
+	if err := RunContinue(t.Context(), ContinueOptions{
 		Agents: []codingagents.Agent{newContinueAgent()},
 	}); err != nil {
 		t.Fatalf("RunContinue: %v", err)
@@ -847,7 +847,7 @@ func TestNewContinueCmd_RunE_MissingTask(t *testing.T) {
 	t.Cleanup(viper.Reset)
 	t.Chdir(t.TempDir())
 	cmd := newContinueCmd()
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(io.Discard)
@@ -878,7 +878,7 @@ func TestRunContinue_RegisteredAsChild(t *testing.T) {
 func TestRunContinue_GetTaskDecodeError(t *testing.T) {
 	setupContinueEnv(t)
 	testutil.SeedRawTaskFile(t, "broken", []byte("not = valid = toml"))
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID: "broken",
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -893,7 +893,7 @@ func TestRunContinue_GetTaskDecodeError(t *testing.T) {
 
 // TestDispatchByStatus_UnknownStatus covers the safety-net branch.
 func TestDispatchByStatus_UnknownStatus(t *testing.T) {
-	err := dispatchByStatus(context.Background(), ContinueOptions{
+	err := dispatchByStatus(t.Context(), ContinueOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 	}, tasks.Task{ID: "x", Status: "ghost"})
@@ -911,7 +911,7 @@ func TestRunContinue_PlanningSpawnFails(t *testing.T) {
 	})
 	agent := newContinueAgent()
 	var stdout bytes.Buffer
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID: id,
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
@@ -1008,7 +1008,7 @@ func TestPickReVerifyFromStore_EmptyBucket(t *testing.T) {
 	defer func() { _ = s.Close() }()
 	var stdout bytes.Buffer
 	_, ok, err := pickReVerifyFromStore(
-		context.Background(), s,
+		t.Context(), s,
 		ReVerifyOptions{Stdout: &stdout, UI: &fakeUI{}},
 	)
 	if err != nil || ok {
@@ -1030,7 +1030,7 @@ func TestPickReVerifyFromStore_PickerHappy(t *testing.T) {
 	defer func() { _ = s.Close() }()
 	ui := &fakeUI{pickReturn: id}
 	got, ok, err := pickReVerifyFromStore(
-		context.Background(), s,
+		t.Context(), s,
 		ReVerifyOptions{Stdout: io.Discard, UI: ui},
 	)
 	if err != nil || !ok {
@@ -1050,7 +1050,7 @@ func TestNewContinueCmd_RunE_InteractiveFlag(t *testing.T) {
 	t.Cleanup(viper.Reset)
 	setupContinueEnv(t)
 	cmd := newContinueCmd()
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(io.Discard)
@@ -1093,7 +1093,7 @@ func TestRunContinue_PlanApproveDispatchesToOrchestratorFromWork(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID:  id,
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
@@ -1143,7 +1143,7 @@ func TestRunContinue_NeedsClarification_VerifyResume(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID:  id,
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
@@ -1191,7 +1191,7 @@ func TestRunContinue_NeedsClarification_WorkResume(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
-	err := RunContinue(context.Background(), ContinueOptions{
+	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID:  id,
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,

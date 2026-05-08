@@ -78,10 +78,10 @@ func TestNew_ShellOutPassEscalates(t *testing.T) {
 	}
 	testutil.SeedAgentBucket(t, store.BucketVerifier, "scripted", "m1")
 	testutil.SeedTaskRow(t, tasks.Task{
-		ID:          taskID,
-		Status:      tasks.StatusWorkDone,
-		WorkTool:    "scripted",
-		Summary:     "task",
+		ID:       taskID,
+		Status:   tasks.StatusWorkDone,
+		WorkTool: "scripted",
+		Summary:  "task",
 	})
 
 	stub := newScriptedVerifyAgent("scripted")
@@ -121,10 +121,10 @@ func TestNew_ShellOutFailDoesNotEscalate(t *testing.T) {
 	}
 	testutil.SeedAgentBucket(t, store.BucketVerifier, "scripted", "m1")
 	testutil.SeedTaskRow(t, tasks.Task{
-		ID:          taskID,
-		Status:      tasks.StatusWorkDone,
-		WorkTool:    "scripted",
-		Summary:     "task",
+		ID:       taskID,
+		Status:   tasks.StatusWorkDone,
+		WorkTool: "scripted",
+		Summary:  "task",
 	})
 
 	stub := newScriptedVerifyAgent("scripted")
@@ -162,10 +162,10 @@ func TestNew_ShellOutVerifyFails(t *testing.T) {
 	}
 	testutil.SeedAgentBucket(t, store.BucketVerifier, "scripted", "m1")
 	testutil.SeedTaskRow(t, tasks.Task{
-		ID:          taskID,
-		Status:      tasks.StatusWorkDone,
-		WorkTool:    "scripted",
-		Summary:     "task",
+		ID:       taskID,
+		Status:   tasks.StatusWorkDone,
+		WorkTool: "scripted",
+		Summary:  "task",
 	})
 
 	stub := newScriptedVerifyAgent("scripted")
@@ -200,10 +200,10 @@ func TestNew_ShellOutDefaultsMaxIterations(t *testing.T) {
 	}
 	testutil.SeedAgentBucket(t, store.BucketVerifier, "scripted", "m1")
 	testutil.SeedTaskRow(t, tasks.Task{
-		ID:          taskID,
-		Status:      tasks.StatusWorkDone,
-		WorkTool:    "scripted",
-		Summary:     "task",
+		ID:       taskID,
+		Status:   tasks.StatusWorkDone,
+		WorkTool: "scripted",
+		Summary:  "task",
 	})
 
 	stub := newScriptedVerifyAgent("scripted")

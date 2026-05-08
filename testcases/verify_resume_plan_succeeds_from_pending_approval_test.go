@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	codingagents "github.com/spacelions/j/internal/coding-agents"
 	clitasks "github.com/spacelions/j/internal/cli/tasks"
+	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
@@ -118,7 +118,7 @@ func TestVerify_ResumePlan_SucceedsFromPlanPendingApproval(t *testing.T) {
 	ui := &verifyResumePlanFakeUI{pickReturn: id}
 	agent := testutil.NewScriptedAgent()
 	if err := clitasks.RunResumePlan(
-		context.Background(),
+		t.Context(),
 		clitasks.ResumePlanOptions{
 			Stdin:   strings.NewReader(""),
 			Stdout:  io.Discard,

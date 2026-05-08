@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -251,9 +252,9 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	start := time.Now()
-	err := RunStart(context.Background(), StartOptions{
+	err := RunStart(t.Context(), StartOptions{
 		FromFile:    target,
-		Interactive: boolPtr(false),
+		Interactive: new(false),
 		Stdin:       strings.NewReader(""),
 		Stdout:      &stdout,
 		Stderr:      &stderr,
@@ -330,16 +331,16 @@ func TestRunStart_ForwardsResolvedPlanApproval(t *testing.T) {
 			}
 			target := writeStartFile(t, "# task\nbody")
 			argvPath := filepath.Join(t.TempDir(), "argv.txt")
-			if err := RunStart(context.Background(), StartOptions{
+			if err := RunStart(t.Context(), StartOptions{
 				FromFile:             target,
 				PlanRequiresApproval: tc.override,
 				Stdin:                strings.NewReader(""),
 				Stdout:               io.Discard,
 				Stderr:               io.Discard,
 				Agents:               []codingagents.Agent{testutil.NewScriptedAgent()},
-	
-				UI:                   &scriptedStartUI{},
-				JBinary:              argvJBinary(t, argvPath),
+
+				UI:      &scriptedStartUI{},
+				JBinary: argvJBinary(t, argvPath),
 			}); err != nil {
 				t.Fatalf("RunStart: %v", err)
 			}
@@ -349,13 +350,7 @@ func TestRunStart_ForwardsResolvedPlanApproval(t *testing.T) {
 			}
 			// --interactive=true is always appended after the approval flag
 			wantApproval := "--plan-requires-approval=" + tc.want
-			found := false
-			for _, a := range args {
-				if a == wantApproval {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(args, wantApproval)
 			if !found {
 				t.Fatalf("approval flag %q not found in argv=%v", wantApproval, args)
 			}
@@ -374,15 +369,15 @@ func TestRunStart_PrePopulatedSkipsPrompts(t *testing.T) {
 	target := writeStartFile(t, "# task\nbody")
 	binary := noopJBinary(t)
 
-	err := RunStart(context.Background(), StartOptions{
-			Interactive: boolPtr(false),
-		FromFile: target,
-		Stdin:    strings.NewReader(""),
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		UI:       &scriptedStartUI{},
-		JBinary:  binary,
+	err := RunStart(t.Context(), StartOptions{
+		Interactive: new(false),
+		FromFile:    target,
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{testutil.NewScriptedAgent()},
+		UI:          &scriptedStartUI{},
+		JBinary:     binary,
 	})
 	if err != nil {
 		t.Fatalf("RunStart: %v", err)
@@ -391,7 +386,7 @@ func TestRunStart_PrePopulatedSkipsPrompts(t *testing.T) {
 
 // TestRunStart_NoAgents pins the no-agents-configured branch.
 func TestRunStart_NoAgents(t *testing.T) {
-	err := RunStart(context.Background(), StartOptions{
+	err := RunStart(t.Context(), StartOptions{
 		FromFile: "ignored",
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -422,15 +417,15 @@ func TestRunStart_NoFromFile_PicksMarkdown(t *testing.T) {
 		pickedMarkdownPath: filepath.Join(cwd, "spec.md"),
 	}
 
-	err = RunStart(context.Background(), StartOptions{
-			Interactive: boolPtr(false),
-		Stdin:    strings.NewReader(""),
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
+	err = RunStart(t.Context(), StartOptions{
+		Interactive: new(false),
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{testutil.NewScriptedAgent()},
 
-		UI:       ui,
-		JBinary:  noopJBinary(t),
+		UI:      ui,
+		JBinary: noopJBinary(t),
 	})
 	if err != nil {
 		t.Fatalf("RunStart: %v", err)
@@ -471,10 +466,10 @@ func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedTaskRowDirect(t, tasks.Task{
-		ID:          existingID,
-		Status:      tasks.StatusPlanDone,
+		ID:       existingID,
+		Status:   tasks.StatusPlanDone,
 		PlanTool: "cursor",
-		Summary:     "existing task",
+		Summary:  "existing task",
 	})
 	ui := &scriptedStartUI{
 		source:       picker.SourceTask,
@@ -482,15 +477,15 @@ func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 		pickedTaskOK: true,
 	}
 
-	err = RunStart(context.Background(), StartOptions{
-			Interactive: boolPtr(false),
-		Stdin:    strings.NewReader(""),
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
+	err = RunStart(t.Context(), StartOptions{
+		Interactive: new(false),
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{testutil.NewScriptedAgent()},
 
-		UI:       ui,
-		JBinary:  noopJBinary(t),
+		UI:      ui,
+		JBinary: noopJBinary(t),
 	})
 	if err != nil {
 		t.Fatalf("RunStart: %v", err)
@@ -555,15 +550,15 @@ func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
 		pickedIssueOK: true,
 	}
 
-	err := RunStart(context.Background(), StartOptions{
-			Interactive: boolPtr(false),
-		Stdin:    strings.NewReader(""),
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
+	err := RunStart(t.Context(), StartOptions{
+		Interactive: new(false),
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{testutil.NewScriptedAgent()},
 
-		UI:       ui,
-		JBinary:  noopJBinary(t),
+		UI:      ui,
+		JBinary: noopJBinary(t),
 	})
 	if err != nil {
 		t.Fatalf("RunStart: %v", err)
@@ -613,16 +608,16 @@ func TestRunStart_FromLinearFlag(t *testing.T) {
 	t.Cleanup(func() { linear.TestEndpoint = prev })
 
 	ui := &scriptedStartUI{}
-	err := RunStart(context.Background(), StartOptions{
-			Interactive: boolPtr(false),
-		FromLinear: "ENG-2",
-		Stdin:      strings.NewReader(""),
-		Stdout:     io.Discard,
-		Stderr:     io.Discard,
-		Agents:     []codingagents.Agent{testutil.NewScriptedAgent()},
+	err := RunStart(t.Context(), StartOptions{
+		Interactive: new(false),
+		FromLinear:  "ENG-2",
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{testutil.NewScriptedAgent()},
 
-		UI:         ui,
-		JBinary:    noopJBinary(t),
+		UI:      ui,
+		JBinary: noopJBinary(t),
 	})
 	if err != nil {
 		t.Fatalf("RunStart: %v", err)
@@ -666,16 +661,16 @@ func TestRunStart_FromLinearFlag_RecordsLinearIssue(t *testing.T) {
 	linear.TestEndpoint = srv.URL
 	t.Cleanup(func() { linear.TestEndpoint = prev })
 
-	err := RunStart(context.Background(), StartOptions{
-			Interactive: boolPtr(false),
-		FromLinear: "ENG-42",
-		Stdin:      strings.NewReader(""),
-		Stdout:     io.Discard,
-		Stderr:     io.Discard,
-		Agents:     []codingagents.Agent{testutil.NewScriptedAgent()},
+	err := RunStart(t.Context(), StartOptions{
+		Interactive: new(false),
+		FromLinear:  "ENG-42",
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{testutil.NewScriptedAgent()},
 
-		UI:         &scriptedStartUI{},
-		JBinary:    noopJBinary(t),
+		UI:      &scriptedStartUI{},
+		JBinary: noopJBinary(t),
 	})
 	if err != nil {
 		t.Fatalf("RunStart: %v", err)
@@ -696,15 +691,15 @@ func TestRunStart_FromLinearFlag_MissingKey(t *testing.T) {
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
-	err := RunStart(context.Background(), StartOptions{
+	err := RunStart(t.Context(), StartOptions{
 		FromLinear: "ENG-2",
 		Stdin:      strings.NewReader(""),
 		Stdout:     io.Discard,
 		Stderr:     io.Discard,
 		Agents:     []codingagents.Agent{testutil.NewScriptedAgent()},
 
-		UI:         &scriptedStartUI{},
-		JBinary:    noopJBinary(t),
+		UI:      &scriptedStartUI{},
+		JBinary: noopJBinary(t),
 	})
 	if err == nil || !errors.Is(err, linear.ErrNoAPIKey) {
 		t.Fatalf("err = %v, want linear.ErrNoAPIKey", err)
@@ -729,14 +724,14 @@ func TestRunStart_NoFromFile_NoExistingTasks(t *testing.T) {
 	}
 	ui := &scriptedStartUI{source: picker.SourceTask}
 
-	err := RunStart(context.Background(), StartOptions{
-		Stdin:    strings.NewReader(""),
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
+	err := RunStart(t.Context(), StartOptions{
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{testutil.NewScriptedAgent()},
 
-		UI:       ui,
-		JBinary:  noopJBinary(t),
+		UI:      ui,
+		JBinary: noopJBinary(t),
 	})
 	if err == nil || !strings.Contains(err.Error(), "no tasks to re-plan") {
 		t.Fatalf("err = %v, want no-tasks-to-replan wrap", err)
@@ -757,21 +752,21 @@ func TestRunStart_NoFromFile_TaskPickerCancelled(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedTaskRowDirect(t, tasks.Task{
-		ID:          existingID,
-		Status:      tasks.StatusPlanDone,
+		ID:       existingID,
+		Status:   tasks.StatusPlanDone,
 		PlanTool: "cursor",
-		Summary:     "existing",
+		Summary:  "existing",
 	})
 	ui := &scriptedStartUI{source: picker.SourceTask, pickedTaskOK: false}
 
-	err := RunStart(context.Background(), StartOptions{
-		Stdin:    strings.NewReader(""),
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
+	err := RunStart(t.Context(), StartOptions{
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{testutil.NewScriptedAgent()},
 
-		UI:       ui,
-		JBinary:  noopJBinary(t),
+		UI:      ui,
+		JBinary: noopJBinary(t),
 	})
 	if err != nil {
 		t.Fatalf("err = %v, want nil (cancelled picker exits cleanly)", err)
@@ -791,15 +786,15 @@ func TestRunStart_ResolveSourceFails(t *testing.T) {
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
-	err := RunStart(context.Background(), StartOptions{
+	err := RunStart(t.Context(), StartOptions{
 		FromFile: "/definitely/does/not/exist.md",
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 
-		UI:       &scriptedStartUI{},
-		JBinary:  noopJBinary(t),
+		UI:      &scriptedStartUI{},
+		JBinary: noopJBinary(t),
 	})
 	if err == nil {
 		t.Fatal("expected error from missing --from-file path")
@@ -814,15 +809,15 @@ func TestRunStart_SpawnFails(t *testing.T) {
 		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	target := writeStartFile(t, "# task\nbody")
-	err := RunStart(context.Background(), StartOptions{
+	err := RunStart(t.Context(), StartOptions{
 		FromFile: target,
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
 		Stderr:   io.Discard,
 		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
 
-		UI:       &scriptedStartUI{},
-		JBinary:  "/no/such/binary-xyzzy",
+		UI:      &scriptedStartUI{},
+		JBinary: "/no/such/binary-xyzzy",
 	})
 	if err == nil {
 		t.Fatal("expected spawn failure")
@@ -839,11 +834,11 @@ func TestRunStart_AppliesDefaults(t *testing.T) {
 		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	target := writeStartFile(t, "# task\nbody")
-	if err := RunStart(context.Background(), StartOptions{
-			Interactive: boolPtr(false),
-		FromFile: target,
-		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
-		JBinary:  noopJBinary(t),
+	if err := RunStart(t.Context(), StartOptions{
+		Interactive: new(false),
+		FromFile:    target,
+		Agents:      []codingagents.Agent{testutil.NewScriptedAgent()},
+		JBinary:     noopJBinary(t),
 	}); err != nil {
 		t.Fatalf("RunStart: %v", err)
 	}
@@ -872,16 +867,16 @@ func TestRunStart_BucketInteractiveUntouched(t *testing.T) {
 		_ = s.Close()
 	}
 	target := writeStartFile(t, "# task\nbody")
-	if err := RunStart(context.Background(), StartOptions{
-			Interactive: boolPtr(false),
-		FromFile: target,
-		Stdin:    strings.NewReader(""),
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
+	if err := RunStart(t.Context(), StartOptions{
+		Interactive: new(false),
+		FromFile:    target,
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{testutil.NewScriptedAgent()},
 
-		UI:       &scriptedStartUI{},
-		JBinary:  noopJBinary(t),
+		UI:      &scriptedStartUI{},
+		JBinary: noopJBinary(t),
 	}); err != nil {
 		t.Fatalf("RunStart: %v", err)
 	}
@@ -1025,7 +1020,7 @@ func TestNewStartCmd_RunE_PropagatesError(t *testing.T) {
 	if err := cmd.Flags().Set("from-file", "/does/not/exist.md"); err != nil {
 		t.Fatalf("Flags().Set: %v", err)
 	}
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.RunE(cmd, nil); err == nil {
@@ -1077,18 +1072,18 @@ func TestRunStart_ContextCancellable(t *testing.T) {
 		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
 	}
 	target := writeStartFile(t, "# task\nbody")
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	err := RunStart(ctx, StartOptions{
-			Interactive: boolPtr(false),
-		FromFile: target,
-		Stdin:    strings.NewReader(""),
-		Stdout:   io.Discard,
-		Stderr:   io.Discard,
-		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
+		Interactive: new(false),
+		FromFile:    target,
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{testutil.NewScriptedAgent()},
 
-		UI:       &scriptedStartUI{},
-		JBinary:  noopJBinary(t),
+		UI:      &scriptedStartUI{},
+		JBinary: noopJBinary(t),
 	})
 	if err == nil {
 		_ = firstSeededTaskID(t)
@@ -1129,17 +1124,17 @@ func TestRunStart_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
 			}
 			target := writeStartFile(t, "# task\nbody")
 			argvPath := filepath.Join(t.TempDir(), "argv.txt")
-			if err := RunStart(context.Background(), StartOptions{
-			Interactive: boolPtr(false),
+			if err := RunStart(t.Context(), StartOptions{
+				Interactive:          boolPtr(false),
 				FromFile:             target,
 				PlanRequiresApproval: tc.override,
 				Stdin:                strings.NewReader(""),
 				Stdout:               io.Discard,
 				Stderr:               io.Discard,
 				Agents:               []codingagents.Agent{testutil.NewScriptedAgent()},
-	
-				UI:                   &scriptedStartUI{},
-				JBinary:              argvJBinary(t, argvPath),
+
+				UI:      &scriptedStartUI{},
+				JBinary: argvJBinary(t, argvPath),
 			}); err != nil {
 				t.Fatalf("RunStart: %v", err)
 			}
@@ -1182,7 +1177,7 @@ func TestRunStart_InteractiveRunsInline(t *testing.T) {
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	yes := true
 	var stdout bytes.Buffer
-	if err := RunStart(context.Background(), StartOptions{
+	if err := RunStart(t.Context(), StartOptions{
 		FromFile:    target,
 		Interactive: &yes,
 		Stdin:       strings.NewReader(""),
@@ -1216,12 +1211,7 @@ func TestRunStart_InteractiveRunsInline(t *testing.T) {
 // present somewhere in the forwarded argv (its position relative to
 // the other one-off overrides is not load-bearing).
 func containsArg(args []string, want string) bool {
-	for _, a := range args {
-		if a == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args, want)
 }
 
 // seedTaskRowDirect inserts a Task row via the per-project tasks

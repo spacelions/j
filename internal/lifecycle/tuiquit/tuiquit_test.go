@@ -159,7 +159,7 @@ func TestParseAgentLogForPR(t *testing.T) {
 			wantURL: "https://github.com/a/b/pull/1",
 		},
 		{
-			name: "multiline picks first line with pr",
+			name:    "multiline picks first line with pr",
 			content: "line 1\nline 2 https://github.com/x/y/pull/99\nline 3\n",
 			wantURL: "https://github.com/x/y/pull/99",
 		},

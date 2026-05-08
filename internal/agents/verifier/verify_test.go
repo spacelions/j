@@ -39,7 +39,6 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(tmp)
 	if err := os.Chdir(tmp); err != nil {
 		panic(err)
 	}
@@ -62,7 +61,9 @@ exit 1
 	if err := os.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH")); err != nil {
 		panic(err)
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	_ = os.RemoveAll(tmp)
+	os.Exit(code)
 }
 
 func mustInit(t *testing.T) {
@@ -310,17 +311,17 @@ func seedWorkDoneTask(t *testing.T, summary, planBody, requirementBody string) s
 	workBegin := planEnd.Add(time.Minute)
 	workEnd := workBegin.Add(time.Minute)
 	task := tasks.Task{
-		ID:               id,
-		Status:           tasks.StatusWorkDone,
-		WorkTool:         "cursor",
-		WorkModel:        "sonnet-4",
+		ID:                id,
+		Status:            tasks.StatusWorkDone,
+		WorkTool:          "cursor",
+		WorkModel:         "sonnet-4",
 		PlanResumeSession: "seed-plan-cursor",
 		WorkResumeSession: "seed-work-cursor",
-		Summary:          summary,
-		PlanBeginAt:      planBegin,
-		PlanEndAt:        planEnd,
-		WorkBeginAt:      workBegin,
-		WorkEndAt:        workEnd,
+		Summary:           summary,
+		PlanBeginAt:       planBegin,
+		PlanEndAt:         planEnd,
+		WorkBeginAt:       workBegin,
+		WorkEndAt:         workEnd,
 	}
 	if err := s.PutTask(task); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -340,7 +341,7 @@ func TestRun_PassOnFirstIteration(t *testing.T) {
 	agent.verifyVerdicts = []string{"PASS"}
 	var stdout bytes.Buffer
 
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID:        id,
 		Interactive:   true,
 		MaxIterations: 3,
@@ -394,7 +395,7 @@ func TestRun_FailThenPass(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"FAIL", "PASS"}
 
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID:        id,
 		Interactive:   true,
 		MaxIterations: 3,
@@ -459,7 +460,7 @@ func TestRun_ThreadsWorktreeIntoRequests(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"FAIL", "PASS"}
 
-	err = Run(context.Background(), Options{
+	err = Run(t.Context(), Options{
 		TaskID:        id,
 		Interactive:   true,
 		MaxIterations: 3,
@@ -495,7 +496,7 @@ func TestRun_LoopExhausted(t *testing.T) {
 	agent.verifyVerdicts = []string{"FAIL", "FAIL"}
 	var stdout bytes.Buffer
 
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID:        id,
 		Interactive:   true,
 		MaxIterations: 2,
@@ -535,7 +536,7 @@ func TestRun_MaxIterations1(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"FAIL"}
 
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID:        id,
 		Interactive:   true,
 		MaxIterations: 1,
@@ -568,7 +569,7 @@ func TestRun_VerifierError(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyErr = errors.New("verify boom")
 
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID:        id,
 		Interactive:   true,
 		MaxIterations: 3,
@@ -597,7 +598,7 @@ func TestRun_WorkerFixError(t *testing.T) {
 	agent.verifyVerdicts = []string{"FAIL", "PASS"}
 	agent.workErr = errors.New("worker boom")
 
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID:        id,
 		Interactive:   true,
 		MaxIterations: 3,
@@ -626,7 +627,7 @@ func TestRun_MalformedVerdictTreatedAsFail(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"weird verdict"}
 
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID:        id,
 		Interactive:   true,
 		MaxIterations: 1,
@@ -715,7 +716,7 @@ func TestAllowedForVerify(t *testing.T) {
 
 // TestRun_NoAgents short-circuits before touching anything.
 func TestRun_NoAgents(t *testing.T) {
-	err := Run(context.Background(), Options{})
+	err := Run(t.Context(), Options{})
 	if err == nil || !strings.Contains(err.Error(), "no coding agents") {
 		t.Fatalf("err = %v", err)
 	}
@@ -730,7 +731,7 @@ func TestRun_NoCandidatesError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
@@ -749,7 +750,7 @@ func TestRun_FromTask_NotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID: "missing",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -785,7 +786,7 @@ func TestRun_FromTask_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 
 	agent := newScriptedAgent()
 	ui := &scriptedUI{confirm: false}
-	err = Run(context.Background(), Options{
+	err = Run(t.Context(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -831,7 +832,7 @@ func TestRun_FromTask_StatusMismatch_AcceptedRuns(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
 	ui := &scriptedUI{confirm: true}
-	err = Run(context.Background(), Options{
+	err = Run(t.Context(), Options{
 		TaskID:        id,
 		MaxIterations: 1,
 		Stdout:        io.Discard,
@@ -861,7 +862,7 @@ func TestRun_FromTask_StatusMismatch_YesFlagSkipsPrompt(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
 	ui := &scriptedUI{}
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID:        id,
 		Yes:           true,
 		MaxIterations: 1,
@@ -903,7 +904,7 @@ func TestRun_FromTask_StatusMismatch_PromptError(t *testing.T) {
 
 	agent := newScriptedAgent()
 	ui := &scriptedUI{confirmErr: errors.New("confirm boom")}
-	err = Run(context.Background(), Options{
+	err = Run(t.Context(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -940,7 +941,7 @@ func TestRun_FromTask_StatusMismatch_AbortExitsClean(t *testing.T) {
 
 	agent := newScriptedAgent()
 	ui := &scriptedUI{confirmErr: huh.ErrUserAborted}
-	err = Run(context.Background(), Options{
+	err = Run(t.Context(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -964,7 +965,7 @@ func TestRun_AutoPicksLatestWorkDone(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
 	ui := &scriptedUI{}
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
@@ -992,7 +993,7 @@ func TestRun_PickerOverMultipleTasks(t *testing.T) {
 	agent.verifyVerdicts = []string{"PASS"}
 	ui := &scriptedUI{pickedID: id2}
 
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
@@ -1034,7 +1035,7 @@ func TestRun_PickerError(t *testing.T) {
 	agent := newScriptedAgent()
 	ui := &scriptedUI{pickErr: errors.New("picker boom")}
 
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
@@ -1052,7 +1053,7 @@ func TestRun_UICancelled(t *testing.T) {
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
 	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -1079,7 +1080,7 @@ func TestRun_NewResumeID_ErrorWarnsButContinues(t *testing.T) {
 	agent.verifyVerdicts = []string{"PASS"}
 	var stderr bytes.Buffer
 
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID:        id,
 		MaxIterations: 1,
 		Stdout:        io.Discard,
@@ -1104,7 +1105,7 @@ func TestRun_UnknownToolFromUI(t *testing.T) {
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
 	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -1138,7 +1139,7 @@ func TestRun_UnknownTool_OnTaskRow(t *testing.T) {
 	_ = s.Close()
 
 	agent := newScriptedAgent()
-	err = Run(context.Background(), Options{
+	err = Run(t.Context(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -1159,7 +1160,7 @@ func TestRun_PersistsVerifierSelection(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
 
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID:      id,
 		Interactive: true,
 		Stdout:      io.Discard,
@@ -1195,7 +1196,7 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 	agent.verifyVerdicts = []string{"PASS"}
 	ui := &scriptedUI{}
 
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID: id,
 		Tool:   "cursor",
 		Model:  "opus",
@@ -1247,7 +1248,7 @@ func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 	id := seedWorkDoneTask(t, "x", "plan", "")
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
-	err = Run(context.Background(), Options{
+	err = Run(t.Context(), Options{
 		TaskID: id,
 		Tool:   "cursor",
 		Stdout: io.Discard,
@@ -1280,7 +1281,7 @@ func TestRun_ExplicitTool_NilStore_LazyOpenFails(t *testing.T) {
 	}
 	id := seedWorkDoneTask(t, "x", "plan", "")
 	agent := newScriptedAgent()
-	err = Run(context.Background(), Options{
+	err = Run(t.Context(), Options{
 		TaskID: id,
 		Tool:   "cursor",
 		Stdout: io.Discard,
@@ -1302,7 +1303,7 @@ func TestRun_PartialModel_NoStoredTool(t *testing.T) {
 	id := seedWorkDoneTask(t, "x", "plan", "")
 	agent := newScriptedAgent()
 
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID: id,
 		Model:  "opus",
 		Stdout: io.Discard,
@@ -1328,7 +1329,7 @@ func TestRun_LoginFailure_StopsBeforeAgent(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.loginErr = errors.New("not logged in")
 
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -1353,7 +1354,7 @@ func TestRun_ListModelsError_StopsBeforeUI(t *testing.T) {
 	agent.modelsErr = errors.New("network down")
 
 	ui := &scriptedUI{}
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -1378,7 +1379,7 @@ func TestRun_ByTaskID_PlanReadError(t *testing.T) {
 		t.Fatal(err)
 	}
 	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -1399,7 +1400,7 @@ func TestRun_List_DecodeError(t *testing.T) {
 	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
 
 	agent := newScriptedAgent()
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
@@ -1444,9 +1445,11 @@ func (s *spawnVerifyAgent) NewResumeID(context.Context) (string, error)  { retur
 func (s *spawnVerifyAgent) Plan(context.Context, codingagents.PlanRequest) (int, error) {
 	return 0, errors.New("spawnVerifyAgent: Plan unused")
 }
+
 func (s *spawnVerifyAgent) Work(context.Context, codingagents.WorkRequest) (int, error) {
 	return 0, nil
 }
+
 func (s *spawnVerifyAgent) Verify(_ context.Context, req codingagents.VerifyRequest) (int, error) {
 	idx := s.verifyCalls
 	s.verifyCalls++
@@ -1485,7 +1488,7 @@ func TestRunVerifyLoop_WaitsForSpawnedChild(t *testing.T) {
 	}
 	var stdout bytes.Buffer
 	start := time.Now()
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		TaskID:        id,
 		Interactive:   false,
 		MaxIterations: 3,
@@ -1540,9 +1543,11 @@ func (a *liveChildAgent) NewResumeID(context.Context) (string, error)  { return 
 func (a *liveChildAgent) Plan(context.Context, codingagents.PlanRequest) (int, error) {
 	return 0, errors.New("liveChildAgent: Plan unused")
 }
+
 func (a *liveChildAgent) Work(context.Context, codingagents.WorkRequest) (int, error) {
 	return a.pid, nil
 }
+
 func (a *liveChildAgent) Verify(_ context.Context, req codingagents.VerifyRequest) (int, error) {
 	if a.failFindings != "" && req.VerifierFindingsOutputPath != "" {
 		_ = os.WriteFile(req.VerifierFindingsOutputPath, []byte(a.failFindings), 0o644)
@@ -1573,8 +1578,10 @@ func startLongChild(t *testing.T) int {
 // lifecycle.BeginVerifyRestart (EventVerifyBegin) does not panic.
 func resolvedForTest(taskDir string) resolved {
 	return resolved{
-		Task: tasks.Task{ID: "x", Status: tasks.StatusWorkDone,
-			WorkModel: "m", WorkTool: "cursor"},
+		Task: tasks.Task{
+			ID: "x", Status: tasks.StatusWorkDone,
+			WorkModel: "m", WorkTool: "cursor",
+		},
 		TaskDir:          taskDir,
 		RequirementsPath: filepath.Join(taskDir, "req.md"),
 		PlanPath:         filepath.Join(taskDir, "plan.md"),
@@ -1592,7 +1599,7 @@ func TestRunVerifyLoop_VerifierWaitCtxCancelled(t *testing.T) {
 	agent := &liveChildAgent{pid: pid}
 	res := resolvedForTest(t.TempDir())
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
@@ -1623,7 +1630,7 @@ func TestRunVerifyLoop_WorkerWaitCtxCancelled(t *testing.T) {
 	worker := &liveChildAgent{pid: pid}
 	res := resolvedForTest(t.TempDir())
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
