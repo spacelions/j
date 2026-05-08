@@ -2,7 +2,6 @@ package testcases_test
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,11 +16,12 @@ import (
 // runWithStdin runs cmd with the supplied args, leaving the caller's
 // existing SetIn (typically a strings.NewReader for line-based
 // prompts). It mirrors testutil.RunCobra but does NOT overwrite stdin.
-func runWithStdin(cmd *cobra.Command, args ...string) (string, string, error) {
+func runWithStdin(t *testing.T, cmd *cobra.Command, args ...string) (string, string, error) {
+	t.Helper()
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetArgs(args)
 	err := cmd.Execute()
 	return stdout.String(), stderr.String(), err
@@ -36,7 +36,7 @@ func freshInit(t *testing.T) {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	mustRead := ""
-	if err := initcmd.Run(context.Background(), initcmd.Options{
+	if err := initcmd.Run(t.Context(), initcmd.Options{
 		Yes:      true,
 		MustRead: &mustRead,
 		Stdin:    nil,

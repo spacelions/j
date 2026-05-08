@@ -105,9 +105,9 @@ type PlanRequest struct {
 	// user-overridable role body decoupled from the file-IO
 	// contracts the orchestrator depends on. Always derived from
 	// `<task-dir>/` + tasks.ClarificationFileName by the caller.
-	ClarificationPath      string
-	Interactive            bool
-	ResumeChatID           string
+	ClarificationPath string
+	Interactive       bool
+	ResumeChatID      string
 	// Resume, when true, asks the backend to use its resume-only
 	// prompt template: skip the save-from-scratch suffix and tell
 	// the previous session to inspect what was already done,
@@ -142,8 +142,8 @@ type PlanRequest struct {
 // ResumeChatID, when set, is the value previously returned by
 // Agent.NewResumeID. Agents that have no notion of resume ignore it.
 type WorkRequest struct {
-	PlanPath     string
-	Model        string
+	PlanPath string
+	Model    string
 	// ClarificationPath is the per-task absolute path the agent
 	// must write its question to (and exit) instead of guessing
 	// when it gets stuck. See PlanRequest.ClarificationPath.

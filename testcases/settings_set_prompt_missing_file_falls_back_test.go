@@ -25,7 +25,7 @@ func TestSettingsSet_PromptMissingFileFallsBack(t *testing.T) {
 	}
 	dest := filepath.Join(dir, "vanishing-planner.md")
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "planner.prompt="+dest,
 	); err != nil {
 		t.Fatalf("set: %v", err)

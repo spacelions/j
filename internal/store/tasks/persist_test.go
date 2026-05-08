@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spacelions/j/internal/store")
+	"github.com/spacelions/j/internal/store"
+)
 
 // TestPersistWarn_OpenFailure forces bolt.Open to fail
 // by parking a regular file at .j/tasks; a single warning lands on

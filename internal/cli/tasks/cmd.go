@@ -34,7 +34,7 @@ const simpleFlag = "simple"
 // New returns the `j tasks` cobra command.
 func New() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "tasks",
+		Use:   cmdTasks,
 		Short: "List planning/work tasks recorded in <cwd>/.j/tasks/",
 		Long: "Reads the per-project task log written by `j plan` and " +
 			"`j work` (bbolt at <cwd>/.j/tasks/list.db) and prints a " +

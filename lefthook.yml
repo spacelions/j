@@ -19,6 +19,9 @@ pre-commit:
         - "testcases/**"
         - ".j/**"
         - "go.sum"
+        - "go.mod"
+        - ".agents/**"
+        - "skills-lock.json"
     tests:
       priority: 2
       run: make test

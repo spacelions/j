@@ -26,7 +26,7 @@ func TestTasksTaskFromTask_EnvIsInert(t *testing.T) {
 	testutil.Init(t)
 	t.Setenv("TASKS_TASK_FROM_TASK", "ghost-id")
 
-	stdout, _, err := testutil.RunCobra(tasks.New(), "show")
+	stdout, _, err := testutil.RunCobra(t, tasks.New(), "show")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

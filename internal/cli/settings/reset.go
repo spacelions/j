@@ -3,7 +3,6 @@ package settings
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -21,9 +20,7 @@ func newResetCmd() *cobra.Command {
 		Short: "Remove all project settings, a whole bucket, " +
 			"or one bucket.key (multiple targets allowed)",
 		Args: cobra.ArbitraryArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReset(cmd, args)
-		},
+		RunE: runReset,
 	}
 	cmd.Flags().BoolP(
 		"yes", "y", false,
@@ -44,37 +41,15 @@ func runResetFull(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(jDir); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			uitheme.NormalFprintln(cmd.OutOrStdout(), "J: nothing to reset")
-			return nil
-		}
-		return err
-	}
 	path, err := store.DefaultPath()
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			uitheme.NormalFprintln(cmd.OutOrStdout(), "J: nothing to reset")
-			return nil
-		}
-		return err
-	}
-	s, err := store.Open(path)
+	noOp, err := resetIsNoOp(jDir, path)
 	if err != nil {
 		return err
 	}
-	empty, err := s.IsEmpty()
-	if err != nil {
-		_ = s.Close()
-		return err
-	}
-	if err := s.Close(); err != nil {
-		return err
-	}
-	if empty {
+	if noOp {
 		uitheme.NormalFprintln(cmd.OutOrStdout(), "J: nothing to reset")
 		return nil
 	}
@@ -97,6 +72,28 @@ func runResetFull(cmd *cobra.Command) error {
 	}
 	uitheme.DangerousFprintf(cmd.OutOrStdout(), "J: removed %s\n", jDir)
 	return nil
+}
+
+// resetIsNoOp returns true when there is nothing to reset: either the
+// .j directory or the settings file is absent, or the store is empty.
+func resetIsNoOp(jDir, path string) (bool, error) {
+	for _, p := range []string{jDir, path} {
+		if _, err := os.Stat(p); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return true, nil
+			}
+			return false, err
+		}
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		return false, err
+	}
+	empty, err := s.IsEmpty()
+	if closeErr := s.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	return empty, err
 }
 
 func readConfirmationLine(cmd *cobra.Command) (string, error) {
@@ -137,7 +134,7 @@ func parseResetTargets(args []string) ([]resetTarget, error) {
 	out := make([]resetTarget, 0, len(args))
 	for _, arg := range args {
 		if arg == "" {
-			return nil, fmt.Errorf("settings: empty reset target")
+			return nil, errors.New("settings: empty reset target")
 		}
 		if strings.ContainsRune(arg, '.') {
 			bucket, key, err := parseBucketKey(arg)

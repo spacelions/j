@@ -32,7 +32,7 @@ func TestCLI_NoDoubleJPrefix(t *testing.T) {
 	if !strings.Contains(stderr, "J: ") {
 		t.Fatalf("stderr missing single J: prefix: %q", stderr)
 	}
-	if strings.Contains(stderr, "J: J:") {
+	if strings.Contains(stderr, "J: J:") { //nolint:dupword // intentionally checking for a double-prefix bug
 		t.Fatalf("stderr has double J: prefix: %q", stderr)
 	}
 }

@@ -10,8 +10,8 @@ import (
 
 	"github.com/charmbracelet/huh"
 
-	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/lifecycle"
 	"github.com/spacelions/j/internal/resolver"
@@ -166,7 +166,7 @@ func runVerifyResume(
 	}
 	outcome := lifecycle.VerifyOutcomeNoRetries
 	if runErr == nil &&
-		resolver.ParseVerdict(findingsPath) == "PASS" {
+		resolver.ParseVerdict(findingsPath) == resolver.VerdictPass {
 		outcome = lifecycle.VerifyOutcomeSuccess
 	}
 	lc.Finish(outcome, runErr)

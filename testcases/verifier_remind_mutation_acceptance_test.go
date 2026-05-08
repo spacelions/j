@@ -1,7 +1,6 @@
 package testcases_test
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -40,7 +39,7 @@ func TestVerifier_RemindOnIssue_UsesIssueReminderMutation(
 	c := linear.NewClient("k", linear.WithEndpoint(srv.URL))
 	before := time.Now().UTC().Add(-2 * time.Second)
 	if err := c.RemindOnIssue(
-		context.Background(), "node-id-99",
+		t.Context(), "node-id-99",
 	); err != nil {
 		t.Fatalf("RemindOnIssue: %v", err)
 	}

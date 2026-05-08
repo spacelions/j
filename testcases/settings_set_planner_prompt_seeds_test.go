@@ -23,7 +23,7 @@ func TestSettingsSet_PlannerPromptSeedsBundled(t *testing.T) {
 	}
 	dest := filepath.Join(dir, "custom-planner.md")
 
-	stdout, _, err := testutil.RunCobra(settings.New(),
+	stdout, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "planner.prompt="+dest,
 	)
 	if err != nil {

@@ -5,13 +5,11 @@ import (
 	"testing"
 )
 
-func boolPtr(b bool) *bool { return &b }
-
 func TestInteractive_ExplicitWins(t *testing.T) {
-	if got := Interactive(boolPtr(true)); got != true {
+	if got := Interactive(new(true)); got != true {
 		t.Fatalf("Interactive(true) = %v, want true", got)
 	}
-	if got := Interactive(boolPtr(false)); got != false {
+	if got := Interactive(new(false)); got != false {
 		t.Fatalf("Interactive(false) = %v, want false", got)
 	}
 }

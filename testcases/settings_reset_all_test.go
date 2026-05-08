@@ -19,7 +19,7 @@ import (
 func TestSettingsResetAll_HeadlessYesFlag(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "plan.tool=cursor", "plan.model=sonnet-4",
 	); err != nil {
 		t.Fatalf("set: %v", err)
@@ -29,7 +29,7 @@ func TestSettingsResetAll_HeadlessYesFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DefaultDir: %v", err)
 	}
-	stdout, _, err := testutil.RunCobra(settings.New(), "reset", "--yes")
+	stdout, _, err := testutil.RunCobra(t, settings.New(), "reset", "--yes")
 	if err != nil {
 		t.Fatalf("reset --yes: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestSettingsResetAll_HeadlessYesFlag(t *testing.T) {
 func TestSettingsResetAll_InteractiveDecline(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "plan.tool=cursor",
 	); err != nil {
 		t.Fatalf("set: %v", err)
@@ -65,7 +65,7 @@ func TestSettingsResetAll_InteractiveDecline(t *testing.T) {
 
 	cmd := settings.New()
 	cmd.SetIn(strings.NewReader("n\n"))
-	stdout, _, err := runWithStdin(cmd, "reset")
+	stdout, _, err := runWithStdin(t, cmd, "reset")
 	if err != nil {
 		t.Fatalf("reset (decline): %v", err)
 	}
@@ -75,7 +75,7 @@ func TestSettingsResetAll_InteractiveDecline(t *testing.T) {
 	if _, err := os.Stat(jDir); err != nil {
 		t.Fatalf("%s should still exist after decline: err=%v", jDir, err)
 	}
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("post-decline list: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestSettingsResetAll_InteractiveDecline(t *testing.T) {
 func TestSettingsResetAll_InteractiveAccept(t *testing.T) {
 	freshInit(t)
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "plan.tool=cursor",
 	); err != nil {
 		t.Fatalf("set: %v", err)
@@ -105,7 +105,7 @@ func TestSettingsResetAll_InteractiveAccept(t *testing.T) {
 
 	cmd := settings.New()
 	cmd.SetIn(strings.NewReader("y\n"))
-	stdout, _, err := runWithStdin(cmd, "reset")
+	stdout, _, err := runWithStdin(t, cmd, "reset")
 	if err != nil {
 		t.Fatalf("reset (accept): %v", err)
 	}

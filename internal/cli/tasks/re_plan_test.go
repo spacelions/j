@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,17 +16,13 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// boolPtr is a tiny convenience for the *bool flags on RePlanOptions
-// (nil means "inherit"; non-nil forwards into the orchestrate argv).
-func boolPtr(v bool) *bool { return &v }
-
 // TestRunRePlan_NoTasks pins the empty-store branch: no rows, no
 // --from-task -> emptyMessage on stdout and exit 0.
 func TestRunRePlan_NoTasks(t *testing.T) {
 	setupContinueEnv(t)
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunRePlan(context.Background(), RePlanOptions{
+	err := RunRePlan(t.Context(), RePlanOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -51,7 +46,7 @@ func TestRunRePlan_PickerAbort(t *testing.T) {
 	setupContinueEnv(t)
 	seedTaskFull(t, nil)
 	ui := &fakeUI{} // empty pickReturn -> ok=false
-	if err := RunRePlan(context.Background(), RePlanOptions{
+	if err := RunRePlan(t.Context(), RePlanOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -72,7 +67,7 @@ func TestRunRePlan_PickerAbort(t *testing.T) {
 // unknown id surfaces the wrapped resolver error verbatim.
 func TestRunRePlan_FromTaskNotFound(t *testing.T) {
 	setupContinueEnv(t)
-	err := RunRePlan(context.Background(), RePlanOptions{
+	err := RunRePlan(t.Context(), RePlanOptions{
 		FromTask: "ghost",
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -94,7 +89,7 @@ func TestRunRePlan_StatusOverrideDeclined(t *testing.T) {
 		task.Status = tasks.StatusWorking
 	})
 	ui := &fakeUI{statusReturn: false}
-	if err := RunRePlan(context.Background(), RePlanOptions{
+	if err := RunRePlan(t.Context(), RePlanOptions{
 		FromTask: id,
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -126,9 +121,9 @@ func TestRunRePlan_PlanDoneSkipsConfirm(t *testing.T) {
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	if err := RunRePlan(context.Background(), RePlanOptions{
+	if err := RunRePlan(t.Context(), RePlanOptions{
 		FromTask:    id,
-		Interactive: boolPtr(false),
+		Interactive: new(false),
 		Stdin:       strings.NewReader(""),
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
@@ -168,7 +163,7 @@ func TestRunRePlan_HelpSkipsConfirm(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{}
-	if err := RunRePlan(context.Background(), RePlanOptions{
+	if err := RunRePlan(t.Context(), RePlanOptions{
 		FromTask: id,
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -194,11 +189,11 @@ func TestRunRePlan_ForwardsAllOverrides(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, nil)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
-	if err := RunRePlan(context.Background(), RePlanOptions{
+	if err := RunRePlan(t.Context(), RePlanOptions{
 		FromTask:    id,
 		Tool:        "claude",
 		Model:       "opus",
-		Interactive: boolPtr(true),
+		Interactive: new(true),
 		Stdin:       strings.NewReader(""),
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
@@ -228,9 +223,9 @@ func TestRunRePlan_InteractiveFalseStillForwards(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, nil)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
-	if err := RunRePlan(context.Background(), RePlanOptions{
+	if err := RunRePlan(t.Context(), RePlanOptions{
 		FromTask:    id,
-		Interactive: boolPtr(false),
+		Interactive: new(false),
 		Stdin:       strings.NewReader(""),
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
@@ -253,7 +248,7 @@ func TestRunRePlan_PickerHappy(t *testing.T) {
 	id := seedTaskFull(t, nil)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}
-	if err := RunRePlan(context.Background(), RePlanOptions{
+	if err := RunRePlan(t.Context(), RePlanOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -281,9 +276,9 @@ func TestRunRePlan_InteractiveRunsInline(t *testing.T) {
 	id := seedTaskFull(t, nil)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	var stdout bytes.Buffer
-	if err := RunRePlan(context.Background(), RePlanOptions{
+	if err := RunRePlan(t.Context(), RePlanOptions{
 		FromTask:    id,
-		Interactive: boolPtr(true),
+		Interactive: new(true),
 		Stdin:       strings.NewReader(""),
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
@@ -312,7 +307,7 @@ func TestRunRePlan_InteractiveRunsInline(t *testing.T) {
 func TestRunRePlan_SpawnFails(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, nil)
-	err := RunRePlan(context.Background(), RePlanOptions{
+	err := RunRePlan(t.Context(), RePlanOptions{
 		FromTask: id,
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -336,7 +331,7 @@ func TestRunRePlan_SpawnFails(t *testing.T) {
 func TestRunRePlan_AppliesDefaults(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, nil)
-	if err := RunRePlan(context.Background(), RePlanOptions{
+	if err := RunRePlan(t.Context(), RePlanOptions{
 		FromTask: id,
 		Agents:   []codingagents.Agent{newContinueAgent()},
 		JBinary:  noopJBinary(t),
@@ -419,7 +414,7 @@ func TestNewRePlanCmd_RunE_PropagatesError(t *testing.T) {
 	if err := cmd.Flags().Set("from-task", "ghost"); err != nil {
 		t.Fatalf("Flags().Set: %v", err)
 	}
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.RunE(cmd, nil); err == nil {
@@ -437,7 +432,7 @@ func TestRunRePlan_StatusUIError(t *testing.T) {
 	})
 	boom := errInjected("status boom")
 	ui := &fakeUI{statusErr: boom}
-	err := RunRePlan(context.Background(), RePlanOptions{
+	err := RunRePlan(t.Context(), RePlanOptions{
 		FromTask: id,
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -451,10 +446,24 @@ func TestRunRePlan_StatusUIError(t *testing.T) {
 }
 
 // TestRunRePlan_OpenDefaultFails replaces the cwd with a removed
-// directory so tasks.OpenDefault → DefaultDir → os.Getwd fails. On
-// macOS getwd may still succeed via cached inodes; in that case the
-// test skips. Drives the resolveRePlanTaskID error branch.
+// directory so tasks.OpenDefault → DefaultDir → os.Getwd fails.
 func TestRunRePlan_OpenDefaultFails(t *testing.T) {
+	requireRemovedCWD(t, func() error {
+		return RunRePlan(t.Context(), RePlanOptions{
+			Stdin:  strings.NewReader(""),
+			Stdout: io.Discard,
+			Stderr: io.Discard,
+			Agents: []codingagents.Agent{newContinueAgent()},
+			UI:     &fakeUI{},
+		})
+	})
+}
+
+// requireRemovedCWD runs fn after deleting the current directory so
+// tasks.DefaultDir() → os.Getwd() returns an error. Skips on Windows
+// and when running as root, and when the OS caches the inode.
+func requireRemovedCWD(t *testing.T, fn func() error) {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("cwd cannot be removed while in use on windows")
 	}
@@ -474,14 +483,7 @@ func TestRunRePlan_OpenDefaultFails(t *testing.T) {
 	if _, err := os.Getwd(); err == nil {
 		t.Skip("os.Getwd unexpectedly succeeded")
 	}
-	err := RunRePlan(context.Background(), RePlanOptions{
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{newContinueAgent()},
-		UI:     &fakeUI{},
-	})
-	if err == nil {
+	if err := fn(); err == nil {
 		t.Fatal("expected DefaultDir to surface getwd error")
 	}
 }
@@ -500,7 +502,7 @@ func TestRunRePlan_ListDecodeError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "bad", tasks.TaskFileName), []byte("not = valid = toml"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err = RunRePlan(context.Background(), RePlanOptions{
+	err = RunRePlan(t.Context(), RePlanOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -522,7 +524,7 @@ func TestNewRePlanCmd_PreRunE_DefaultedAgents(t *testing.T) {
 	setupContinueEnv(t)
 	installCursorAgentLoginStub(t)
 	cmd := newRePlanCmd()
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetIn(strings.NewReader(""))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -547,7 +549,7 @@ func TestNewRePlanCmd_RunE_InteractiveFlag(t *testing.T) {
 	if err := cmd.Flags().Set("interactive", "true"); err != nil {
 		t.Fatalf("Flags().Set interactive: %v", err)
 	}
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetIn(strings.NewReader(""))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -556,67 +558,39 @@ func TestNewRePlanCmd_RunE_InteractiveFlag(t *testing.T) {
 	}
 }
 
-// TestRunRePlan_FromCompletedSpawnsAfterConfirm pins that re-plan no
-// longer rejects a completed task at the IsLegal guard. The status
-// is outside the re-plan allowlist so the override prompt fires;
-// confirming reaches the orchestrator-spawn fake.
-func TestRunRePlan_FromCompletedSpawnsAfterConfirm(t *testing.T) {
-	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
-		task.Status = tasks.StatusCompleted
-	})
-	argvPath := filepath.Join(t.TempDir(), "argv.txt")
-	ui := &fakeUI{statusReturn: true}
-	if err := RunRePlan(context.Background(), RePlanOptions{
-		FromTask:    id,
-		Interactive: boolPtr(false),
-		Stdin:       strings.NewReader(""),
-		Stdout:      io.Discard,
-		Stderr:      io.Discard,
-		Agents:      []codingagents.Agent{newContinueAgent()},
-		UI:          ui,
-		JBinary:     argvJBinary(t, argvPath),
-	}); err != nil {
-		t.Fatalf("RunRePlan: %v", err)
-	}
-	if ui.statusCalls != 1 {
-		t.Fatalf("ConfirmStatusOverride calls = %d, want 1",
-			ui.statusCalls)
-	}
-	args := readSpawnedArgv(t, argvPath)
-	if len(args) == 0 || args[0] != "tasks" {
-		t.Fatalf("argv = %v, want spawned `tasks orchestrate ...`", args)
-	}
-}
-
-// TestRunRePlan_FromFailedSpawnsAfterConfirm mirrors the completed
-// case for the `failed` source status.
-func TestRunRePlan_FromFailedSpawnsAfterConfirm(t *testing.T) {
-	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
-		task.Status = tasks.StatusFailed
-	})
-	argvPath := filepath.Join(t.TempDir(), "argv.txt")
-	ui := &fakeUI{statusReturn: true}
-	if err := RunRePlan(context.Background(), RePlanOptions{
-		FromTask:    id,
-		Interactive: boolPtr(false),
-		Stdin:       strings.NewReader(""),
-		Stdout:      io.Discard,
-		Stderr:      io.Discard,
-		Agents:      []codingagents.Agent{newContinueAgent()},
-		UI:          ui,
-		JBinary:     argvJBinary(t, argvPath),
-	}); err != nil {
-		t.Fatalf("RunRePlan: %v", err)
-	}
-	if ui.statusCalls != 1 {
-		t.Fatalf("ConfirmStatusOverride calls = %d, want 1",
-			ui.statusCalls)
-	}
-	args := readSpawnedArgv(t, argvPath)
-	if len(args) == 0 || args[0] != "tasks" {
-		t.Fatalf("argv = %v, want spawned `tasks orchestrate ...`", args)
+// TestRunRePlan_SpawnsAfterConfirm pins statuses outside the allowlist:
+// the override prompt fires, confirming reaches the orchestrator-spawn fake.
+func TestRunRePlan_SpawnsAfterConfirm(t *testing.T) {
+	for _, status := range []tasks.TaskStatus{
+		tasks.StatusCompleted, tasks.StatusFailed,
+	} {
+		t.Run(string(status), func(t *testing.T) {
+			setupContinueEnv(t)
+			id := seedTaskFull(t, func(task *tasks.Task) { task.Status = status })
+			argvPath := filepath.Join(t.TempDir(), "argv.txt")
+			ui := &fakeUI{statusReturn: true}
+			if err := RunRePlan(t.Context(), RePlanOptions{
+				FromTask:    id,
+				Interactive: new(false),
+				Stdin:       strings.NewReader(""),
+				Stdout:      io.Discard,
+				Stderr:      io.Discard,
+				Agents:      []codingagents.Agent{newContinueAgent()},
+				UI:          ui,
+				JBinary:     argvJBinary(t, argvPath),
+			}); err != nil {
+				t.Fatalf("RunRePlan: %v", err)
+			}
+			if ui.statusCalls != 1 {
+				t.Fatalf("ConfirmStatusOverride calls = %d, want 1",
+					ui.statusCalls)
+			}
+			args := readSpawnedArgv(t, argvPath)
+			if len(args) == 0 || args[0] != cmdTasks {
+				t.Fatalf("argv = %v, want spawned `tasks orchestrate ...`",
+					args)
+			}
+		})
 	}
 }
 

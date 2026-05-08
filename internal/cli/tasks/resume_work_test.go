@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"path/filepath"
 	"strings"
@@ -26,7 +25,7 @@ func seedWorkingTaskWithWorkSession(t *testing.T) string {
 func TestRunResumeWork_NoActiveSession(t *testing.T) {
 	setupContinueEnv(t)
 	var stdout bytes.Buffer
-	err := RunResumeWork(context.Background(), ResumeWorkOptions{
+	err := RunResumeWork(t.Context(), ResumeWorkOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -46,7 +45,7 @@ func TestRunResumeWork_HappyPath(t *testing.T) {
 	id := seedWorkingTaskWithWorkSession(t)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}
-	err := RunResumeWork(context.Background(), ResumeWorkOptions{
+	err := RunResumeWork(t.Context(), ResumeWorkOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -69,7 +68,7 @@ func TestRunResumeWork_PickerAbort(t *testing.T) {
 	seedWorkingTaskWithWorkSession(t)
 	seedWorkingTaskWithWorkSession(t)
 	ui := &fakeUI{} // empty pickReturn -> ok=false
-	if err := RunResumeWork(context.Background(), ResumeWorkOptions{
+	if err := RunResumeWork(t.Context(), ResumeWorkOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -87,7 +86,7 @@ func TestRunResumeWork_SpawnFails(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedWorkingTaskWithWorkSession(t)
 	ui := &fakeUI{pickReturn: id}
-	err := RunResumeWork(context.Background(), ResumeWorkOptions{
+	err := RunResumeWork(t.Context(), ResumeWorkOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -101,13 +100,13 @@ func TestRunResumeWork_SpawnFails(t *testing.T) {
 }
 
 func TestRunResumeWork_AppliesDefaults(t *testing.T) {
-	opts := ResumeWorkOptions{}
-	opts = opts.withDefaults()
-	if opts.Stdin == nil || opts.Stdout == nil || opts.Stderr == nil {
-		t.Fatal("withDefaults should fill nil streams")
-	}
-	if opts.UI == nil {
-		t.Fatal("withDefaults should give default UI")
+	// withDefaults is now on resumeOptions; RunResumeWork wraps it
+	// so calling with nil opts is the easiest way to exercise the path.
+	setupContinueEnv(t)
+	if err := RunResumeWork(t.Context(), ResumeWorkOptions{
+		Agents: []codingagents.Agent{newContinueAgent()},
+	}); err != nil {
+		t.Fatalf("RunResumeWork: %v", err)
 	}
 }
 
@@ -117,7 +116,7 @@ func TestFilterTasksWithWorkSession(t *testing.T) {
 		{ID: "b", WorkResumeSession: ""},
 		{ID: "c", WorkResumeSession: "s2"},
 	}
-	got := filterTasksWithWorkSession(rows)
+	got := filterTasksBySession(rows, resumeWorkConfig.hasSession)
 	if len(got) != 2 {
 		t.Fatalf("len = %d, want 2", len(got))
 	}
@@ -137,7 +136,7 @@ func TestRunResumeWork_HappyPath_Completed(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}
-	if err := RunResumeWork(context.Background(), ResumeWorkOptions{
+	if err := RunResumeWork(t.Context(), ResumeWorkOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -167,7 +166,7 @@ func TestRunResumeWork_HappyPath_Failed(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}
-	if err := RunResumeWork(context.Background(), ResumeWorkOptions{
+	if err := RunResumeWork(t.Context(), ResumeWorkOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -200,7 +199,7 @@ func TestRunResumeWork_RegisteredAsChild(t *testing.T) {
 func TestNewResumeWorkCmd_RunE_NoTasks(t *testing.T) {
 	setupContinueEnv(t)
 	cmd := newResumeWorkCmd()
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(io.Discard)

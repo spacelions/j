@@ -1,0 +1,225 @@
+version: "2"
+run:
+  concurrency: 4
+  timeout: 5m
+  tests: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 50
+
+linters:
+  enable:
+    # correctness
+    - govet
+    - staticcheck
+    - unused
+    - errcheck
+    - errorlint
+    - nilerr
+    - forcetypeassert
+    - copyloopvar
+    - durationcheck
+    - reassign
+    # style
+    - gocritic
+    - revive
+    - whitespace
+    - misspell
+    - dupword
+    - predeclared
+    - errname
+    - asciicheck
+    # complexity
+    - gocyclo
+    - nestif
+    - funlen
+    - dupl
+    # performance
+    - perfsprint
+    - unconvert
+    - ineffassign
+    - goconst
+    # security & resources
+    - gosec
+    - bidichk
+    - bodyclose
+    - noctx
+    - containedctx
+    - fatcontext
+    # testing
+    - thelper
+    - usetesting
+    # modernization & meta
+    - modernize
+    - exptostd
+    - intrange
+    - usestdlibvars
+    - exhaustive
+    - nolintlint
+
+  disable:
+    # handled by lefthook/line-cap hooks already
+    - lll
+    # paralleltest: enabled only in chdir-free packages; t.Parallel() was added manually there
+    - paralleltest
+    # whitespace rules too opinionated for this codebase
+    - wsl_v5
+    # comment period enforcement — add once baseline is clean
+    - godot
+    # no structured logger in this project
+    - sloglint
+    - loggercheck
+    # no testify
+    - testifylint
+    # no SQL
+    - sqlclosecheck
+    - rowserrcheck
+    # standard template disables
+    - prealloc
+    - wrapcheck
+    - err113
+    - mnd
+    - iface
+    - nakedret
+    - noinlineerr
+    - gocognit
+    - cyclop
+    - depguard
+    - goheader
+    - importas
+    - funcorder
+    - godoclint
+    - varnamelen
+    - exhaustruct
+    - gochecknoglobals
+    - gochecknoinits
+    - unparam
+    - makezero
+    - testpackage
+    - embeddedstructfieldcheck
+    - iotamixing
+    - unqueryvet
+    - recvcheck
+    - mirror
+    - protogetter
+    - spancheck
+    - zerologlint
+
+  exclusions:
+    rules:
+      # CLI tools intentionally launch subprocesses with variable names
+      - linters: [gosec]
+        text: "G204"
+      # CLI tools intentionally use user-supplied file paths
+      - linters: [gosec]
+        text: "G304"
+      # Store and test setup use intentional permissions (0600/0644/0755)
+      - linters: [gosec]
+        text: "G30[126]"
+      # Path traversal taint analysis false positives in test setup helpers
+      - linters: [gosec]
+        text: "G703"
+      # uitheme.* prints are fire-and-forget terminal writes
+      - linters: [errcheck, gosec]
+        text: "uitheme\\."
+      # G104 (gosec) overlaps with errcheck; already excluded via errcheck settings
+      - linters: [gosec]
+        text: "G104"
+        path: "internal/cli|internal/agents|internal/store|internal/lifecycle|internal/resolver"
+      # G101 false positive: URL constant is not a credential
+      - linters: [gosec]
+        text: "G101"
+        path: "internal/linear/client\\.go"
+      # Test token constants are intentional test fixtures
+      - linters: [gosec]
+        text: "G101"
+        path: "_test\\.go|testcases/"
+      # exec.Command without context is intentional in browser opener and test helpers
+      - linters: [noctx]
+        path: "internal/linear/browser\\.go"
+      - linters: [noctx]
+        path: "_test\\.go"
+      # Test-local error types don't need to follow package naming conventions
+      - linters: [errname]
+        path: "_test\\.go"
+      # goconst is noisy in test files with repeated fixture strings
+      - linters: [goconst]
+        path: "_test\\.go"
+      # dupl: e2e testcases for parallel show subcommands are structurally identical
+      - linters: [dupl]
+        path: "testcases/"
+      # funlen, gocyclo, nestif: project already exempts *_test.go from
+      # method-length hooks; test functions legitimately need more assertions
+      - linters: [funlen, gocyclo, nestif]
+        path: "_test\\.go|testcases/"
+      # os.RemoveAll in test cleanup — error is non-actionable
+      - linters: [errcheck]
+        text: "os\\.RemoveAll"
+      # s.Close / f.Close in test defers — already handled in production code
+      - linters: [errcheck]
+        text: "\\.Close"
+        path: "_test\\.go"
+      # Bare type assertions in tests — panic is acceptable as a test failure
+      - linters: [errcheck]
+        text: "type assertion"
+        path: "_test\\.go"
+      # uitheme print functions in tests are fire-and-forget
+      - linters: [errcheck]
+        text: "uitheme\\."
+        path: "_test\\.go"
+      # godoc comments on exported symbols are encouraged but not enforced yet
+      - linters: [revive]
+        text: "exported:"
+      # package-comments enforcement deferred
+      - linters: [revive]
+        text: "package-comments"
+      # unused parameters in interface implementations — renaming would break callers
+      - linters: [revive]
+        text: "unused-parameter"
+    paths:
+      - vendor$
+      - third_party$
+
+  settings:
+    dupl:
+      threshold: 200  # parallel phase implementations and test patterns are legitimately similar
+    errcheck:
+      check-type-assertions: true
+      exclude-functions:
+        # fire-and-forget UI/terminal writes — errors are non-actionable in CLI
+        - fmt.Fprintln
+        - fmt.Fprintf
+        - fmt.Fprint
+    exhaustive:
+      default-signifies-exhaustive: true
+    funlen:
+      lines: 80       # matches .hooks/check-line-cap enforcement
+      statements: 60
+    goconst:
+      min-len: 3
+      min-occurrences: 8  # reduce noise; low-frequency test strings aren't worth extracting
+    gocyclo:
+      min-complexity: 13
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+  disable:
+    - gci
+    - goimports
+    - golines
+    - swaggo
+  settings:
+    gofumpt:
+      extra-rules: true
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

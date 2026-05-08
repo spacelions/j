@@ -49,6 +49,7 @@ func (a *freshPlanCaptureAgent) Plan(_ context.Context, req codingagents.PlanReq
 func (a *freshPlanCaptureAgent) Work(context.Context, codingagents.WorkRequest) (int, error) {
 	return 0, errors.New("Work should not be called")
 }
+
 func (a *freshPlanCaptureAgent) Verify(context.Context, codingagents.VerifyRequest) (int, error) {
 	return 0, errors.New("Verify should not be called")
 }
@@ -83,7 +84,7 @@ func TestVerify_PlannerFresh_MintsNewSessionAndUsesFreshPrompt(t *testing.T) {
 	})
 
 	stub := &freshPlanCaptureAgent{}
-	if err := planner.Execute(context.Background(),
+	if err := planner.Execute(t.Context(),
 		planner.ExecuteOptions{
 			TaskID: id,
 			Agent:  stub,

@@ -24,7 +24,7 @@ func TestSettingsSet_PromptListingShowsPath(t *testing.T) {
 	workerDest := filepath.Join(dir, "w.md")
 	verifierDest := filepath.Join(dir, "v.md")
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set",
 		"planner.prompt="+plannerDest,
 		"worker.prompt="+workerDest,
@@ -33,7 +33,7 @@ func TestSettingsSet_PromptListingShowsPath(t *testing.T) {
 		t.Fatalf("set: %v", err)
 	}
 
-	listing, _, err := testutil.RunCobra(settings.New())
+	listing, _, err := testutil.RunCobra(t, settings.New())
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}

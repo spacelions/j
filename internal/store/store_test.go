@@ -509,7 +509,6 @@ func TestIsEmpty_NonEmpty(t *testing.T) {
 	}
 }
 
-
 // TestEnsureProject_FreshDirCreatesAllArtifacts pins the
 // initialisation contract: a brand-new directory becomes a fully-
 // initialized project after a single EnsureProject call. The three
@@ -739,7 +738,6 @@ func TestEnsureProject_TouchSettingsFails(t *testing.T) {
 	}
 }
 
-
 // TestEnsureProject_MkdirJDirFails forces the first os.MkdirAll error
 // by parking a regular file at the .j path.
 func TestEnsureProject_MkdirJDirFails(t *testing.T) {
@@ -926,6 +924,7 @@ func TestProjectInitialized_PropagatesCwdError(t *testing.T) {
 		t.Fatal("ProjectInitialized should propagate DefaultDir error")
 	}
 }
+
 // TestTouchBoltFile_BoltOpenFails exercises the bolt.Open failure
 // branch of the unexported touchBoltFile helper by pointing it at a
 // path whose parent directory does not exist. EnsureProject never

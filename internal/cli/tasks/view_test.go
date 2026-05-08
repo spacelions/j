@@ -190,7 +190,7 @@ func TestDefaultViewer_FallbackToIOCopy(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	if err := defaultViewer(
-		context.Background(), path, nil, &buf, io.Discard,
+		t.Context(), path, nil, &buf, io.Discard,
 	); err != nil {
 		t.Fatalf("defaultViewer: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestDefaultViewer_RunsCatBinary(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	if err := defaultViewer(
-		context.Background(), path, nil, &buf, io.Discard,
+		t.Context(), path, nil, &buf, io.Discard,
 	); err != nil {
 		t.Fatalf("defaultViewer: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestDefaultViewer_ExecError(t *testing.T) {
 		return "", errors.New("not found")
 	})
 	err := defaultViewer(
-		context.Background(),
+		t.Context(),
 		filepath.Join(t.TempDir(), "x"),
 		nil, io.Discard, io.Discard,
 	)
@@ -246,7 +246,7 @@ func TestResolveTaskFile_DirectIDHappyPath(t *testing.T) {
 	seedTaskWithFile(t, "id-rt", "x",
 		tasks.RequirementsFileName, "body")
 	got, ok, err := resolveTaskFile(
-		context.Background(),
+		t.Context(),
 		fileResolveOptions{
 			TaskID: "id-rt",
 			Stdout: io.Discard,
@@ -269,7 +269,7 @@ func TestResolveTaskFile_DirectIDUnknown(t *testing.T) {
 	testutil.Init(t)
 	var stdout bytes.Buffer
 	got, ok, err := resolveTaskFile(
-		context.Background(),
+		t.Context(),
 		fileResolveOptions{TaskID: "ghost", Stdout: &stdout},
 		tasks.RequirementsFileName,
 	)
@@ -288,7 +288,7 @@ func TestResolveTaskFile_FileMissing(t *testing.T) {
 	seedTaskWithFile(t, "id-no-file", "x", "", "")
 	var stdout bytes.Buffer
 	got, ok, err := resolveTaskFile(
-		context.Background(),
+		t.Context(),
 		fileResolveOptions{TaskID: "id-no-file", Stdout: &stdout},
 		tasks.RequirementsFileName,
 	)
@@ -310,7 +310,7 @@ func TestResolveTaskFile_NoIDEmptyStore(t *testing.T) {
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
 	got, ok, err := resolveTaskFile(
-		context.Background(),
+		t.Context(),
 		fileResolveOptions{UI: ui, Stdout: &stdout},
 		tasks.RequirementsFileName,
 	)
@@ -336,7 +336,7 @@ func TestResolveTaskFile_NoIDPickerHappyPath(t *testing.T) {
 		tasks.PlanFileName, "plan body")
 	ui := &fakeUI{pickReturn: "id-pk"}
 	got, ok, err := resolveTaskFile(
-		context.Background(),
+		t.Context(),
 		fileResolveOptions{UI: ui, Stdout: io.Discard},
 		tasks.PlanFileName,
 	)
@@ -361,7 +361,7 @@ func TestResolveTaskFile_NoIDPickerAbort(t *testing.T) {
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
 	got, ok, err := resolveTaskFile(
-		context.Background(),
+		t.Context(),
 		fileResolveOptions{UI: ui, Stdout: &stdout},
 		tasks.RequirementsFileName,
 	)
@@ -381,7 +381,7 @@ func TestResolveTaskFile_GetTaskNonNotExistError(t *testing.T) {
 	testutil.Init(t)
 	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
 	_, _, err := resolveTaskFile(
-		context.Background(),
+		t.Context(),
 		fileResolveOptions{TaskID: "bad", Stdout: io.Discard},
 		tasks.RequirementsFileName,
 	)
@@ -397,7 +397,7 @@ func TestResolveTaskFile_PickerErrorPropagates(t *testing.T) {
 	boom := errors.New("picker boom")
 	ui := &fakeUI{pickErr: boom}
 	_, _, err := resolveTaskFile(
-		context.Background(),
+		t.Context(),
 		fileResolveOptions{UI: ui, Stdout: io.Discard},
 		tasks.RequirementsFileName,
 	)
@@ -417,7 +417,7 @@ func TestResolveTaskFile_StatNonNotExistError(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 	_, ok, err := resolveTaskFile(
-		context.Background(),
+		t.Context(),
 		fileResolveOptions{TaskID: "id-loop", Stdout: io.Discard},
 		tasks.RequirementsFileName,
 	)
@@ -450,7 +450,7 @@ func TestResolveTaskFile_DefaultDirError(t *testing.T) {
 		t.Skip("os.Getwd unexpectedly succeeded")
 	}
 	_, _, err := resolveTaskFile(
-		context.Background(),
+		t.Context(),
 		fileResolveOptions{TaskID: "x", Stdout: io.Discard},
 		tasks.RequirementsFileName,
 	)

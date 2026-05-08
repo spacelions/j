@@ -15,7 +15,7 @@ func TestTasksLogs_EmptyStore(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	stdout, _, err := testutil.RunCobra(tasks.New(), "logs")
+	stdout, _, err := testutil.RunCobra(t, tasks.New(), "logs")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

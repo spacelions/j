@@ -106,7 +106,7 @@ func TestLinearPickerEmptyAssignedMessage(t *testing.T) {
 
 	ui := &emptyAssignedIssuesUI{}
 	_, err := picker.PickSource(
-		context.Background(), ui,
+		t.Context(), ui,
 		[]picker.Source{picker.SourceLinear}, nil, nil,
 	)
 	if err == nil {
@@ -114,7 +114,7 @@ func TestLinearPickerEmptyAssignedMessage(t *testing.T) {
 	}
 	got := err.Error()
 
-	const want = "no Linear issues assigned to you."
+	const want = "no Linear issues assigned to you"
 	if got != want {
 		t.Fatalf("err = %q, want exact %q", got, want)
 	}

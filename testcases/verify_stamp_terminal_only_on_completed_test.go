@@ -13,6 +13,7 @@ import (
 //   - Every other status (including the terminal-but-failed
 //     StatusFailed and the open phases planning / verifying / help)
 //     -> DoneAt must be left untouched.
+//
 // The asymmetry matters: `j tasks` distinguishes "successful end"
 // from "terminal failure" via DoneAt, so failed rows must NOT carry
 // a stamp.
@@ -33,7 +34,6 @@ func TestVerify_StampTerminal_OnlyOnCompleted(t *testing.T) {
 		{tasks.StatusPlanPendingApproval, false},
 	}
 	for _, c := range cases {
-		c := c
 		t.Run(string(c.status), func(t *testing.T) {
 			row := tasks.Task{Status: c.status}
 			tasks.StampTerminal(&row)

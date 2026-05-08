@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -21,11 +20,12 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(tmp)
 	if err := os.Chdir(tmp); err != nil {
 		panic(err)
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	_ = os.RemoveAll(tmp)
+	os.Exit(code)
 }
 
 func runCommand(t *testing.T, args ...string) (string, string, error) {
@@ -34,7 +34,7 @@ func runCommand(t *testing.T, args ...string) (string, string, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetArgs(args)
 	err := cmd.Execute()
 	return stdout.String(), stderr.String(), err
@@ -179,31 +179,31 @@ func TestRun_PrintsHeaderAndSortedTasks(t *testing.T) {
 
 	rows := []tasks.Task{
 		{
-			ID:               "ddd-old-plan-done",
-			Status:           tasks.StatusPlanDone,
-			PlanTool:         "cursor",
-			PlanModel:        "gpt-5",
+			ID:                "ddd-old-plan-done",
+			Status:            tasks.StatusPlanDone,
+			PlanTool:          "cursor",
+			PlanModel:         "gpt-5",
 			PlanResumeSession: "",
-			Summary:          "old one",
-			PlanEndAt:        t1,
+			Summary:           "old one",
+			PlanEndAt:         t1,
 		},
 		{
-			ID:               "aaa-new-work-done",
-			Status:           tasks.StatusWorkDone,
-			WorkTool:         "cursor",
-			WorkModel:        "sonnet-4",
+			ID:                "aaa-new-work-done",
+			Status:            tasks.StatusWorkDone,
+			WorkTool:          "cursor",
+			WorkModel:         "sonnet-4",
 			PlanResumeSession: "8c7e6a9d-0f1a-4b2c-9d8e-1234567890ab",
 			WorkResumeSession: "11111111-2222-3333-4444-555555555555",
-			Summary:          "new one",
-			WorkEndAt:        t2,
+			Summary:           "new one",
+			WorkEndAt:         t2,
 		},
 		{
-			ID:               "active-1",
-			Status:           tasks.StatusPlanning,
-			PlanTool:         "cursor",
-			PlanModel:        "sonnet-4",
+			ID:                "active-1",
+			Status:            tasks.StatusPlanning,
+			PlanTool:          "cursor",
+			PlanModel:         "sonnet-4",
 			PlanResumeSession: "11111111-1111-4111-9111-111111111111",
-			Summary:          "draft idea",
+			Summary:           "draft idea",
 		},
 	}
 	for _, row := range rows {
@@ -269,12 +269,12 @@ func TestRun_DefaultNonTTY_RendersBorder(t *testing.T) {
 	s := openTasksDB(t)
 	begin := time.Now().UTC().Add(-90 * time.Second)
 	task := tasks.Task{
-		ID:       "active-default",
-		Status:   tasks.StatusPlanning,
-		PlanTool: "cursor",
-		PlanModel: "sonnet-4",
-		Summary:      "draft idea",
-		PlanBeginAt:  begin,
+		ID:          "active-default",
+		Status:      tasks.StatusPlanning,
+		PlanTool:    "cursor",
+		PlanModel:   "sonnet-4",
+		Summary:     "draft idea",
+		PlanBeginAt: begin,
 	}
 	if err := s.PutTask(task); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -307,14 +307,14 @@ func TestRun_DefaultNonTTY_RendersBorder(t *testing.T) {
 func TestRun_HidesSessionLines(t *testing.T) {
 	s := openTasksDB(t)
 	task := tasks.Task{
-		ID:       "all-cursors",
-		Status:   tasks.StatusPlanDone,
-		PlanTool: "cursor",
-		PlanModel: "sonnet-4",
+		ID:                  "all-cursors",
+		Status:              tasks.StatusPlanDone,
+		PlanTool:            "cursor",
+		PlanModel:           "sonnet-4",
 		PlanResumeSession:   "plan-cursor-id",
 		WorkResumeSession:   "work-cursor-id",
 		VerifyResumeSession: "verify-cursor-id",
-		Summary:            "all cursors set",
+		Summary:             "all cursors set",
 	}
 	if err := s.PutTask(task); err != nil {
 		t.Fatalf("PutTask: %v", err)

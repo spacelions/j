@@ -16,8 +16,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/lifecycle"
 	"github.com/spacelions/j/internal/resolver"
@@ -106,9 +106,9 @@ func Run(ctx context.Context, opts Options) (err error) {
 	if err != nil || !proceed {
 		return err
 	}
-
-	verifierAgent, workerAgent, model, resumeID, err :=
-		resolveVerifyAgents(ctx, opts, res)
+	verifierAgent, workerAgent, model, resumeID, err := resolveVerifyAgents(
+		ctx, opts, res,
+	)
 	if err != nil {
 		return err
 	}
@@ -188,7 +188,7 @@ func runVerifyLoop(
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	clarifyPath := filepath.Join(res.TaskDir, tasks.ClarificationFileName)
-	for i := 0; i < opts.MaxIterations; i++ {
+	for i := range opts.MaxIterations {
 		lc.IterationBegin(i, opts.MaxIterations)
 		req := codingagents.VerifyRequest{
 			RequirementsPath:           res.RequirementsPath,
@@ -214,7 +214,7 @@ func runVerifyLoop(
 		verdict := resolver.ParseVerdict(res.FindingsPath)
 		lc.Verdict(i, verdict, res.FindingsPath)
 		lc.IterationEnd(i, verdict)
-		if verdict == "PASS" {
+		if verdict == resolver.VerdictPass {
 			return lifecycle.VerifyOutcomeSuccess, nil
 		}
 		// On FAIL we still need to keep iterating: break out

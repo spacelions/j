@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -108,7 +109,7 @@ func formatValue(v any) string {
 	case string:
 		return x
 	case time.Duration:
-		return fmt.Sprintf("%d", int64(x))
+		return strconv.FormatInt(int64(x), 10)
 	default:
 		return fmt.Sprintf("%v", x)
 	}
@@ -118,7 +119,7 @@ func formatValue(v any) string {
 // path is a silent no-op: the foreground (interactive) flows do not
 // share a per-task log, so callers that don't know whether they are
 // foreground or detached can hand the empty string and not branch.
-func EmitTo(path string, event string, fields map[string]any) error {
+func EmitTo(path, event string, fields map[string]any) error {
 	if path == "" {
 		return nil
 	}

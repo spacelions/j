@@ -16,7 +16,7 @@ func TestTasksShowHelp_ListsShowLeaves(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	stdout, _, err := testutil.RunCobra(
+	stdout, _, err := testutil.RunCobra(t,
 		tasks.New(), "show", "--help",
 	)
 	if err != nil {
@@ -32,7 +32,7 @@ func TestTasksShowHelp_ListsShowLeaves(t *testing.T) {
 	}
 	for _, leaf := range want {
 		found := false
-		for _, line := range strings.Split(cmds, "\n") {
+		for line := range strings.SplitSeq(cmds, "\n") {
 			fields := strings.Fields(line)
 			if len(fields) > 0 && fields[0] == leaf {
 				found = true

@@ -1,33 +1,23 @@
+//nolint:dupl // intentionally parallel to resume_work.go
 package tasks
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/spacelions/j/internal/cli/preflight"
-	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
-	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// noActivePlanSessionMessage is the single line printed to stdout
-// when no task in the bbolt store has a non-empty PlanResumeSession.
-// Pinning it in a constant keeps the test assertion and the command
-// output in lockstep.
+// noActivePlanSessionMessage is shown when no active plan session exists.
 const noActivePlanSessionMessage = "J: no tasks with an active plan session"
 
-// ResumePlanOptions configures RunResumePlan. Stdin/Stdout/Stderr
-// default to the process streams; UI defaults to the huh-backed task
-// picker; Agents must be supplied by the caller (the cobra wiring
-// injects `[]codingagents.Agent{cursor.New(), claude.New()}`, tests
-// inject scripted ones).
+// ResumePlanOptions configures RunResumePlan.
 type ResumePlanOptions struct {
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -36,104 +26,38 @@ type ResumePlanOptions struct {
 	Agents []codingagents.Agent
 	UI     UI
 
-	// JBinary is the absolute path to the j binary re-executed as
-	// `j tasks orchestrate --id <id>`. Empty falls back to
+	// JBinary is the absolute path to the j binary. Empty falls back to
 	// os.Executable. Tests inject a path-resolvable stub.
 	JBinary string
 }
 
-func (o ResumePlanOptions) withDefaults() ResumePlanOptions {
-	if o.Stdin == nil {
-		o.Stdin = os.Stdin
-	}
-	if o.Stdout == nil {
-		o.Stdout = os.Stdout
-	}
-	if o.Stderr == nil {
-		o.Stderr = os.Stderr
-	}
-	if o.UI == nil {
-		o.UI = newHuhUI(o.Stdin, o.Stderr)
-	}
-	return o
-}
-
-// RunResumePlan implements `j tasks resume-plan`. It filters the
-// bbolt store to rows whose PlanResumeSession is non-empty, prompts
-// the user to pick one, and re-execs `j tasks orchestrate --id <id>
-// --plan-requires-approval=true --interactive=true` inline so the
-// planner resumes its session in the foreground with the parent's
-// terminal attached.
-func RunResumePlan(ctx context.Context, opts ResumePlanOptions) (err error) {
-	defer func() { err = resolver.CleanAbort(err) }()
-	opts = opts.withDefaults()
-
-	taskID, ok, err := resolveResumePlanTaskID(ctx, opts)
-	if err != nil || !ok {
-		return err
-	}
-	t, err := resolver.TaskByID(taskID)
-	if err != nil {
-		return err
-	}
-	if !tasks.IsLegal(t.Status, tasks.EventPlanResume) {
-		return fmt.Errorf("cannot resume-plan task in status %q", t.Status)
-	}
-	if _, err := tasks.EnsureDir(taskID); err != nil {
-		return err
-	}
-	return runInlineOrchestrator(ctx, opts.JBinary, []string{
-		"tasks", "orchestrate",
-		"--id", taskID,
-		"--plan-requires-approval=true",
-		"--interactive=true",
-	})
-}
-
-func resolveResumePlanTaskID(
-	ctx context.Context, opts ResumePlanOptions,
-) (string, bool, error) {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return "", false, err
-	}
-	id, ok, err := pickResumePlanFromStore(ctx, s, opts)
-	_ = s.Close()
-	return id, ok, err
-}
-
-func pickResumePlanFromStore(
-	ctx context.Context, s *tasks.Store, opts ResumePlanOptions,
-) (string, bool, error) {
-	rows, err := s.ListTasks()
-	if err != nil {
-		return "", false, err
-	}
-	filtered := filterTasksWithPlanSession(rows)
-	if len(filtered) == 0 {
-		uitheme.NormalFprintln(opts.Stdout, noActivePlanSessionMessage)
-		return "", false, nil
-	}
-	tasks.SortTasks(filtered)
-	return opts.UI.PickTask(ctx, filtered)
-}
-
-func filterTasksWithPlanSession(rows []tasks.Task) []tasks.Task {
-	out := make([]tasks.Task, 0, len(rows))
-	for _, t := range rows {
-		if t.PlanResumeSession != "" {
-			out = append(out, t)
+var resumePlanConfig = resumePhaseConfig{
+	emptyMsg:    noActivePlanSessionMessage,
+	resumeEvent: tasks.EventPlanResume,
+	errorVerb:   "resume-plan",
+	hasSession:  func(t tasks.Task) bool { return t.PlanResumeSession != "" },
+	orchestrateArgs: func(taskID string) []string {
+		return []string{
+			cmdTasks, cmdOrchestrate,
+			flagID, taskID,
+			flagPlanRequiresApprovalTrue,
+			flagInteractiveTrue,
 		}
-	}
-	return out
+	},
+}
+
+// RunResumePlan implements `j tasks resume-plan`.
+func RunResumePlan(ctx context.Context, opts ResumePlanOptions) error {
+	return runResumePhase(ctx, resumeOptions{
+		Stdin:   opts.Stdin,
+		Stdout:  opts.Stdout,
+		Stderr:  opts.Stderr,
+		UI:      opts.UI,
+		JBinary: opts.JBinary,
+	}, resumePlanConfig)
 }
 
 // newResumePlanCmd builds the `j tasks resume-plan` cobra subcommand.
-// The picker filters to rows with a recorded plan resume session so
-// only tasks the agent actually started can be resumed; an empty
-// list short-circuits with a user-facing message and exit 0. No
-// flags: resume always operates against the picker selection and
-// always runs the orchestrator inline with --interactive=true.
 func newResumePlanCmd() *cobra.Command {
 	agents := []codingagents.Agent{cursor.New(), claude.New()}
 	cmd := &cobra.Command{

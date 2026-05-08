@@ -3,7 +3,6 @@
 package testcases_test
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,7 +22,7 @@ func TestSpawn_ChildExitMarker_AppendsHumanReadable(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "agent.log")
 	pid, err := run.Spawn(
-		context.Background(), logPath, "sh", "-c", "exit 0",
+		t.Context(), logPath, "sh", "-c", "exit 0",
 	)
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)

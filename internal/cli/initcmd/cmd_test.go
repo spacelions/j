@@ -57,7 +57,7 @@ func TestRun_FreshInitCreatesAllArtifacts(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	var stdout, stderr bytes.Buffer
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		Stdout: &stdout,
 		Stderr: &stderr,
 		UI:     &scriptedUI{},
@@ -77,7 +77,7 @@ func TestRun_FreshInit_DoesNotPrompt(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	ui := &scriptedUI{}
-	if err := Run(context.Background(), Options{
+	if err := Run(t.Context(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -101,7 +101,7 @@ func TestRun_AlreadyInitialized_PromptAccept_WipesAndRecreates(t *testing.T) {
 		t.Fatal(err)
 	}
 	ui := &scriptedUI{confirm: true}
-	if err := Run(context.Background(), Options{
+	if err := Run(t.Context(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -129,7 +129,7 @@ func TestRun_AlreadyInitialized_PromptDecline_LeavesUntouched(t *testing.T) {
 	}
 	ui := &scriptedUI{confirm: false}
 	var stdout bytes.Buffer
-	if err := Run(context.Background(), Options{
+	if err := Run(t.Context(), Options{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -155,7 +155,7 @@ func TestRun_AlreadyInitialized_YesFlag_SkipsPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	ui := &scriptedUI{}
-	if err := Run(context.Background(), Options{
+	if err := Run(t.Context(), Options{
 		Yes:    true,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -178,7 +178,7 @@ func TestRun_PartialState_FillsMissingArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	ui := &scriptedUI{}
-	if err := Run(context.Background(), Options{
+	if err := Run(t.Context(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -198,7 +198,7 @@ func TestRun_UIError(t *testing.T) {
 		t.Fatal(err)
 	}
 	boom := errors.New("ui boom")
-	err := Run(context.Background(), Options{
+	err := Run(t.Context(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     &scriptedUI{err: boom},
@@ -237,7 +237,7 @@ func TestNew_RunE_ExecutesInTempDir(t *testing.T) {
 	cmd.SetIn(strings.NewReader(""))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	if err := cmd.RunE(cmd, nil); err != nil {
 		t.Fatalf("RunE: %v", err)
 	}
@@ -339,7 +339,7 @@ func readMustRead(t *testing.T) (string, bool) {
 // user can override it later via `j settings set`.
 func TestRun_FreshInit_SeedsMaxIterations(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := Run(context.Background(), Options{
+	if err := Run(t.Context(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     &scriptedUI{},
@@ -356,7 +356,7 @@ func TestRun_FreshInit_SeedsMaxIterations(t *testing.T) {
 // fresh projects pause after planning unless the user opts out.
 func TestRun_FreshInit_SeedsPlanRequiresApproval(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := Run(context.Background(), Options{
+	if err := Run(t.Context(), Options{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     &scriptedUI{},
@@ -372,7 +372,7 @@ func TestRun_FreshInit_SeedsPlanRequiresApproval(t *testing.T) {
 func TestRun_PlanRequiresApprovalFalse_SeedsFalse(t *testing.T) {
 	t.Chdir(t.TempDir())
 	v := false
-	if err := Run(context.Background(), Options{
+	if err := Run(t.Context(), Options{
 		PlanRequiresApproval: &v,
 		Stdout:               io.Discard,
 		Stderr:               io.Discard,
@@ -409,7 +409,7 @@ func TestRun_ResetReseedsMaxIterations(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := Run(context.Background(), Options{
+	if err := Run(t.Context(), Options{
 		Yes:    true,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -430,7 +430,7 @@ func TestRun_ResetReseedsMaxIterations(t *testing.T) {
 func TestRun_MustReadFlag_SeedsValue(t *testing.T) {
 	t.Chdir(t.TempDir())
 	v := "AGENTS.md;CLAUDE.md"
-	if err := Run(context.Background(), Options{
+	if err := Run(t.Context(), Options{
 		Yes:      true,
 		MustRead: &v,
 		Stdout:   io.Discard,
@@ -454,7 +454,7 @@ func TestRun_MustReadFlag_SeedsValue(t *testing.T) {
 func TestRun_MustReadFlag_BlankIsPersisted(t *testing.T) {
 	t.Chdir(t.TempDir())
 	empty := ""
-	if err := Run(context.Background(), Options{
+	if err := Run(t.Context(), Options{
 		Yes:      true,
 		MustRead: &empty,
 		Stdout:   io.Discard,
@@ -474,7 +474,7 @@ func TestRun_MustReadFlag_BlankIsPersisted(t *testing.T) {
 // surface the must-read prompt.
 func TestRun_MustReadFlag_AbsentLeavesUnset(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := Run(context.Background(), Options{
+	if err := Run(t.Context(), Options{
 		Yes:    true,
 		Stdout: io.Discard,
 		Stderr: io.Discard,

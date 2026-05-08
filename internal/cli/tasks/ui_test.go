@@ -29,7 +29,7 @@ func TestNewHuhUI_NotNil(t *testing.T) {
 // scripted fake in re_plan_test.go.
 func TestHuhUI_ConfirmStatusOverride_DelegatesToPicker(t *testing.T) {
 	u := newHuhUI(strings.NewReader(""), &bytes.Buffer{})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err := u.ConfirmStatusOverride(ctx, "re-plan", "abc", "working")
 	if err == nil {

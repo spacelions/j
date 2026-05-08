@@ -1,7 +1,6 @@
 package orchestrator
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -13,7 +12,7 @@ import (
 // subcommand, so no network call and no server is started.
 func TestRun_SmokeBogusLauncherArgs(t *testing.T) {
 	err := Run(
-		context.Background(),
+		t.Context(),
 		store.ProjectConfig{APIKey: "bogus", Model: "gemini-2.5-flash", MaxIterations: 1},
 		[]string{"definitely-not-a-real-subcommand"},
 	)

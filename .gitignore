@@ -4,3 +4,5 @@
 cover.out
 /bin/
 .j
+.agents/
+.claude/

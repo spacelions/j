@@ -15,7 +15,7 @@ func TestTasksLogs_HelpUsesBatCatWording(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	stdout, _, err := testutil.RunCobra(
+	stdout, _, err := testutil.RunCobra(t,
 		tasks.New(), "logs", "--help",
 	)
 	if err != nil {

@@ -102,9 +102,9 @@ func RunReVerify(ctx context.Context, opts ReVerifyOptions) (err error) {
 	interactive := resolver.Interactive(opts.Interactive)
 
 	args := []string{
-		"tasks", "orchestrate",
-		"--id", task.ID,
-		"--phase=verify-only",
+		cmdTasks, cmdOrchestrate,
+		flagID, task.ID,
+		flagPhaseVerifyOnly,
 		"--interactive=" + strconv.FormatBool(interactive),
 	}
 
@@ -120,7 +120,7 @@ func RunReVerify(ctx context.Context, opts ReVerifyOptions) (err error) {
 	}
 	stampSpawnOnRow(opts.Stderr, task.ID, agentLogPath, pid)
 	uitheme.NormalForkDialog(
-		opts.Stdout, fmt.Sprintf("task %s", task.ID), pid, agentLogPath)
+		opts.Stdout, "task "+task.ID, pid, agentLogPath)
 	return nil
 }
 
@@ -181,7 +181,7 @@ func newReVerifyCmd() *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var interactive *bool
-			if cmd.Flags().Changed("interactive") ||
+			if cmd.Flags().Changed(flagKeyInteractive) ||
 				envSet("TASKS_REVERIFY_INTERACTIVE") {
 				v := viper.GetBool("tasks.reverify.interactive")
 				interactive = &v
@@ -196,15 +196,15 @@ func newReVerifyCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("from-task", "",
+	cmd.Flags().String(flagKeyFromTask, "",
 		"Existing task id to re-verify (empty triggers the picker)")
-	cmd.Flags().Bool("interactive", false,
+	cmd.Flags().Bool(flagKeyInteractive, false,
 		"Run verifier in interactive (TUI) mode")
 	_ = viper.BindPFlag(
-		"tasks.reverify.from_task", cmd.Flags().Lookup("from-task"))
+		"tasks.reverify.from_task", cmd.Flags().Lookup(flagKeyFromTask))
 	_ = viper.BindEnv("tasks.reverify.from_task", "TASKS_REVERIFY_FROM_TASK")
 	_ = viper.BindPFlag(
-		"tasks.reverify.interactive", cmd.Flags().Lookup("interactive"))
+		"tasks.reverify.interactive", cmd.Flags().Lookup(flagKeyInteractive))
 	_ = viper.BindEnv(
 		"tasks.reverify.interactive", "TASKS_REVERIFY_INTERACTIVE")
 	return cmd

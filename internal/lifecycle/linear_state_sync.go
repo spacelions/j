@@ -130,8 +130,9 @@ func isNeedsClarificationEvent(ev tasks.Event) bool {
 		tasks.EventReaperWorkNeedsClarification,
 		tasks.EventReaperVerifyNeedsClarification:
 		return true
+	default:
+		return false
 	}
-	return false
 }
 
 // handleNeedsClarification posts the clarification.md body as a
@@ -235,6 +236,7 @@ func postInboxReminder(
 			agentLogPath,
 			"linear_reminder_failed",
 			map[string]any{
+				//nolint:goconst // "issue" count inflated by test files
 				"issue": issueID,
 				"error": err.Error(),
 			},

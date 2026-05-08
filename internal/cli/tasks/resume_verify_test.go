@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -22,7 +21,7 @@ func TestRunResumeVerify_NoActiveSession(t *testing.T) {
 	})
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	if err := RunResumeVerify(context.Background(), ResumeVerifyOptions{
+	if err := RunResumeVerify(t.Context(), ResumeVerifyOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -43,7 +42,7 @@ func TestRunResumeVerify_NoTasksAtAll(t *testing.T) {
 	setupContinueEnv(t)
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	if err := RunResumeVerify(context.Background(), ResumeVerifyOptions{
+	if err := RunResumeVerify(t.Context(), ResumeVerifyOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -66,7 +65,7 @@ func TestRunResumeVerify_PickerOnlyShowsRowsWithSession(t *testing.T) {
 		task.VerifyResumeSession = ""
 	})
 	ui := &fakeUI{}
-	if err := RunResumeVerify(context.Background(), ResumeVerifyOptions{
+	if err := RunResumeVerify(t.Context(), ResumeVerifyOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -93,7 +92,7 @@ func TestRunResumeVerify_PickerAbort(t *testing.T) {
 		task.VerifyResumeSession = "active-cursor"
 	})
 	ui := &fakeUI{}
-	if err := RunResumeVerify(context.Background(), ResumeVerifyOptions{
+	if err := RunResumeVerify(t.Context(), ResumeVerifyOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -116,7 +115,7 @@ func TestRunResumeVerify_HappyPath(t *testing.T) {
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}
 	var stdout bytes.Buffer
-	if err := RunResumeVerify(context.Background(), ResumeVerifyOptions{
+	if err := RunResumeVerify(t.Context(), ResumeVerifyOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  &stdout,
 		Stderr:  io.Discard,
@@ -142,7 +141,7 @@ func TestRunResumeVerify_SpawnFails(t *testing.T) {
 		task.VerifyResumeSession = "active-cursor"
 	})
 	ui := &fakeUI{pickReturn: id}
-	err := RunResumeVerify(context.Background(), ResumeVerifyOptions{
+	err := RunResumeVerify(t.Context(), ResumeVerifyOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -162,7 +161,7 @@ func TestRunResumeVerify_PickerErrorPropagates(t *testing.T) {
 	})
 	boom := errInjected("picker boom")
 	ui := &fakeUI{pickErr: boom}
-	err := RunResumeVerify(context.Background(), ResumeVerifyOptions{
+	err := RunResumeVerify(t.Context(), ResumeVerifyOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -188,7 +187,7 @@ func TestRunResumeVerify_ListDecodeError(t *testing.T) {
 		t.Fatal(err)
 	}
 	ui := &fakeUI{}
-	if err := RunResumeVerify(context.Background(), ResumeVerifyOptions{
+	if err := RunResumeVerify(t.Context(), ResumeVerifyOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -204,7 +203,7 @@ func TestRunResumeVerify_ListDecodeError(t *testing.T) {
 
 func TestRunResumeVerify_AppliesDefaults(t *testing.T) {
 	setupContinueEnv(t)
-	if err := RunResumeVerify(context.Background(), ResumeVerifyOptions{
+	if err := RunResumeVerify(t.Context(), ResumeVerifyOptions{
 		Agents: []codingagents.Agent{newContinueAgent()},
 	}); err != nil {
 		t.Fatalf("RunResumeVerify: %v", err)
@@ -229,7 +228,7 @@ func TestNewResumeVerifyCmd_RunE_EmptyStore(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	cmd := newResumeVerifyCmd()
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(io.Discard)
@@ -247,7 +246,7 @@ func TestNewResumeVerifyCmd_PreRunE_DefaultedAgents(t *testing.T) {
 	setupContinueEnv(t)
 	installCursorAgentLoginStub(t)
 	cmd := newResumeVerifyCmd()
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetIn(strings.NewReader(""))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -267,7 +266,7 @@ func TestRunResumeVerify_HappyPath_Completed(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}
-	if err := RunResumeVerify(context.Background(), ResumeVerifyOptions{
+	if err := RunResumeVerify(t.Context(), ResumeVerifyOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -297,7 +296,7 @@ func TestRunResumeVerify_HappyPath_Failed(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}
-	if err := RunResumeVerify(context.Background(), ResumeVerifyOptions{
+	if err := RunResumeVerify(t.Context(), ResumeVerifyOptions{
 		Stdin:   strings.NewReader(""),
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,

@@ -14,10 +14,10 @@ import (
 	"github.com/spf13/viper"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/lifecycle/orchestrator"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
-	"github.com/spacelions/j/internal/lifecycle/orchestrator"
 )
 
 // chainAgent stands in for a real codingagents.Agent across the
@@ -109,10 +109,10 @@ func seedOrchestrateTask(t *testing.T, tool string) string {
 		writeBucketKey(t, bucket, "interactive", "false")
 	}
 	row := tasks.Task{
-		ID:          id,
-		Status:      tasks.StatusPlanning,
-		PlanTool:    tool,
-		Summary:     "task",
+		ID:       id,
+		Status:   tasks.StatusPlanning,
+		PlanTool: tool,
+		Summary:  "task",
 	}
 	s, err := tasks.OpenDefault()
 	if err != nil {
@@ -171,7 +171,7 @@ func requirePlanApproval() *bool {
 
 // TestRunOrchestrate_RequiresTaskID pins the empty-id guard.
 func TestRunOrchestrate_RequiresTaskID(t *testing.T) {
-	err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -184,7 +184,7 @@ func TestRunOrchestrate_RequiresTaskID(t *testing.T) {
 
 // TestRunOrchestrate_RequiresAgents pins the no-agents guard.
 func TestRunOrchestrate_RequiresAgents(t *testing.T) {
-	err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		TaskID: "t1",
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -205,7 +205,7 @@ func TestRunOrchestrate_PassFirstTry(t *testing.T) {
 	stub := newChainAgent("scripted")
 	stub.verdicts = []string{"VERDICT: PASS"}
 
-	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	if err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: noPlanApproval(),
 		Stdin:                strings.NewReader(""),
@@ -242,7 +242,7 @@ func TestRunOrchestrate_FailRetryPass(t *testing.T) {
 	stub := newChainAgent("scripted")
 	stub.verdicts = []string{"VERDICT: FAIL", "VERDICT: PASS"}
 
-	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	if err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: noPlanApproval(),
 		Stdin:                strings.NewReader(""),
@@ -275,7 +275,7 @@ func TestRunOrchestrate_FailExhausts(t *testing.T) {
 	stub := newChainAgent("scripted")
 	stub.verdicts = []string{"VERDICT: FAIL"}
 
-	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	if err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: noPlanApproval(),
 		Stdin:                strings.NewReader(""),
@@ -300,7 +300,7 @@ func TestRunOrchestrate_PlanFailsHelp(t *testing.T) {
 	stub := newChainAgent("scripted")
 	stub.planErr = errors.New("planning boom")
 
-	err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: noPlanApproval(),
 		Stdin:                strings.NewReader(""),
@@ -329,7 +329,7 @@ func TestRunOrchestrate_PlanApprovalStopsAfterPlan(t *testing.T) {
 	id := seedOrchestrateTask(t, "scripted")
 	stub := newChainAgent("scripted")
 
-	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	if err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: requirePlanApproval(),
 		Stdin:                strings.NewReader(""),
@@ -362,7 +362,7 @@ func TestRunOrchestrate_AppliesDefaults(t *testing.T) {
 	stub := newChainAgent("scripted")
 	stub.verdicts = []string{"VERDICT: PASS"}
 
-	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	if err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		TaskID: id,
 		Agents: []codingagents.Agent{stub},
 	}); err != nil {
@@ -482,7 +482,7 @@ func TestRunOrchestrate_FromWorkRunsWorkVerify(t *testing.T) {
 	stub := newChainAgent("scripted")
 	stub.verdicts = []string{"VERDICT: PASS"}
 
-	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	if err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: noPlanApproval(),
 		Phase:                orchestrator.RunPhaseFromWork,
@@ -510,7 +510,7 @@ func TestRunOrchestrate_FromWorkConflictsWithApproval(t *testing.T) {
 	id := seedOrchestrateTask(t, "scripted")
 	stub := newChainAgent("scripted")
 
-	err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: requirePlanApproval(),
 		Phase:                orchestrator.RunPhaseFromWork,
@@ -550,7 +550,7 @@ func TestNewOrchestrateCmd_RunE_PropagatesError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	cmd := newOrchestrateCmd()
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	if err := cmd.RunE(cmd, nil); err == nil {
@@ -641,7 +641,7 @@ func TestRunOrchestrate_FromWorkIgnoresProjectApproval(t *testing.T) {
 	stub := newChainAgent("scripted")
 	stub.verdicts = []string{"VERDICT: PASS"}
 
-	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	if err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		TaskID: id,
 		Phase:  orchestrator.RunPhaseFromWork,
 		Stdin:  strings.NewReader(""),
@@ -674,7 +674,7 @@ func TestRunOrchestrate_VerifyOnlyIgnoresProjectApproval(t *testing.T) {
 	stub := newChainAgent("scripted")
 	stub.verdicts = []string{"VERDICT: PASS"}
 
-	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	if err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		TaskID: id,
 		Phase:  orchestrator.RunPhaseVerifyOnly,
 		Stdin:  strings.NewReader(""),
@@ -705,7 +705,7 @@ func TestRunOrchestrate_FromWorkConflictExplicitOverrideOnly(t *testing.T) {
 	id := seedOrchestrateTask(t, "scripted")
 	stub := newChainAgent("scripted")
 
-	err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: requirePlanApproval(),
 		Phase:                orchestrator.RunPhaseFromWork,
@@ -740,7 +740,7 @@ func TestRunOrchestrate_InfersPlanResumeFromRow(t *testing.T) {
 	stub.newResumeIDPanics = true
 	stub.verdicts = []string{"VERDICT: PASS"}
 
-	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	if err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: requirePlanApproval(),
 		Stdin:                strings.NewReader(""),
@@ -801,7 +801,7 @@ func TestRunOrchestrate_FromWorkExplicitFalseAllowed(t *testing.T) {
 	stub := newChainAgent("scripted")
 	stub.verdicts = []string{"VERDICT: PASS"}
 
-	if err := RunOrchestrate(context.Background(), OrchestrateOptions{
+	if err := RunOrchestrate(t.Context(), OrchestrateOptions{
 		TaskID:               id,
 		PlanRequiresApproval: noPlanApproval(),
 		Phase:                orchestrator.RunPhaseFromWork,

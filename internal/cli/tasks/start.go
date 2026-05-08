@@ -3,7 +3,6 @@ package tasks
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"strconv"
 
@@ -104,7 +103,7 @@ func newStartCmd() *cobra.Command {
 				return err
 			}
 			var interactive *bool
-			if cmd.Flags().Changed("interactive") ||
+			if cmd.Flags().Changed(flagKeyInteractive) ||
 				envSet("TASKS_START_INTERACTIVE") {
 				v := viper.GetBool("tasks.start.interactive")
 				interactive = &v
@@ -202,7 +201,7 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	}
 	persistStartRow(opts.Stderr, target, agentLogPath, pid)
 	uitheme.NormalForkDialog(opts.Stdout,
-		fmt.Sprintf("task %s", target.TaskID), pid, agentLogPath)
+		"task "+target.TaskID, pid, agentLogPath)
 	return nil
 }
 
@@ -213,8 +212,8 @@ func buildOrchestrateArgs(
 	taskID string, planRequiresApproval, interactive bool, opts StartOptions,
 ) []string {
 	args := []string{
-		"tasks", "orchestrate",
-		"--id", taskID,
+		cmdTasks, cmdOrchestrate,
+		flagID, taskID,
 		"--plan-requires-approval=" +
 			strconv.FormatBool(planRequiresApproval),
 		"--interactive=" + strconv.FormatBool(interactive),

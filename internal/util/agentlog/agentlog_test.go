@@ -22,6 +22,7 @@ var markerHeader = regexp.MustCompile(
 // the topic+verb derived from the event name, and renders fields as
 // sorted `k=v` pairs after an em dash.
 func TestEmit_LineShape(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	err := Emit(&buf, "session_start", map[string]any{
 		"task": "01KQ", "phase": "full",
@@ -53,6 +54,7 @@ func TestEmit_LineShape(t *testing.T) {
 // TestEmit_NoUnderscoreEvent pins the verb-empty branch: an event
 // name without an underscore renders as just the topic.
 func TestEmit_NoUnderscoreEvent(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	if err := Emit(&buf, "ready", nil); err != nil {
 		t.Fatalf("Emit: %v", err)
@@ -69,6 +71,7 @@ func TestEmit_NoUnderscoreEvent(t *testing.T) {
 // TestEmit_FieldsSortedAndSkipEmpty asserts fields render in
 // lexicographic key order and empty values are dropped.
 func TestEmit_FieldsSortedAndSkipEmpty(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	err := Emit(&buf, "child_exit", map[string]any{
 		"name":  "claude",
@@ -99,6 +102,7 @@ func TestEmit_FieldsSortedAndSkipEmpty(t *testing.T) {
 // `event` / `ts` keys are silently skipped; the formatter owns the
 // header and a caller cannot mislabel a marker.
 func TestEmit_ReservedKeysOverridden(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	err := Emit(&buf, "session_start", map[string]any{
 		"event": "wrong",
@@ -124,6 +128,7 @@ func TestEmit_ReservedKeysOverridden(t *testing.T) {
 // have no per-task log (interactive flows) can pass nil without
 // branching themselves.
 func TestEmit_NilWriterIsNoop(t *testing.T) {
+	t.Parallel()
 	if err := Emit(nil, "session_start", nil); err != nil {
 		t.Fatalf("Emit(nil): %v", err)
 	}
@@ -133,10 +138,11 @@ func TestEmit_NilWriterIsNoop(t *testing.T) {
 // concurrent Emit calls produce 50 well-formed lines without
 // interleaving (each line still matches the marker header pattern).
 func TestEmit_Concurrent(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	var wg sync.WaitGroup
 	const n = 50
-	for i := 0; i < n; i++ {
+	for i := range n {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -164,6 +170,7 @@ func TestEmit_Concurrent(t *testing.T) {
 // shared agent.log: a second EmitTo against the same path must
 // preserve every byte from the first.
 func TestEmitTo_AppendsAcrossCalls(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "agent.log")
 	if err := EmitTo(path, "plan_begin", nil); err != nil {
@@ -192,6 +199,7 @@ func TestEmitTo_AppendsAcrossCalls(t *testing.T) {
 // O_APPEND mode rather than truncating: arbitrary human transcript
 // written before the marker survives the open.
 func TestEmitTo_PreservesPriorBytes(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "agent.log")
 	err := os.WriteFile(path, []byte("human transcript line\n"), 0o644)
@@ -217,6 +225,7 @@ func TestEmitTo_PreservesPriorBytes(t *testing.T) {
 // TestEmitTo_EmptyPath pins the silent no-op branch: callers that
 // don't know whether they are foreground or detached can pass "".
 func TestEmitTo_EmptyPath(t *testing.T) {
+	t.Parallel()
 	if err := EmitTo("", "plan_begin", nil); err != nil {
 		t.Fatalf("EmitTo(\"\"): %v", err)
 	}
@@ -225,6 +234,7 @@ func TestEmitTo_EmptyPath(t *testing.T) {
 // TestEmitTo_OpenFailureIsWrapped covers the path-is-a-directory
 // branch so the wrapped error message includes the offending path.
 func TestEmitTo_OpenFailureIsWrapped(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	err := EmitTo(dir, "plan_begin", nil)
 	if err == nil {
@@ -238,6 +248,7 @@ func TestEmitTo_OpenFailureIsWrapped(t *testing.T) {
 // TestHeader covers Header's three branches: no-underscore, single
 // underscore, and trailing-underscore (verb empty).
 func TestHeader(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ in, want string }{
 		{"session_start", "session start"},
 		{"child_exit", "child exit"},
@@ -256,6 +267,7 @@ func TestHeader(t *testing.T) {
 // callers that already pre-convert to milliseconds get a clean
 // integer string.
 func TestEmit_DurationField(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	err := Emit(&buf, "child_exit", map[string]any{
 		"d": 250 * time.Millisecond,
@@ -283,6 +295,7 @@ func (b boomError) Error() string { return string(b) }
 // TestEmit_WriteErrorIsWrapped covers the io.Writer Write error
 // branch so the surfaced error mentions the event for triage.
 func TestEmit_WriteErrorIsWrapped(t *testing.T) {
+	t.Parallel()
 	err := Emit(failingWriter{}, "session_start", nil)
 	if err == nil {
 		t.Fatal("expected write error")

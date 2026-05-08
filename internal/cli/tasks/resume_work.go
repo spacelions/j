@@ -1,24 +1,20 @@
+//nolint:dupl // intentionally parallel to resume_plan.go
 package tasks
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/spacelions/j/internal/cli/preflight"
-	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
-	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// noActiveWorkSessionMessage is printed when no task has a non-empty
-// WorkResumeSession.
+// noActiveWorkSessionMessage is shown when no active work session exists.
 const noActiveWorkSessionMessage = "J: no tasks with an active work session"
 
 // ResumeWorkOptions configures RunResumeWork.
@@ -33,86 +29,30 @@ type ResumeWorkOptions struct {
 	JBinary string
 }
 
-func (o ResumeWorkOptions) withDefaults() ResumeWorkOptions {
-	if o.Stdin == nil {
-		o.Stdin = os.Stdin
-	}
-	if o.Stdout == nil {
-		o.Stdout = os.Stdout
-	}
-	if o.Stderr == nil {
-		o.Stderr = os.Stderr
-	}
-	if o.UI == nil {
-		o.UI = newHuhUI(o.Stdin, o.Stderr)
-	}
-	return o
-}
-
-// RunResumeWork implements `j tasks resume-work`. It filters to tasks
-// with a non-empty WorkResumeSession and re-execs the orchestrator inline.
-func RunResumeWork(ctx context.Context, opts ResumeWorkOptions) (err error) {
-	defer func() { err = resolver.CleanAbort(err) }()
-	opts = opts.withDefaults()
-
-	taskID, ok, err := resolveResumeWorkTaskID(ctx, opts)
-	if err != nil || !ok {
-		return err
-	}
-	t, err := resolver.TaskByID(taskID)
-	if err != nil {
-		return err
-	}
-	if !tasks.IsLegal(t.Status, tasks.EventWorkResume) {
-		return fmt.Errorf("cannot resume-work task in status %q", t.Status)
-	}
-	if _, err := tasks.EnsureDir(taskID); err != nil {
-		return err
-	}
-	return runInlineOrchestrator(ctx, opts.JBinary, []string{
-		"tasks", "orchestrate",
-		"--id", taskID,
-		"--phase=from-work",
-		"--interactive=true",
-	})
-}
-
-func resolveResumeWorkTaskID(
-	ctx context.Context, opts ResumeWorkOptions,
-) (string, bool, error) {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return "", false, err
-	}
-	id, ok, err := pickResumeWorkFromStore(ctx, s, opts)
-	_ = s.Close()
-	return id, ok, err
-}
-
-func pickResumeWorkFromStore(
-	ctx context.Context, s *tasks.Store, opts ResumeWorkOptions,
-) (string, bool, error) {
-	rows, err := s.ListTasks()
-	if err != nil {
-		return "", false, err
-	}
-	filtered := filterTasksWithWorkSession(rows)
-	if len(filtered) == 0 {
-		uitheme.NormalFprintln(opts.Stdout, noActiveWorkSessionMessage)
-		return "", false, nil
-	}
-	tasks.SortTasks(filtered)
-	return opts.UI.PickTask(ctx, filtered)
-}
-
-func filterTasksWithWorkSession(rows []tasks.Task) []tasks.Task {
-	out := make([]tasks.Task, 0, len(rows))
-	for _, t := range rows {
-		if t.WorkResumeSession != "" {
-			out = append(out, t)
+var resumeWorkConfig = resumePhaseConfig{
+	emptyMsg:    noActiveWorkSessionMessage,
+	resumeEvent: tasks.EventWorkResume,
+	errorVerb:   "resume-work",
+	hasSession:  func(t tasks.Task) bool { return t.WorkResumeSession != "" },
+	orchestrateArgs: func(taskID string) []string {
+		return []string{
+			cmdTasks, cmdOrchestrate,
+			flagID, taskID,
+			flagPhaseFromWork,
+			flagInteractiveTrue,
 		}
-	}
-	return out
+	},
+}
+
+// RunResumeWork implements `j tasks resume-work`.
+func RunResumeWork(ctx context.Context, opts ResumeWorkOptions) error {
+	return runResumePhase(ctx, resumeOptions{
+		Stdin:   opts.Stdin,
+		Stdout:  opts.Stdout,
+		Stderr:  opts.Stderr,
+		UI:      opts.UI,
+		JBinary: opts.JBinary,
+	}, resumeWorkConfig)
 }
 
 // newResumeWorkCmd builds the `j tasks resume-work` cobra subcommand.

@@ -19,11 +19,12 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(tmp)
 	if err := os.Chdir(tmp); err != nil {
 		panic(err)
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	_ = os.RemoveAll(tmp)
+	os.Exit(code)
 }
 
 // resetGlobals resets any global state that tests share (the Viper
@@ -33,7 +34,6 @@ func resetGlobals(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(func() { viper.Reset() })
 }
-
 
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
@@ -117,4 +117,3 @@ func TestExecute_WebMissingSettings(t *testing.T) {
 	withArgs(t, "web")
 	assertExecuteFails(t, "j init")
 }
-

@@ -73,10 +73,10 @@ func TestNew_ShellOutHappyPath(t *testing.T) {
 	}
 	testutil.SeedAgentBucket(t, store.BucketWorker, "scripted", "m1")
 	testutil.SeedTaskRow(t, tasks.Task{
-		ID:          taskID,
-		Status:      tasks.StatusPlanDone,
-		PlanTool:    "scripted",
-		Summary:     "task",
+		ID:       taskID,
+		Status:   tasks.StatusPlanDone,
+		PlanTool: "scripted",
+		Summary:  "task",
 	})
 
 	stub := newScriptedWorkAgent("scripted")
@@ -115,10 +115,10 @@ func TestNew_ShellOutWorkFails(t *testing.T) {
 	}
 	testutil.SeedAgentBucket(t, store.BucketWorker, "scripted", "m1")
 	testutil.SeedTaskRow(t, tasks.Task{
-		ID:          taskID,
-		Status:      tasks.StatusPlanDone,
-		PlanTool:    "scripted",
-		Summary:     "task",
+		ID:       taskID,
+		Status:   tasks.StatusPlanDone,
+		PlanTool: "scripted",
+		Summary:  "task",
 	})
 
 	stub := newScriptedWorkAgent("scripted")
@@ -154,10 +154,10 @@ func TestNew_ShellOutDefaultsStderr(t *testing.T) {
 	}
 	testutil.SeedAgentBucket(t, store.BucketWorker, "scripted", "m1")
 	testutil.SeedTaskRow(t, tasks.Task{
-		ID:          taskID,
-		Status:      tasks.StatusPlanDone,
-		PlanTool:    "scripted",
-		Summary:     "task",
+		ID:       taskID,
+		Status:   tasks.StatusPlanDone,
+		PlanTool: "scripted",
+		Summary:  "task",
 	})
 
 	stub := newScriptedWorkAgent("scripted")

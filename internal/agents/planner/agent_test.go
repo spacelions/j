@@ -189,7 +189,7 @@ func TestExecute_ResumeFromStoredSession(t *testing.T) {
 
 	stub := newScriptedPlanAgent("scripted")
 	stub.panicOnNewResumeID = true
-	if err := Execute(context.Background(), ExecuteOptions{
+	if err := Execute(t.Context(), ExecuteOptions{
 		TaskID: taskID,
 		Agent:  stub,
 		Model:  "m1",
@@ -240,7 +240,7 @@ func TestExecute_FreshFromEmptySession(t *testing.T) {
 	seedPlanApproval(t, false)
 
 	stub := newScriptedPlanAgent("scripted")
-	if err := Execute(context.Background(), ExecuteOptions{
+	if err := Execute(t.Context(), ExecuteOptions{
 		TaskID: taskID,
 		Agent:  stub,
 		Model:  "m1",
@@ -306,6 +306,7 @@ func (a *scriptedPlanAgent) Plan(_ context.Context, req codingagents.PlanRequest
 func (a *scriptedPlanAgent) Work(context.Context, codingagents.WorkRequest) (int, error) {
 	return 0, errors.New("scriptedPlanAgent.Work should not be called")
 }
+
 func (a *scriptedPlanAgent) Verify(context.Context, codingagents.VerifyRequest) (int, error) {
 	return 0, errors.New("scriptedPlanAgent.Verify should not be called")
 }

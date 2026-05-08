@@ -15,7 +15,7 @@ func TestTasksShowRequirements_UnknownID(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	stdout, _, err := testutil.RunCobra(
+	stdout, _, err := testutil.RunCobra(t,
 		tasks.New(), "show", "requirements",
 		"--from-task", "ghost-id",
 	)
@@ -34,7 +34,7 @@ func TestTasksShowPlan_UnknownID(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	stdout, _, err := testutil.RunCobra(
+	stdout, _, err := testutil.RunCobra(t,
 		tasks.New(), "show", "plan",
 		"--from-task", "ghost-id",
 	)

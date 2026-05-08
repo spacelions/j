@@ -1,7 +1,7 @@
 package tasks
 
 import (
-	"sort"
+	"slices"
 	"time"
 )
 
@@ -19,19 +19,37 @@ import (
 // The function mutates tasks in place and returns nothing because the
 // receiver convention here matches sort.Slice's existing call sites.
 func SortTasks(tasks []Task) {
-	sort.SliceStable(tasks, func(i, j int) bool {
-		ai, aj := taskIsActive(tasks[i].Status), taskIsActive(tasks[j].Status)
-		if ai != aj {
-			return ai
+	slices.SortStableFunc(tasks, func(a, b Task) int {
+		ai, bi := taskIsActive(a.Status), taskIsActive(b.Status)
+		if ai != bi {
+			if ai {
+				return -1
+			}
+			return 1
 		}
 		if ai {
-			return tasks[i].ID < tasks[j].ID
+			if a.ID < b.ID {
+				return -1
+			}
+			if a.ID > b.ID {
+				return 1
+			}
+			return 0
 		}
-		ti, tj := taskFallbackTime(tasks[i]), taskFallbackTime(tasks[j])
-		if !ti.Equal(tj) {
-			return ti.After(tj)
+		ta, tb := taskFallbackTime(a), taskFallbackTime(b)
+		if !ta.Equal(tb) {
+			if ta.After(tb) {
+				return -1
+			}
+			return 1
 		}
-		return tasks[i].ID > tasks[j].ID
+		if a.ID > b.ID {
+			return -1
+		}
+		if a.ID < b.ID {
+			return 1
+		}
+		return 0
 	})
 }
 
@@ -43,8 +61,9 @@ func taskIsActive(s TaskStatus) bool {
 	case StatusPlanning, StatusPlanPendingApproval, StatusWorking,
 		StatusVerifying, StatusNeedsClarification, StatusHelp:
 		return true
+	default:
+		return false
 	}
-	return false
 }
 
 // taskFallbackTime returns the timestamp SortTasks compares for

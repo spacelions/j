@@ -108,6 +108,7 @@ func WriteTaskTable(
 	for i, r := range rows[1:] {
 		b.WriteString(buildBorderLine(cols, "├", "┼", "┤"))
 		b.WriteByte('\n')
+		//nolint:gosec // taskRows and rows[1:] always have equal length
 		b.WriteString(buildContentLine(r, cols, rowStyle(taskRows[i], &activeIdx)))
 		b.WriteByte('\n')
 	}
@@ -124,6 +125,7 @@ func rowStyle(t tsk.Task, activeIdx *int) lipgloss.Style {
 		return doneStyle
 	case tsk.StatusHelp:
 		return helpStyle
+	default:
 	}
 	style := lipgloss.NewStyle().Foreground(
 		activeRowPalette[*activeIdx%len(activeRowPalette)])
@@ -182,19 +184,19 @@ func applyColumnWidths(rows [][]string, cols []int) [][]string {
 	return out
 }
 
-func truncateCell(s string, max int) string {
-	if max <= 0 {
+func truncateCell(s string, limit int) string {
+	if limit <= 0 {
 		return ""
 	}
-	if lipgloss.Width(s) <= max {
+	if lipgloss.Width(s) <= limit {
 		return s
 	}
-	if max == 1 {
+	if limit == 1 {
 		return "…"
 	}
 	runes := []rune(s)
-	cut := runes[:max-1]
-	for lipgloss.Width(string(cut))+1 > max && len(cut) > 0 {
+	cut := runes[:limit-1]
+	for lipgloss.Width(string(cut))+1 > limit && len(cut) > 0 {
 		cut = cut[:len(cut)-1]
 	}
 	return string(cut) + "…"

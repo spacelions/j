@@ -128,7 +128,7 @@ func stubAssignedIssuesServer(t *testing.T, issues ...linear.Issue) {
 
 func TestPickSource_Markdown(t *testing.T) {
 	ui := &scriptedSourceUI{source: SourceMarkdown, markdown: "/abs/feature.md"}
-	res, err := PickSource(context.Background(), ui, []Source{SourceMarkdown, SourceLinear, SourceTask}, nil, nil)
+	res, err := PickSource(t.Context(), ui, []Source{SourceMarkdown, SourceLinear, SourceTask}, nil, nil)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -161,7 +161,7 @@ func TestPickSource_Linear_TokenAndProjectStored(t *testing.T) {
 		},
 		pickedIssueOK: true,
 	}
-	res, err := PickSource(context.Background(), ui, []Source{SourceMarkdown, SourceLinear}, nil, nil)
+	res, err := PickSource(t.Context(), ui, []Source{SourceMarkdown, SourceLinear}, nil, nil)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -197,7 +197,7 @@ func TestPickSource_Linear_IssuePickerCancelled(t *testing.T) {
 		linear.Issue{Identifier: "ENG-1", Title: "x", State: "Todo"},
 	)
 	ui := &scriptedSourceUI{source: SourceLinear, pickedIssueOK: false}
-	res, err := PickSource(context.Background(), ui, []Source{SourceLinear}, nil, nil)
+	res, err := PickSource(t.Context(), ui, []Source{SourceLinear}, nil, nil)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -219,8 +219,8 @@ func TestPickSource_Linear_EmptyIssueList(t *testing.T) {
 	}
 	stubAssignedIssuesServer(t)
 	ui := &scriptedSourceUI{source: SourceLinear}
-	_, err := PickSource(context.Background(), ui, []Source{SourceLinear}, nil, nil)
-	if err == nil || err.Error() != "no Linear issues assigned to you." {
+	_, err := PickSource(t.Context(), ui, []Source{SourceLinear}, nil, nil)
+	if err == nil || err.Error() != "no Linear issues assigned to you" {
 		t.Fatalf("err = %v, want empty-list error", err)
 	}
 	if ui.pickedIssueCalls != 0 {
@@ -234,7 +234,7 @@ func TestPickSource_Linear_TokenPromptCancelled(t *testing.T) {
 		t.Fatal(err)
 	}
 	ui := &scriptedSourceUI{source: SourceLinear, linearAPIKeyOK: false}
-	res, err := PickSource(context.Background(), ui, []Source{SourceLinear}, nil, nil)
+	res, err := PickSource(t.Context(), ui, []Source{SourceLinear}, nil, nil)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -257,7 +257,7 @@ func TestPickSource_Linear_TokenPromptError(t *testing.T) {
 	}
 	want := errors.New("token boom")
 	ui := &scriptedSourceUI{source: SourceLinear, linearAPIKeyErr: want}
-	_, err := PickSource(context.Background(), ui, []Source{SourceLinear}, nil, nil)
+	_, err := PickSource(t.Context(), ui, []Source{SourceLinear}, nil, nil)
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v, want wrapped 'token boom'", err)
 	}
@@ -268,7 +268,7 @@ func TestPickSource_Task_HappyPath(t *testing.T) {
 	listTasks := func() ([]tasks.Task, error) {
 		return []tasks.Task{{ID: "01ABC", Status: tasks.StatusPlanDone, Summary: "x"}}, nil
 	}
-	res, err := PickSource(context.Background(), ui, []Source{SourceTask}, listTasks, nil)
+	res, err := PickSource(t.Context(), ui, []Source{SourceTask}, listTasks, nil)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -285,7 +285,7 @@ func TestPickSource_Task_UserCancelled(t *testing.T) {
 	listTasks := func() ([]tasks.Task, error) {
 		return []tasks.Task{{ID: "01ABC"}}, nil
 	}
-	res, err := PickSource(context.Background(), ui, []Source{SourceTask}, listTasks, nil)
+	res, err := PickSource(t.Context(), ui, []Source{SourceTask}, listTasks, nil)
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
@@ -296,7 +296,7 @@ func TestPickSource_Task_UserCancelled(t *testing.T) {
 
 func TestPickSource_Task_NilListTasks(t *testing.T) {
 	ui := &scriptedSourceUI{source: SourceTask}
-	_, err := PickSource(context.Background(), ui, []Source{SourceTask}, nil, nil)
+	_, err := PickSource(t.Context(), ui, []Source{SourceTask}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "listTasks callback") {
 		t.Fatalf("err = %v, want listTasks misuse", err)
 	}
@@ -305,7 +305,7 @@ func TestPickSource_Task_NilListTasks(t *testing.T) {
 func TestPickSource_Task_EmptyList(t *testing.T) {
 	ui := &scriptedSourceUI{source: SourceTask}
 	listTasks := func() ([]tasks.Task, error) { return nil, nil }
-	_, err := PickSource(context.Background(), ui, []Source{SourceTask}, listTasks, nil)
+	_, err := PickSource(t.Context(), ui, []Source{SourceTask}, listTasks, nil)
 	if err == nil || !strings.Contains(err.Error(), "no tasks") {
 		t.Fatalf("err = %v, want 'no tasks'", err)
 	}
@@ -315,7 +315,7 @@ func TestPickSource_Task_EmptyList_CustomError(t *testing.T) {
 	ui := &scriptedSourceUI{source: SourceTask}
 	listTasks := func() ([]tasks.Task, error) { return nil, nil }
 	want := errors.New("plan: no tasks to re-plan; run `j plan` first")
-	_, err := PickSource(context.Background(), ui, []Source{SourceTask}, listTasks, want)
+	_, err := PickSource(t.Context(), ui, []Source{SourceTask}, listTasks, want)
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v, want supplied empty-tasks error", err)
 	}
@@ -325,7 +325,7 @@ func TestPickSource_Task_ListError(t *testing.T) {
 	ui := &scriptedSourceUI{source: SourceTask}
 	want := errors.New("list boom")
 	listTasks := func() ([]tasks.Task, error) { return nil, want }
-	_, err := PickSource(context.Background(), ui, []Source{SourceTask}, listTasks, nil)
+	_, err := PickSource(t.Context(), ui, []Source{SourceTask}, listTasks, nil)
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v, want wrapped 'list boom'", err)
 	}
@@ -334,7 +334,7 @@ func TestPickSource_Task_ListError(t *testing.T) {
 func TestPickSource_SelectSourceError(t *testing.T) {
 	want := errors.New("source boom")
 	ui := &scriptedSourceUI{sourceErr: want}
-	_, err := PickSource(context.Background(), ui, []Source{SourceMarkdown}, nil, nil)
+	_, err := PickSource(t.Context(), ui, []Source{SourceMarkdown}, nil, nil)
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v, want wrapped 'source boom'", err)
 	}
@@ -343,7 +343,7 @@ func TestPickSource_SelectSourceError(t *testing.T) {
 func TestPickSource_MarkdownError(t *testing.T) {
 	want := errors.New("md boom")
 	ui := &scriptedSourceUI{source: SourceMarkdown, markdownErr: want}
-	_, err := PickSource(context.Background(), ui, []Source{SourceMarkdown}, nil, nil)
+	_, err := PickSource(t.Context(), ui, []Source{SourceMarkdown}, nil, nil)
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v, want wrapped 'md boom'", err)
 	}

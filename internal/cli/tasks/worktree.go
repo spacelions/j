@@ -30,7 +30,7 @@ func parseWorktreeListPorcelain(output string) []worktreeRecord {
 		}
 		cur = nil
 	}
-	for _, raw := range strings.Split(output, "\n") {
+	for raw := range strings.SplitSeq(output, "\n") {
 		line := strings.TrimSpace(raw)
 		if line == "" {
 			flush()
@@ -45,8 +45,8 @@ func parseWorktreeListPorcelain(output string) []worktreeRecord {
 		if cur == nil {
 			continue
 		}
-		if strings.HasPrefix(line, "branch ") {
-			cur.branch = strings.TrimSpace(strings.TrimPrefix(line, "branch "))
+		if after, ok := strings.CutPrefix(line, "branch "); ok {
+			cur.branch = strings.TrimSpace(after)
 		}
 	}
 	flush()

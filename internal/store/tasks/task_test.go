@@ -90,11 +90,11 @@ func TestNewTaskID_ConcurrentUnique(t *testing.T) {
 		ids = make(map[string]struct{}, workers*perCall)
 	)
 	wg.Add(workers)
-	for w := 0; w < workers; w++ {
+	for range workers {
 		go func() {
 			defer wg.Done()
 			local := make([]string, perCall)
-			for i := 0; i < perCall; i++ {
+			for i := range perCall {
 				local[i] = NewTaskID()
 			}
 			mu.Lock()
@@ -116,21 +116,21 @@ func TestNewTaskID_ConcurrentUnique(t *testing.T) {
 func TestTask_JSONRoundTrip(t *testing.T) {
 	now := time.Date(2026, 4, 29, 12, 0, 0, 0, time.UTC)
 	in := Task{
-		ID:                 "abc",
-		Status:             StatusPlanDone,
-		PlanTool:           "cursor",
-		PlanModel:          "sonnet-4",
-		Summary:            "task",
+		ID:                  "abc",
+		Status:              StatusPlanDone,
+		PlanTool:            "cursor",
+		PlanModel:           "sonnet-4",
+		Summary:             "task",
 		PlanResumeSession:   "plan-uuid",
 		WorkResumeSession:   "work-uuid",
 		VerifyResumeSession: "verify-uuid",
-		PlanBeginAt:        now,
-		PlanEndAt:          now.Add(time.Minute),
-		WorkBeginAt:        now.Add(2 * time.Minute),
-		WorkEndAt:          now.Add(3 * time.Minute),
-		VerifyBeginAt:      now.Add(4 * time.Minute),
-		VerifyEndAt:        now.Add(5 * time.Minute),
-		DoneAt:             now.Add(6 * time.Minute),
+		PlanBeginAt:         now,
+		PlanEndAt:           now.Add(time.Minute),
+		WorkBeginAt:         now.Add(2 * time.Minute),
+		WorkEndAt:           now.Add(3 * time.Minute),
+		VerifyBeginAt:       now.Add(4 * time.Minute),
+		VerifyEndAt:         now.Add(5 * time.Minute),
+		DoneAt:              now.Add(6 * time.Minute),
 	}
 	data, err := json.Marshal(in)
 	if err != nil {
@@ -221,7 +221,7 @@ func TestTask_TOML_OmitsZeroFields(t *testing.T) {
 // TestTask_TOML_BackwardCompatible_ZeroSentinels confirms that legacy
 // task.toml files written before this cleanup — which contain zero-time
 // sentinels like `plan_begin_at = 0001-01-01T00:00:00Z` and empty strings
-// like `worktree = ''` — decode cleanly to zero/empty Go values. The old
+// like `worktree = ”` — decode cleanly to zero/empty Go values. The old
 // `*_resume_cursor` keys are silently dropped (by design — no compat shim).
 func TestTask_TOML_BackwardCompatible_ZeroSentinels(t *testing.T) {
 	legacy := `
@@ -265,11 +265,11 @@ plan_resume_cursor = "old-cursor-value"
 func TestPutTask_RoundTrip(t *testing.T) {
 	s := openTaskStore(t)
 	task := Task{
-		ID:               "id-1",
-		Status:           StatusPlanDone,
-		Summary:          "hello",
-		PlanTool:         "cursor",
-		PlanModel:        "sonnet-4",
+		ID:                "id-1",
+		Status:            StatusPlanDone,
+		Summary:           "hello",
+		PlanTool:          "cursor",
+		PlanModel:         "sonnet-4",
 		PlanResumeSession: "plan-1",
 	}
 	if err := s.PutTask(task); err != nil {
@@ -320,10 +320,10 @@ func TestPutTask_MkdirFails(t *testing.T) {
 func TestGetTask_RoundTrip(t *testing.T) {
 	s := openTaskStore(t)
 	in := Task{
-		ID:               "id-get",
-		Status:           StatusPlanDone,
-		Summary:          "hello",
-		PlanTool:         "cursor",
+		ID:                "id-get",
+		Status:            StatusPlanDone,
+		Summary:           "hello",
+		PlanTool:          "cursor",
 		PlanResumeSession: "plan-1",
 	}
 	if err := s.PutTask(in); err != nil {

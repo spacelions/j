@@ -22,12 +22,12 @@ import (
 // records every invocation and returns a programmable error so the
 // subshell branch is asserted without launching a real shell.
 type fakeSpawner struct {
-	mu       sync.Mutex
-	calls    int
-	lastDir  string
-	lastIn   io.Reader
-	lastOut  io.Writer
-	lastErr  io.Writer
+	mu        sync.Mutex
+	calls     int
+	lastDir   string
+	lastIn    io.Reader
+	lastOut   io.Writer
+	lastErr   io.Writer
 	returnErr error
 }
 
@@ -139,7 +139,7 @@ func TestRunEnter_PickerSubshell(t *testing.T) {
 	ui := &fakeUI{pickReturn: "id-pick"}
 	spawner := &fakeSpawner{}
 	var stdout, stderr bytes.Buffer
-	err = RunEnter(context.Background(), EnterOptions{
+	err = RunEnter(t.Context(), EnterOptions{
 		Stdout:  &stdout,
 		Stderr:  &stderr,
 		UI:      ui,
@@ -178,7 +178,7 @@ func TestRunEnter_PickerPrint(t *testing.T) {
 	ui := &fakeUI{pickReturn: "id-print"}
 	spawner := &fakeSpawner{}
 	var stdout bytes.Buffer
-	err = RunEnter(context.Background(), EnterOptions{
+	err = RunEnter(t.Context(), EnterOptions{
 		Print:   true,
 		Stdout:  &stdout,
 		Stderr:  io.Discard,
@@ -211,7 +211,7 @@ func TestRunEnter_DirectIDSubshell(t *testing.T) {
 	ui := &fakeUI{}
 	spawner := &fakeSpawner{}
 	var stdout bytes.Buffer
-	err = RunEnter(context.Background(), EnterOptions{
+	err = RunEnter(t.Context(), EnterOptions{
 		TaskID:  "id-direct",
 		Stdout:  &stdout,
 		Stderr:  io.Discard,
@@ -248,7 +248,7 @@ func TestRunEnter_DirectIDPrint(t *testing.T) {
 	ui := &fakeUI{}
 	spawner := &fakeSpawner{}
 	var stdout bytes.Buffer
-	err = RunEnter(context.Background(), EnterOptions{
+	err = RunEnter(t.Context(), EnterOptions{
 		TaskID:  "id-direct-print",
 		Print:   true,
 		Stdout:  &stdout,
@@ -278,7 +278,7 @@ func TestRunEnter_DirectIDUnknown(t *testing.T) {
 	ui := &fakeUI{}
 	spawner := &fakeSpawner{}
 	var stdout bytes.Buffer
-	err := RunEnter(context.Background(), EnterOptions{
+	err := RunEnter(t.Context(), EnterOptions{
 		TaskID:  "ghost",
 		Stdout:  &stdout,
 		Stderr:  io.Discard,
@@ -305,7 +305,7 @@ func TestRunEnter_NoIDMissingDB(t *testing.T) {
 	ui := &fakeUI{}
 	spawner := &fakeSpawner{}
 	var stdout bytes.Buffer
-	err := RunEnter(context.Background(), EnterOptions{
+	err := RunEnter(t.Context(), EnterOptions{
 		Stdout:  &stdout,
 		Stderr:  io.Discard,
 		UI:      ui,
@@ -332,7 +332,7 @@ func TestRunEnter_NoIDEmptyBucket(t *testing.T) {
 	ui := &fakeUI{}
 	spawner := &fakeSpawner{}
 	var stdout bytes.Buffer
-	err := RunEnter(context.Background(), EnterOptions{
+	err := RunEnter(t.Context(), EnterOptions{
 		Stdout:  &stdout,
 		Stderr:  io.Discard,
 		UI:      ui,
@@ -359,7 +359,7 @@ func TestRunEnter_PickerAbort(t *testing.T) {
 	ui := &fakeUI{}
 	spawner := &fakeSpawner{}
 	var stdout bytes.Buffer
-	err := RunEnter(context.Background(), EnterOptions{
+	err := RunEnter(t.Context(), EnterOptions{
 		Stdout:  &stdout,
 		Stderr:  io.Discard,
 		UI:      ui,
@@ -387,7 +387,7 @@ func TestRunEnter_PickerErrorPropagates(t *testing.T) {
 	boom := errors.New("picker boom")
 	ui := &fakeUI{pickErr: boom}
 	spawner := &fakeSpawner{}
-	err := RunEnter(context.Background(), EnterOptions{
+	err := RunEnter(t.Context(), EnterOptions{
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
 		UI:      ui,
@@ -410,7 +410,7 @@ func TestRunEnter_SpawnerErrorPropagates(t *testing.T) {
 	boom := errors.New("spawn boom")
 	ui := &fakeUI{}
 	spawner := &fakeSpawner{returnErr: boom}
-	err := RunEnter(context.Background(), EnterOptions{
+	err := RunEnter(t.Context(), EnterOptions{
 		TaskID:  "id-spawn-err",
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -433,7 +433,7 @@ func TestRunEnter_GetTaskNonNotExistError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
-	err := RunEnter(context.Background(), EnterOptions{
+	err := RunEnter(t.Context(), EnterOptions{
 		TaskID:  "bad",
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -452,7 +452,7 @@ func TestRunEnter_ListDecodeError_Picker(t *testing.T) {
 	testutil.Init(t)
 	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
 	ui := &fakeUI{}
-	err := RunEnter(context.Background(), EnterOptions{
+	err := RunEnter(t.Context(), EnterOptions{
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
 		UI:      ui,
@@ -490,7 +490,7 @@ func TestRunEnter_DefaultTasksPathError(t *testing.T) {
 	if _, err := os.Getwd(); err == nil {
 		t.Skip("os.Getwd unexpectedly succeeded")
 	}
-	if err := RunEnter(context.Background(), EnterOptions{
+	if err := RunEnter(t.Context(), EnterOptions{
 		TaskID:  "x",
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
@@ -523,7 +523,7 @@ func TestRunEnter_DefaultTasksPathError_Picker(t *testing.T) {
 	if _, err := os.Getwd(); err == nil {
 		t.Skip("os.Getwd unexpectedly succeeded")
 	}
-	if err := RunEnter(context.Background(), EnterOptions{
+	if err := RunEnter(t.Context(), EnterOptions{
 		Stdout:  io.Discard,
 		Stderr:  io.Discard,
 		UI:      &fakeUI{},
@@ -573,7 +573,7 @@ func TestEnterOptions_WithDefaults_KeepsProvided(t *testing.T) {
 	if o.UI != customUI {
 		t.Errorf("UI = %v, want custom fake", o.UI)
 	}
-	if err := o.Spawner(context.Background(), "/", nil, nil, nil); err != nil {
+	if err := o.Spawner(t.Context(), "/", nil, nil, nil); err != nil {
 		t.Fatalf("custom spawner err = %v", err)
 	}
 	if !called {
@@ -593,7 +593,7 @@ func TestDefaultSpawner_RunsCommand(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
 	dir := t.TempDir()
 	var stdout bytes.Buffer
-	err := defaultSpawner(context.Background(), dir, strings.NewReader("echo spawner-ran\n"), &stdout, io.Discard)
+	err := defaultSpawner(t.Context(), dir, strings.NewReader("echo spawner-ran\n"), &stdout, io.Discard)
 	if err != nil {
 		t.Fatalf("defaultSpawner: %v", err)
 	}
@@ -613,7 +613,7 @@ func TestDefaultSpawner_RunsInDir(t *testing.T) {
 	}
 	t.Setenv("SHELL", "/bin/sh")
 	dir := t.TempDir()
-	err := defaultSpawner(context.Background(), dir, strings.NewReader("echo ok > sentinel\n"), io.Discard, io.Discard)
+	err := defaultSpawner(t.Context(), dir, strings.NewReader("echo ok > sentinel\n"), io.Discard, io.Discard)
 	if err != nil {
 		t.Fatalf("defaultSpawner: %v", err)
 	}
@@ -635,7 +635,7 @@ func TestDefaultSpawner_FallbackShell(t *testing.T) {
 	}
 	t.Setenv("SHELL", "")
 	dir := t.TempDir()
-	err := defaultSpawner(context.Background(), dir, strings.NewReader("exit 0\n"), io.Discard, io.Discard)
+	err := defaultSpawner(t.Context(), dir, strings.NewReader("exit 0\n"), io.Discard, io.Discard)
 	if err != nil {
 		t.Fatalf("defaultSpawner fallback: %v", err)
 	}
@@ -661,7 +661,7 @@ func TestNewEnterCmd_RunE_PickerPrintViaEnv(t *testing.T) {
 	root.SetIn(strings.NewReader(""))
 	root.SetOut(&stdout)
 	root.SetErr(io.Discard)
-	root.SetContext(context.Background())
+	root.SetContext(t.Context())
 	root.SetArgs([]string{"enter", "--print"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -692,7 +692,7 @@ func TestNewEnterCmd_RunE_PrintViaEnvFlagID(t *testing.T) {
 	root.SetIn(strings.NewReader(""))
 	root.SetOut(&stdout)
 	root.SetErr(io.Discard)
-	root.SetContext(context.Background())
+	root.SetContext(t.Context())
 	root.SetArgs([]string{"enter", "--id", "id-env-bool"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)

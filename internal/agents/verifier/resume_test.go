@@ -47,20 +47,20 @@ func seedResumableVerify(t *testing.T, mutate func(*tasks.Task)) (string, time.T
 	verifyBegin := workEnd.Add(time.Minute)
 	verifyEnd := verifyBegin.Add(time.Minute)
 	row := tasks.Task{
-		ID:                 id,
-		Status:             tasks.StatusVerifying,
-		VerifyTool:         "cursor",
-		VerifyModel:        "sonnet-4",
+		ID:                  id,
+		Status:              tasks.StatusVerifying,
+		VerifyTool:          "cursor",
+		VerifyModel:         "sonnet-4",
 		PlanResumeSession:   "plan-cursor",
 		WorkResumeSession:   "work-cursor",
 		VerifyResumeSession: "verify-cursor",
-		Summary:            "seeded verify",
-		PlanBeginAt:        planBegin,
-		PlanEndAt:          planEnd,
-		WorkBeginAt:        workBegin,
-		WorkEndAt:          workEnd,
-		VerifyBeginAt:      verifyBegin,
-		VerifyEndAt:        verifyEnd,
+		Summary:             "seeded verify",
+		PlanBeginAt:         planBegin,
+		PlanEndAt:           planEnd,
+		WorkBeginAt:         workBegin,
+		WorkEndAt:           workEnd,
+		VerifyBeginAt:       verifyBegin,
+		VerifyEndAt:         verifyEnd,
 	}
 	if mutate != nil {
 		mutate(&row)
@@ -92,7 +92,7 @@ func TestRunResume_EmptySelector(t *testing.T) {
 	ui := &scriptedUI{}
 	var stdout bytes.Buffer
 
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
@@ -121,7 +121,7 @@ func TestRunResume_FromTaskHappyPath(t *testing.T) {
 	agent.verifyVerdicts = []string{"PASS"}
 	var stdout bytes.Buffer
 
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		TaskID: id,
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -170,7 +170,7 @@ func TestRunResume_FromTaskMissing(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	agent := newScriptedAgent()
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		TaskID: "missing",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -188,7 +188,7 @@ func TestRunResume_FromTaskNoSession(t *testing.T) {
 	mustInit(t)
 	id, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyResumeSession = "" })
 	agent := newScriptedAgent()
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -210,7 +210,7 @@ func TestRunResume_SelectorPicksSecond(t *testing.T) {
 	agent.verifyVerdicts = []string{"PASS"}
 	ui := &scriptedUI{resumePicked: id2}
 
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
@@ -235,7 +235,7 @@ func TestRunResume_PickerReturnsUnknownID(t *testing.T) {
 	seedResumableVerify(t, nil)
 	agent := newScriptedAgent()
 	ui := &scriptedUI{resumePicked: "ghost-id"}
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
@@ -251,7 +251,7 @@ func TestRunResume_UnknownTool(t *testing.T) {
 	mustInit(t)
 	id, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyTool = "ghost" })
 	agent := newScriptedAgent()
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -271,7 +271,7 @@ func TestRunResume_AgentError(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyErr = errors.New("verify boom")
 
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -297,7 +297,7 @@ func TestRunResume_StatusCompletedIsResumable(t *testing.T) {
 	id, _ := seedResumableVerify(t, func(row *tasks.Task) { row.Status = tasks.StatusCompleted })
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -323,7 +323,7 @@ func TestRunResume_AutoPicksSingle(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
 	ui := &scriptedUI{}
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
@@ -345,7 +345,7 @@ func TestRunResume_AutoPicksSingle(t *testing.T) {
 }
 
 func TestRunResume_NoAgents(t *testing.T) {
-	err := RunResume(context.Background(), ResumeOptions{Stdout: io.Discard, Stderr: io.Discard})
+	err := RunResume(t.Context(), ResumeOptions{Stdout: io.Discard, Stderr: io.Discard})
 	if err == nil || !strings.Contains(err.Error(), "no coding agents") {
 		t.Fatalf("err = %v", err)
 	}
@@ -358,7 +358,7 @@ func TestRunResume_PickerError(t *testing.T) {
 	seedResumableVerify(t, nil)
 	agent := newScriptedAgent()
 	ui := &scriptedUI{resumeErr: errors.New("picker boom")}
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
@@ -380,7 +380,7 @@ func TestRunResume_PickerCancelled(t *testing.T) {
 	seedResumableVerify(t, nil)
 	seedResumableVerify(t, nil)
 	agent := newScriptedAgent()
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{agent},
@@ -398,7 +398,7 @@ func TestRunResume_PickerCancelled(t *testing.T) {
 func TestRunResume_AppliesDefaults(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	if err := RunResume(context.Background(), ResumeOptions{
+	if err := RunResume(t.Context(), ResumeOptions{
 		Agents: []codingagents.Agent{newScriptedAgent()},
 	}); err != nil {
 		t.Fatalf("RunResume: %v", err)
@@ -422,7 +422,7 @@ func TestRunResume_ListDecodeError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(badDir, "task.toml"), []byte("not = valid = toml"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err = RunResume(context.Background(), ResumeOptions{
+	err = RunResume(t.Context(), ResumeOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{newScriptedAgent()},
@@ -440,7 +440,7 @@ func TestRunResume_FromTaskDecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	testutil.SeedRawTaskFile(t, "broken", []byte("not = valid = toml"))
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		TaskID: "broken",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -461,7 +461,7 @@ func TestRunResume_StampsCompletedOnPass(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
 
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -491,7 +491,7 @@ func TestRunResume_FailLeavesFailed(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"FAIL"}
 
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -590,7 +590,7 @@ func TestRunResume_Verify_AlwaysInteractive(t *testing.T) {
 			}
 			id, _ := seedResumableVerify(t, nil)
 			agent := newScriptedAgent()
-			if err := RunResume(context.Background(), ResumeOptions{
+			if err := RunResume(t.Context(), ResumeOptions{
 				TaskID: id,
 				Stdout: io.Discard,
 				Stderr: io.Discard,
@@ -627,7 +627,7 @@ func TestRunResume_WaitsForSpawnedChild(t *testing.T) {
 	}
 	var stdout bytes.Buffer
 	start := time.Now()
-	err := RunResume(context.Background(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		TaskID: id,
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -668,7 +668,7 @@ func TestRunResume_VerifierWaitCtxCancelled(t *testing.T) {
 	pid := startLongChild(t)
 	agent := &liveChildAgent{pid: pid}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
@@ -701,7 +701,7 @@ func TestRunResume_Verify_ForwardsMustRead(t *testing.T) {
 	id, _ := seedResumableVerify(t, nil)
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
-	if err := RunResume(context.Background(), ResumeOptions{
+	if err := RunResume(t.Context(), ResumeOptions{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -735,7 +735,7 @@ func TestRunResume_Verify_MustReadUnsetYieldsNil(t *testing.T) {
 	id, _ := seedResumableVerify(t, nil)
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
-	if err := RunResume(context.Background(), ResumeOptions{
+	if err := RunResume(t.Context(), ResumeOptions{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: io.Discard,

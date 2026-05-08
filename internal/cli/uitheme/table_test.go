@@ -123,20 +123,20 @@ func TestWriteTaskTable_MixedActiveAndInactive(t *testing.T) {
 	end := now.Add(-time.Hour)
 	rows := []tsk.Task{
 		{
-			ID:           "active-1",
-			Status:   tsk.StatusPlanning,
-			PlanTool: "cursor",
-			PlanModel: "sonnet-4",
-			Summary:      "draft idea",
-			PlanBeginAt:  begin,
+			ID:          "active-1",
+			Status:      tsk.StatusPlanning,
+			PlanTool:    "cursor",
+			PlanModel:   "sonnet-4",
+			Summary:     "draft idea",
+			PlanBeginAt: begin,
 		},
 		{
-			ID:           "done-1",
-			Status:   tsk.StatusPlanDone,
-			PlanTool: "cursor",
+			ID:        "done-1",
+			Status:    tsk.StatusPlanDone,
+			PlanTool:  "cursor",
 			PlanModel: "gpt-5",
-			Summary:      "old one",
-			PlanEndAt:    end,
+			Summary:   "old one",
+			PlanEndAt: end,
 		},
 	}
 	var buf bytes.Buffer
@@ -195,11 +195,11 @@ func TestWriteTaskTable_RowColors(t *testing.T) {
 func TestWriteTaskTable_FitsToWidth(t *testing.T) {
 	rows := []tsk.Task{
 		{
-			ID:           "row-1",
-			Status:   tsk.StatusPlanDone,
-			PlanTool: "cursor",
+			ID:        "row-1",
+			Status:    tsk.StatusPlanDone,
+			PlanTool:  "cursor",
 			PlanModel: "sonnet-4",
-			Summary:      "this is a very long summary that absolutely should not fit",
+			Summary:   "this is a very long summary that absolutely should not fit",
 		},
 	}
 	const width = 50
@@ -208,7 +208,7 @@ func TestWriteTaskTable_FitsToWidth(t *testing.T) {
 		t.Fatalf("WriteTaskTable: %v", err)
 	}
 	stripped := ansi.Strip(buf.String())
-	for _, line := range strings.Split(strings.TrimRight(stripped, "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(stripped, "\n"), "\n") {
 		if lipgloss.Width(line) > width {
 			t.Fatalf("line %q exceeds width %d (got %d)", line, width, lipgloss.Width(line))
 		}

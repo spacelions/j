@@ -11,6 +11,7 @@ import (
 )
 
 func TestResolve_Markdown(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	for _, ext := range []string{".md", ".markdown"} {
 		t.Run(ext, func(t *testing.T) {
@@ -34,6 +35,7 @@ func TestResolve_Markdown(t *testing.T) {
 }
 
 func TestResolve_TrimsAndUppercaseExtension(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "SPEC.MD")
 	if err := os.WriteFile(p, []byte("hi"), 0o600); err != nil {
@@ -50,6 +52,7 @@ func TestResolve_TrimsAndUppercaseExtension(t *testing.T) {
 }
 
 func TestResolve_Errors(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	txt := filepath.Join(dir, "spec.txt")
 	if err := os.WriteFile(txt, []byte("hi"), 0o600); err != nil {
@@ -80,6 +83,7 @@ func TestResolve_Errors(t *testing.T) {
 }
 
 func TestResolve_NotRegularFile(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("posix-only fifo test")
 	}
@@ -121,6 +125,7 @@ func listInDirBasenames(t *testing.T, dir string) []string {
 // AGENTS.md / README.md exclusions drop out, hidden files are
 // skipped, and the result is sorted case-insensitively by basename.
 func TestListInDir_FiltersAndSorts(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	files := []string{
 		"spec.md",
@@ -159,6 +164,7 @@ func TestListInDir_FiltersAndSorts(t *testing.T) {
 // contract: ListInDir returns an empty (non-nil error) result so
 // callers can branch on len(out) without inspecting err.
 func TestListInDir_EmptyDirectory(t *testing.T) {
+	t.Parallel()
 	got, err := ListInDir(t.TempDir())
 	if err != nil {
 		t.Fatalf("ListInDir: %v", err)
@@ -172,6 +178,7 @@ func TestListInDir_EmptyDirectory(t *testing.T) {
 // passthrough. We do not wrap the error: the caller is best placed
 // to add user-facing context (e.g. mentioning the cwd).
 func TestListInDir_MissingDirectory(t *testing.T) {
+	t.Parallel()
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
 	_, err := ListInDir(missing)
 	if err == nil {
@@ -184,6 +191,7 @@ func TestListInDir_MissingDirectory(t *testing.T) {
 // scan layer too so the picker never offers something that would
 // blow up later inside Resolve.
 func TestListInDir_SkipsNonRegularFile(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("posix-only fifo test")
 	}

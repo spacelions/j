@@ -9,6 +9,12 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
+const (
+	phasePlan   = "plan"
+	phaseWork   = "work"
+	phaseVerify = "verify"
+)
+
 // Init registers the markers hook that writes one human-readable
 // line per status transition to the per-task agent.log. Callers
 // should invoke Init once at process startup (e.g. from root.go).
@@ -56,72 +62,73 @@ func markersHook(tr tasks.Transition, task tasks.Task) {
 	_, _ = fmt.Fprintln(f, line)
 }
 
+//nolint:gocyclo,funlen // one case per FSM event; complexity is inherent
 func eventToPhaseVerb(e tasks.Event) (phase, verb string) {
 	switch e {
 	case tasks.EventPlanBegin:
-		return "plan", "begin"
+		return phasePlan, "begin"
 	case tasks.EventPlanRestart:
-		return "plan", "restart"
+		return phasePlan, "restart"
 	case tasks.EventPlanDone:
-		return "plan", "done"
+		return phasePlan, "done"
 	case tasks.EventPlanAwaitApproval:
-		return "plan", "await approval"
+		return phasePlan, "await approval"
 	case tasks.EventPlanApprove:
-		return "plan", "approve"
+		return phasePlan, "approve"
 	case tasks.EventPlanQuit:
-		return "plan", "quit"
+		return phasePlan, "quit"
 	case tasks.EventPlanError:
-		return "plan", "error"
+		return phasePlan, "error"
 	case tasks.EventPlanNeedsClarification:
-		return "plan", "needs clarification"
+		return phasePlan, "needs clarification"
 	case tasks.EventPlanResume:
-		return "plan", "resume"
+		return phasePlan, "resume"
 	case tasks.EventReaperPlanDone:
-		return "plan", "done"
+		return phasePlan, "done"
 	case tasks.EventReaperPlanAwaitApproval:
-		return "plan", "await approval"
+		return phasePlan, "await approval"
 	case tasks.EventReaperPlanFail:
-		return "plan", "fail"
+		return phasePlan, "fail"
 	case tasks.EventReaperPlanNeedsClarification:
-		return "plan", "needs clarification"
+		return phasePlan, "needs clarification"
 
 	case tasks.EventWorkBegin:
-		return "work", "begin"
+		return phaseWork, "begin"
 	case tasks.EventWorkRestart:
-		return "work", "restart"
+		return phaseWork, "restart"
 	case tasks.EventWorkResume:
-		return "work", "resume"
+		return phaseWork, "resume"
 	case tasks.EventWorkDone:
-		return "work", "done"
+		return phaseWork, "done"
 	case tasks.EventWorkQuit:
-		return "work", "quit"
+		return phaseWork, "quit"
 	case tasks.EventWorkError:
-		return "work", "error"
+		return phaseWork, "error"
 	case tasks.EventWorkNeedsClarification:
-		return "work", "needs clarification"
+		return phaseWork, "needs clarification"
 	case tasks.EventReaperWorkDone:
-		return "work", "done"
+		return phaseWork, "done"
 	case tasks.EventReaperWorkNeedsClarification:
-		return "work", "needs clarification"
+		return phaseWork, "needs clarification"
 
 	case tasks.EventVerifyBegin:
-		return "verify", "begin"
+		return phaseVerify, "begin"
 	case tasks.EventVerifyRestart:
-		return "verify", "restart"
+		return phaseVerify, "restart"
 	case tasks.EventVerifyResume:
-		return "verify", "resume"
+		return phaseVerify, "resume"
 	case tasks.EventVerifyPass:
-		return "verify", "pass"
+		return phaseVerify, "pass"
 	case tasks.EventVerifyFail:
-		return "verify", "fail"
+		return phaseVerify, "fail"
 	case tasks.EventVerifyQuit:
-		return "verify", "quit"
+		return phaseVerify, "quit"
 	case tasks.EventVerifyError:
-		return "verify", "error"
+		return phaseVerify, "error"
 	case tasks.EventVerifyStuck:
-		return "verify", "stuck"
+		return phaseVerify, "stuck"
 	case tasks.EventReaperVerifyNeedsClarification:
-		return "verify", "needs clarification"
+		return phaseVerify, "needs clarification"
 	}
 	return string(e), ""
 }

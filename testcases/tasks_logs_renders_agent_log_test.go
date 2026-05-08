@@ -49,7 +49,7 @@ func TestTasksLogs_RendersAgentLog(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	stdout, _, err := testutil.RunCobra(
+	stdout, _, err := testutil.RunCobra(t,
 		clitasks.New(), "logs", "--from-task", "id-render",
 	)
 	if err != nil {

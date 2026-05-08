@@ -118,7 +118,7 @@ func (s *stubAgent) Verify(context.Context, codingagents.VerifyRequest) (int, er
 
 func TestFromStore_NilStore(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
-	_, _, err := AgentFromStore(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(t.Context(), nil, store.BucketPlanner, []codingagents.Agent{cursor})
 	if !errors.Is(err, ErrNoStoredSelection) {
 		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
 	}
@@ -134,7 +134,7 @@ func TestFromStore_MissingTool(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(t.Context(), s, store.BucketPlanner, []codingagents.Agent{cursor})
 	if !errors.Is(err, ErrNoStoredSelection) {
 		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
 	}
@@ -147,7 +147,7 @@ func TestFromStore_MissingModel(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(t.Context(), s, store.BucketPlanner, []codingagents.Agent{cursor})
 	if !errors.Is(err, ErrNoStoredSelection) {
 		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
 	}
@@ -166,7 +166,7 @@ func TestFromStore_EmptyToolValue(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(t.Context(), s, store.BucketPlanner, []codingagents.Agent{cursor})
 	if !errors.Is(err, ErrNoStoredSelection) {
 		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
 	}
@@ -182,7 +182,7 @@ func TestFromStore_EmptyModelValue(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(t.Context(), s, store.BucketPlanner, []codingagents.Agent{cursor})
 	if !errors.Is(err, ErrNoStoredSelection) {
 		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
 	}
@@ -198,7 +198,7 @@ func TestFromStore_UnknownTool(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(t.Context(), s, store.BucketPlanner, []codingagents.Agent{cursor})
 	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
 		t.Fatalf("err = %v", err)
 	}
@@ -221,7 +221,7 @@ func TestFromStore_CheckLoginError(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
 	cursor.loginErr = errors.New("not logged in")
 
-	_, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(t.Context(), s, store.BucketPlanner, []codingagents.Agent{cursor})
 	if err == nil || !strings.Contains(err.Error(), "not logged in") {
 		t.Fatalf("err = %v", err)
 	}
@@ -240,7 +240,7 @@ func TestFromStore_StoreReadError(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor})
+	_, _, err := AgentFromStore(t.Context(), s, store.BucketPlanner, []codingagents.Agent{cursor})
 	if err == nil || !strings.Contains(err.Error(), "resolver: read planner") {
 		t.Fatalf("err = %v, want wrapped read error", err)
 	}
@@ -260,7 +260,7 @@ func TestFromStore_HappyPath(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4", "gpt-5")
 	codex := newStubAgent("codex", "o4")
 
-	agent, model, err := AgentFromStore(context.Background(), s, store.BucketWorker, []codingagents.Agent{codex, cursor})
+	agent, model, err := AgentFromStore(t.Context(), s, store.BucketWorker, []codingagents.Agent{codex, cursor})
 	if err != nil {
 		t.Fatalf("FromStore: %v", err)
 	}
@@ -292,7 +292,7 @@ func TestFromStore_DoesNotPersist(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	if _, _, err := AgentFromStore(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}); err != nil {
+	if _, _, err := AgentFromStore(t.Context(), s, store.BucketPlanner, []codingagents.Agent{cursor}); err != nil {
 		t.Fatalf("FromStore: %v", err)
 	}
 	entries, err := s.List(store.BucketPlanner)
@@ -330,7 +330,7 @@ func TestFromStore_DoesNotPersist(t *testing.T) {
 // not consulted. A nil store is fine.
 func TestResolve_BothExplicit(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
-	agent, model, err := resolveAgent(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "opus")
+	agent, model, err := resolveAgent(t.Context(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "opus")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestResolve_ToolOnly_FillsModelFromStore(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	agent, model, err := resolveAgent(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
+	agent, model, err := resolveAgent(t.Context(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestResolve_ModelOnly_FillsToolFromStore(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	agent, model, err := resolveAgent(context.Background(), s, store.BucketWorker, []codingagents.Agent{cursor}, "", "opus")
+	agent, model, err := resolveAgent(t.Context(), s, store.BucketWorker, []codingagents.Agent{cursor}, "", "opus")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -397,7 +397,7 @@ func TestResolve_ToolOnly_EmptyBucket(t *testing.T) {
 	s := openTestStore(t, store.BucketPlanner)
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := resolveAgent(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
+	_, _, err := resolveAgent(t.Context(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
 	if err == nil || !strings.Contains(err.Error(), "given without stored model in planner") {
 		t.Fatalf("err = %v, want missing-model error", err)
 	}
@@ -411,7 +411,7 @@ func TestResolve_ModelOnly_EmptyBucket(t *testing.T) {
 	s := openTestStore(t, store.BucketVerifier)
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := resolveAgent(context.Background(), s, store.BucketVerifier, []codingagents.Agent{cursor}, "", "opus")
+	_, _, err := resolveAgent(t.Context(), s, store.BucketVerifier, []codingagents.Agent{cursor}, "", "opus")
 	if err == nil || !strings.Contains(err.Error(), "given without stored tool in verifier") {
 		t.Fatalf("err = %v, want missing-tool error", err)
 	}
@@ -425,7 +425,7 @@ func TestResolve_ModelOnly_EmptyBucket(t *testing.T) {
 // can fall through to FromStore / Pick.
 func TestResolve_BothEmpty(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
-	_, _, err := resolveAgent(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "", "")
+	_, _, err := resolveAgent(t.Context(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "", "")
 	if !errors.Is(err, ErrNoStoredSelection) {
 		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
 	}
@@ -435,7 +435,7 @@ func TestResolve_BothEmpty(t *testing.T) {
 // before CheckLogin runs.
 func TestResolve_UnknownTool(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
-	_, _, err := resolveAgent(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "ghost", "opus")
+	_, _, err := resolveAgent(t.Context(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "ghost", "opus")
 	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
 		t.Fatalf("err = %v, want unknown-tool error", err)
 	}
@@ -449,7 +449,7 @@ func TestResolve_CheckLoginError(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
 	cursor.loginErr = errors.New("not logged in")
 
-	_, _, err := resolveAgent(context.Background(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "opus")
+	_, _, err := resolveAgent(t.Context(), nil, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "opus")
 	if err == nil || !strings.Contains(err.Error(), "not logged in") {
 		t.Fatalf("err = %v, want login error", err)
 	}
@@ -467,7 +467,7 @@ func TestResolve_StoreReadError(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	_, _, err := resolveAgent(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
+	_, _, err := resolveAgent(t.Context(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "cursor", "")
 	if err == nil || !strings.Contains(err.Error(), "resolver: read planner") {
 		t.Fatalf("err = %v, want wrapped read error", err)
 	}
@@ -483,7 +483,7 @@ func TestResolve_DoesNotPersist(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	if _, _, err := resolveAgent(context.Background(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "", "opus"); err != nil {
+	if _, _, err := resolveAgent(t.Context(), s, store.BucketPlanner, []codingagents.Agent{cursor}, "", "opus"); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 	entries, err := s.List(store.BucketPlanner)
@@ -500,7 +500,7 @@ func TestResolve_DoesNotPersist(t *testing.T) {
 func TestAgent_ExplicitHits(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
 	ui := &scriptedUI{}
-	agent, model, err := Agent(context.Background(), AgentOptions{
+	agent, model, err := Agent(t.Context(), AgentOptions{
 		Bucket:        store.BucketPlanner,
 		Agents:        []codingagents.Agent{cursor},
 		ExplicitTool:  "cursor",
@@ -531,7 +531,7 @@ func TestAgent_StoredHits(t *testing.T) {
 	}
 	cursor := newStubAgent("cursor", "sonnet-4")
 	ui := &scriptedUI{}
-	agent, model, err := Agent(context.Background(), AgentOptions{
+	agent, model, err := Agent(t.Context(), AgentOptions{
 		Bucket: store.BucketPlanner,
 		Agents: []codingagents.Agent{cursor},
 		UI:     ui,
@@ -555,7 +555,7 @@ func TestAgent_PromptsAndPersists(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
 	ui := &scriptedUI{tool: "cursor", model: "sonnet-4"}
 	var stderr bytes.Buffer
-	agent, model, err := Agent(context.Background(), AgentOptions{
+	agent, model, err := Agent(t.Context(), AgentOptions{
 		Bucket:      store.BucketPlanner,
 		Agents:      []codingagents.Agent{cursor},
 		UI:          ui,
@@ -592,7 +592,7 @@ func TestAgent_PromptError(t *testing.T) {
 	s := openTestStore(t, store.BucketPlanner)
 	cursor := newStubAgent("cursor", "sonnet-4")
 	ui := &scriptedUI{toolErr: errors.New("ui boom")}
-	_, _, err := Agent(context.Background(), AgentOptions{
+	_, _, err := Agent(t.Context(), AgentOptions{
 		Bucket: store.BucketPlanner,
 		Agents: []codingagents.Agent{cursor},
 		UI:     ui,
@@ -617,7 +617,7 @@ func TestAgent_ExplicitMissingHalfPropagates(t *testing.T) {
 	s := openTestStore(t, store.BucketPlanner)
 	cursor := newStubAgent("cursor", "sonnet-4")
 	ui := &scriptedUI{}
-	_, _, err := Agent(context.Background(), AgentOptions{
+	_, _, err := Agent(t.Context(), AgentOptions{
 		Bucket:       store.BucketPlanner,
 		Agents:       []codingagents.Agent{cursor},
 		ExplicitTool: "cursor",
@@ -636,7 +636,7 @@ func TestAgent_LazyStorePaths(t *testing.T) {
 	setupResolverProject(t)
 	cursor := newStubAgent("cursor", "sonnet-4")
 
-	agent, model, err := Agent(context.Background(), AgentOptions{
+	agent, model, err := Agent(t.Context(), AgentOptions{
 		Bucket:        store.BucketPlanner,
 		Agents:        []codingagents.Agent{cursor},
 		ExplicitTool:  "cursor",
@@ -668,7 +668,7 @@ func TestAgent_LazyStorePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	agent, model, err = Agent(context.Background(), AgentOptions{
+	agent, model, err = Agent(t.Context(), AgentOptions{
 		Bucket: store.BucketPlanner,
 		Agents: []codingagents.Agent{cursor},
 		Stderr: io.Discard,
@@ -682,7 +682,7 @@ func TestAgent_LazyPromptPersists(t *testing.T) {
 	setupResolverProject(t)
 	cursor := newStubAgent("cursor", "sonnet-4")
 	ui := &scriptedUI{tool: "cursor", model: "sonnet-4"}
-	agent, model, err := Agent(context.Background(), AgentOptions{
+	agent, model, err := Agent(t.Context(), AgentOptions{
 		Bucket:      store.BucketPlanner,
 		Agents:      []codingagents.Agent{cursor},
 		UI:          ui,

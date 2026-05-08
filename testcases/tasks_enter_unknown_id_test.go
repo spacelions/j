@@ -18,7 +18,7 @@ func TestTasksEnterUnknownID(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	stdout, _, err := testutil.RunCobra(
+	stdout, _, err := testutil.RunCobra(t,
 		tasks.New(), "enter", "--id", "ghost-id",
 	)
 	if err != nil {

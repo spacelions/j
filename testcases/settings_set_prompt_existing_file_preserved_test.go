@@ -26,7 +26,7 @@ func TestSettingsSet_PromptExistingFileNotOverwritten(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	stdout, _, err := testutil.RunCobra(settings.New(),
+	stdout, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "planner.prompt="+dest,
 	)
 	if err != nil {

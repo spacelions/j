@@ -23,7 +23,7 @@ func TestSettingsSet_VerifierPromptSeedsBundled(t *testing.T) {
 	}
 	dest := filepath.Join(dir, "custom-verifier.md")
 
-	stdout, _, err := testutil.RunCobra(settings.New(),
+	stdout, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "verifier.prompt="+dest,
 	)
 	if err != nil {

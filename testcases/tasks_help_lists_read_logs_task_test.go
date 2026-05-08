@@ -14,7 +14,7 @@ func TestTasksHelp_ListsShowLogsTask(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	stdout, _, err := testutil.RunCobra(tasks.New(), "--help")
+	stdout, _, err := testutil.RunCobra(t, tasks.New(), "--help")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

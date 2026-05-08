@@ -27,10 +27,10 @@ func resumePlanInlineOrchestrator(
 	}
 	approval, _ := store.LoadPlanRequiresApproval()
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
-		"tasks", "orchestrate",
-		"--id", t.ID,
+		cmdTasks, cmdOrchestrate,
+		flagID, t.ID,
 		"--plan-requires-approval=" + strconv.FormatBool(approval),
-		"--interactive=true",
+		flagInteractiveTrue,
 	})
 }
 
@@ -44,10 +44,10 @@ func resumeWorkInlineOrchestrator(
 		return fmt.Errorf("ensure task dir: %w", err)
 	}
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
-		"tasks", "orchestrate",
-		"--id", t.ID,
-		"--phase=from-work",
-		"--interactive=true",
+		cmdTasks, cmdOrchestrate,
+		flagID, t.ID,
+		flagPhaseFromWork,
+		flagInteractiveTrue,
 	})
 }
 
@@ -90,7 +90,7 @@ func dispatchHelp(
 		return resumeVerifyingInline(ctx, opts, t.ID)
 	case "work":
 		return resumeWorkInlineOrchestrator(ctx, opts, t)
-	case "plan":
+	case cmdPlan:
 		return resumePlanInlineOrchestrator(ctx, opts, t)
 	}
 	return fmt.Errorf("task %s in `help` has no resumable phase signal", t.ID)
@@ -154,9 +154,9 @@ func runPlanDoneWork(
 	}
 	interactive := resolver.Interactive(opts.Interactive)
 	args := []string{
-		"tasks", "orchestrate",
-		"--id", t.ID,
-		"--phase=from-work",
+		cmdTasks, cmdOrchestrate,
+		flagID, t.ID,
+		flagPhaseFromWork,
 		"--interactive=" + strconv.FormatBool(interactive),
 	}
 	if opts.Tool != "" {
@@ -176,7 +176,7 @@ func runPlanDoneWork(
 	}
 	stampSpawnOnRow(opts.Stderr, t.ID, agentLogPath, pid)
 	uitheme.NormalForkDialog(
-		opts.Stdout, fmt.Sprintf("task %s", t.ID), pid, agentLogPath)
+		opts.Stdout, "task "+t.ID, pid, agentLogPath)
 	return nil
 }
 
@@ -206,19 +206,19 @@ func dispatchClarification(
 		ev = tasks.EventVerifyResume
 	case "work":
 		ev = tasks.EventWorkResume
-	case "plan":
+	case cmdPlan:
 		ev = tasks.EventPlanResume
 	default:
 		return fmt.Errorf(
-				"task %s in %s has no resumable phase",
-				t.ID, tasks.StatusNeedsClarification)
+			"task %s in %s has no resumable phase",
+			t.ID, tasks.StatusNeedsClarification)
 	}
 	prev := t.Status
 	if _, err := tasks.ApplyAndPersistWarn(
 		opts.Stderr, &t, ev); err != nil {
 		return fmt.Errorf(
-				"cannot resume task in status %q (event %q)",
-				prev, ev)
+			"cannot resume task in status %q (event %q)",
+			prev, ev)
 	}
 
 	switch ev {

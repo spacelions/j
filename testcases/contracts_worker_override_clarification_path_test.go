@@ -31,7 +31,7 @@ func TestContracts_WorkerOverride_ClarificationPath(t *testing.T) {
 	); err != nil {
 		t.Fatalf("write override: %v", err)
 	}
-	if _, _, err := testutil.RunCobra(
+	if _, _, err := testutil.RunCobra(t,
 		settings.New(), "set", "worker.prompt="+override,
 	); err != nil {
 		t.Fatalf("set worker.prompt: %v", err)

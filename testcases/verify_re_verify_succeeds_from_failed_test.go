@@ -1,14 +1,13 @@
 package testcases_test
 
 import (
-	"context"
 	"io"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	codingagents "github.com/spacelions/j/internal/coding-agents"
 	clitasks "github.com/spacelions/j/internal/cli/tasks"
+	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -24,11 +23,11 @@ func TestVerify_ReVerify_SucceedsFromFailed(t *testing.T) {
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &recoveryFakeUI{statusOK: true}
-	false_ := false
+
 	if err := clitasks.RunReVerify(
-		context.Background(), clitasks.ReVerifyOptions{
+		t.Context(), clitasks.ReVerifyOptions{
 			FromTask:    id,
-			Interactive: &false_,
+			Interactive: new(false),
 			Stdin:       strings.NewReader(""),
 			Stdout:      io.Discard,
 			Stderr:      io.Discard,

@@ -1,7 +1,6 @@
 package testcases_test
 
 import (
-	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -9,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	codingagents "github.com/spacelions/j/internal/coding-agents"
 	clitasks "github.com/spacelions/j/internal/cli/tasks"
+	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
@@ -66,7 +65,7 @@ func TestTasksContinue_PlanApproveChainsToOrchestratorFromWork(t *testing.T) {
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	jbin := argvJStub(t, argvPath)
 	if err := clitasks.RunContinue(
-		context.Background(),
+		t.Context(),
 		clitasks.ContinueOptions{
 			TaskID:  id,
 			Stdin:   strings.NewReader(""),

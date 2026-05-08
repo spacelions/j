@@ -80,36 +80,36 @@ import (
 type Event string
 
 const (
-	EventPlanBegin                   Event = "plan_begin"
-	EventPlanRestart                 Event = "plan_restart"
-	EventPlanDone                    Event = "plan_done"
-	EventPlanAwaitApproval           Event = "plan_await_approval"
-	EventPlanApprove                 Event = "plan_approve"
-	EventPlanQuit                    Event = "plan_quit"
-	EventPlanError                   Event = "plan_error"
-	EventPlanNeedsClarification      Event = "plan_needs_clarification"
-	EventPlanResume                  Event = "plan_resume"
-	EventReaperPlanDone              Event = "reaper_plan_done"
-	EventReaperPlanAwaitApproval     Event = "reaper_plan_await_approval"
-	EventReaperPlanFail              Event = "reaper_plan_fail"
-	EventReaperPlanNeedsClarification Event = "reaper_plan_needs_clarification"
-	EventWorkBegin                   Event = "work_begin"
-	EventWorkRestart                 Event = "work_restart"
-	EventWorkResume                  Event = "work_resume"
-	EventWorkDone                    Event = "work_done"
-	EventWorkQuit                    Event = "work_quit"
-	EventWorkError                   Event = "work_error"
-	EventWorkNeedsClarification      Event = "work_needs_clarification"
-	EventReaperWorkDone              Event = "reaper_work_done"
-	EventReaperWorkNeedsClarification Event = "reaper_work_needs_clarification"
-	EventVerifyBegin                 Event = "verify_begin"
-	EventVerifyRestart               Event = "verify_restart"
-	EventVerifyResume                Event = "verify_resume"
-	EventVerifyPass                  Event = "verify_pass"
-	EventVerifyFail                  Event = "verify_fail"
-	EventVerifyQuit                  Event = "verify_quit"
-	EventVerifyError                 Event = "verify_error"
-	EventVerifyStuck                 Event = "verify_stuck"
+	EventPlanBegin                      Event = "plan_begin"
+	EventPlanRestart                    Event = "plan_restart"
+	EventPlanDone                       Event = "plan_done"
+	EventPlanAwaitApproval              Event = "plan_await_approval"
+	EventPlanApprove                    Event = "plan_approve"
+	EventPlanQuit                       Event = "plan_quit"
+	EventPlanError                      Event = "plan_error"
+	EventPlanNeedsClarification         Event = "plan_needs_clarification"
+	EventPlanResume                     Event = "plan_resume"
+	EventReaperPlanDone                 Event = "reaper_plan_done"
+	EventReaperPlanAwaitApproval        Event = "reaper_plan_await_approval"
+	EventReaperPlanFail                 Event = "reaper_plan_fail"
+	EventReaperPlanNeedsClarification   Event = "reaper_plan_needs_clarification"
+	EventWorkBegin                      Event = "work_begin"
+	EventWorkRestart                    Event = "work_restart"
+	EventWorkResume                     Event = "work_resume"
+	EventWorkDone                       Event = "work_done"
+	EventWorkQuit                       Event = "work_quit"
+	EventWorkError                      Event = "work_error"
+	EventWorkNeedsClarification         Event = "work_needs_clarification"
+	EventReaperWorkDone                 Event = "reaper_work_done"
+	EventReaperWorkNeedsClarification   Event = "reaper_work_needs_clarification"
+	EventVerifyBegin                    Event = "verify_begin"
+	EventVerifyRestart                  Event = "verify_restart"
+	EventVerifyResume                   Event = "verify_resume"
+	EventVerifyPass                     Event = "verify_pass"
+	EventVerifyFail                     Event = "verify_fail"
+	EventVerifyQuit                     Event = "verify_quit"
+	EventVerifyError                    Event = "verify_error"
+	EventVerifyStuck                    Event = "verify_stuck"
 	EventReaperVerifyNeedsClarification Event = "reaper_verify_needs_clarification"
 )
 
@@ -167,8 +167,10 @@ var transitions = []Transition{
 	{StatusVerifying, EventVerifyError, StatusHelp},
 	{StatusVerifying, EventVerifyQuit, StatusHelp},
 	{StatusVerifying, EventVerifyResume, StatusVerifying},
-	{StatusVerifying, EventReaperVerifyNeedsClarification,
-		StatusNeedsClarification},
+	{
+		StatusVerifying, EventReaperVerifyNeedsClarification,
+		StatusNeedsClarification,
+	},
 
 	{StatusFailed, EventPlanRestart, StatusPlanning},
 	{StatusFailed, EventWorkRestart, StatusWorking},
@@ -286,9 +288,8 @@ func Notify(tr Transition, task Task) {
 	}
 }
 
-// ResetHooksForTest clears the global hook registry. It panics when
-// called outside of testing so a production path cannot accidentally
-// lose hooks. Test packages should defer it with t.Cleanup.
+// ResetHooksForTest clears the global hook registry. Panics outside
+// of testing; test packages should defer it with t.Cleanup.
 func ResetHooksForTest() {
 	if !testing.Testing() {
 		panic("ResetHooksForTest called outside of testing")

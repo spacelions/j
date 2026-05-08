@@ -1,7 +1,6 @@
 package linear
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -34,7 +33,7 @@ func TestUpdateIssueDescription_OK(t *testing.T) {
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
 	err := c.UpdateIssueDescription(
-		context.Background(), "node-id-1", "new body")
+		t.Context(), "node-id-1", "new body")
 	if err != nil {
 		t.Fatalf("UpdateIssueDescription: %v", err)
 	}
@@ -60,7 +59,7 @@ func TestUpdateIssueDescription_GraphQLError(t *testing.T) {
 		})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.UpdateIssueDescription(context.Background(), "id", "b")
+	err := c.UpdateIssueDescription(t.Context(), "id", "b")
 	if err == nil || !strings.Contains(err.Error(), "bad input") {
 		t.Fatalf("err = %v, want graphql 'bad input'", err)
 	}
@@ -71,7 +70,7 @@ func TestUpdateIssueDescription_Unauthorized(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.UpdateIssueDescription(context.Background(), "id", "b")
+	err := c.UpdateIssueDescription(t.Context(), "id", "b")
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("err = %v, want ErrUnauthorized", err)
 	}
@@ -83,7 +82,7 @@ func TestUpdateIssueDescription_HTTP500(t *testing.T) {
 		_, _ = w.Write([]byte("boom"))
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.UpdateIssueDescription(context.Background(), "id", "b")
+	err := c.UpdateIssueDescription(t.Context(), "id", "b")
 	var hErr *HTTPError
 	if !errors.As(err, &hErr) || hErr.Status != http.StatusInternalServerError {
 		t.Fatalf("err = %v, want *HTTPError with 500", err)
@@ -102,7 +101,7 @@ func TestCreateComment_OK(t *testing.T) {
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
 	err := c.CreateComment(
-		context.Background(), "node-id-2", "hello plan")
+		t.Context(), "node-id-2", "hello plan")
 	if err != nil {
 		t.Fatalf("CreateComment: %v", err)
 	}
@@ -128,7 +127,7 @@ func TestCreateComment_GraphQLError(t *testing.T) {
 		})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.CreateComment(context.Background(), "id", "b")
+	err := c.CreateComment(t.Context(), "id", "b")
 	if err == nil || !strings.Contains(err.Error(), "no perms") {
 		t.Fatalf("err = %v, want graphql 'no perms'", err)
 	}
@@ -139,7 +138,7 @@ func TestCreateComment_Unauthorized(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.CreateComment(context.Background(), "id", "b")
+	err := c.CreateComment(t.Context(), "id", "b")
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("err = %v, want ErrUnauthorized", err)
 	}
@@ -151,7 +150,7 @@ func TestCreateComment_HTTP500(t *testing.T) {
 		_, _ = w.Write([]byte("dead"))
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.CreateComment(context.Background(), "id", "b")
+	err := c.CreateComment(t.Context(), "id", "b")
 	var hErr *HTTPError
 	if !errors.As(err, &hErr) || hErr.Status != http.StatusInternalServerError {
 		t.Fatalf("err = %v, want *HTTPError with 500", err)
@@ -170,7 +169,7 @@ func TestUpdateIssueState_OK(t *testing.T) {
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
 	err := c.UpdateIssueState(
-		context.Background(), "node-1", "state-1")
+		t.Context(), "node-1", "state-1")
 	if err != nil {
 		t.Fatalf("UpdateIssueState: %v", err)
 	}
@@ -196,7 +195,7 @@ func TestUpdateIssueState_GraphQLError(t *testing.T) {
 		})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.UpdateIssueState(context.Background(), "id", "s")
+	err := c.UpdateIssueState(t.Context(), "id", "s")
 	if err == nil || !strings.Contains(err.Error(), "bad state") {
 		t.Fatalf("err = %v", err)
 	}
@@ -207,7 +206,7 @@ func TestUpdateIssueState_Unauthorized(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.UpdateIssueState(context.Background(), "id", "s")
+	err := c.UpdateIssueState(t.Context(), "id", "s")
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("err = %v, want ErrUnauthorized", err)
 	}
@@ -225,7 +224,7 @@ func TestRemindOnIssue_OK(t *testing.T) {
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
 	before := time.Now().UTC().Add(-time.Second)
-	err := c.RemindOnIssue(context.Background(), "node-id-3")
+	err := c.RemindOnIssue(t.Context(), "node-id-3")
 	if err != nil {
 		t.Fatalf("RemindOnIssue: %v", err)
 	}
@@ -262,7 +261,7 @@ func TestRemindOnIssue_GraphQLError(t *testing.T) {
 		})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.RemindOnIssue(context.Background(), "id")
+	err := c.RemindOnIssue(t.Context(), "id")
 	if err == nil || !strings.Contains(err.Error(), "no remind") {
 		t.Fatalf("err = %v, want graphql 'no remind'", err)
 	}
@@ -273,7 +272,7 @@ func TestRemindOnIssue_Unauthorized(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.RemindOnIssue(context.Background(), "id")
+	err := c.RemindOnIssue(t.Context(), "id")
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("err = %v, want ErrUnauthorized", err)
 	}
@@ -285,7 +284,7 @@ func TestRemindOnIssue_HTTP500(t *testing.T) {
 		_, _ = w.Write([]byte("dead"))
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.RemindOnIssue(context.Background(), "id")
+	err := c.RemindOnIssue(t.Context(), "id")
 	var hErr *HTTPError
 	if !errors.As(err, &hErr) ||
 		hErr.Status != http.StatusInternalServerError {
@@ -311,7 +310,7 @@ func TestGetIssue_PopulatesID(t *testing.T) {
 		})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	got, err := c.GetIssue(context.Background(), "ENG-1")
+	got, err := c.GetIssue(t.Context(), "ENG-1")
 	if err != nil {
 		t.Fatalf("GetIssue: %v", err)
 	}

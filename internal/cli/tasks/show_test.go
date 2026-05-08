@@ -20,12 +20,12 @@ import (
 // showLeaf names the leaf under test so the same harness drives
 // requirements / plan without duplicating the table.
 type showLeaf struct {
-	name      string
-	filename  string
-	run       func(context.Context, ShowOptions) error
-	viperKey  string
-	envName   string
-	cmdArgv   []string
+	name     string
+	filename string
+	run      func(context.Context, ShowOptions) error
+	viperKey string
+	envName  string
+	cmdArgv  []string
 }
 
 func showLeaves() []showLeaf {
@@ -67,7 +67,7 @@ func TestRunShow_DirectIDHappyPath(t *testing.T) {
 	}
 	seedTaskWithFile(t, "id-show", "x", "", "")
 	viewer := &fakeViewer{}
-	err = RunShow(context.Background(), ShowOptions{
+	err = RunShow(t.Context(), ShowOptions{
 		TaskID: "id-show",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -94,7 +94,7 @@ func TestRunShow_DirectIDUnknown(t *testing.T) {
 	testutil.Init(t)
 	viewer := &fakeViewer{}
 	var stdout bytes.Buffer
-	err := RunShow(context.Background(), ShowOptions{
+	err := RunShow(t.Context(), ShowOptions{
 		TaskID: "ghost",
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -119,7 +119,7 @@ func TestRunShow_NoIDEmptyStore(t *testing.T) {
 	viewer := &fakeViewer{}
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunShow(context.Background(), ShowOptions{
+	err := RunShow(t.Context(), ShowOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -147,7 +147,7 @@ func TestRunShow_NoIDPickerHappyPath(t *testing.T) {
 	seedTaskWithFile(t, "id-pk", "x", "", "")
 	ui := &fakeUI{pickReturn: "id-pk"}
 	viewer := &fakeViewer{}
-	err = RunShow(context.Background(), ShowOptions{
+	err = RunShow(t.Context(), ShowOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -177,7 +177,7 @@ func TestRunShow_NoIDPickerAbort(t *testing.T) {
 	ui := &fakeUI{}
 	viewer := &fakeViewer{}
 	var stdout bytes.Buffer
-	err := RunShow(context.Background(), ShowOptions{
+	err := RunShow(t.Context(), ShowOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -201,7 +201,7 @@ func TestRunShow_ViewerErrorPropagates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	seedTaskWithFile(t, "id-vw-err", "x", "", "")
 	boom := errors.New("viewer boom")
-	err := RunShow(context.Background(), ShowOptions{
+	err := RunShow(t.Context(), ShowOptions{
 		TaskID: "id-vw-err",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -226,7 +226,7 @@ func TestRunShowLeaf_DirectIDHappyPath(t *testing.T) {
 			seedTaskWithFile(t, "id-direct", "x",
 				leaf.filename, "body")
 			viewer := &fakeViewer{}
-			err = leaf.run(context.Background(), ShowOptions{
+			err = leaf.run(t.Context(), ShowOptions{
 				TaskID: "id-direct",
 				Stdout: io.Discard,
 				Stderr: io.Discard,
@@ -259,7 +259,7 @@ func TestRunShowLeaf_DirectIDUnknown(t *testing.T) {
 			testutil.Init(t)
 			viewer := &fakeViewer{}
 			var stdout bytes.Buffer
-			err := leaf.run(context.Background(), ShowOptions{
+			err := leaf.run(t.Context(), ShowOptions{
 				TaskID: "ghost",
 				Stdout: &stdout,
 				Stderr: io.Discard,
@@ -289,7 +289,7 @@ func TestRunShowLeaf_DirectIDFileMissing(t *testing.T) {
 			seedTaskWithFile(t, "id-no-file", "x", "", "")
 			viewer := &fakeViewer{}
 			var stdout bytes.Buffer
-			err := leaf.run(context.Background(), ShowOptions{
+			err := leaf.run(t.Context(), ShowOptions{
 				TaskID: "id-no-file",
 				Stdout: &stdout,
 				Stderr: io.Discard,
@@ -321,7 +321,7 @@ func TestRunShowLeaf_NoIDEmptyStore(t *testing.T) {
 			viewer := &fakeViewer{}
 			ui := &fakeUI{}
 			var stdout bytes.Buffer
-			err := leaf.run(context.Background(), ShowOptions{
+			err := leaf.run(t.Context(), ShowOptions{
 				Stdout: &stdout,
 				Stderr: io.Discard,
 				UI:     ui,
@@ -357,7 +357,7 @@ func TestRunShowLeaf_NoIDPickerHappyPath(t *testing.T) {
 				leaf.filename, "body")
 			ui := &fakeUI{pickReturn: "id-pk"}
 			viewer := &fakeViewer{}
-			err = leaf.run(context.Background(), ShowOptions{
+			err = leaf.run(t.Context(), ShowOptions{
 				Stdout: io.Discard,
 				Stderr: io.Discard,
 				UI:     ui,
@@ -395,7 +395,7 @@ func TestRunShowLeaf_NoIDPickerAbort(t *testing.T) {
 			ui := &fakeUI{}
 			viewer := &fakeViewer{}
 			var stdout bytes.Buffer
-			err := leaf.run(context.Background(), ShowOptions{
+			err := leaf.run(t.Context(), ShowOptions{
 				Stdout: &stdout,
 				Stderr: io.Discard,
 				UI:     ui,
@@ -426,7 +426,7 @@ func TestRunShowLeaf_ViewerErrorPropagates(t *testing.T) {
 	seedTaskWithFile(t, "id-vw-err", "x",
 		leaf.filename, "body")
 	boom := errors.New("viewer boom")
-	err := leaf.run(context.Background(), ShowOptions{
+	err := leaf.run(t.Context(), ShowOptions{
 		TaskID: "id-vw-err",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -557,7 +557,7 @@ func TestRunShowCmd_RunE_DirectIDViaEnv(t *testing.T) {
 	root.SetIn(strings.NewReader(""))
 	root.SetOut(&stdout)
 	root.SetErr(io.Discard)
-	root.SetContext(context.Background())
+	root.SetContext(t.Context())
 	root.SetArgs([]string{"show"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -581,7 +581,7 @@ func TestRunShowLeafCmd_RunE_DirectIDViaEnv(t *testing.T) {
 			root.SetIn(strings.NewReader(""))
 			root.SetOut(&stdout)
 			root.SetErr(io.Discard)
-			root.SetContext(context.Background())
+			root.SetContext(t.Context())
 			root.SetArgs(leaf.cmdArgv)
 			if err := root.Execute(); err != nil {
 				t.Fatalf("Execute: %v", err)
@@ -642,7 +642,7 @@ func TestNew_ReadUnknownCommand(t *testing.T) {
 	root.SetIn(strings.NewReader(""))
 	root.SetOut(io.Discard)
 	root.SetErr(io.Discard)
-	root.SetContext(context.Background())
+	root.SetContext(t.Context())
 	root.SetArgs([]string{"read"})
 	err := root.Execute()
 	if err == nil {

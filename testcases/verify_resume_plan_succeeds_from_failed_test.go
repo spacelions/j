@@ -1,14 +1,13 @@
 package testcases_test
 
 import (
-	"context"
 	"io"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	codingagents "github.com/spacelions/j/internal/coding-agents"
 	clitasks "github.com/spacelions/j/internal/cli/tasks"
+	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -26,7 +25,7 @@ func TestVerify_ResumePlan_SucceedsFromFailed(t *testing.T) {
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &recoveryFakeUI{pickReturn: id}
 	if err := clitasks.RunResumePlan(
-		context.Background(), clitasks.ResumePlanOptions{
+		t.Context(), clitasks.ResumePlanOptions{
 			Stdin:  strings.NewReader(""),
 			Stdout: io.Discard,
 			Stderr: io.Discard,

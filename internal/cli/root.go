@@ -10,11 +10,15 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
-	"github.com/spacelions/j/internal/cli/uitheme"
+	"github.com/spf13/viper"
+
+	"github.com/spacelions/j/internal/cli/completion"
 	"github.com/spacelions/j/internal/cli/initcmd"
 	"github.com/spacelions/j/internal/cli/run"
 	"github.com/spacelions/j/internal/cli/settings"
 	"github.com/spacelions/j/internal/cli/tasks"
+	"github.com/spacelions/j/internal/cli/uitheme"
+	"github.com/spacelions/j/internal/cli/version"
 	"github.com/spacelions/j/internal/cli/web"
 	"github.com/spacelions/j/internal/lifecycle"
 )
@@ -27,6 +31,8 @@ func NewRoot() *cobra.Command {
 	lifecycle.InitLinearPush()
 	lifecycle.InitLinearStateSync()
 	lifecycle.InitLinearVerifyPush()
+	viper.SetEnvPrefix("J")
+	viper.AutomaticEnv()
 	root := &cobra.Command{
 		Use:   "j",
 		Short: "J Harness CLI",
@@ -40,7 +46,9 @@ func NewRoot() *cobra.Command {
 		settings.New(),
 		tasks.New(),
 		initcmd.New(),
+		version.New(),
 	)
+	root.AddCommand(completion.New(root))
 	return root
 }
 

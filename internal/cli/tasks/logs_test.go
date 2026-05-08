@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"io"
 	"os"
@@ -25,7 +24,7 @@ func TestRunLogs_DirectIDHappyPath(t *testing.T) {
 	seedTaskWithFile(t, "id-log", "x",
 		tasks.AgentLogFileName, "log line\n")
 	viewer := &fakeViewer{}
-	err = RunLogs(context.Background(), LogsOptions{
+	err = RunLogs(t.Context(), LogsOptions{
 		TaskID: "id-log",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -53,7 +52,7 @@ func TestRunLogs_DirectIDUnknown(t *testing.T) {
 	testutil.Init(t)
 	viewer := &fakeViewer{}
 	var stdout bytes.Buffer
-	err := RunLogs(context.Background(), LogsOptions{
+	err := RunLogs(t.Context(), LogsOptions{
 		TaskID: "ghost",
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -77,7 +76,7 @@ func TestRunLogs_DirectIDFileMissing(t *testing.T) {
 	seedTaskWithFile(t, "id-no-log", "x", "", "")
 	viewer := &fakeViewer{}
 	var stdout bytes.Buffer
-	err := RunLogs(context.Background(), LogsOptions{
+	err := RunLogs(t.Context(), LogsOptions{
 		TaskID: "id-no-log",
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -104,7 +103,7 @@ func TestRunLogs_NoIDEmptyStore(t *testing.T) {
 	viewer := &fakeViewer{}
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunLogs(context.Background(), LogsOptions{
+	err := RunLogs(t.Context(), LogsOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -133,7 +132,7 @@ func TestRunLogs_NoIDPickerHappyPath(t *testing.T) {
 		tasks.AgentLogFileName, "body")
 	ui := &fakeUI{pickReturn: "id-pk"}
 	viewer := &fakeViewer{}
-	err = RunLogs(context.Background(), LogsOptions{
+	err = RunLogs(t.Context(), LogsOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -165,7 +164,7 @@ func TestRunLogs_NoIDPickerAbort(t *testing.T) {
 	ui := &fakeUI{}
 	viewer := &fakeViewer{}
 	var stdout bytes.Buffer
-	err := RunLogs(context.Background(), LogsOptions{
+	err := RunLogs(t.Context(), LogsOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -190,7 +189,7 @@ func TestRunLogs_ViewerErrorPropagates(t *testing.T) {
 	seedTaskWithFile(t, "id-v-err", "x",
 		tasks.AgentLogFileName, "")
 	boom := errors.New("viewer boom")
-	err := RunLogs(context.Background(), LogsOptions{
+	err := RunLogs(t.Context(), LogsOptions{
 		TaskID: "id-v-err",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -246,7 +245,7 @@ func TestNewLogsCmd_RunE_DirectIDViaEnv(t *testing.T) {
 	root.SetIn(strings.NewReader(""))
 	root.SetOut(&stdout)
 	root.SetErr(io.Discard)
-	root.SetContext(context.Background())
+	root.SetContext(t.Context())
 	root.SetArgs([]string{"logs"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)

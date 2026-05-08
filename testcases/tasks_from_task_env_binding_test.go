@@ -27,15 +27,21 @@ func TestTasksFromTask_EnvBindings(t *testing.T) {
 		env  string
 		argv []string
 	}{
-		{"show",
+		{
+			"show",
 			"TASKS_SHOW_FROM_TASK",
-			[]string{"show"}},
-		{"show requirements",
+			[]string{"show"},
+		},
+		{
+			"show requirements",
 			"TASKS_SHOW_REQUIREMENTS_FROM_TASK",
-			[]string{"show", "requirements"}},
-		{"show plan",
+			[]string{"show", "requirements"},
+		},
+		{
+			"show plan",
 			"TASKS_SHOW_PLAN_FROM_TASK",
-			[]string{"show", "plan"}},
+			[]string{"show", "plan"},
+		},
 		{"logs", "TASKS_LOGS_FROM_TASK", []string{"logs"}},
 	}
 	for _, tc := range cases {
@@ -46,7 +52,7 @@ func TestTasksFromTask_EnvBindings(t *testing.T) {
 			testutil.Init(t)
 			t.Setenv(tc.env, "ghost")
 
-			stdout, _, err := testutil.RunCobra(
+			stdout, _, err := testutil.RunCobra(t,
 				tasks.New(), tc.argv...,
 			)
 			if err != nil {

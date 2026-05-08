@@ -101,7 +101,7 @@ func TestPick_Success(t *testing.T) {
 	codex := newStubAgent("codex", "o4")
 	ui := &scriptedUI{tool: "cursor", model: "gpt-5"}
 
-	agent, model, err := PickAgent(context.Background(), ui, []codingagents.Agent{cursor, codex})
+	agent, model, err := PickAgent(t.Context(), ui, []codingagents.Agent{cursor, codex})
 	if err != nil {
 		t.Fatalf("Pick: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestPick_SelectToolError(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
 	ui := &scriptedUI{toolErr: errors.New("tool boom")}
 
-	_, _, err := PickAgent(context.Background(), ui, []codingagents.Agent{cursor})
+	_, _, err := PickAgent(t.Context(), ui, []codingagents.Agent{cursor})
 	if err == nil || !strings.Contains(err.Error(), "tool boom") {
 		t.Fatalf("err = %v", err)
 	}
@@ -143,7 +143,7 @@ func TestPick_UnknownTool(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
 	ui := &scriptedUI{tool: "ghost"}
 
-	_, _, err := PickAgent(context.Background(), ui, []codingagents.Agent{cursor})
+	_, _, err := PickAgent(t.Context(), ui, []codingagents.Agent{cursor})
 	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
 		t.Fatalf("err = %v", err)
 	}
@@ -157,7 +157,7 @@ func TestPick_ListModelsError(t *testing.T) {
 	cursor.modelsErr = errors.New("list boom")
 	ui := &scriptedUI{}
 
-	_, _, err := PickAgent(context.Background(), ui, []codingagents.Agent{cursor})
+	_, _, err := PickAgent(t.Context(), ui, []codingagents.Agent{cursor})
 	if err == nil || !strings.Contains(err.Error(), "list boom") {
 		t.Fatalf("err = %v", err)
 	}
@@ -173,7 +173,7 @@ func TestPick_SelectModelError(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
 	ui := &scriptedUI{modelErr: errors.New("model boom")}
 
-	_, _, err := PickAgent(context.Background(), ui, []codingagents.Agent{cursor})
+	_, _, err := PickAgent(t.Context(), ui, []codingagents.Agent{cursor})
 	if err == nil || !strings.Contains(err.Error(), "model boom") {
 		t.Fatalf("err = %v", err)
 	}
@@ -187,7 +187,7 @@ func TestPick_CheckLoginError(t *testing.T) {
 	cursor.loginErr = errors.New("not logged in")
 	ui := &scriptedUI{}
 
-	_, _, err := PickAgent(context.Background(), ui, []codingagents.Agent{cursor})
+	_, _, err := PickAgent(t.Context(), ui, []codingagents.Agent{cursor})
 	if err == nil || !strings.Contains(err.Error(), "not logged in") {
 		t.Fatalf("err = %v", err)
 	}
@@ -203,7 +203,7 @@ func TestPick_CheckLoginError(t *testing.T) {
 // contract for code that bypasses the guard.
 func TestPick_NoAgents(t *testing.T) {
 	ui := &scriptedUI{toolErr: errors.New("no options")}
-	_, _, err := PickAgent(context.Background(), ui, nil)
+	_, _, err := PickAgent(t.Context(), ui, nil)
 	if err == nil || !strings.Contains(err.Error(), "no options") {
 		t.Fatalf("err = %v", err)
 	}

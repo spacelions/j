@@ -25,7 +25,7 @@ func TestSettingsReset_PromptRevertsToEmbedded(t *testing.T) {
 	dest := filepath.Join(dir, "planner.md")
 	const customBody = "PLANNER OVERRIDE BODY"
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"set", "planner.prompt="+dest,
 	); err != nil {
 		t.Fatalf("set: %v", err)
@@ -40,7 +40,7 @@ func TestSettingsReset_PromptRevertsToEmbedded(t *testing.T) {
 			beforeReset)
 	}
 
-	if _, _, err := testutil.RunCobra(settings.New(),
+	if _, _, err := testutil.RunCobra(t, settings.New(),
 		"reset", "planner.prompt",
 	); err != nil {
 		t.Fatalf("reset: %v", err)

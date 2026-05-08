@@ -21,16 +21,16 @@ type TaskStatus string
 // `needs-clarification` means the background agent wrote a question to
 // `clarification.md` and is waiting for the user to answer.
 const (
-	StatusPlanning             TaskStatus = "planning"
-	StatusPlanPendingApproval  TaskStatus = "plan-pending-approval"
-	StatusPlanDone             TaskStatus = "plan-done"
-	StatusWorking              TaskStatus = "working"
-	StatusWorkDone             TaskStatus = "work-done"
-	StatusVerifying            TaskStatus = "verifying"
-	StatusNeedsClarification   TaskStatus = "needs-clarification"
-	StatusCompleted            TaskStatus = "completed"
-	StatusFailed               TaskStatus = "failed"
-	StatusHelp                 TaskStatus = "help"
+	StatusPlanning            TaskStatus = "planning"
+	StatusPlanPendingApproval TaskStatus = "plan-pending-approval"
+	StatusPlanDone            TaskStatus = "plan-done"
+	StatusWorking             TaskStatus = "working"
+	StatusWorkDone            TaskStatus = "work-done"
+	StatusVerifying           TaskStatus = "verifying"
+	StatusNeedsClarification  TaskStatus = "needs-clarification"
+	StatusCompleted           TaskStatus = "completed"
+	StatusFailed              TaskStatus = "failed"
+	StatusHelp                TaskStatus = "help"
 )
 
 // Valid reports whether s is one of the allowlisted TaskStatus values.

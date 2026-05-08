@@ -26,9 +26,9 @@ func TestLinearVerifyPush_RegisteredInNewRoot(t *testing.T) {
 	}()
 	tasks.Notify(
 		tasks.Transition{
-			From: tasks.StatusVerifying,
+			From:  tasks.StatusVerifying,
 			Event: tasks.EventVerifyPass,
-			To: tasks.StatusCompleted,
+			To:    tasks.StatusCompleted,
 		},
 		tasks.Task{ID: id, Status: tasks.StatusCompleted},
 	)

@@ -93,11 +93,11 @@ func seedTask(t *testing.T, id, summary string) string {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 	if err := s.PutTask(tasks.Task{
-		ID:           id,
-		Status:       tasks.StatusPlanDone,
-		PlanTool:     "cursor",
-		PlanModel:    "sonnet-4",
-		Summary:      summary,
+		ID:        id,
+		Status:    tasks.StatusPlanDone,
+		PlanTool:  "cursor",
+		PlanModel: "sonnet-4",
+		Summary:   summary,
 	}); err != nil {
 		t.Fatalf("PutTask: %v", err)
 	}
@@ -125,12 +125,12 @@ func seedTaskWithWorktree(t *testing.T, id, summary, worktree string) string {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
 	if err := s.PutTask(tasks.Task{
-		ID:           id,
-		Status:       tasks.StatusPlanDone,
-		PlanTool:     "cursor",
-		PlanModel:    "sonnet-4",
-		Summary:      summary,
-		Worktree:     worktree,
+		ID:        id,
+		Status:    tasks.StatusPlanDone,
+		PlanTool:  "cursor",
+		PlanModel: "sonnet-4",
+		Summary:   summary,
+		Worktree:  worktree,
 	}); err != nil {
 		t.Fatalf("PutTask: %v", err)
 	}
@@ -209,7 +209,7 @@ func readGitStubLogLines(t *testing.T, logFile string) []string {
 		t.Fatalf("read stub log: %v", err)
 	}
 	var lines []string
-	for _, line := range strings.Split(string(b), "\n") {
+	for line := range strings.SplitSeq(string(b), "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			lines = append(lines, line)
@@ -245,7 +245,7 @@ func TestRunDiscard_HappyPath_ConfirmedRemovesRowAndDir(t *testing.T) {
 	taskDir := seedTask(t, "id-happy", "do the thing")
 	ui := &fakeUI{confirmReturn: true}
 	var stdout, stderr bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "id-happy",
 		Stdout: &stdout,
 		Stderr: &stderr,
@@ -276,7 +276,7 @@ func TestRunDiscard_YesFlag_SkipsPrompt(t *testing.T) {
 	taskDir := seedTask(t, "id-yes", "yes-flag bypass")
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "id-yes",
 		Yes:    true,
 		Stdout: &stdout,
@@ -305,7 +305,7 @@ func TestRunDiscard_Decline_LeavesRowAndDirIntact(t *testing.T) {
 	taskDir := seedTask(t, "id-keep", "keep me")
 	ui := &fakeUI{confirmReturn: false}
 	var stdout bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "id-keep",
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -333,7 +333,7 @@ func TestRunDiscard_MissingTask_PrintsNoTask(t *testing.T) {
 	testutil.Init(t)
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "ghost",
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -359,7 +359,7 @@ func TestRunDiscard_UIErrorPropagates(t *testing.T) {
 	t.Chdir(t.TempDir())
 	seedTask(t, "id-ui-err", "boom")
 	boom := errors.New("ui boom")
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "id-ui-err",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -383,7 +383,7 @@ func TestRunDiscard_GetTaskNonNotExistError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "bad",
 		Yes:    true,
 		Stdout: io.Discard,
@@ -418,7 +418,7 @@ func TestRunDiscard_DefaultTasksPathError(t *testing.T) {
 	if _, err := os.Getwd(); err == nil {
 		t.Skip("os.Getwd unexpectedly succeeded")
 	}
-	if err := RunDiscard(context.Background(), DiscardOptions{
+	if err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "x",
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -448,7 +448,7 @@ func TestRunDiscard_RemoveTaskDirError(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(tasksDir, 0o755) })
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "id-rm-fail",
 		Yes:    true,
 		Stdout: io.Discard,
@@ -553,7 +553,7 @@ func TestNewDiscardCmd_RunE_ExecutesEnvYes(t *testing.T) {
 	root.SetIn(strings.NewReader(""))
 	root.SetOut(&stdout)
 	root.SetErr(io.Discard)
-	root.SetContext(context.Background())
+	root.SetContext(t.Context())
 	root.SetArgs([]string{"discard", "--id", "id-env"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -607,7 +607,7 @@ func TestRunDiscard_PickerHappyPath(t *testing.T) {
 	taskDir := seedTask(t, "id-pick", "pick me")
 	ui := &fakeUI{pickReturn: "id-pick", confirmReturn: true}
 	var stdout bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -643,7 +643,7 @@ func TestRunDiscard_PickerAbort(t *testing.T) {
 	taskDir := seedTask(t, "id-abort", "keep me")
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -676,7 +676,7 @@ func TestRunDiscard_PickerErrorPropagates(t *testing.T) {
 	taskDir := seedTask(t, "id-pick-err", "boom")
 	boom := errors.New("picker boom")
 	ui := &fakeUI{pickErr: boom}
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -702,7 +702,7 @@ func TestRunDiscard_NoIDMissingDB(t *testing.T) {
 	t.Chdir(t.TempDir())
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -727,7 +727,7 @@ func TestRunDiscard_NoIDEmptyBucket(t *testing.T) {
 	testutil.Init(t)
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		Stdout: &stdout,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -752,7 +752,7 @@ func TestRunDiscard_NoIDListDecodeError(t *testing.T) {
 	testutil.Init(t)
 	testutil.SeedRawTaskFile(t, "bad", []byte("not = valid = toml"))
 	ui := &fakeUI{}
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		UI:     ui,
@@ -780,7 +780,7 @@ func TestRunDiscard_RemovesWorktreeOnConfirm(t *testing.T) {
 	t.Setenv("GIT_STUB_LIST_FILE", listFile)
 	taskDir := seedTaskWithWorktree(t, "id-wt-ok", "wt discard", "j-wt-happy")
 	var stdout, stderr bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "id-wt-ok",
 		Yes:    true,
 		Stdout: &stdout,
@@ -842,7 +842,7 @@ func TestRunDiscard_EmptyWorktree_FallsBackToComputedName(t *testing.T) {
 	t.Setenv("GIT_STUB_LIST_FILE", listFile)
 	taskDir := seedTask(t, "id-fallback", "do the thing")
 	var stdout, stderr bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "id-fallback",
 		Yes:    true,
 		Stdout: &stdout,
@@ -899,7 +899,7 @@ func TestRunDiscard_EmptyWorktree_NoComputedMatch_NoRemove(t *testing.T) {
 	t.Setenv("GIT_STUB_LIST_FILE", listFile)
 	taskDir := seedTask(t, "id-no-match", "no worktree field")
 	var stdout bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "id-no-match",
 		Yes:    true,
 		Stdout: &stdout,
@@ -939,7 +939,7 @@ func TestRunDiscard_WorktreeNotListed_NoRemove(t *testing.T) {
 	t.Setenv("GIT_STUB_LIST_FILE", listFile)
 	taskDir := seedTaskWithWorktree(t, "id-missing-wt", "ghost wt", "not-in-list")
 	var stdout bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "id-missing-wt",
 		Yes:    true,
 		Stdout: &stdout,
@@ -981,7 +981,7 @@ func TestRunDiscard_MultipleMatches_PicksFirstAndWarns(t *testing.T) {
 	t.Setenv("GIT_STUB_LIST_FILE", listFile)
 	taskDir := seedTaskWithWorktree(t, "id-dup", "dup basename", "dup-wt")
 	var stdout, stderr bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "id-dup",
 		Yes:    true,
 		Stdout: &stdout,
@@ -1028,7 +1028,7 @@ func TestRunDiscard_ListFails_WarnsAndContinues(t *testing.T) {
 	t.Setenv("GIT_STUB_LIST_EXIT", "1")
 	taskDir := seedTaskWithWorktree(t, "id-list-fail", "list fail", "any-wt")
 	var stdout, stderr bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "id-list-fail",
 		Yes:    true,
 		Stdout: &stdout,
@@ -1072,7 +1072,7 @@ func TestRunDiscard_RemoveFails_WarnsAndContinues(t *testing.T) {
 	t.Setenv("GIT_STUB_REMOVE_EXIT", "1")
 	taskDir := seedTaskWithWorktree(t, "id-rm-git", "remove fail", "wt-rm-fail")
 	var stdout, stderr bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "id-rm-git",
 		Yes:    true,
 		Stdout: &stdout,
@@ -1105,7 +1105,7 @@ func TestRunDiscard_GitMissing_WarnsAndContinues(t *testing.T) {
 	t.Setenv("PATH", emptyPath)
 	taskDir := seedTaskWithWorktree(t, "id-no-git", "no git", "wt-x")
 	var stdout, stderr bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "id-no-git",
 		Yes:    true,
 		Stdout: &stdout,
@@ -1144,7 +1144,7 @@ func TestRunDiscard_BranchMatchFallback(t *testing.T) {
 	t.Setenv("GIT_STUB_LIST_FILE", listFile)
 	taskDir := seedTaskWithWorktree(t, "id-br", "branch match", "branch-slug")
 	var stdout bytes.Buffer
-	err := RunDiscard(context.Background(), DiscardOptions{
+	err := RunDiscard(t.Context(), DiscardOptions{
 		TaskID: "id-br",
 		Yes:    true,
 		Stdout: &stdout,

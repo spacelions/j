@@ -130,9 +130,9 @@ func RunRePlan(ctx context.Context, opts RePlanOptions) (err error) {
 	interactive := resolver.Interactive(opts.Interactive)
 
 	args := []string{
-		"tasks", "orchestrate",
-		"--id", task.ID,
-		"--plan-requires-approval=true",
+		cmdTasks, cmdOrchestrate,
+		flagID, task.ID,
+		flagPlanRequiresApprovalTrue,
 		"--interactive=" + strconv.FormatBool(interactive),
 	}
 	if opts.Tool != "" {
@@ -154,7 +154,7 @@ func RunRePlan(ctx context.Context, opts RePlanOptions) (err error) {
 	}
 	stampSpawnOnRow(opts.Stderr, task.ID, agentLogPath, pid)
 	uitheme.NormalForkDialog(
-		opts.Stdout, fmt.Sprintf("task %s", task.ID), pid, agentLogPath)
+		opts.Stdout, "task "+task.ID, pid, agentLogPath)
 	return nil
 }
 
@@ -253,7 +253,7 @@ func newRePlanCmd() *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var interactive *bool
-			if cmd.Flags().Changed("interactive") ||
+			if cmd.Flags().Changed(flagKeyInteractive) ||
 				envSet("TASKS_REPLAN_INTERACTIVE") {
 				v := viper.GetBool("tasks.replan.interactive")
 				interactive = &v
@@ -270,23 +270,23 @@ func newRePlanCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("from-task", "",
+	cmd.Flags().String(flagKeyFromTask, "",
 		"Existing task id to re-plan (empty triggers the picker)")
-	cmd.Flags().String("tool", "",
+	cmd.Flags().String(flagKeyTool, "",
 		"Planner tool override (cursor|claude); does not update the bucket")
-	cmd.Flags().String("model", "",
+	cmd.Flags().String(flagKeyModel, "",
 		"Planner model override; does not update the bucket")
-	cmd.Flags().Bool("interactive", false,
+	cmd.Flags().Bool(flagKeyInteractive, false,
 		"Run planner in interactive (TUI) mode")
 	_ = viper.BindPFlag(
-		"tasks.replan.from_task", cmd.Flags().Lookup("from-task"))
+		"tasks.replan.from_task", cmd.Flags().Lookup(flagKeyFromTask))
 	_ = viper.BindEnv("tasks.replan.from_task", "TASKS_REPLAN_FROM_TASK")
-	_ = viper.BindPFlag("tasks.replan.tool", cmd.Flags().Lookup("tool"))
+	_ = viper.BindPFlag("tasks.replan.tool", cmd.Flags().Lookup(flagKeyTool))
 	_ = viper.BindEnv("tasks.replan.tool", "TASKS_REPLAN_TOOL")
-	_ = viper.BindPFlag("tasks.replan.model", cmd.Flags().Lookup("model"))
+	_ = viper.BindPFlag("tasks.replan.model", cmd.Flags().Lookup(flagKeyModel))
 	_ = viper.BindEnv("tasks.replan.model", "TASKS_REPLAN_MODEL")
 	_ = viper.BindPFlag(
-		"tasks.replan.interactive", cmd.Flags().Lookup("interactive"))
+		"tasks.replan.interactive", cmd.Flags().Lookup(flagKeyInteractive))
 	_ = viper.BindEnv("tasks.replan.interactive", "TASKS_REPLAN_INTERACTIVE")
 	return cmd
 }

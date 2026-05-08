@@ -2,11 +2,8 @@ package tasks
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -21,7 +18,7 @@ func TestRunReVerify_NoTasks(t *testing.T) {
 	setupContinueEnv(t)
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	err := RunReVerify(context.Background(), ReVerifyOptions{
+	err := RunReVerify(t.Context(), ReVerifyOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: &stdout,
 		Stderr: io.Discard,
@@ -41,7 +38,7 @@ func TestRunReVerify_NoTasks(t *testing.T) {
 
 func TestRunReVerify_FromTaskNotFound(t *testing.T) {
 	setupContinueEnv(t)
-	err := RunReVerify(context.Background(), ReVerifyOptions{
+	err := RunReVerify(t.Context(), ReVerifyOptions{
 		FromTask: "ghost",
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -60,7 +57,7 @@ func TestRunReVerify_StatusOverrideDeclined(t *testing.T) {
 		task.Status = tasks.StatusWorking
 	})
 	ui := &fakeUI{statusReturn: false}
-	if err := RunReVerify(context.Background(), ReVerifyOptions{
+	if err := RunReVerify(t.Context(), ReVerifyOptions{
 		FromTask: id,
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -83,9 +80,9 @@ func TestRunReVerify_WorkDoneSkipsConfirm(t *testing.T) {
 	})
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
-	if err := RunReVerify(context.Background(), ReVerifyOptions{
+	if err := RunReVerify(t.Context(), ReVerifyOptions{
 		FromTask:    id,
-		Interactive: boolPtr(false),
+		Interactive: new(false),
 		Stdin:       strings.NewReader(""),
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
@@ -110,9 +107,9 @@ func TestRunReVerify_InteractiveRunsInline(t *testing.T) {
 		task.Status = tasks.StatusWorkDone
 	})
 	var stdout bytes.Buffer
-	if err := RunReVerify(context.Background(), ReVerifyOptions{
+	if err := RunReVerify(t.Context(), ReVerifyOptions{
 		FromTask:    id,
-		Interactive: boolPtr(true),
+		Interactive: new(true),
 		Stdin:       strings.NewReader(""),
 		Stdout:      &stdout,
 		Stderr:      io.Discard,
@@ -184,7 +181,7 @@ func TestNewReVerifyCmd_RunE_PropagatesError(t *testing.T) {
 	if err := cmd.Flags().Set("from-task", "ghost"); err != nil {
 		t.Fatalf("Flags().Set: %v", err)
 	}
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	// non-interactive: re-verify fires the spawn helper which
@@ -206,7 +203,7 @@ func TestNewReVerifyCmd_PreRunE_DefaultedAgents(t *testing.T) {
 	setupContinueEnv(t)
 	installCursorAgentLoginStub(t)
 	cmd := newReVerifyCmd()
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	cmd.SetIn(strings.NewReader(""))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -220,7 +217,7 @@ func TestNewReVerifyCmd_RunE_InteractiveFlag(t *testing.T) {
 	t.Cleanup(viper.Reset)
 	setupContinueEnv(t)
 	cmd := newReVerifyCmd()
-	cmd.SetContext(context.Background())
+	cmd.SetContext(t.Context())
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(io.Discard)
@@ -245,9 +242,9 @@ func TestRunReVerify_FromCompletedSpawnsAfterConfirm(t *testing.T) {
 		task.Status = tasks.StatusCompleted
 	})
 	ui := &fakeUI{statusReturn: true}
-	if err := RunReVerify(context.Background(), ReVerifyOptions{
+	if err := RunReVerify(t.Context(), ReVerifyOptions{
 		FromTask:    id,
-		Interactive: boolPtr(false),
+		Interactive: new(false),
 		Stdin:       strings.NewReader(""),
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
@@ -289,9 +286,9 @@ func TestRunReVerify_ClearsStaleVerifySession(t *testing.T) {
 		task.Status = tasks.StatusWorkDone
 		task.VerifyResumeSession = "stale-cursor"
 	})
-	if err := RunReVerify(context.Background(), ReVerifyOptions{
+	if err := RunReVerify(t.Context(), ReVerifyOptions{
 		FromTask:    id,
-		Interactive: boolPtr(false),
+		Interactive: new(false),
 		Stdin:       strings.NewReader(""),
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
@@ -317,7 +314,7 @@ func TestRunReVerify_SpawnFails(t *testing.T) {
 	id := seedTaskFull(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorkDone
 	})
-	err := RunReVerify(context.Background(), ReVerifyOptions{
+	err := RunReVerify(t.Context(), ReVerifyOptions{
 		FromTask: id,
 		Stdin:    strings.NewReader(""),
 		Stdout:   io.Discard,
@@ -332,35 +329,15 @@ func TestRunReVerify_SpawnFails(t *testing.T) {
 }
 
 func TestRunReVerify_OpenDefaultFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("cwd cannot be removed while in use on windows")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root may bypass relevant FS errors")
-	}
-	parent := t.TempDir()
-	gone := filepath.Join(parent, "gone")
-	if err := os.Mkdir(gone, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(gone)
-	t.Setenv("PWD", "")
-	if err := os.Remove(gone); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
-	if _, err := os.Getwd(); err == nil {
-		t.Skip("os.Getwd unexpectedly succeeded")
-	}
-	err := RunReVerify(context.Background(), ReVerifyOptions{
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{newContinueAgent()},
-		UI:     &fakeUI{},
+	requireRemovedCWD(t, func() error {
+		return RunReVerify(t.Context(), ReVerifyOptions{
+			Stdin:  strings.NewReader(""),
+			Stdout: io.Discard,
+			Stderr: io.Discard,
+			Agents: []codingagents.Agent{newContinueAgent()},
+			UI:     &fakeUI{},
+		})
 	})
-	if err == nil {
-		t.Fatal("expected DefaultDir to surface getwd error")
-	}
 }
 
 func TestReVerifyOptions_WithDefaults_FillsNilStreams(t *testing.T) {
@@ -391,4 +368,3 @@ func TestReVerifyOptions_WithDefaults_KeepsProvided(t *testing.T) {
 		t.Errorf("UI = %v, want custom", o.UI)
 	}
 }
-

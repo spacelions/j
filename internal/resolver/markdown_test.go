@@ -55,6 +55,7 @@ func (a *planAgent) NewResumeID(context.Context) (string, error) {
 	}
 	return a.resumeID, nil
 }
+
 func (a *planAgent) Plan(_ context.Context, req codingagents.PlanRequest) (int, error) {
 	a.lastReq = req
 	if a.reqBody != "" {
@@ -69,9 +70,11 @@ func (a *planAgent) Plan(_ context.Context, req codingagents.PlanRequest) (int, 
 	}
 	return a.pid, a.planErr
 }
+
 func (a *planAgent) Work(context.Context, codingagents.WorkRequest) (int, error) {
 	return 0, errors.New("unused")
 }
+
 func (a *planAgent) Verify(context.Context, codingagents.VerifyRequest) (int, error) {
 	return 0, errors.New("unused")
 }
@@ -107,7 +110,7 @@ func TestRunPlanMarkdown(t *testing.T) {
 	}
 	agent := &planAgent{resumeID: "resume", reqBody: "refined", planBody: "plan"}
 	var stdout bytes.Buffer
-	if err := RunPlanMarkdown(context.Background(), PlanMarkdownOptions{
+	if err := RunPlanMarkdown(t.Context(), PlanMarkdownOptions{
 		RawTarget:   sourcePath,
 		Stdout:      &stdout,
 		Stderr:      &bytes.Buffer{},
@@ -132,7 +135,7 @@ func TestRunPlanMarkdown(t *testing.T) {
 func TestRunPlanMarkdownPlanError(t *testing.T) {
 	setupResolverProject(t)
 	agent := &planAgent{planErr: errors.New("plan failed")}
-	err := RunPlanMarkdown(context.Background(), PlanMarkdownOptions{
+	err := RunPlanMarkdown(t.Context(), PlanMarkdownOptions{
 		Source: PlanMarkdownSource{Target: "/tmp/source.md", Body: "body"},
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
@@ -148,7 +151,7 @@ func TestRunPlanMarkdownWarningsAndBackground(t *testing.T) {
 	setupResolverProject(t)
 	agent := &planAgent{resumeID: "ERR", pid: os.Getpid()}
 	var stdout, stderr bytes.Buffer
-	err := RunPlanMarkdown(context.Background(), PlanMarkdownOptions{
+	err := RunPlanMarkdown(t.Context(), PlanMarkdownOptions{
 		Source: PlanMarkdownSource{Target: "/tmp/source.md", Body: "body"},
 		Stdout: &stdout,
 		Stderr: &stderr,
@@ -203,7 +206,7 @@ func TestRunPlanFromBody(t *testing.T) {
 	agent := &planAgent{resumeID: "resume", planBody: "plan body"}
 	var stdout bytes.Buffer
 	body := "# from linear\n\nbody text\n\n---\nLinear: https://x\n"
-	if err := RunPlanFromBody(context.Background(), PlanMarkdownOptions{
+	if err := RunPlanFromBody(t.Context(), PlanMarkdownOptions{
 		Stdout:      &stdout,
 		Stderr:      &bytes.Buffer{},
 		Agent:       agent,
@@ -233,7 +236,7 @@ func TestRunPlanFromBody(t *testing.T) {
 func TestRunPlanFromBody_DefaultSourceLabel(t *testing.T) {
 	setupResolverProject(t)
 	agent := &planAgent{resumeID: "resume", planBody: "plan"}
-	if err := RunPlanFromBody(context.Background(), PlanMarkdownOptions{
+	if err := RunPlanFromBody(t.Context(), PlanMarkdownOptions{
 		Stdout: &bytes.Buffer{},
 		Stderr: &bytes.Buffer{},
 		Agent:  agent,

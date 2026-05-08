@@ -167,46 +167,21 @@ func PickSource(
 // creating a task. Token / project values are only persisted after
 // the user confirms each prompt.
 func pickLinearSource(ctx context.Context, ui SourceUI) (SourceResult, error) {
-	token, err := linear.LoadAPIKey()
+	cancelled := SourceResult{Source: SourceLinear, Cancelled: true}
+	token, ok, err := resolveLinearToken(ctx, ui)
 	if err != nil {
 		return SourceResult{}, err
 	}
-	if token == "" {
-		t, ok, err := ui.PromptLinearAPIKey(ctx, linear.LinearAPIKeysURL)
-		if err != nil {
-			return SourceResult{}, err
-		}
-		if !ok {
-			return SourceResult{Source: SourceLinear, Cancelled: true}, nil
-		}
-		if err := linear.SaveAPIKey(t); err != nil {
-			return SourceResult{}, err
-		}
-		token = t
-	}
-	project, err := linear.LoadProject()
-	if err != nil {
-		return SourceResult{}, err
+	if !ok {
+		return cancelled, nil
 	}
 	client := linear.NewClient(token)
-	if project == "" {
-		projects, err := client.ListProjects(ctx)
-		if err != nil {
-			return SourceResult{}, err
-		}
-		if len(projects) > 0 {
-			p, ok, err := ui.PickLinearProject(ctx, projects)
-			if err != nil {
-				return SourceResult{}, err
-			}
-			if !ok {
-				return SourceResult{Source: SourceLinear, Cancelled: true}, nil
-			}
-			if err := linear.SaveProject(p.ID); err != nil {
-				return SourceResult{}, err
-			}
-			project = p.ID
-		}
+	project, ok, err := resolveLinearProject(ctx, ui, client)
+	if err != nil {
+		return SourceResult{}, err
+	}
+	if !ok {
+		return cancelled, nil
 	}
 	issues, err := client.ListAssignedIssues(
 		ctx, linear.ListIssuesOpts{ProjectID: project},
@@ -215,17 +190,62 @@ func pickLinearSource(ctx context.Context, ui SourceUI) (SourceResult, error) {
 		return SourceResult{}, err
 	}
 	if len(issues) == 0 {
-		return SourceResult{}, errors.New("no Linear issues assigned to you.")
+		return SourceResult{}, errors.New("no Linear issues assigned to you")
 	}
 	chosen, ok, err := ui.PickLinearIssue(ctx, issues)
 	if err != nil {
 		return SourceResult{}, err
 	}
 	if !ok {
-		return SourceResult{Source: SourceLinear, Cancelled: true}, nil
+		return cancelled, nil
 	}
 	return SourceResult{
 		Source:           SourceLinear,
 		LinearIdentifier: chosen.Identifier,
 	}, nil
+}
+
+// resolveLinearToken returns the stored API key, prompting the user if
+// none is saved. ok=false means the user cancelled the prompt.
+func resolveLinearToken(
+	ctx context.Context, ui SourceUI,
+) (token string, ok bool, err error) {
+	token, err = linear.LoadAPIKey()
+	if err != nil || token != "" {
+		return token, err == nil, err
+	}
+	t, prompted, err := ui.PromptLinearAPIKey(ctx, linear.LinearAPIKeysURL)
+	if err != nil || !prompted {
+		return "", prompted, err
+	}
+	if err := linear.SaveAPIKey(t); err != nil {
+		return "", false, err
+	}
+	return t, true, nil
+}
+
+// resolveLinearProject returns the stored project ID, prompting the
+// user to pick one if none is saved. ok=false means user cancelled.
+func resolveLinearProject(
+	ctx context.Context, ui SourceUI, client *linear.Client,
+) (string, bool, error) {
+	project, err := linear.LoadProject()
+	if err != nil || project != "" {
+		return project, err == nil, err
+	}
+	projects, err := client.ListProjects(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	if len(projects) == 0 {
+		return "", true, nil
+	}
+	p, ok, err := ui.PickLinearProject(ctx, projects)
+	if err != nil || !ok {
+		return "", ok, err
+	}
+	if err := linear.SaveProject(p.ID); err != nil {
+		return "", false, err
+	}
+	return p.ID, true, nil
 }

@@ -26,7 +26,7 @@ func TestWorkCommand_Removed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := runRoot(tc.args)
+			out, err := runRoot(t, tc.args)
 			if err == nil {
 				t.Fatalf("expected error for %v; stdout=%q", tc.args, out)
 			}

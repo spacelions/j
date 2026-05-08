@@ -293,12 +293,12 @@ func TestTask_BeginWorkResume_LeavesWorktreeAlone(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	existing := tasks.Task{
-		ID:     tasks.NewTaskID(),
-		Status: tasks.StatusWorking,
-		PlanTool: "cursor",
-		WorkTool: "cursor",
+		ID:        tasks.NewTaskID(),
+		Status:    tasks.StatusWorking,
+		PlanTool:  "cursor",
+		WorkTool:  "cursor",
 		WorkModel: "sonnet-4",
-		Summary: "hello",
+		Summary:   "hello",
 	}
 	tasks.PersistWarn(io.Discard, existing)
 	if existing.Worktree != "" {
