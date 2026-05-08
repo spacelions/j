@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -183,6 +184,45 @@ func fireStateSyncWithPR(
 			PullRequestURL: prURL,
 		},
 	)
+}
+
+// fireStateSyncWithLog mirrors fireStateSync but populates
+// AgentLogPath so the needs-clarification branch can locate the
+// task directory holding clarification.md.
+func fireStateSyncWithLog(
+	taskID, linearIssue, agentLogPath string,
+	from, to tasks.TaskStatus, ev tasks.Event,
+) {
+	tasks.Notify(
+		tasks.Transition{From: from, Event: ev, To: to},
+		tasks.Task{
+			ID: taskID, Status: to, LinearIssue: linearIssue,
+			AgentLogPath: agentLogPath,
+		},
+	)
+}
+
+// writeClarification writes a clarification.md with the given body
+// into a fresh temp dir and returns an agent.log path inside that
+// dir. The needs-clarification branch resolves taskDir as
+// filepath.Dir(AgentLogPath), so this matches the layout the reaper
+// produces in `<tasksDir>/<id>/`.
+func writeClarification(t *testing.T, body string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "clarification.md")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write clarification.md: %v", err)
+	}
+	return filepath.Join(dir, "agent.log")
+}
+
+// agentLogPathOnly returns an agent.log path inside a fresh temp dir
+// without creating clarification.md, so the file-missing branch of
+// postClarificationComment can be exercised.
+func agentLogPathOnly(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "agent.log")
 }
 
 func bodyKinds(bodies []string) []string {
