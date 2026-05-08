@@ -13,5 +13,11 @@ jobs:
         with:
           go-version-file: .go-version
           cache: true
-      - run: make test
-      - run: make e2e
+      - name: line-cap
+        run: go tool lefthook run pre-commit --command line-cap --all-files
+      - name: test
+        if: always()
+        run: make test
+      - name: e2e
+        if: always()
+        run: make e2e

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Fail if any staged file violates line/file/method caps.
-# Invoked by lefthook with {staged_files}.
+# Fail if any input file violates line/file/method caps.
+# Invoked by lefthook with {staged_files} (pre-commit) or
+# {all_files} via `lefthook run pre-commit --all-files` (CI).
+# Reads staged content when the path is staged; else from disk.
 set -euo pipefail
 
 MAX_LINES=300
@@ -10,7 +12,12 @@ MAX_METHOD_LINES=80
 violations=()
 
 for path in "$@"; do
-	content=$(git show ":$path")
+	if git diff --cached --name-only -- "$path" | grep -qx "$path"
+	then
+		content=$(git show ":$path")
+	else
+		content=$(cat -- "$path")
+	fi
 
 	# --- file line count (all files) ---
 	lines=$(printf '%s\n' "$content" | wc -l | tr -d ' ')
@@ -30,8 +37,10 @@ for path in "$@"; do
 		'length($0) > max { print NR":"length($0) }')
 
 	# method-cap: find every top-level func line, compute distance
-	# to the next func (or EOF) as the method length.
-	func_lines=$(echo "$content" | grep -n '^func ' | cut -d: -f1)
+	# to the next func (or EOF) as the method length. Use awk so a
+	# file with zero top-level funcs returns an empty list (rather
+	# than tripping `set -e` via grep's exit-1 on no match).
+	func_lines=$(echo "$content" | awk '/^func / { print NR }')
 
 	prev_line=0
 	prev_name=""
