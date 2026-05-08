@@ -16,6 +16,7 @@
 //	    planning --> help : EventPlanQuit
 //	    planning --> needs-clarification : EventPlanNeedsClarification
 //	    planning --> needs-clarification : EventReaperPlanNeedsClarification
+//	    planning --> planning : EventPlanResume
 //	    plan-pending-approval --> plan-done : EventPlanApprove
 //	    plan-pending-approval --> planning : EventPlanRestart
 //	    plan-pending-approval --> planning : EventPlanResume
@@ -131,13 +132,13 @@ var transitions = []Transition{
 	{StatusPlanning, EventReaperPlanNeedsClarification, StatusNeedsClarification},
 
 	{StatusPlanning, EventPlanRestart, StatusPlanning},
+	{StatusPlanning, EventPlanResume, StatusPlanning},
 	{StatusPlanning, EventWorkRestart, StatusWorking},
 	{StatusPlanning, EventVerifyBegin, StatusVerifying},
 
 	{StatusPlanPendingApproval, EventPlanApprove, StatusPlanDone},
 	{StatusPlanPendingApproval, EventPlanRestart, StatusPlanning},
 	{StatusPlanPendingApproval, EventPlanResume, StatusPlanning},
-
 	{StatusPlanDone, EventPlanRestart, StatusPlanning},
 	{StatusPlanDone, EventPlanResume, StatusPlanning},
 	{StatusPlanDone, EventWorkBegin, StatusWorking},
@@ -159,7 +160,6 @@ var transitions = []Transition{
 	{StatusWorkDone, EventWorkRestart, StatusWorking},
 	{StatusWorkDone, EventVerifyBegin, StatusVerifying},
 	{StatusWorkDone, EventVerifyRestart, StatusVerifying},
-
 	{StatusVerifying, EventVerifyBegin, StatusVerifying},
 	{StatusVerifying, EventVerifyRestart, StatusVerifying},
 	{StatusVerifying, EventVerifyPass, StatusCompleted},

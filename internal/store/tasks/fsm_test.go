@@ -29,6 +29,7 @@ func TestApply_FailedAndCompletedRecoveryEdges(t *testing.T) {
 		ev   Event
 		to   TaskStatus
 	}{
+		{StatusPlanning, EventPlanResume, StatusPlanning},
 		{StatusFailed, EventPlanResume, StatusPlanning},
 		{StatusFailed, EventWorkResume, StatusWorking},
 		{StatusFailed, EventVerifyResume, StatusVerifying},
