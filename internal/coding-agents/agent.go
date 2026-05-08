@@ -97,6 +97,15 @@ type PlanRequest struct {
 	Model                  string
 	RequirementsOutputPath string
 	PlanOutputPath         string
+	// ClarificationPath is the per-task absolute path the agent must
+	// write its question to (and exit) instead of guessing when it
+	// gets stuck. The orchestrator threads it through every phase
+	// (PlanRequest / WorkRequest / VerifyRequest) so the prompt
+	// builders can inject the contract — keeping the
+	// user-overridable role body decoupled from the file-IO
+	// contracts the orchestrator depends on. Always derived from
+	// `<task-dir>/` + tasks.ClarificationFileName by the caller.
+	ClarificationPath      string
 	Interactive            bool
 	ResumeChatID           string
 	// Resume, when true, asks the backend to use its resume-only
@@ -135,8 +144,12 @@ type PlanRequest struct {
 type WorkRequest struct {
 	PlanPath     string
 	Model        string
-	Interactive  bool
-	ResumeChatID string
+	// ClarificationPath is the per-task absolute path the agent
+	// must write its question to (and exit) instead of guessing
+	// when it gets stuck. See PlanRequest.ClarificationPath.
+	ClarificationPath string
+	Interactive       bool
+	ResumeChatID      string
 	// Resume, when true, asks the backend to use its resume-only
 	// prompt template that tells the previous session to inspect
 	// what was already done, summarise it for the user, and
@@ -145,12 +158,18 @@ type WorkRequest struct {
 	Resume bool
 	// FixFindings, when true, asks the backend to use a fix-only
 	// worker prompt that points the previous session at the
-	// per-task verifier_findings.md (read by the agent itself) and
-	// asks it to address every listed item without re-planning.
+	// per-task verifier findings file (read by the agent itself)
+	// and asks it to address every listed item without re-planning.
 	// False preserves today's first-run / resume behaviour. Used
 	// by `j verify`'s bounded fix loop after a verifier turn
 	// returned VERDICT: FAIL.
 	FixFindings bool
+	// VerifierFindingsOutputPath is the per-task absolute path of
+	// the findings file the worker must address when FixFindings
+	// is true. The orchestrator threads it in directly so the
+	// fix-loop prompt cites the absolute path (not the bare
+	// filename literal) on every backend.
+	VerifierFindingsOutputPath string
 	// Worktree, when non-empty, is the bare git-worktree name the
 	// worker should operate against. The backend threads it into the
 	// prompt builders so the worker knows which worktree to `cd`
@@ -185,10 +204,14 @@ type VerifyRequest struct {
 	PlanPath                   string
 	VerifierPlanOutputPath     string
 	VerifierFindingsOutputPath string
-	Model                      string
-	Interactive                bool
-	Resume                     bool
-	ResumeChatID               string
+	// ClarificationPath is the per-task absolute path the agent
+	// must write its question to (and exit) instead of guessing
+	// when it gets stuck. See PlanRequest.ClarificationPath.
+	ClarificationPath string
+	Model             string
+	Interactive       bool
+	Resume            bool
+	ResumeChatID      string
 	// Worktree, when non-empty, is the bare git-worktree name the
 	// verifier should target. The backend threads it into the
 	// verifier prompt so the agent can `git worktree list` the name

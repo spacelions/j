@@ -8,7 +8,10 @@ import (
 )
 
 func TestBuildWorker(t *testing.T) {
-	got := BuildWorker("/tmp/feature.plan.md", "", nil)
+	const clarification = "/tmp/.j/tasks/abc/clarification.md"
+	got := BuildWorker(
+		"/tmp/feature.plan.md", "", nil, clarification,
+	)
 
 	if !strings.Contains(got, strings.TrimSpace(instructions.Worker)) {
 		t.Fatalf("prompt missing instructions.Worker: %q", got)
@@ -18,6 +21,9 @@ func TestBuildWorker(t *testing.T) {
 	}
 	if !strings.Contains(got, "Read the plan at") {
 		t.Fatalf("prompt missing read-the-plan directive: %q", got)
+	}
+	if !strings.Contains(got, clarification) {
+		t.Fatalf("prompt missing clarification path: %q", got)
 	}
 	if strings.Contains(got, "Plan (from") {
 		t.Fatalf("prompt should not embed plan body: %q", got)
@@ -34,7 +40,10 @@ func TestBuildWorker(t *testing.T) {
 // the worker prompt: it appears once, preserves case, and sits
 // between the worker instruction and the read-the-plan directive.
 func TestBuildWorker_WithMustRead(t *testing.T) {
-	got := BuildWorker("/tmp/feature.plan.md", "", []string{"AGENTS.md", "CLAUDE.md"})
+	got := BuildWorker(
+		"/tmp/feature.plan.md", "",
+		[]string{"AGENTS.md", "CLAUDE.md"}, "/tmp/c.md",
+	)
 	const header = "Before starting, read these project files for required context:"
 	if strings.Count(got, header) != 1 {
 		t.Fatalf("must-read header should appear exactly once: %q", got)
@@ -55,7 +64,7 @@ func TestBuildWorker_WithMustRead(t *testing.T) {
 // into the rendered prompt — the instructions.Worker value is trimmed
 // before composition.
 func TestBuildWorker_TrimsLeadingTrailingWhitespace(t *testing.T) {
-	got := BuildWorker("p.md", "", nil)
+	got := BuildWorker("p.md", "", nil, "c.md")
 	if strings.HasPrefix(got, "\n") || strings.HasPrefix(got, " ") {
 		t.Fatalf("prompt should not start with whitespace: %q", got[:10])
 	}
@@ -65,7 +74,7 @@ func TestBuildWorker_TrimsLeadingTrailingWhitespace(t *testing.T) {
 // appended on a non-empty worktree: the trailing line names the
 // worktree verbatim and keeps the create-via-git-worktree-add hint.
 func TestBuildWorker_WithWorktree(t *testing.T) {
-	got := BuildWorker("p.md", "j-my-task", nil)
+	got := BuildWorker("p.md", "j-my-task", nil, "c.md")
 	if !strings.Contains(got, "j-my-task") {
 		t.Fatalf("worktree prompt missing worktree name: %q", got)
 	}
@@ -82,7 +91,8 @@ func TestBuildWorker_WithWorktree(t *testing.T) {
 // without inlining the body, and differ from BuildWorker.
 func TestBuildWorkerResume(t *testing.T) {
 	const planPath = "/tmp/feature.plan.md"
-	got := BuildWorkerResume(planPath, "", nil)
+	const clarification = "/tmp/.j/tasks/abc/clarification.md"
+	got := BuildWorkerResume(planPath, "", nil, clarification)
 	if got == "" {
 		t.Fatal("BuildWorkerResume returned empty string")
 	}
@@ -102,13 +112,16 @@ func TestBuildWorkerResume(t *testing.T) {
 	if !strings.Contains(got, planPath) {
 		t.Fatalf("resume prompt missing plan path: %q", got)
 	}
+	if !strings.Contains(got, clarification) {
+		t.Fatalf("resume prompt missing clarification path: %q", got)
+	}
 	if !strings.Contains(got, "read it for context only") {
 		t.Fatalf("resume prompt missing read-for-context hint: %q", got)
 	}
 	if strings.Contains(got, "Plan (from") {
 		t.Fatalf("resume prompt should not embed plan body: %q", got)
 	}
-	if got == BuildWorker(planPath, "", nil) {
+	if got == BuildWorker(planPath, "", nil, clarification) {
 		t.Fatal("resume prompt should differ from BuildWorker output")
 	}
 	if strings.Contains(strings.ToLower(got), "git worktree") {
@@ -122,7 +135,7 @@ func TestBuildWorkerResume(t *testing.T) {
 // TestBuildWorkerResume_WithWorktree pins the worktree-direction suffix
 // on the resume path, mirroring TestBuildWorker_WithWorktree.
 func TestBuildWorkerResume_WithWorktree(t *testing.T) {
-	got := BuildWorkerResume("p.md", "j-my-task", nil)
+	got := BuildWorkerResume("p.md", "j-my-task", nil, "c.md")
 	if !strings.Contains(got, "j-my-task") {
 		t.Fatalf("resume worktree prompt missing worktree name: %q", got)
 	}
@@ -137,7 +150,10 @@ func TestBuildWorkerResume_WithWorktree(t *testing.T) {
 // and sit between the instructions.Worker body and the resume framing
 // line ("You are resuming…").
 func TestBuildWorkerResume_WithMustRead(t *testing.T) {
-	got := BuildWorkerResume("/tmp/feature.plan.md", "", []string{"AGENTS.md", "CLAUDE.md"})
+	got := BuildWorkerResume(
+		"/tmp/feature.plan.md", "",
+		[]string{"AGENTS.md", "CLAUDE.md"}, "/tmp/c.md",
+	)
 
 	const header = "Before starting, read these project files for required context:"
 	if strings.Count(got, header) != 1 {
@@ -153,8 +169,8 @@ func TestBuildWorkerResume_WithMustRead(t *testing.T) {
 	if strings.Index(got, header) > strings.Index(got, framing) {
 		t.Fatalf("must-read block must precede resume framing line: %q", got)
 	}
-	if strings.Index(got, strings.TrimSpace(instructions.Worker)) > strings.Index(got, header) {
-		t.Fatalf("must-read block must follow instructions.Worker body: %q", got)
+	if strings.Index(got, header) > strings.Index(got, strings.TrimSpace(instructions.Worker)) {
+		t.Fatalf("must-read block must precede instructions.Worker body: %q", got)
 	}
 }
 
@@ -163,8 +179,12 @@ func TestBuildWorkerResume_WithMustRead(t *testing.T) {
 // pre-must-read output (the must-read block must not bleed in via
 // some default).
 func TestBuildWorkerResume_NilMustReadByteIdentical(t *testing.T) {
-	withNil := BuildWorkerResume("/tmp/feature.plan.md", "", nil)
-	withEmpty := BuildWorkerResume("/tmp/feature.plan.md", "", []string{})
+	withNil := BuildWorkerResume(
+		"/tmp/feature.plan.md", "", nil, "/tmp/c.md",
+	)
+	withEmpty := BuildWorkerResume(
+		"/tmp/feature.plan.md", "", []string{}, "/tmp/c.md",
+	)
 	if withNil != withEmpty {
 		t.Fatalf("nil and empty must-read slices must produce identical output: nil=%q empty=%q", withNil, withEmpty)
 	}

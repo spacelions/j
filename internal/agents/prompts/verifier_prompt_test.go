@@ -9,17 +9,21 @@ import (
 
 func TestBuildVerifier(t *testing.T) {
 	const (
-		reqPath          = "/tmp/.j/tasks/abc/requirements.md"
-		planPath         = "/tmp/.j/tasks/abc/plan.md"
-		verifierPlanPath = "/tmp/.j/tasks/abc/verifier_plan.md"
-		findingsPath     = "/tmp/.j/tasks/abc/verifier_findings.md"
+		reqPath           = "/tmp/.j/tasks/abc/requirements.md"
+		planPath          = "/tmp/.j/tasks/abc/plan.md"
+		verifierPlanPath  = "/tmp/.j/tasks/abc/verifier_plan.md"
+		findingsPath      = "/tmp/.j/tasks/abc/verifier_findings.md"
+		clarificationPath = "/tmp/.j/tasks/abc/clarification.md"
 	)
-	got := BuildVerifier(reqPath, planPath, verifierPlanPath, findingsPath, "", nil)
+	got := BuildVerifier(
+		reqPath, planPath, verifierPlanPath, findingsPath, "",
+		nil, clarificationPath,
+	)
 
 	if !strings.Contains(got, strings.TrimSpace(instructions.Verifier)) {
 		t.Fatalf("prompt missing instructions.Verifier: %q", got)
 	}
-	for _, want := range []string{reqPath, planPath, findingsPath} {
+	for _, want := range []string{reqPath, planPath, findingsPath, clarificationPath} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("prompt missing %q: %q", want, got)
 		}
@@ -33,7 +37,10 @@ func TestBuildVerifier(t *testing.T) {
 	if strings.Contains(got, "Requirements (from") || strings.Contains(got, "Plan (from") {
 		t.Fatalf("prompt should not embed requirement/plan bodies: %q", got)
 	}
-	for _, want := range []string{"VERDICT: PASS", "VERDICT: FAIL", "Then exit."} {
+	for _, want := range []string{
+		"VERDICT: PASS", "VERDICT: FAIL",
+		"last non-empty line", "Then exit.",
+	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("prompt missing %q: %q", want, got)
 		}
@@ -50,7 +57,10 @@ func TestBuildVerifier(t *testing.T) {
 // the verifier prompt: appears once, preserves case, and sits between
 // the verifier instruction and the read-the-requirements directive.
 func TestBuildVerifier_WithMustRead(t *testing.T) {
-	got := BuildVerifier("r.md", "p.md", "vp.md", "vf.md", "", []string{"AGENTS.md", "CLAUDE.md"})
+	got := BuildVerifier(
+		"r.md", "p.md", "vp.md", "vf.md", "",
+		[]string{"AGENTS.md", "CLAUDE.md"}, "c.md",
+	)
 	const header = "Before starting, read these project files for required context:"
 	if strings.Count(got, header) != 1 {
 		t.Fatalf("must-read header should appear exactly once: %q", got)
@@ -71,7 +81,9 @@ func TestBuildVerifier_WithMustRead(t *testing.T) {
 // instructions.Verifier must not bleed leading whitespace into the
 // composed prompt.
 func TestBuildVerifier_TrimsLeadingWhitespace(t *testing.T) {
-	got := BuildVerifier("r.md", "p.md", "vp.md", "vf.md", "", nil)
+	got := BuildVerifier(
+		"r.md", "p.md", "vp.md", "vf.md", "", nil, "c.md",
+	)
 	if strings.HasPrefix(got, "\n") || strings.HasPrefix(got, " ") {
 		t.Fatalf("prompt should not start with whitespace: %q", got[:10])
 	}
@@ -82,7 +94,9 @@ func TestBuildVerifier_TrimsLeadingWhitespace(t *testing.T) {
 // worktree verbatim and mentions `git worktree list` so the verifier
 // knows how to resolve the absolute path.
 func TestBuildVerifier_WithWorktree(t *testing.T) {
-	got := BuildVerifier("r.md", "p.md", "vp.md", "vf.md", "j-my-task", nil)
+	got := BuildVerifier(
+		"r.md", "p.md", "vp.md", "vf.md", "j-my-task", nil, "c.md",
+	)
 	if !strings.Contains(got, "j-my-task") {
 		t.Fatalf("worktree prompt missing worktree name: %q", got)
 	}
@@ -100,10 +114,13 @@ func TestBuildVerifier_WithWorktree(t *testing.T) {
 // BuildVerifier.
 func TestBuildVerifierResume(t *testing.T) {
 	const (
-		reqPath  = "/tmp/.j/tasks/abc/requirements.md"
-		planPath = "/tmp/.j/tasks/abc/plan.md"
+		reqPath           = "/tmp/.j/tasks/abc/requirements.md"
+		planPath          = "/tmp/.j/tasks/abc/plan.md"
+		clarificationPath = "/tmp/.j/tasks/abc/clarification.md"
 	)
-	got := BuildVerifierResume(reqPath, planPath, "", nil)
+	got := BuildVerifierResume(
+		reqPath, planPath, "", nil, clarificationPath,
+	)
 	if got == "" {
 		t.Fatal("BuildVerifierResume returned empty string")
 	}
@@ -120,7 +137,7 @@ func TestBuildVerifierResume(t *testing.T) {
 			t.Fatalf("resume prompt missing marker %q: %q", marker, got)
 		}
 	}
-	for _, want := range []string{reqPath, planPath} {
+	for _, want := range []string{reqPath, planPath, clarificationPath} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("resume prompt missing %q: %q", want, got)
 		}
@@ -133,7 +150,7 @@ func TestBuildVerifierResume(t *testing.T) {
 			t.Fatalf("resume prompt should not include %q: %q", banned, got)
 		}
 	}
-	if got == BuildVerifier(reqPath, planPath, "vp.md", "vf.md", "", nil) {
+	if got == BuildVerifier(reqPath, planPath, "vp.md", "vf.md", "", nil, clarificationPath) {
 		t.Fatal("resume prompt should differ from BuildVerifier output")
 	}
 	if strings.Contains(strings.ToLower(got), "git worktree") {
@@ -147,7 +164,9 @@ func TestBuildVerifierResume(t *testing.T) {
 // TestBuildVerifierResume_WithWorktree pins the worktree-direction
 // suffix on the resume path, mirroring TestBuildVerifier_WithWorktree.
 func TestBuildVerifierResume_WithWorktree(t *testing.T) {
-	got := BuildVerifierResume("r.md", "p.md", "j-my-task", nil)
+	got := BuildVerifierResume(
+		"r.md", "p.md", "j-my-task", nil, "c.md",
+	)
 	if !strings.Contains(got, "j-my-task") {
 		t.Fatalf("resume worktree prompt missing worktree name: %q", got)
 	}
@@ -162,7 +181,10 @@ func TestBuildVerifierResume_WithWorktree(t *testing.T) {
 // and sit between the instructions.Verifier body and the resume
 // framing line ("You are resuming…").
 func TestBuildVerifierResume_WithMustRead(t *testing.T) {
-	got := BuildVerifierResume("r.md", "p.md", "", []string{"AGENTS.md", "CLAUDE.md"})
+	got := BuildVerifierResume(
+		"r.md", "p.md", "",
+		[]string{"AGENTS.md", "CLAUDE.md"}, "c.md",
+	)
 
 	const header = "Before starting, read these project files for required context:"
 	if strings.Count(got, header) != 1 {
@@ -178,8 +200,8 @@ func TestBuildVerifierResume_WithMustRead(t *testing.T) {
 	if strings.Index(got, header) > strings.Index(got, framing) {
 		t.Fatalf("must-read block must precede resume framing line: %q", got)
 	}
-	if strings.Index(got, strings.TrimSpace(instructions.Verifier)) > strings.Index(got, header) {
-		t.Fatalf("must-read block must follow instructions.Verifier body: %q", got)
+	if strings.Index(got, header) > strings.Index(got, strings.TrimSpace(instructions.Verifier)) {
+		t.Fatalf("must-read block must precede instructions.Verifier body: %q", got)
 	}
 }
 
@@ -187,8 +209,10 @@ func TestBuildVerifierResume_WithMustRead(t *testing.T) {
 // nil/empty mustRead leaves the prompt byte-identical to the
 // pre-must-read output.
 func TestBuildVerifierResume_NilMustReadByteIdentical(t *testing.T) {
-	withNil := BuildVerifierResume("r.md", "p.md", "", nil)
-	withEmpty := BuildVerifierResume("r.md", "p.md", "", []string{})
+	withNil := BuildVerifierResume("r.md", "p.md", "", nil, "c.md")
+	withEmpty := BuildVerifierResume(
+		"r.md", "p.md", "", []string{}, "c.md",
+	)
 	if withNil != withEmpty {
 		t.Fatalf("nil and empty must-read slices must produce identical output: nil=%q empty=%q", withNil, withEmpty)
 	}
@@ -202,10 +226,13 @@ func TestBuildVerifierResume_NilMustReadByteIdentical(t *testing.T) {
 // re-planning.
 func TestBuildVerifierFix(t *testing.T) {
 	const (
-		planPath     = "/tmp/.j/tasks/abc/plan.md"
-		findingsPath = "/tmp/.j/tasks/abc/verifier_findings.md"
+		planPath          = "/tmp/.j/tasks/abc/plan.md"
+		findingsPath      = "/tmp/.j/tasks/abc/verifier_findings.md"
+		clarificationPath = "/tmp/.j/tasks/abc/clarification.md"
 	)
-	got := BuildVerifierFix(planPath, findingsPath, "")
+	got := BuildVerifierFix(
+		planPath, findingsPath, "", clarificationPath,
+	)
 	if got == "" {
 		t.Fatal("BuildVerifierFix returned empty string")
 	}
@@ -216,7 +243,9 @@ func TestBuildVerifierFix(t *testing.T) {
 	if strings.Count(got, preamble) != 1 {
 		t.Fatalf("fix prompt should contain the role preamble exactly once (no duplicate): %q", got)
 	}
-	for _, want := range []string{planPath, findingsPath, "Address every item"} {
+	for _, want := range []string{
+		planPath, findingsPath, clarificationPath, "Address every item",
+	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("fix prompt missing %q: %q", want, got)
 		}
@@ -243,7 +272,7 @@ func TestBuildVerifierFix(t *testing.T) {
 // appendWorktreeLine with BuildWorker so the hint mentions
 // `git worktree add`, not `git worktree list`.
 func TestBuildVerifierFix_WithWorktree(t *testing.T) {
-	got := BuildVerifierFix("p.md", "vf.md", "j-my-task")
+	got := BuildVerifierFix("p.md", "vf.md", "j-my-task", "c.md")
 	if !strings.Contains(got, "j-my-task") {
 		t.Fatalf("fix worktree prompt missing worktree name: %q", got)
 	}

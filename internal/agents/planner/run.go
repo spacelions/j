@@ -51,6 +51,9 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 	taskDir := filepath.Join(tasksDir, opts.TaskID)
 	requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
 	planPath := filepath.Join(taskDir, tasks.PlanFileName)
+	clarificationPath := filepath.Join(
+		taskDir, tasks.ClarificationFileName,
+	)
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 
 	existing, err := resolver.TaskByID(opts.TaskID)
@@ -72,6 +75,7 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 		Model:                  opts.Model,
 		RequirementsOutputPath: requirementsPath,
 		PlanOutputPath:         planPath,
+		ClarificationPath:      clarificationPath,
 		Interactive:            opts.Interactive,
 		ResumeChatID:           resumeID,
 		Resume:                 resumeMode,
@@ -91,7 +95,10 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 		if data, readErr := os.ReadFile(requirementsPath); readErr == nil {
 			refinedReq = string(data)
 		} else {
-			uitheme.DangerousDialogBox(stderr, "J: read %s: %v", requirementsPath, readErr)
+			uitheme.DangerousDialogBox(
+				stderr, "J: read %s: %v",
+				requirementsPath, readErr,
+			)
 		}
 		if data, readErr := os.ReadFile(planPath); readErr == nil {
 			planMD = string(data)

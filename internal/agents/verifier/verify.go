@@ -174,12 +174,9 @@ func reportOutcome(
 }
 
 // runVerifyLoop alternates verifier turns with worker-resume fix
-// turns until the verifier writes VERDICT: PASS or MaxIterations is
-// exhausted. Turn 1 runs the verifier; subsequent iterations resume
-// the worker with FixFindings, then the verifier with Resume=true.
-// run.WaitForExit blocks on every spawned child before reading the
-// findings file so a headless backend's deferred write doesn't race
-// the verdict parse.
+// turns until VERDICT: PASS or MaxIterations is exhausted.
+// run.WaitForExit blocks on every spawned child so a headless
+// backend's deferred write doesn't race the verdict parse.
 func runVerifyLoop(
 	ctx context.Context, opts Options,
 	lc *lifecycle.VerifyLifecycle,
@@ -190,6 +187,7 @@ func runVerifyLoop(
 	if mustReadErr != nil {
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
+	clarifyPath := filepath.Join(res.TaskDir, tasks.ClarificationFileName)
 	for i := 0; i < opts.MaxIterations; i++ {
 		lc.IterationBegin(i, opts.MaxIterations)
 		req := codingagents.VerifyRequest{
@@ -197,6 +195,7 @@ func runVerifyLoop(
 			PlanPath:                   res.PlanPath,
 			VerifierPlanOutputPath:     res.VerifierPlanPath,
 			VerifierFindingsOutputPath: res.FindingsPath,
+			ClarificationPath:          clarifyPath,
 			Model:                      model,
 			Interactive:                opts.Interactive,
 			Resume:                     i > 0,
@@ -226,14 +225,16 @@ func runVerifyLoop(
 			break
 		}
 		workReq := codingagents.WorkRequest{
-			PlanPath:     res.PlanPath,
-			Model:        res.Task.WorkModel,
-			Interactive:  opts.Interactive,
-			ResumeChatID: res.Task.WorkResumeSession,
-			Resume:       true,
-			FixFindings:  true,
-			Worktree:     res.Task.Worktree,
-			AgentLogPath: agentLogPath,
+			PlanPath:                   res.PlanPath,
+			Model:                      res.Task.WorkModel,
+			ClarificationPath:          clarifyPath,
+			Interactive:                opts.Interactive,
+			ResumeChatID:               res.Task.WorkResumeSession,
+			Resume:                     true,
+			FixFindings:                true,
+			VerifierFindingsOutputPath: res.FindingsPath,
+			Worktree:                   res.Task.Worktree,
+			AgentLogPath:               agentLogPath,
 		}
 		workPID, err := workerAgent.Work(ctx, workReq)
 		if err != nil {

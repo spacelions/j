@@ -48,33 +48,42 @@ func TestSettingsSet_PromptRuntimeRender(t *testing.T) {
 	if !strings.Contains(plannerOut, roles[0].body) {
 		t.Fatalf("BuildPlanner missing override: %q", plannerOut)
 	}
-	plannerResume := prompts.BuildPlannerResume("/tmp/feature.md", nil)
+	const clarify = "/tmp/c.md"
+	plannerResume := prompts.BuildPlannerResume(
+		"/tmp/feature.md", nil,
+	)
 	if !strings.Contains(plannerResume, roles[0].body) {
 		t.Fatalf("BuildPlannerResume missing override: %q", plannerResume)
 	}
 
-	workerOut := prompts.BuildWorker("/tmp/plan.md", "", nil)
+	workerOut := prompts.BuildWorker(
+		"/tmp/plan.md", "", nil, clarify,
+	)
 	if !strings.Contains(workerOut, roles[1].body) {
 		t.Fatalf("BuildWorker missing override: %q", workerOut)
 	}
-	workerResume := prompts.BuildWorkerResume("/tmp/plan.md", "", nil)
+	workerResume := prompts.BuildWorkerResume(
+		"/tmp/plan.md", "", nil, clarify,
+	)
 	if !strings.Contains(workerResume, roles[1].body) {
 		t.Fatalf("BuildWorkerResume missing override: %q", workerResume)
 	}
-	fixOut := prompts.BuildVerifierFix("/tmp/plan.md", "/tmp/v.md", "")
+	fixOut := prompts.BuildVerifierFix(
+		"/tmp/plan.md", "/tmp/v.md", "", clarify,
+	)
 	if !strings.Contains(fixOut, roles[1].body) {
 		t.Fatalf("BuildVerifierFix should honour worker override: %q",
 			fixOut)
 	}
 
 	verifierOut := prompts.BuildVerifier(
-		"r.md", "p.md", "vp.md", "vf.md", "", nil,
+		"r.md", "p.md", "vp.md", "vf.md", "", nil, clarify,
 	)
 	if !strings.Contains(verifierOut, roles[2].body) {
 		t.Fatalf("BuildVerifier missing override: %q", verifierOut)
 	}
 	verifierResume := prompts.BuildVerifierResume(
-		"r.md", "p.md", "", nil,
+		"r.md", "p.md", "", nil, clarify,
 	)
 	if !strings.Contains(verifierResume, roles[2].body) {
 		t.Fatalf("BuildVerifierResume missing override: %q",

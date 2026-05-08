@@ -48,9 +48,10 @@ func ResolvePlanMarkdown(rawTarget string) (PlanMarkdownSource, error) {
 	return PlanMarkdownSource{Target: target, Body: string(body)}, nil
 }
 
-// TODO: this should be moved to cli package and use cli/uitheme for user-facing messages,
-// but for now this is a convenient place to put the core logic of the command without
-// depending on the CLI package.
+// TODO: this should be moved to cli package and use cli/uitheme
+// for user-facing messages, but for now this is a convenient place
+// to put the core logic of the command without depending on the
+// CLI package.
 func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 	source := opts.Source
 	if source.Target == "" {
@@ -65,7 +66,10 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 	if err != nil {
 		return fmt.Errorf("plan: ensure task dir: %w", err)
 	}
-	return runPlanInTaskDir(ctx, opts, taskID, taskDir, source.Target, source.Body, source.LinearIssue)
+	return runPlanInTaskDir(
+		ctx, opts, taskID, taskDir,
+		source.Target, source.Body, source.LinearIssue,
+	)
 }
 
 // RunPlanFromBody mirrors RunPlanMarkdown for the in-memory body
@@ -78,17 +82,27 @@ func RunPlanMarkdown(ctx context.Context, opts PlanMarkdownOptions) error {
 // source field. linearIssue is the upstream `<TEAM>-<NUM>` form
 // stamped on the task row's linear_issue field; empty for non-Linear
 // sources.
-func RunPlanFromBody(ctx context.Context, opts PlanMarkdownOptions, body, sourceLabel, linearIssue string) error {
+func RunPlanFromBody(
+	ctx context.Context, opts PlanMarkdownOptions,
+	body, sourceLabel, linearIssue string,
+) error {
 	taskID := tasks.NewTaskID()
 	taskDir, err := tasks.EnsureDir(taskID)
 	if err != nil {
 		return fmt.Errorf("plan: ensure task dir: %w", err)
 	}
-	requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
-	if err := os.WriteFile(requirementsPath, []byte(body), 0o644); err != nil {
+	requirementsPath := filepath.Join(
+		taskDir, tasks.RequirementsFileName,
+	)
+	if err := os.WriteFile(
+		requirementsPath, []byte(body), 0o644,
+	); err != nil {
 		return fmt.Errorf("plan: stage requirements: %w", err)
 	}
-	return runPlanInTaskDir(ctx, opts, taskID, taskDir, requirementsPath, body, linearIssue)
+	return runPlanInTaskDir(
+		ctx, opts, taskID, taskDir,
+		requirementsPath, body, linearIssue,
+	)
 }
 
 // runPlanInTaskDir is the shared lifecycle: build PlanRequest, drive
@@ -96,9 +110,15 @@ func RunPlanFromBody(ctx context.Context, opts PlanMarkdownOptions, body, source
 // the task row. Both RunPlanMarkdown (real file) and RunPlanFromBody
 // (in-memory body staged into requirements.md) feed through it so
 // the lifecycle bookkeeping has exactly one source of truth.
-func runPlanInTaskDir(ctx context.Context, opts PlanMarkdownOptions, taskID, taskDir, fromFilePath, sourceBody, linearIssue string) error {
+func runPlanInTaskDir(
+	ctx context.Context, opts PlanMarkdownOptions,
+	taskID, taskDir, fromFilePath, sourceBody, linearIssue string,
+) error {
 	requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
 	planPath := filepath.Join(taskDir, tasks.PlanFileName)
+	clarificationPath := filepath.Join(
+		taskDir, tasks.ClarificationFileName,
+	)
 
 	resumeID, err := opts.Agent.NewResumeID(ctx)
 	if err != nil {
@@ -109,12 +129,17 @@ func runPlanInTaskDir(ctx context.Context, opts PlanMarkdownOptions, taskID, tas
 	if mustReadErr != nil {
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
-	lc := lifecycle.NewPlanTask(opts.Stderr, opts.Agent.Name(), opts.Model, taskID, fromFilePath, sourceBody, resumeID, agentLogPath, linearIssue)
+	lc := lifecycle.NewPlanTask(
+		opts.Stderr, opts.Agent.Name(), opts.Model,
+		taskID, fromFilePath, sourceBody,
+		resumeID, agentLogPath, linearIssue,
+	)
 	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           fromFilePath,
 		Model:                  opts.Model,
 		RequirementsOutputPath: requirementsPath,
 		PlanOutputPath:         planPath,
+		ClarificationPath:      clarificationPath,
 		Interactive:            opts.Interactive,
 		ResumeChatID:           resumeID,
 		AgentLogPath:           agentLogPath,
@@ -129,31 +154,58 @@ func runPlanInTaskDir(ctx context.Context, opts PlanMarkdownOptions, taskID, tas
 			}
 		} else {
 			lc.RecordBackground(pid, agentLogPath)
-			uitheme.NormalForkDialog(opts.Stdout, opts.Agent.Name(), pid, agentLogPath)
+			uitheme.NormalForkDialog(
+				opts.Stdout, opts.Agent.Name(),
+				pid, agentLogPath,
+			)
 			return nil
 		}
 	}
 
-	var refinedReq, planMD string
-	if planErr == nil {
-		if data, readErr := os.ReadFile(requirementsPath); readErr == nil {
-			refinedReq = string(data)
-		} else {
-			uitheme.DangerousDialogBox(opts.Stderr, "J: read %s: %v", requirementsPath, readErr)
-		}
-		if data, readErr := os.ReadFile(planPath); readErr == nil {
-			planMD = string(data)
-		} else {
-			uitheme.DangerousDialogBox(opts.Stderr, "J: read %s: %v", planPath, readErr)
-		}
-	}
+	refinedReq, planMD := readPlanArtifacts(
+		opts.Stderr, planErr, requirementsPath, planPath,
+	)
 	lc.Finish(planErr, refinedReq, planMD, fromFilePath)
 	if planErr != nil {
 		return planErr
 	}
-
-	uitheme.NormalFprintf(opts.Stdout, "J: the requirements.md and plan.md are saved in .j/tasks/%s/\n", taskID)
+	uitheme.NormalFprintf(
+		opts.Stdout,
+		"J: the requirements.md and plan.md are saved in "+
+			".j/tasks/%s/\n",
+		taskID,
+	)
 	return nil
+}
+
+// readPlanArtifacts reads the planner-produced requirements.md and
+// plan.md when planErr is nil, surfacing read failures as orange
+// warnings on stderr so the lifecycle still records what it can.
+// Empty strings are returned for either file that fails to read,
+// matching the prior inline behaviour.
+func readPlanArtifacts(
+	stderr io.Writer, planErr error,
+	requirementsPath, planPath string,
+) (string, string) {
+	if planErr != nil {
+		return "", ""
+	}
+	var refinedReq, planMD string
+	if data, err := os.ReadFile(requirementsPath); err == nil {
+		refinedReq = string(data)
+	} else {
+		uitheme.DangerousDialogBox(
+			stderr, "J: read %s: %v", requirementsPath, err,
+		)
+	}
+	if data, err := os.ReadFile(planPath); err == nil {
+		planMD = string(data)
+	} else {
+		uitheme.DangerousDialogBox(
+			stderr, "J: read %s: %v", planPath, err,
+		)
+	}
+	return refinedReq, planMD
 }
 
 // StartTarget bundles the resolved input for `j tasks start`. IsNew
@@ -178,7 +230,12 @@ func NewStartTargetFromMarkdown(raw string) (StartTarget, error) {
 	if err != nil {
 		return StartTarget{}, fmt.Errorf("read source: %w", err)
 	}
-	return StartTarget{TaskID: tasks.NewTaskID(), IsNew: true, Body: string(body), Source: abs}, nil
+	return StartTarget{
+		TaskID: tasks.NewTaskID(),
+		IsNew:  true,
+		Body:   string(body),
+		Source: abs,
+	}, nil
 }
 
 // NewStartTargetFromBody mints an in-memory StartTarget for sources
@@ -188,8 +245,16 @@ func NewStartTargetFromMarkdown(raw string) (StartTarget, error) {
 // row so `j tasks` can show the issue identifier instead of a path.
 // linearIssue is the upstream `<TEAM>-<NUM>` form, propagated into
 // the row's linear_issue column.
-func NewStartTargetFromBody(body, sourceLabel, linearIssue string) StartTarget {
-	return StartTarget{TaskID: tasks.NewTaskID(), IsNew: true, Body: body, Source: sourceLabel, LinearIssue: linearIssue}
+func NewStartTargetFromBody(
+	body, sourceLabel, linearIssue string,
+) StartTarget {
+	return StartTarget{
+		TaskID:      tasks.NewTaskID(),
+		IsNew:       true,
+		Body:        body,
+		Source:      sourceLabel,
+		LinearIssue: linearIssue,
+	}
 }
 
 func PrepareStartTaskFiles(target StartTarget) (string, error) {
@@ -198,8 +263,12 @@ func PrepareStartTaskFiles(target StartTarget) (string, error) {
 		return "", fmt.Errorf("ensure task dir: %w", err)
 	}
 	if target.IsNew {
-		requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
-		if err := os.WriteFile(requirementsPath, []byte(target.Body), 0o644); err != nil {
+		requirementsPath := filepath.Join(
+			taskDir, tasks.RequirementsFileName,
+		)
+		if err := os.WriteFile(
+			requirementsPath, []byte(target.Body), 0o644,
+		); err != nil {
 			return "", fmt.Errorf("stage requirements: %w", err)
 		}
 	}
