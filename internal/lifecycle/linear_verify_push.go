@@ -37,11 +37,12 @@ func InitLinearVerifyPush() {
 	tasks.Register(linearVerifyPushHook)
 }
 
-// linearVerifyPushHook posts a `@<viewer> <header>\n\n<findings>`
-// mention comment to the linked Linear issue when the verifier
-// transitions to a terminal state. All failures emit a stderr warning
-// and return — the hook never returns an error and never blocks the
-// FSM transition.
+// linearVerifyPushHook posts a `<header>\n\n<findings>` plain
+// comment to the linked Linear issue when the verifier transitions
+// to a terminal state. The comment is self-authored, so Linear's
+// actor==recipient gate suppresses any inbox notification — exactly
+// what we want here (the comment is for context on the issue, not a
+// page). All failures emit a stderr warning and return.
 func linearVerifyPushHook(tr tasks.Transition, task tasks.Task) {
 	header, ok := verifyTerminalHeaders[tr.Event]
 	if !ok {
@@ -50,7 +51,7 @@ func linearVerifyPushHook(tr tasks.Transition, task tasks.Task) {
 	pushFindings(os.Stderr, task, header)
 }
 
-// PushVerifyIterationFinding posts a per-iteration mention comment to
+// PushVerifyIterationFinding posts a per-iteration plain comment to
 // the linked Linear issue. Called by the verifier loop after each
 // FAIL verdict; iteration is 0-based and is rendered as 1-based in
 // the comment header for human readability.
@@ -64,7 +65,7 @@ func PushVerifyIterationFinding(
 }
 
 // pushFindings is the shared worker that reads verifier_findings.md
-// for the task and posts a mention comment carrying the supplied
+// for the task and posts a plain comment carrying the supplied
 // header plus the file body. Each step warns and returns on failure;
 // the caller's stderr is honoured so the verifier loop's redirection
 // (agent.log via background runner) keeps working.
@@ -90,14 +91,9 @@ func pushFindings(stderr io.Writer, task tasks.Task, header string) {
 			stderr, "resolve %s: %s", task.LinearIssue, err)
 		return
 	}
-	viewerID, err := client.ViewerID(ctx)
-	if err != nil {
-		warnLinearVerify(stderr, "viewer: %s", err)
-		return
-	}
 	body := header + "\n\n" + findings
-	if err := client.CreateMentionComment(
-		ctx, issue.ID, viewerID, body); err != nil {
+	if err := client.CreateComment(
+		ctx, issue.ID, body); err != nil {
 		warnLinearVerify(stderr, "commentCreate: %s", err)
 	}
 }

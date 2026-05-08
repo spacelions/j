@@ -7,12 +7,16 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// TestLinearStateSync_VerifyBegin_PostsPRLinkMention pins the new
-// acceptance criterion: when a task transitions into verifying via
-// EventVerifyBegin and has a non-empty PullRequestURL, the hook
-// updates the workflow state AND posts a `@<viewer> <PR URL>`
-// mention comment so reviewers see the PR link.
-func TestLinearStateSync_VerifyBegin_PostsPRLinkMention(
+// TestLinearStateSync_VerifyBegin_PostsPRLinkAndReminds pins the
+// "verify-begin with a PR URL" acceptance criterion: when a task
+// transitions into verifying via EventVerifyBegin and has a
+// non-empty PullRequestURL, the hook updates the workflow state to
+// "In Progress", posts the PR URL as a plain comment, and schedules
+// a Linear inbox reminder so the API-key owner is paged with a
+// click-through path to the PR. The comment is plain (no @-mention)
+// because Linear suppresses self-mention notifications anyway; the
+// reminder is what surfaces the inbox entry.
+func TestLinearStateSync_VerifyBegin_PostsPRLinkAndReminds(
 	t *testing.T,
 ) {
 	env := newLinearStateSyncEnv(t)
@@ -26,7 +30,7 @@ func TestLinearStateSync_VerifyBegin_PostsPRLinkMention(
 
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "viewer", "commentCreate",
+		"issue", "states", "issueUpdate", "commentCreate", "remindMe",
 	}
 	if !equalSlices(bodyKindList(got), want) {
 		t.Fatalf("call order = %v, want %v",
@@ -35,8 +39,11 @@ func TestLinearStateSync_VerifyBegin_PostsPRLinkMention(
 	if v := decodeMutationVar(t, got[2], "stateId"); v != "s-prog" {
 		t.Fatalf("issueUpdate stateId = %q, want s-prog", v)
 	}
-	wantBody := "@user-uuid https://github.com/spacelions/j/pull/42"
-	if v := decodeMutationVar(t, got[4], "body"); v != wantBody {
+	wantBody := "https://github.com/spacelions/j/pull/42"
+	if v := decodeMutationVar(t, got[3], "body"); v != wantBody {
 		t.Fatalf("commentCreate body = %q, want %q", v, wantBody)
+	}
+	if v := decodeMutationVar(t, got[4], "id"); v != "node-1" {
+		t.Fatalf("issueRemindMe id = %q, want node-1", v)
 	}
 }

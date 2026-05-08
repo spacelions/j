@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // decodeReq decodes a recorded request body into a graphQLRequest.
@@ -212,43 +213,83 @@ func TestUpdateIssueState_Unauthorized(t *testing.T) {
 	}
 }
 
-func TestCreateMentionComment_PrependsViewerMention(t *testing.T) {
+func TestRemindOnIssue_OK(t *testing.T) {
 	var seenBody []byte
 	srv := issueServer(t, func(w http.ResponseWriter, r *http.Request) {
 		seenBody, _ = io.ReadAll(r.Body)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
-				"commentCreate": map[string]any{"success": true},
+				"issueRemindMe": map[string]any{"success": true},
 			},
 		})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.CreateMentionComment(
-		context.Background(), "id-1", "viewer-uuid", "todo")
+	before := time.Now().UTC().Add(-time.Second)
+	err := c.RemindOnIssue(context.Background(), "node-id-3")
 	if err != nil {
-		t.Fatalf("CreateMentionComment: %v", err)
+		t.Fatalf("RemindOnIssue: %v", err)
+	}
+	after := time.Now().UTC().Add(time.Second)
+	if !strings.Contains(string(seenBody), "issueRemindMe") {
+		t.Fatalf("body missing issueRemindMe: %s", seenBody)
 	}
 	req := decodeReq(t, seenBody)
-	if req.Variables["body"] != "@viewer-uuid todo" {
-		t.Fatalf("body = %v, want '@viewer-uuid todo'",
-			req.Variables["body"])
+	if req.Variables["id"] != "node-id-3" {
+		t.Fatalf("id var = %v", req.Variables["id"])
+	}
+	raw, ok := req.Variables["remindAt"].(string)
+	if !ok {
+		t.Fatalf("remindAt var = %v (%T)",
+			req.Variables["remindAt"], req.Variables["remindAt"])
+	}
+	got, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		t.Fatalf("remindAt parse: %v (raw=%q)", err, raw)
+	}
+	if got.Before(before) || got.After(after) {
+		t.Fatalf("remindAt = %v, want within [%v, %v]",
+			got, before, after)
 	}
 }
 
-func TestCreateMentionComment_GraphQLError(t *testing.T) {
+func TestRemindOnIssue_GraphQLError(t *testing.T) {
 	srv := issueServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
-				"commentCreate": map[string]any{"success": false},
+				"issueRemindMe": map[string]any{"success": false},
 			},
-			"errors": []map[string]string{{"message": "x"}},
+			"errors": []map[string]string{{"message": "no remind"}},
 		})
 	})
 	c := NewClient("k", WithEndpoint(srv.URL))
-	err := c.CreateMentionComment(
-		context.Background(), "id", "v", "b")
-	if err == nil || !strings.Contains(err.Error(), "x") {
-		t.Fatalf("err = %v", err)
+	err := c.RemindOnIssue(context.Background(), "id")
+	if err == nil || !strings.Contains(err.Error(), "no remind") {
+		t.Fatalf("err = %v, want graphql 'no remind'", err)
+	}
+}
+
+func TestRemindOnIssue_Unauthorized(t *testing.T) {
+	srv := issueServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	err := c.RemindOnIssue(context.Background(), "id")
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("err = %v, want ErrUnauthorized", err)
+	}
+}
+
+func TestRemindOnIssue_HTTP500(t *testing.T) {
+	srv := issueServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("dead"))
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	err := c.RemindOnIssue(context.Background(), "id")
+	var hErr *HTTPError
+	if !errors.As(err, &hErr) ||
+		hErr.Status != http.StatusInternalServerError {
+		t.Fatalf("err = %v, want *HTTPError with 500", err)
 	}
 }
 

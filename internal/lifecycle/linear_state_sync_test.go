@@ -28,9 +28,8 @@ type stateSyncEnv struct {
 	states       []linear.WorkflowState
 	statesErrors []string
 	updateErrors []string
-	viewerID     string
-	viewerErrors []string
 	commentErrs  []string
+	remindErrors []string
 	stderrR      *os.File
 	stderrW      *os.File
 	stderrOrig   *os.File
@@ -52,7 +51,6 @@ func newStateSyncEnv(t *testing.T) *stateSyncEnv {
 			{ID: "s-prog", Name: "In Progress", Type: "started"},
 			{ID: "s-rev", Name: "In Review", Type: "started"},
 		},
-		viewerID: "user-uuid",
 	}
 	env.srv = httptest.NewServer(http.HandlerFunc(env.handle))
 	t.Cleanup(env.srv.Close)
@@ -117,12 +115,12 @@ func (e *stateSyncEnv) handle(
 	switch {
 	case strings.Contains(q, "team{states"):
 		writeStatesResp(w, e.states, e.statesErrors)
+	case strings.Contains(q, "issueRemindMe"):
+		writeMutation(w, "issueRemindMe", e.remindErrors)
 	case strings.Contains(q, "issueUpdate"):
 		writeMutation(w, "issueUpdate", e.updateErrors)
 	case strings.Contains(q, "commentCreate"):
 		writeMutation(w, "commentCreate", e.commentErrs)
-	case strings.Contains(q, "viewer{id"):
-		writeViewerResp(w, e.viewerID, e.viewerErrors)
 	case strings.Contains(q, "issue(id:"):
 		writeIssueResp(w, e.issueResp, e.issueErrors)
 	default:
@@ -153,20 +151,6 @@ func writeStatesResp(
 					"states": map[string]any{"nodes": states},
 				},
 			},
-		},
-	}
-	if len(errs) > 0 {
-		payload["errors"] = errorList(errs)
-	}
-	writeJSON(w, payload)
-}
-
-func writeViewerResp(
-	w http.ResponseWriter, id string, errs []string,
-) {
-	payload := map[string]any{
-		"data": map[string]any{
-			"viewer": map[string]any{"id": id},
 		},
 	}
 	if len(errs) > 0 {
@@ -213,12 +197,12 @@ func classifyBody(body string) string {
 	switch {
 	case strings.Contains(body, "team{states"):
 		return "states"
+	case strings.Contains(body, "issueRemindMe"):
+		return "remindMe"
 	case strings.Contains(body, "issueUpdate"):
 		return "issueUpdate"
 	case strings.Contains(body, "commentCreate"):
 		return "commentCreate"
-	case strings.Contains(body, "viewer{id"):
-		return "viewer"
 	case strings.Contains(body, "issue(id:"):
 		return "issue"
 	}

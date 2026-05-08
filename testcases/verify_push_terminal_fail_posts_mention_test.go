@@ -8,12 +8,13 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// TestLinearVerifyPush_TerminalFail_PostsMention pins acceptance
-// criterion #2 (terminal failure leg): the verifying→failed
-// transition driven by EventVerifyFail must mirror
-// verifier_findings.md to the linked Linear issue with the
-// "Verification failed (retries exhausted)" header.
-func TestLinearVerifyPush_TerminalFail_PostsMention(t *testing.T) {
+// TestLinearVerifyPush_TerminalFail_PostsPlainComment pins the
+// "verify-fail mirrors findings to Linear without an inbox ping"
+// acceptance criterion: EventVerifyFail posts verifier_findings.md
+// as a plain comment with the
+// "Verification failed (retries exhausted)" header and does NOT
+// call issueRemindMe.
+func TestLinearVerifyPush_TerminalFail_PostsPlainComment(t *testing.T) {
 	id := tasks.NewTaskID()
 	env := newVerifyPushAcceptanceEnv(t, id, "findings body")
 	saveLinearAPIKey(t, "lin_api_TEST")
@@ -23,16 +24,21 @@ func TestLinearVerifyPush_TerminalFail_PostsMention(t *testing.T) {
 		id, "ENG-1", tasks.StatusFailed, tasks.EventVerifyFail)
 
 	got := env.recordedBodies()
-	if len(got) != 3 {
-		t.Fatalf("want 3 calls, got %d: %v", len(got), got)
+	if len(got) != 2 {
+		t.Fatalf("want 2 calls, got %d: %v", len(got), got)
 	}
-	if !strings.Contains(got[2], "commentCreate") {
-		t.Fatalf("third call not commentCreate: %s", got[2])
+	if !strings.Contains(got[1], "commentCreate") {
+		t.Fatalf("second call not commentCreate: %s", got[1])
 	}
-	body := decodeMutationVar(t, got[2], "body")
-	want := "@user-uuid Verification failed (retries exhausted)" +
+	body := decodeMutationVar(t, got[1], "body")
+	want := "Verification failed (retries exhausted)" +
 		"\n\nfindings body"
 	if body != want {
 		t.Fatalf("commentCreate body = %q, want %q", body, want)
+	}
+	for _, b := range got {
+		if strings.Contains(b, "issueRemindMe") {
+			t.Fatalf("unexpected issueRemindMe: %v", got)
+		}
 	}
 }
