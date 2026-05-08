@@ -106,9 +106,9 @@ func Run(ctx context.Context, opts Options) (err error) {
 	if err != nil || !proceed {
 		return err
 	}
-
-	verifierAgent, workerAgent, model, resumeID, err :=
-		resolveVerifyAgents(ctx, opts, res)
+	verifierAgent, workerAgent, model, resumeID, err := resolveVerifyAgents(
+		ctx, opts, res,
+	)
 	if err != nil {
 		return err
 	}

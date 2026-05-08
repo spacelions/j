@@ -407,7 +407,7 @@ func TestFilterTasksWithPlanSession(t *testing.T) {
 		{ID: "b", PlanResumeSession: ""},
 		{ID: "c", PlanResumeSession: "y"},
 	}
-	got := filterTasksWithPlanSession(rows)
+	got := filterTasksBySession(rows, resumePlanConfig.hasSession)
 	if len(got) != 2 || got[0].ID != "a" || got[1].ID != "c" {
 		t.Fatalf("filtered = %+v, want [a c]", got)
 	}

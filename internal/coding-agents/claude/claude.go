@@ -33,6 +33,7 @@ const (
 // of latest-model aliases the CLI accepts via `--model`. Users who want
 // to pin a specific full id (e.g. `claude-opus-4-7`) can record it via
 // `j settings set model <id>`.
+//
 //nolint:goconst // "sonnet" count inflated by test files; 1 production use
 var defaultModels = []string{"opus", "sonnet", "haiku"}
 

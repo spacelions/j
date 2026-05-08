@@ -62,6 +62,7 @@ func markersHook(tr tasks.Transition, task tasks.Task) {
 	_, _ = fmt.Fprintln(f, line)
 }
 
+//nolint:gocyclo,funlen // one case per FSM event; complexity is inherent
 func eventToPhaseVerb(e tasks.Event) (phase, verb string) {
 	switch e {
 	case tasks.EventPlanBegin:

@@ -311,86 +311,57 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 	}
 }
 
-// TestVerifyLifecycle_MarkersGoToAgentLogNotStderr is the regression
-// pin for "phase markers must never reach the user's terminal".
+// TestVerifyLifecycle_MarkersGoToAgentLogNotStderr pins that phase
+// markers go to agent.log and never reach stderr, for both pass and fail outcomes.
 func TestVerifyLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("store.EnsureProject: %v", err)
+	cases := []struct {
+		name        string
+		outcome     VerifyOutcome
+		wantVerdict string
+	}{
+		{"pass", VerifyOutcomeSuccess, "verify pass"},
+		{"fail", VerifyOutcomeNoRetries, "verify fail"},
 	}
-	id := seedWorkDoneTask(t, "x")
-	dbPath, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := tasks.Open(dbPath)
-	existing, err := s.GetTask(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
-	logPath := filepath.Join(t.TempDir(), "agent.log")
-	var stderr bytes.Buffer
-	t.Cleanup(tasks.ResetHooksForTest)
-	tasks.Register(markersHook)
-	lc := BeginVerifyRestart(existing, &stderr, "cursor", "m", "v-cursor", logPath)
-	lc.Finish(VerifyOutcomeSuccess, nil)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			if err := store.EnsureProject(); err != nil {
+				t.Fatalf("store.EnsureProject: %v", err)
+			}
+			id := seedWorkDoneTask(t, "x")
+			dbPath, err := tasks.DefaultDir()
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := tasks.Open(dbPath)
+			existing, err := s.GetTask(id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = s.Close()
+			logPath := filepath.Join(t.TempDir(), "agent.log")
+			var stderr bytes.Buffer
+			t.Cleanup(tasks.ResetHooksForTest)
+			tasks.Register(markersHook)
+			lc := BeginVerifyRestart(
+				existing, &stderr, "cursor", "m", "v-cursor", logPath)
+			lc.Finish(tc.outcome, nil)
 
-	data, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatalf("read agent.log: %v", err)
-	}
-	body := string(data)
-	if !strings.Contains(body, "verify begin") {
-		t.Fatalf("agent.log missing verify begin marker: %q", body)
-	}
-	if !strings.Contains(body, "verify pass") {
-		t.Fatalf("agent.log missing verify pass marker: %q", body)
-	}
-	if strings.Contains(stderr.String(), agentlog.Header("verify_begin")) {
-		t.Fatalf("stderr leaked phase marker: %q", stderr.String())
-	}
-}
-
-// TestVerifyLifecycle_IterationMarkersInAgentLog pins verify_iteration_*
-// and verdict markers to agent.log with the same empty-path no-op and
-// stderr non-leak semantics as phase markers.
-func TestVerifyLifecycle_IterationMarkersInAgentLog(t *testing.T) {
-	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("store.EnsureProject: %v", err)
-	}
-	id := seedWorkDoneTask(t, "x")
-	dbPath, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := tasks.Open(dbPath)
-	existing, err := s.GetTask(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
-	logPath := filepath.Join(t.TempDir(), "agent.log")
-	var stderr bytes.Buffer
-	t.Cleanup(tasks.ResetHooksForTest)
-	tasks.Register(markersHook)
-	lc := BeginVerifyRestart(existing, &stderr, "cursor", "m", "v-cursor", logPath)
-	lc.Finish(VerifyOutcomeNoRetries, nil)
-
-	data, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatalf("read agent.log: %v", err)
-	}
-	body := string(data)
-	if !strings.Contains(body, "verify begin") {
-		t.Fatalf("agent.log missing verify begin marker: %q", body)
-	}
-	if !strings.Contains(body, "verify fail") {
-		t.Fatalf("agent.log missing verify fail marker: %q", body)
-	}
-	if strings.Contains(stderr.String(), agentlog.Header("verify_begin")) {
-		t.Fatalf("stderr leaked phase marker: %q", stderr.String())
+			data, err := os.ReadFile(logPath)
+			if err != nil {
+				t.Fatalf("read agent.log: %v", err)
+			}
+			body := string(data)
+			if !strings.Contains(body, "verify begin") {
+				t.Fatalf("agent.log missing verify begin: %q", body)
+			}
+			if !strings.Contains(body, tc.wantVerdict) {
+				t.Fatalf("agent.log missing %q: %q", tc.wantVerdict, body)
+			}
+			if strings.Contains(stderr.String(), agentlog.Header("verify_begin")) {
+				t.Fatalf("stderr leaked phase marker: %q", stderr.String())
+			}
+		})
 	}
 }
 

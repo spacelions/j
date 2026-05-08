@@ -376,86 +376,77 @@ func deadPID(t *testing.T) int {
 }
 
 // TestReap_DeadPlanning_WithClarification pins the clarification branch:
-// a dead PID on a planning row with clarification.md present must flip
-// to needs-clarification, not plan-done or help.
-func TestReap_DeadPlanning_WithClarification(t *testing.T) {
-	s := openTestStore(t)
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
+// TestReap_Dead_WithClarification pins the clarification branch: a dead
+// PID with clarification.md present must flip to needs-clarification.
+func TestReap_Dead_WithClarification(t *testing.T) {
+	cases := []struct {
+		name      string
+		id        string
+		status    tasks.TaskStatus
+		req, plan string
+		makeTask  func(pid int) tasks.Task
+	}{
+		{
+			name:   "planning",
+			id:     "dead-planning-clarification",
+			status: tasks.StatusPlanning,
+			req:    "# req\nbody",
+			plan:   "1. step",
+			makeTask: func(pid int) tasks.Task {
+				return tasks.Task{
+					ID:            "dead-planning-clarification",
+					Status:        tasks.StatusPlanning,
+					BackgroundPID: pid,
+					PlanBeginAt:   time.Now().UTC().Add(-time.Minute),
+				}
+			},
+		},
+		{
+			name:   "working",
+			id:     "dead-working-clarification",
+			status: tasks.StatusWorking,
+			makeTask: func(pid int) tasks.Task {
+				return tasks.Task{
+					ID:            "dead-working-clarification",
+					Status:        tasks.StatusWorking,
+					BackgroundPID: pid,
+					WorkBeginAt:   time.Now().UTC().Add(-time.Minute),
+				}
+			},
+		},
 	}
-	id := "dead-planning-clarification"
-	dir := seedTaskDir(t, id, "# req\nbody", "1. step")
-	if err := os.WriteFile(
-		filepath.Join(dir, tasks.ClarificationFileName),
-		[]byte("What do you mean?\n"), 0o644,
-	); err != nil {
-		t.Fatal(err)
-	}
-	begin := time.Now().UTC().Add(-time.Minute)
-	in := []tasks.Task{{
-		ID:            id,
-		Status:        tasks.StatusPlanning,
-		BackgroundPID: deadPID(t),
-		PlanBeginAt:   begin,
-	}}
-	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
-	got := out[0]
-	if got.Status != tasks.StatusNeedsClarification {
-		t.Fatalf("Status = %q, want needs-clarification", got.Status)
-	}
-	if got.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
-	}
-	persisted, err := s.GetTask(id)
-	if err != nil {
-		t.Fatalf("GetTask: %v", err)
-	}
-	if persisted.Status != tasks.StatusNeedsClarification {
-		t.Fatalf("persisted Status = %q, want needs-clarification",
-			persisted.Status)
-	}
-}
-
-// TestReap_DeadWorking_WithClarification pins the clarification branch:
-// a dead PID on a working row with clarification.md present must flip
-// to needs-clarification, not work-done.
-func TestReap_DeadWorking_WithClarification(t *testing.T) {
-	s := openTestStore(t)
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
-	id := "dead-working-clarification"
-	dir := seedTaskDir(t, id, "", "")
-	if err := os.WriteFile(
-		filepath.Join(dir, tasks.ClarificationFileName),
-		[]byte("What branch to use?\n"), 0o644,
-	); err != nil {
-		t.Fatal(err)
-	}
-	begin := time.Now().UTC().Add(-time.Minute)
-	in := []tasks.Task{{
-		ID:            id,
-		Status:        tasks.StatusWorking,
-		BackgroundPID: deadPID(t),
-		WorkBeginAt:   begin,
-	}}
-	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
-	got := out[0]
-	if got.Status != tasks.StatusNeedsClarification {
-		t.Fatalf("Status = %q, want needs-clarification", got.Status)
-	}
-	if got.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
-	}
-	persisted, err := s.GetTask(id)
-	if err != nil {
-		t.Fatalf("GetTask: %v", err)
-	}
-	if persisted.Status != tasks.StatusNeedsClarification {
-		t.Fatalf("persisted Status = %q, want needs-clarification",
-			persisted.Status)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := openTestStore(t)
+			tasksDir, err := tasks.DefaultDir()
+			if err != nil {
+				t.Fatalf("DefaultTasksDir: %v", err)
+			}
+			dir := seedTaskDir(t, tc.id, tc.req, tc.plan)
+			if err := os.WriteFile(
+				filepath.Join(dir, tasks.ClarificationFileName),
+				[]byte("needs input\n"), 0o644,
+			); err != nil {
+				t.Fatal(err)
+			}
+			in := []tasks.Task{tc.makeTask(deadPID(t))}
+			out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
+			got := out[0]
+			if got.Status != tasks.StatusNeedsClarification {
+				t.Fatalf("Status = %q, want needs-clarification", got.Status)
+			}
+			if got.BackgroundPID != 0 {
+				t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
+			}
+			persisted, err := s.GetTask(tc.id)
+			if err != nil {
+				t.Fatalf("GetTask: %v", err)
+			}
+			if persisted.Status != tasks.StatusNeedsClarification {
+				t.Fatalf("persisted Status = %q, want needs-clarification",
+					persisted.Status)
+			}
+		})
 	}
 }
 

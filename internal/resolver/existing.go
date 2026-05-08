@@ -27,15 +27,7 @@ func StartTargetFromExistingTask(
 		return StartTarget{}, err
 	}
 	reqPath := filepath.Join(tasksDir, taskID, tasks.RequirementsFileName)
-	if task.LinearIssue == "" {
-		if _, statErr := os.Stat(reqPath); statErr != nil {
-			if errors.Is(statErr, os.ErrNotExist) {
-				return StartTarget{}, fmt.Errorf(
-					"task %q has no requirements.md; cannot re-plan", taskID)
-			}
-			return StartTarget{}, statErr
-		}
-	} else {
+	if task.LinearIssue != "" {
 		body, _, fetchErr := FetchLinearBody(ctx, task.LinearIssue)
 		if fetchErr != nil {
 			return StartTarget{}, fetchErr
@@ -43,6 +35,15 @@ func StartTargetFromExistingTask(
 		if writeErr := os.WriteFile(reqPath, []byte(body), 0o644); writeErr != nil {
 			return StartTarget{}, writeErr
 		}
+		return StartTarget{TaskID: task.ID, IsNew: false}, nil
+	}
+	_, statErr := os.Stat(reqPath)
+	if errors.Is(statErr, os.ErrNotExist) {
+		return StartTarget{}, fmt.Errorf(
+			"task %q has no requirements.md; cannot re-plan", taskID)
+	}
+	if statErr != nil {
+		return StartTarget{}, statErr
 	}
 	return StartTarget{TaskID: task.ID, IsNew: false}, nil
 }

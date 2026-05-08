@@ -100,13 +100,13 @@ func TestRunResumeWork_SpawnFails(t *testing.T) {
 }
 
 func TestRunResumeWork_AppliesDefaults(t *testing.T) {
-	opts := ResumeWorkOptions{}
-	opts = opts.withDefaults()
-	if opts.Stdin == nil || opts.Stdout == nil || opts.Stderr == nil {
-		t.Fatal("withDefaults should fill nil streams")
-	}
-	if opts.UI == nil {
-		t.Fatal("withDefaults should give default UI")
+	// withDefaults is now on resumeOptions; RunResumeWork wraps it
+	// so calling with nil opts is the easiest way to exercise the path.
+	setupContinueEnv(t)
+	if err := RunResumeWork(t.Context(), ResumeWorkOptions{
+		Agents: []codingagents.Agent{newContinueAgent()},
+	}); err != nil {
+		t.Fatalf("RunResumeWork: %v", err)
 	}
 }
 
@@ -116,7 +116,7 @@ func TestFilterTasksWithWorkSession(t *testing.T) {
 		{ID: "b", WorkResumeSession: ""},
 		{ID: "c", WorkResumeSession: "s2"},
 	}
-	got := filterTasksWithWorkSession(rows)
+	got := filterTasksBySession(rows, resumeWorkConfig.hasSession)
 	if len(got) != 2 {
 		t.Fatalf("len = %d, want 2", len(got))
 	}

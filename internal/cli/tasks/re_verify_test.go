@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -331,35 +329,15 @@ func TestRunReVerify_SpawnFails(t *testing.T) {
 }
 
 func TestRunReVerify_OpenDefaultFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("cwd cannot be removed while in use on windows")
-	}
-	if os.Geteuid() == 0 {
-		t.Skip("root may bypass relevant FS errors")
-	}
-	parent := t.TempDir()
-	gone := filepath.Join(parent, "gone")
-	if err := os.Mkdir(gone, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(gone)
-	t.Setenv("PWD", "")
-	if err := os.Remove(gone); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
-	if _, err := os.Getwd(); err == nil {
-		t.Skip("os.Getwd unexpectedly succeeded")
-	}
-	err := RunReVerify(t.Context(), ReVerifyOptions{
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{newContinueAgent()},
-		UI:     &fakeUI{},
+	requireRemovedCWD(t, func() error {
+		return RunReVerify(t.Context(), ReVerifyOptions{
+			Stdin:  strings.NewReader(""),
+			Stdout: io.Discard,
+			Stderr: io.Discard,
+			Agents: []codingagents.Agent{newContinueAgent()},
+			UI:     &fakeUI{},
+		})
 	})
-	if err == nil {
-		t.Fatal("expected DefaultDir to surface getwd error")
-	}
 }
 
 func TestReVerifyOptions_WithDefaults_FillsNilStreams(t *testing.T) {

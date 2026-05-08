@@ -41,37 +41,15 @@ func runResetFull(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(jDir); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			uitheme.NormalFprintln(cmd.OutOrStdout(), "J: nothing to reset")
-			return nil
-		}
-		return err
-	}
 	path, err := store.DefaultPath()
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			uitheme.NormalFprintln(cmd.OutOrStdout(), "J: nothing to reset")
-			return nil
-		}
-		return err
-	}
-	s, err := store.Open(path)
+	noOp, err := resetIsNoOp(jDir, path)
 	if err != nil {
 		return err
 	}
-	empty, err := s.IsEmpty()
-	if err != nil {
-		_ = s.Close()
-		return err
-	}
-	if err := s.Close(); err != nil {
-		return err
-	}
-	if empty {
+	if noOp {
 		uitheme.NormalFprintln(cmd.OutOrStdout(), "J: nothing to reset")
 		return nil
 	}
@@ -94,6 +72,28 @@ func runResetFull(cmd *cobra.Command) error {
 	}
 	uitheme.DangerousFprintf(cmd.OutOrStdout(), "J: removed %s\n", jDir)
 	return nil
+}
+
+// resetIsNoOp returns true when there is nothing to reset: either the
+// .j directory or the settings file is absent, or the store is empty.
+func resetIsNoOp(jDir, path string) (bool, error) {
+	for _, p := range []string{jDir, path} {
+		if _, err := os.Stat(p); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return true, nil
+			}
+			return false, err
+		}
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		return false, err
+	}
+	empty, err := s.IsEmpty()
+	if closeErr := s.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	return empty, err
 }
 
 func readConfirmationLine(cmd *cobra.Command) (string, error) {

@@ -146,6 +146,13 @@ linters:
       # goconst is noisy in test files with repeated fixture strings
       - linters: [goconst]
         path: "_test\\.go"
+      # dupl: e2e testcases for parallel show subcommands are structurally identical
+      - linters: [dupl]
+        path: "testcases/"
+      # funlen, gocyclo, nestif: project already exempts *_test.go from
+      # method-length hooks; test functions legitimately need more assertions
+      - linters: [funlen, gocyclo, nestif]
+        path: "_test\\.go|testcases/"
       # os.RemoveAll in test cleanup — error is non-actionable
       - linters: [errcheck]
         text: "os\\.RemoveAll"
@@ -176,7 +183,7 @@ linters:
 
   settings:
     dupl:
-      threshold: 150  # higher threshold reduces test-code false positives
+      threshold: 200  # parallel phase implementations and test patterns are legitimately similar
     errcheck:
       check-type-assertions: true
       exclude-functions:
