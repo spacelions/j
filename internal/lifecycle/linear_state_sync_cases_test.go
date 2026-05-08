@@ -43,7 +43,7 @@ func TestLinearStateSync_PlanDone_PostsTodoReminder(t *testing.T) {
 		tasks.EventPlanDone)
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "remindMe",
+		"issue", "states", "issueUpdate", "reminder",
 	}
 	if !equalKinds(bodyKinds(got), want) {
 		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
@@ -63,7 +63,7 @@ func TestLinearStateSync_PlanPendingApproval_PostsTodoReminder(
 		tasks.EventPlanAwaitApproval)
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "remindMe",
+		"issue", "states", "issueUpdate", "reminder",
 	}
 	if !equalKinds(bodyKinds(got), want) {
 		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
@@ -112,7 +112,7 @@ func TestLinearStateSync_Completed_PostsInReviewReminder(
 		tasks.EventVerifyPass)
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "remindMe",
+		"issue", "states", "issueUpdate", "reminder",
 	}
 	if !equalKinds(bodyKinds(got), want) {
 		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
@@ -261,7 +261,7 @@ func TestLinearStateSync_UpdateFails_StillPostsReminder(
 		tasks.EventPlanDone)
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "remindMe",
+		"issue", "states", "issueUpdate", "reminder",
 	}
 	if !equalKinds(bodyKinds(got), want) {
 		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
@@ -281,7 +281,7 @@ func TestLinearStateSync_RemindFails_Warns(t *testing.T) {
 		tasks.StatusPlanning, tasks.StatusPlanDone,
 		tasks.EventPlanDone)
 	if msg := env.stderrText(t); !strings.Contains(
-		msg, "issueRemindMe") {
+		msg, "issueReminder") {
 		t.Fatalf("stderr = %q", msg)
 	}
 }
@@ -298,7 +298,7 @@ func TestLinearStateSync_VerifyBegin_WithPR_PostsCommentAndReminder(
 		tasks.EventVerifyBegin)
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "commentCreate", "remindMe",
+		"issue", "states", "issueUpdate", "commentCreate", "reminder",
 	}
 	if !equalKinds(bodyKinds(got), want) {
 		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
@@ -340,7 +340,7 @@ func TestLinearStateSync_VerifyBegin_PR_UpdateFails_StillPosts(
 		tasks.EventVerifyBegin)
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "commentCreate", "remindMe",
+		"issue", "states", "issueUpdate", "commentCreate", "reminder",
 	}
 	if !equalKinds(bodyKinds(got), want) {
 		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
@@ -364,7 +364,7 @@ func TestLinearStateSync_VerifyBegin_PR_CommentFails_StillReminds(
 		tasks.EventVerifyBegin)
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "commentCreate", "remindMe",
+		"issue", "states", "issueUpdate", "commentCreate", "reminder",
 	}
 	if !equalKinds(bodyKinds(got), want) {
 		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)

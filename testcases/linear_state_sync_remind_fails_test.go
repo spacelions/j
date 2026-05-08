@@ -10,8 +10,8 @@ import (
 
 // TestLinearStateSync_RemindFails_WarnsButTransitionSucceeds pins
 // the "a reminder failure stays a warn-and-return" acceptance
-// criterion. When issueRemindMe surfaces a GraphQL error the hook
-// must emit a `linear sync: issueRemindMe: ...` warning to stderr
+// criterion. When issueReminder surfaces a GraphQL error the hook
+// must emit a `linear sync: issueReminder: ...` warning to stderr
 // and tasks.Notify must still return normally so the FSM advance
 // is not blocked.
 func TestLinearStateSync_RemindFails_WarnsButTransitionSucceeds(
@@ -28,15 +28,15 @@ func TestLinearStateSync_RemindFails_WarnsButTransitionSucceeds(
 
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "remindMe",
+		"issue", "states", "issueUpdate", "reminder",
 	}
 	if !equalSlices(bodyKindList(got), want) {
 		t.Fatalf("call order = %v, want %v",
 			bodyKindList(got), want)
 	}
 	msg := env.stderrText(t)
-	if !strings.Contains(msg, "issueRemindMe") {
-		t.Fatalf("stderr = %q, want issueRemindMe warning", msg)
+	if !strings.Contains(msg, "issueReminder") {
+		t.Fatalf("stderr = %q, want issueReminder warning", msg)
 	}
 	if !strings.Contains(msg, "linear sync") {
 		t.Fatalf("stderr = %q, want linear sync prefix", msg)

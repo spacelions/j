@@ -12,7 +12,7 @@ import (
 // EventVerifyStuck leg: the reaper-driven verifying→failed
 // transition mirrors the same "Verification failed (retries
 // exhausted)" plain-comment shape as EventVerifyFail and does NOT
-// call issueRemindMe.
+// call issueReminder.
 func TestLinearVerifyPush_TerminalStuck_PostsPlainComment(t *testing.T) {
 	id := tasks.NewTaskID()
 	env := newVerifyPushAcceptanceEnv(t, id, "findings body")
@@ -40,8 +40,8 @@ func TestLinearVerifyPush_TerminalStuck_PostsPlainComment(t *testing.T) {
 		t.Fatalf("commentCreate body missing findings: %q", body)
 	}
 	for _, b := range got {
-		if strings.Contains(b, "issueRemindMe") {
-			t.Fatalf("unexpected issueRemindMe: %v", got)
+		if strings.Contains(b, "issueReminder") {
+			t.Fatalf("unexpected issueReminder: %v", got)
 		}
 	}
 }

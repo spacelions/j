@@ -34,8 +34,8 @@ func TestLinearStateSync_VerifyRestart_StaysInProgressNoReminder(
 		t.Fatalf("issueUpdate stateId = %q, want s-prog", v)
 	}
 	for _, b := range got {
-		if strings.Contains(b, "issueRemindMe") {
-			t.Fatalf("unexpected issueRemindMe on re-verify: %v",
+		if strings.Contains(b, "issueReminder") {
+			t.Fatalf("unexpected issueReminder on re-verify: %v",
 				got)
 		}
 	}

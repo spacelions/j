@@ -13,7 +13,7 @@ import (
 // acceptance criterion: the verifying→completed transition
 // (EventVerifyPass) posts verifier_findings.md as a plain comment
 // on the linked Linear issue with a `Verification passed` header,
-// and does NOT call issueRemindMe (the comment is for context, not
+// and does NOT call issueReminder (the comment is for context, not
 // a page).
 func TestLinearVerifyPush_TerminalPass_PostsPlainComment(t *testing.T) {
 	id := tasks.NewTaskID()
@@ -39,8 +39,8 @@ func TestLinearVerifyPush_TerminalPass_PostsPlainComment(t *testing.T) {
 		t.Fatalf("commentCreate body = %q, want %q", body, want)
 	}
 	for _, b := range got {
-		if strings.Contains(b, "issueRemindMe") {
-			t.Fatalf("unexpected issueRemindMe: %v", got)
+		if strings.Contains(b, "issueReminder") {
+			t.Fatalf("unexpected issueReminder: %v", got)
 		}
 	}
 }

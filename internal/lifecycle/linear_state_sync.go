@@ -138,14 +138,14 @@ func resolveStateID(
 
 // postInboxReminder schedules a Linear inbox reminder on the issue
 // for the API-key owner. Linear surfaces the reminder immediately
-// because RemindOnIssue passes "now" as the remindAt timestamp.
+// because RemindOnIssue passes "now" as the reminderAt timestamp.
 // Warns on error and never blocks — failures here must not change
 // the J task status.
 func postInboxReminder(
 	ctx context.Context, client *linear.Client, issueID string,
 ) {
 	if err := client.RemindOnIssue(ctx, issueID); err != nil {
-		warnLinearSync("issueRemindMe: %s", err)
+		warnLinearSync("issueReminder: %s", err)
 	}
 }
 

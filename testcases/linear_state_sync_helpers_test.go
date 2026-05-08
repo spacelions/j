@@ -87,8 +87,8 @@ func (e *linearStateSyncEnv) handle(
 	switch {
 	case strings.Contains(q, "team{states"):
 		writeStatesAck(w, e.states, e.statesErrors)
-	case strings.Contains(q, "issueRemindMe"):
-		writeMutationResp(w, "issueRemindMe", e.remindErrors)
+	case strings.Contains(q, "issueReminder"):
+		writeMutationResp(w, "issueReminder", e.remindErrors)
 	case strings.Contains(q, "issueUpdate"):
 		writeMutationResp(w, "issueUpdate", e.updateErrors)
 	case strings.Contains(q, "commentCreate"):
@@ -177,8 +177,8 @@ func bodyKindList(bodies []string) []string {
 		switch {
 		case strings.Contains(b, "team{states"):
 			out = append(out, "states")
-		case strings.Contains(b, "issueRemindMe"):
-			out = append(out, "remindMe")
+		case strings.Contains(b, "issueReminder"):
+			out = append(out, "reminder")
 		case strings.Contains(b, "issueUpdate"):
 			out = append(out, "issueUpdate")
 		case strings.Contains(b, "commentCreate"):

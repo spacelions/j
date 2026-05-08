@@ -30,7 +30,7 @@ func TestLinearStateSync_VerifyBegin_PostsPRLinkAndReminds(
 
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "commentCreate", "remindMe",
+		"issue", "states", "issueUpdate", "commentCreate", "reminder",
 	}
 	if !equalSlices(bodyKindList(got), want) {
 		t.Fatalf("call order = %v, want %v",
@@ -44,6 +44,6 @@ func TestLinearStateSync_VerifyBegin_PostsPRLinkAndReminds(
 		t.Fatalf("commentCreate body = %q, want %q", v, wantBody)
 	}
 	if v := decodeMutationVar(t, got[4], "id"); v != "node-1" {
-		t.Fatalf("issueRemindMe id = %q, want node-1", v)
+		t.Fatalf("issueReminder id = %q, want node-1", v)
 	}
 }

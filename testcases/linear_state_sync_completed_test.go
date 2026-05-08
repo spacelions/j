@@ -25,7 +25,7 @@ func TestLinearStateSync_Completed_MovesToInReview(
 
 	got := env.recordedBodies()
 	want := []string{
-		"issue", "states", "issueUpdate", "remindMe",
+		"issue", "states", "issueUpdate", "reminder",
 	}
 	if !equalSlices(bodyKindList(got), want) {
 		t.Fatalf("call order = %v, want %v",
@@ -35,6 +35,6 @@ func TestLinearStateSync_Completed_MovesToInReview(
 		t.Fatalf("issueUpdate stateId = %q, want s-rev", v)
 	}
 	if v := decodeMutationVar(t, got[3], "id"); v != "node-1" {
-		t.Fatalf("issueRemindMe id = %q, want node-1", v)
+		t.Fatalf("issueReminder id = %q, want node-1", v)
 	}
 }
