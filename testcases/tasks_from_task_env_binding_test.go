@@ -13,10 +13,10 @@ import (
 // TestTasksFromTask_EnvBindings pins the acceptance bullet that each
 // of the leaves wires `--from-task` to a viper key + env var:
 //
+//   - TASKS_SHOW_FROM_TASK
 //   - TASKS_SHOW_REQUIREMENTS_FROM_TASK
 //   - TASKS_SHOW_PLAN_FROM_TASK
 //   - TASKS_LOGS_FROM_TASK
-//   - TASKS_TASK_FROM_TASK
 //
 // Black-box: setting the env var to a ghost id makes the leaf
 // short-circuit on the unknown-id branch (`J: no task`) instead of
@@ -27,6 +27,9 @@ func TestTasksFromTask_EnvBindings(t *testing.T) {
 		env  string
 		argv []string
 	}{
+		{"show",
+			"TASKS_SHOW_FROM_TASK",
+			[]string{"show"}},
 		{"show requirements",
 			"TASKS_SHOW_REQUIREMENTS_FROM_TASK",
 			[]string{"show", "requirements"}},
@@ -34,7 +37,6 @@ func TestTasksFromTask_EnvBindings(t *testing.T) {
 			"TASKS_SHOW_PLAN_FROM_TASK",
 			[]string{"show", "plan"}},
 		{"logs", "TASKS_LOGS_FROM_TASK", []string{"logs"}},
-		{"task", "TASKS_TASK_FROM_TASK", []string{"task"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
