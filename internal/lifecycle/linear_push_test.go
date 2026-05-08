@@ -185,6 +185,22 @@ func fireHook(taskID, linearIssue string, ev tasks.Event) {
 	tasks.Notify(tr, task)
 }
 
+// fireHookTo dispatches a synthetic transition with an explicit `to`
+// status so the linear-push defensive-guard branch can be exercised
+// without coupling to fireHook's plan-done default.
+func fireHookTo(
+	taskID, linearIssue string, ev tasks.Event, to tasks.TaskStatus,
+) {
+	tasks.Notify(
+		tasks.Transition{
+			From: tasks.StatusPlanning, Event: ev, To: to,
+		},
+		tasks.Task{
+			ID: taskID, Status: to, LinearIssue: linearIssue,
+		},
+	)
+}
+
 func saveAPIKey(t *testing.T, token string) {
 	t.Helper()
 	if err := linear.SaveAPIKey(token); err != nil {
@@ -408,6 +424,24 @@ func TestLinearPush_ReaperAwaitApprovalEvent_PostsBoth(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("want 3 calls on reaper-await-approval, got %d",
 			len(got))
+	}
+}
+
+// TestLinearPush_NeedsClarificationDestination_NoHTTP pins the
+// defensive guard: even if a future event lands inside the
+// `isPlanSuccessEvent` set, the hook must short-circuit when
+// `tr.To` is `needs-clarification` so it never tries to upload a
+// plan.md that the planner did not write.
+func TestLinearPush_NeedsClarificationDestination_NoHTTP(t *testing.T) {
+	id := tasks.NewTaskID()
+	env := newPushEnv(t, id, "req", "plan")
+	saveAPIKey(t, "lin_api_test")
+	InitLinearPush()
+	fireHookTo(id, "ENG-1", tasks.EventPlanDone,
+		tasks.StatusNeedsClarification)
+	if got := env.recordedBodies(); len(got) != 0 {
+		t.Fatalf("expected no HTTP traffic, got %d: %v",
+			len(got), got)
 	}
 }
 

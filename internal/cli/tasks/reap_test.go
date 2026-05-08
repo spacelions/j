@@ -386,7 +386,7 @@ func TestReap_DeadPlanning_WithClarification(t *testing.T) {
 	id := "dead-planning-clarification"
 	dir := seedTaskDir(t, id, "# req\nbody", "1. step")
 	if err := os.WriteFile(
-		filepath.Join(dir, clarificationFileName),
+		filepath.Join(dir, tasks.ClarificationFileName),
 		[]byte("What do you mean?\n"), 0o644,
 	); err != nil {
 		t.Fatal(err)
@@ -428,7 +428,7 @@ func TestReap_DeadWorking_WithClarification(t *testing.T) {
 	id := "dead-working-clarification"
 	dir := seedTaskDir(t, id, "", "")
 	if err := os.WriteFile(
-		filepath.Join(dir, clarificationFileName),
+		filepath.Join(dir, tasks.ClarificationFileName),
 		[]byte("What branch to use?\n"), 0o644,
 	); err != nil {
 		t.Fatal(err)
@@ -538,7 +538,7 @@ func TestReap_TransitionsEmitMarkers(t *testing.T) {
 			dir := seedTaskDir(t, id, c.requirements, c.plan)
 			if c.clarif != "" {
 				if err := os.WriteFile(
-					filepath.Join(dir, clarificationFileName),
+					filepath.Join(dir, tasks.ClarificationFileName),
 					[]byte(c.clarif), 0o644,
 				); err != nil {
 					t.Fatal(err)

@@ -47,11 +47,21 @@ func isPlanSuccessEvent(e tasks.Event) bool {
 // blocks the FSM transition. A failure of issueUpdate does not
 // prevent commentCreate from being attempted; the two are
 // independent calls.
+//
+// Defence-in-depth: the hook also guards on `tr.To` so any future
+// edge whose Event matches `isPlanSuccessEvent` but lands outside
+// `plan-done` / `plan-pending-approval` (e.g.
+// `EventPlanNeedsClarification`) cannot trigger a `plan.md` upload
+// against a directory that does not have one.
 func linearPushHook(tr tasks.Transition, task tasks.Task) {
 	if task.LinearIssue == "" {
 		return
 	}
 	if !isPlanSuccessEvent(tr.Event) {
+		return
+	}
+	if tr.To != tasks.StatusPlanDone &&
+		tr.To != tasks.StatusPlanPendingApproval {
 		return
 	}
 	requirements, plan, ok := readPlanArtefacts(task.ID)

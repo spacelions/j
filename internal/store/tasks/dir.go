@@ -30,6 +30,13 @@ const PlanFileName = "plan.md"
 // and `j tasks` summary derivation read it.
 const RequirementsFileName = "requirements.md"
 
+// ClarificationFileName is the filename agents write when they need
+// human clarification before proceeding. Its presence in the per-task
+// directory after the agent exits cleanly signals
+// `needs-clarification`; the planner contract for it lives in
+// `internal/agents/instructions/planner.md`.
+const ClarificationFileName = "clarification.md"
+
 // Store is the task-package handle for the per-project tasks tree
 // (`<cwd>/.j/tasks/`). Construct one with Open and call Close when
 // done. Close is a no-op (no file descriptors are held); the field is

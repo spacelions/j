@@ -12,8 +12,6 @@ import (
 	"github.com/spacelions/j/internal/util/run"
 )
 
-const clarificationFileName = "clarification.md"
-
 func reapBackgroundTasks(s *tasks.Store, stderr io.Writer,
 	tasksDir string, in []tasks.Task,
 ) []tasks.Task {
@@ -49,7 +47,7 @@ func finalisePlanReap(s *tasks.Store, stderr io.Writer, tasksDir string,
 	t.PlanEndAt = time.Now().UTC()
 	t.BackgroundPID = 0
 
-	clarPath := filepath.Join(taskDir, clarificationFileName)
+	clarPath := filepath.Join(taskDir, tasks.ClarificationFileName)
 	if _, err := os.Stat(clarPath); err == nil {
 		applyAndWarn(s, stderr, &t,
 			tasks.EventReaperPlanNeedsClarification)
@@ -84,7 +82,7 @@ func finaliseWorkReap(s *tasks.Store, stderr io.Writer, tasksDir string,
 	t.WorkEndAt = time.Now().UTC()
 	t.BackgroundPID = 0
 
-	clarPath := filepath.Join(taskDir, clarificationFileName)
+	clarPath := filepath.Join(taskDir, tasks.ClarificationFileName)
 	if _, err := os.Stat(clarPath); err == nil {
 		applyAndWarn(s, stderr, &t,
 			tasks.EventReaperWorkNeedsClarification)
