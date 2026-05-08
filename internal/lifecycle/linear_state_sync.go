@@ -137,8 +137,9 @@ func resolveStateID(
 }
 
 // postInboxReminder schedules a Linear inbox reminder on the issue
-// for the API-key owner. Linear surfaces the reminder immediately
-// because RemindOnIssue passes "now" as the reminderAt timestamp.
+// for the API-key owner. Linear surfaces the reminder effectively
+// immediately; RemindOnIssue passes a near-future reminderAt
+// timestamp because Linear rejects `reminderAt <= now`.
 // Warns on error and never blocks — failures here must not change
 // the J task status.
 func postInboxReminder(
