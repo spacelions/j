@@ -8,10 +8,13 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// TestLinearStateSync_NeedsClarification_RemindFails_Warns pins
-// rule #4 for a failing issueReminder: the call is attempted and
-// fails, surfacing as an `issueReminder` warning on stderr.
-func TestLinearStateSync_NeedsClarification_RemindFails_Warns(
+// TestLinearStateSync_NeedsClarification_RemindFails_LogsToAgentLog
+// pins SPA-48 against the needs-clarification branch: when the
+// trailing issueReminder mutation fails, the marker is appended to
+// the per-task agent.log instead of painting an orange dialog onto
+// stderr. The call sequence (issue → states → issueUpdate →
+// commentCreate → reminder) is unaffected.
+func TestLinearStateSync_NeedsClarification_RemindFails_LogsToAgentLog(
 	t *testing.T,
 ) {
 	env := newLinearStateSyncEnv(t)
@@ -33,8 +36,16 @@ func TestLinearStateSync_NeedsClarification_RemindFails_Warns(
 		t.Fatalf("call order = %v, want %v",
 			bodyKindList(got), want)
 	}
-	if msg := env.stderrText(t); !strings.Contains(
+	logged := readAgentLog(t, logPath)
+	if !strings.Contains(logged, "linear reminder_failed") {
+		t.Fatalf("agent.log = %q, want reminder_failed marker",
+			logged)
+	}
+	if !strings.Contains(logged, "issue=node-1") {
+		t.Fatalf("agent.log = %q, want issue=node-1", logged)
+	}
+	if msg := env.stderrText(t); strings.Contains(
 		msg, "issueReminder") {
-		t.Fatalf("stderr = %q, want issueReminder warning", msg)
+		t.Fatalf("stderr = %q, want no issueReminder leak", msg)
 	}
 }

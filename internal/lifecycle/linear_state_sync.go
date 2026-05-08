@@ -10,6 +10,7 @@ import (
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/util/agentlog"
 )
 
 // linearStateSyncTimeout bounds the total time the hook spends
@@ -60,11 +61,15 @@ func InitLinearStateSync() {
 // workflow state that mirrors tr.To, and optionally schedules a
 // Linear inbox reminder for the API-key owner when the destination
 // warrants human attention. The verify-begin transition additionally
-// posts a comment carrying the PR URL and pings the owner. All
+// posts a comment carrying the PR URL and pings the owner. Most
 // failures emit a DangerousDialogBox warning to stderr and return —
 // the hook never returns an error and never blocks the FSM
 // transition. Failures of issueUpdate do not prevent the follow-up
-// comment / reminder from being attempted.
+// comment / reminder from being attempted. The lone exception is
+// `issueReminder`: Linear's snooze validator occasionally rejects an
+// otherwise-delivered reminder, so that branch's failure is diverted
+// to the per-task `agent.log` (when `task.AgentLogPath` is set) and
+// silently dropped otherwise — keeping the user's terminal clean.
 func linearStateSyncHook(tr tasks.Transition, task tasks.Task) {
 	if task.LinearIssue == "" {
 		return
@@ -103,11 +108,11 @@ func linearStateSyncHook(tr tasks.Transition, task tasks.Task) {
 		tr.Event == tasks.EventVerifyBegin &&
 		task.PullRequestURL != "" {
 		postPullRequestComment(ctx, client, issue.ID, task.PullRequestURL)
-		postInboxReminder(ctx, client, issue.ID)
+		postInboxReminder(ctx, client, issue.ID, task.AgentLogPath)
 		return
 	}
 	if target.ping {
-		postInboxReminder(ctx, client, issue.ID)
+		postInboxReminder(ctx, client, issue.ID, task.AgentLogPath)
 	}
 }
 
@@ -141,7 +146,7 @@ func handleNeedsClarification(
 		taskDir := filepath.Dir(task.AgentLogPath)
 		postClarificationComment(ctx, client, issueID, taskDir)
 	}
-	postInboxReminder(ctx, client, issueID)
+	postInboxReminder(ctx, client, issueID, task.AgentLogPath)
 }
 
 // postClarificationComment reads <taskDir>/clarification.md and posts
@@ -209,13 +214,27 @@ func resolveStateID(
 // for the API-key owner. Linear surfaces the reminder effectively
 // immediately; RemindOnIssue passes a near-future reminderAt
 // timestamp because Linear rejects `reminderAt <= now`.
-// Warns on error and never blocks — failures here must not change
-// the J task status.
+//
+// Failure contract: the inbox notification reaches the user even when
+// Linear returns "Snooze date must be in the future", so the GraphQL
+// rejection is benign noise. On error the helper writes a single
+// `linear reminder failed` marker to `agentLogPath` (best-effort, the
+// EmitTo error is swallowed). When `agentLogPath` is empty —
+// foreground / interactive flows with no per-task log — the failure
+// is dropped silently. Success writes nothing. Never blocks.
 func postInboxReminder(
-	ctx context.Context, client *linear.Client, issueID string,
+	ctx context.Context, client *linear.Client,
+	issueID, agentLogPath string,
 ) {
 	if err := client.RemindOnIssue(ctx, issueID); err != nil {
-		warnLinearSync("issueReminder: %s", err)
+		_ = agentlog.EmitTo(
+			agentLogPath,
+			"linear_reminder_failed",
+			map[string]any{
+				"issue": issueID,
+				"error": err.Error(),
+			},
+		)
 	}
 }
 

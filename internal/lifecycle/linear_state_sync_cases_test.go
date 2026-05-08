@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -272,17 +273,56 @@ func TestLinearStateSync_UpdateFails_StillPostsReminder(
 	}
 }
 
-func TestLinearStateSync_RemindFails_Warns(t *testing.T) {
+func TestLinearStateSync_RemindFails_LogsToAgentLog(t *testing.T) {
+	env := newStateSyncEnv(t)
+	env.remindErrors = []string{"down"}
+	saveAPIKey(t, "lin_api_test")
+	logPath := filepath.Join(t.TempDir(), "agent.log")
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", logPath,
+		tasks.StatusPlanning, tasks.StatusPlanDone,
+		tasks.EventPlanDone)
+	body, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("ReadFile %q: %v", logPath, err)
+	}
+	got := string(body)
+	if !strings.Contains(got, "linear reminder_failed") {
+		t.Fatalf("agent.log = %q, want reminder_failed marker",
+			got)
+	}
+	if !strings.Contains(got, "issue=node-1") {
+		t.Fatalf("agent.log = %q, want issue=node-1", got)
+	}
+	if !strings.Contains(got, "error=") {
+		t.Fatalf("agent.log = %q, want error=...", got)
+	}
+	if msg := env.stderrText(t); strings.Contains(
+		msg, "issueReminder") {
+		t.Fatalf("stderr = %q, want no issueReminder leak", msg)
+	}
+}
+
+func TestLinearStateSync_RemindFails_NoLogPath_Silent(
+	t *testing.T,
+) {
 	env := newStateSyncEnv(t)
 	env.remindErrors = []string{"down"}
 	saveAPIKey(t, "lin_api_test")
 	InitLinearStateSync()
-	fireStateSync("task-1", "ENG-1",
+	fireStateSyncWithLog("task-1", "ENG-1", "",
 		tasks.StatusPlanning, tasks.StatusPlanDone,
 		tasks.EventPlanDone)
-	if msg := env.stderrText(t); !strings.Contains(
+	got := env.recordedBodies()
+	want := []string{
+		"issue", "states", "issueUpdate", "reminder",
+	}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	if msg := env.stderrText(t); strings.Contains(
 		msg, "issueReminder") {
-		t.Fatalf("stderr = %q", msg)
+		t.Fatalf("stderr = %q, want no issueReminder leak", msg)
 	}
 }
 
@@ -550,7 +590,7 @@ func TestLinearStateSync_NeedsClarification_UpdateFails_StillPosts(
 	}
 }
 
-func TestLinearStateSync_NeedsClarification_RemindFails_Warns(
+func TestLinearStateSync_NeedsClarification_RemindFails_LogsToAgentLog(
 	t *testing.T,
 ) {
 	env := newStateSyncEnv(t)
@@ -568,9 +608,21 @@ func TestLinearStateSync_NeedsClarification_RemindFails_Warns(
 	if !equalKinds(bodyKinds(got), want) {
 		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
 	}
-	if msg := env.stderrText(t); !strings.Contains(
+	body, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("ReadFile %q: %v", logPath, err)
+	}
+	logged := string(body)
+	if !strings.Contains(logged, "linear reminder_failed") {
+		t.Fatalf("agent.log = %q, want reminder_failed marker",
+			logged)
+	}
+	if !strings.Contains(logged, "issue=node-1") {
+		t.Fatalf("agent.log = %q, want issue=node-1", logged)
+	}
+	if msg := env.stderrText(t); strings.Contains(
 		msg, "issueReminder") {
-		t.Fatalf("stderr = %q", msg)
+		t.Fatalf("stderr = %q, want no issueReminder leak", msg)
 	}
 }
 

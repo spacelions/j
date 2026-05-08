@@ -8,21 +8,22 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// TestLinearStateSync_RemindFails_WarnsButTransitionSucceeds pins
-// the "a reminder failure stays a warn-and-return" acceptance
-// criterion. When issueReminder surfaces a GraphQL error the hook
-// must emit a `linear sync: issueReminder: ...` warning to stderr
-// and tasks.Notify must still return normally so the FSM advance
-// is not blocked.
-func TestLinearStateSync_RemindFails_WarnsButTransitionSucceeds(
+// TestLinearStateSync_RemindFails_LogsToAgentLogButTransitionSucceeds
+// pins SPA-48: when issueReminder surfaces a GraphQL error, the
+// failure must NOT paint the user's terminal — it is rerouted into
+// the per-task agent.log instead. tasks.Notify must still return
+// normally so the FSM advance is not blocked, and the call sequence
+// (issue → states → issueUpdate → reminder) is unchanged.
+func TestLinearStateSync_RemindFails_LogsToAgentLogButTransitionSucceeds(
 	t *testing.T,
 ) {
 	env := newLinearStateSyncEnv(t)
 	env.remindErrors = []string{"down"}
 	saveLinearAPIKey(t, "lin_api_TEST")
+	logPath := agentLogPathOnlyDir(t)
 
 	lifecycle.InitLinearStateSync()
-	fireStateSyncTransition("task-1", "ENG-1",
+	fireStateSyncTransitionWithLog("task-1", "ENG-1", logPath,
 		tasks.StatusPlanning, tasks.StatusPlanDone,
 		tasks.EventPlanDone)
 
@@ -34,11 +35,22 @@ func TestLinearStateSync_RemindFails_WarnsButTransitionSucceeds(
 		t.Fatalf("call order = %v, want %v",
 			bodyKindList(got), want)
 	}
-	msg := env.stderrText(t)
-	if !strings.Contains(msg, "issueReminder") {
-		t.Fatalf("stderr = %q, want issueReminder warning", msg)
+	logged := readAgentLog(t, logPath)
+	if !strings.Contains(logged, "linear reminder_failed") {
+		t.Fatalf("agent.log = %q, want reminder_failed marker",
+			logged)
 	}
-	if !strings.Contains(msg, "linear sync") {
-		t.Fatalf("stderr = %q, want linear sync prefix", msg)
+	if !strings.Contains(logged, "issue=node-1") {
+		t.Fatalf("agent.log = %q, want issue=node-1", logged)
+	}
+	if !strings.Contains(logged, "error=") {
+		t.Fatalf("agent.log = %q, want error=...", logged)
+	}
+	msg := env.stderrText(t)
+	if strings.Contains(msg, "issueReminder") {
+		t.Fatalf("stderr = %q, want no issueReminder leak", msg)
+	}
+	if strings.Contains(msg, "linear sync: issueReminder") {
+		t.Fatalf("stderr = %q, want no linear sync leak", msg)
 	}
 }
