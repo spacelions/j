@@ -50,7 +50,9 @@ func (o ResumeVerifyOptions) withDefaults() ResumeVerifyOptions {
 // RunResumeVerify implements `j tasks resume-verify`. It filters tasks
 // with a non-empty VerifyResumeSession and re-execs
 // `j tasks orchestrate --phase=verify-only --interactive=true` inline.
-func RunResumeVerify(ctx context.Context, opts ResumeVerifyOptions) (err error) {
+func RunResumeVerify(
+	ctx context.Context, opts ResumeVerifyOptions,
+) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
 
@@ -76,7 +78,9 @@ func RunResumeVerify(ctx context.Context, opts ResumeVerifyOptions) (err error) 
 	})
 }
 
-func resolveResumeVerifyTaskID(ctx context.Context, opts ResumeVerifyOptions) (string, bool, error) {
+func resolveResumeVerifyTaskID(
+	ctx context.Context, opts ResumeVerifyOptions,
+) (string, bool, error) {
 	s, err := tasks.OpenDefault()
 	if err != nil {
 		return "", false, err
@@ -86,7 +90,9 @@ func resolveResumeVerifyTaskID(ctx context.Context, opts ResumeVerifyOptions) (s
 	return id, ok, err
 }
 
-func pickResumeVerifyFromStore(ctx context.Context, s *tasks.Store, opts ResumeVerifyOptions) (string, bool, error) {
+func pickResumeVerifyFromStore(
+	ctx context.Context, s *tasks.Store, opts ResumeVerifyOptions,
+) (string, bool, error) {
 	rows, err := s.ListTasks()
 	if err != nil {
 		return "", false, err
@@ -124,12 +130,14 @@ func newResumeVerifyCmd() *cobra.Command {
 			"`J: no tasks with an active verify session` and exits 0.",
 		PersistentPreRunE: preflight.PreRunE,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			return preflight.EnsureAgentSelections(cmd.Context(), preflight.AgentCheckOptions{
-				Stdin:  cmd.InOrStdin(),
-				Stdout: cmd.OutOrStdout(),
-				Stderr: cmd.ErrOrStderr(),
-				Agents: agents,
-			})
+			return preflight.EnsureAgentSelections(
+				cmd.Context(),
+				preflight.AgentCheckOptions{
+					Stdin:  cmd.InOrStdin(),
+					Stdout: cmd.OutOrStdout(),
+					Stderr: cmd.ErrOrStderr(),
+					Agents: agents,
+				})
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return RunResumeVerify(cmd.Context(), ResumeVerifyOptions{

@@ -35,7 +35,8 @@ type watchModel struct {
 }
 
 func defaultTick() tea.Cmd {
-	return tea.Tick(watchTickInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
+	return tea.Tick(watchTickInterval,
+		func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
 func reloadCmd(reload func() ([]tsk.Task, error)) tea.Cmd {
@@ -91,7 +92,9 @@ func (m watchModel) View() string {
 // RunTasksWatch starts the bubbletea full-screen task table refresh loop.
 // reload returns the current task slice from the store on each tick.
 // The program exits when the user presses q, Esc, or Ctrl+C.
-func RunTasksWatch(in io.Reader, out io.Writer, reload func() ([]tsk.Task, error)) error {
+func RunTasksWatch(
+	in io.Reader, out io.Writer, reload func() ([]tsk.Task, error),
+) error {
 	m := watchModel{
 		now:    time.Now(),
 		reload: reload,

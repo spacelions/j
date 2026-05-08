@@ -13,9 +13,9 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/lifecycle/orchestrator"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/agentlog"
-	"github.com/spacelions/j/internal/lifecycle/orchestrator"
 )
 
 // OrchestrateOptions configures RunOrchestrate. The detached child
@@ -101,18 +101,23 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 		if opts.PlanRequiresApproval != nil && *opts.PlanRequiresApproval {
 			return errPhaseConflictsWithApproval
 		}
-		return orchestrator.RunForTaskVerifyOnly(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
+		return orchestrator.RunForTaskVerifyOnly(
+			ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
 	case orchestrator.RunPhaseFromWork:
 		if opts.PlanRequiresApproval != nil && *opts.PlanRequiresApproval {
 			return errPhaseConflictsWithApproval
 		}
-		return orchestrator.RunForTaskFromWork(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, overrides)
+		return orchestrator.RunForTaskFromWork(
+			ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, overrides)
 	case orchestrator.RunPhaseFull, "":
-		planRequiresApproval, err := resolvePlanRequiresApproval(opts.PlanRequiresApproval)
+		planRequiresApproval, err := resolvePlanRequiresApproval(
+			opts.PlanRequiresApproval)
 		if err != nil {
 			return err
 		}
-		return orchestrator.RunForTaskWithGate(ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, planRequiresApproval, overrides)
+		return orchestrator.RunForTaskWithGate(
+			ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr,
+			planRequiresApproval, overrides)
 	}
 	return fmt.Errorf("tasks: unknown phase %q", opts.Phase)
 }
@@ -122,7 +127,8 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 // project default is intentionally ignored on non-Full phases, so the
 // error fires only when the caller deliberately set the override.
 var errPhaseConflictsWithApproval = errors.New(
-	"tasks: --phase=from-work / verify-only is incompatible with --plan-requires-approval=true")
+	"tasks: --phase=from-work / verify-only is incompatible with " +
+		"--plan-requires-approval=true")
 
 // emitSessionStart writes one `session_start` marker into the agent
 // log at the very top of orchestrate so a tailer can pin the task id,
@@ -130,7 +136,9 @@ var errPhaseConflictsWithApproval = errors.New(
 // reading bbolt. Field collection is deliberately cheap — os.Hostname
 // and os.Getwd never block — and write errors are swallowed because
 // markers are observability signal, not load-bearing data.
-func emitSessionStart(w io.Writer, taskID string, phase orchestrator.RunPhase) {
+func emitSessionStart(
+	w io.Writer, taskID string, phase orchestrator.RunPhase,
+) {
 	hostname, _ := os.Hostname()
 	cwd, _ := os.Getwd()
 	if phase == "" {
@@ -179,12 +187,15 @@ func newOrchestrateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			phase, err := orchestrator.ParseRunPhase(viper.GetString("tasks.orchestrate.phase"))
+			phase, err := orchestrator.ParseRunPhase(
+				viper.GetString("tasks.orchestrate.phase"),
+			)
 			if err != nil {
 				return err
 			}
 			var interactive bool
-			if cmd.Flags().Changed("interactive") || envSet("TASKS_ORCHESTRATE_INTERACTIVE") {
+			if cmd.Flags().Changed("interactive") ||
+				envSet("TASKS_ORCHESTRATE_INTERACTIVE") {
 				interactive = viper.GetBool("tasks.orchestrate.interactive")
 			}
 			return RunOrchestrate(cmd.Context(), OrchestrateOptions{
@@ -202,32 +213,44 @@ func newOrchestrateCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("id", "", "Task id whose planner→worker→verifier chain to drive")
-	cmd.Flags().Bool("plan-requires-approval", false, "Resolved project.plan_requires_approval value")
-	cmd.Flags().String("phase", string(orchestrator.RunPhaseFull), "Which slice of the chain to run: full | from-work | verify-only")
+	cmd.Flags().String("id", "",
+		"Task id whose planner→worker→verifier chain to drive")
+	cmd.Flags().Bool("plan-requires-approval", false,
+		"Resolved project.plan_requires_approval value")
+	cmd.Flags().String("phase", string(orchestrator.RunPhaseFull),
+		"Which slice of the chain to run: full | from-work | verify-only")
 	cmd.Flags().String("tool", "", "Planner tool override (cursor|claude)")
 	cmd.Flags().String("model", "", "Planner model override")
-	cmd.Flags().Bool("interactive", false, "Run the active phase (planner on full, worker on from-work) in TUI mode")
-	cmd.Flags().Bool("yes", false, "Skip status-mismatch confirmation in the planner")
+	cmd.Flags().Bool("interactive", false,
+		"Run the active phase (planner on full, worker on from-work) in TUI mode")
+	cmd.Flags().Bool("yes", false,
+		"Skip status-mismatch confirmation in the planner")
 	_ = viper.BindPFlag("tasks.orchestrate.id", cmd.Flags().Lookup("id"))
 	_ = viper.BindEnv("tasks.orchestrate.id", "TASKS_ORCHESTRATE_ID")
-	_ = viper.BindPFlag("tasks.orchestrate.plan_requires_approval", cmd.Flags().Lookup("plan-requires-approval"))
-	_ = viper.BindEnv("tasks.orchestrate.plan_requires_approval", "TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL")
+	_ = viper.BindPFlag("tasks.orchestrate.plan_requires_approval",
+		cmd.Flags().Lookup("plan-requires-approval"))
+	_ = viper.BindEnv("tasks.orchestrate.plan_requires_approval",
+		"TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL")
 	_ = viper.BindPFlag("tasks.orchestrate.phase", cmd.Flags().Lookup("phase"))
 	_ = viper.BindEnv("tasks.orchestrate.phase", "TASKS_ORCHESTRATE_PHASE")
 	_ = viper.BindPFlag("tasks.orchestrate.tool", cmd.Flags().Lookup("tool"))
 	_ = viper.BindEnv("tasks.orchestrate.tool", "TASKS_ORCHESTRATE_TOOL")
 	_ = viper.BindPFlag("tasks.orchestrate.model", cmd.Flags().Lookup("model"))
 	_ = viper.BindEnv("tasks.orchestrate.model", "TASKS_ORCHESTRATE_MODEL")
-	_ = viper.BindPFlag("tasks.orchestrate.interactive", cmd.Flags().Lookup("interactive"))
-	_ = viper.BindEnv("tasks.orchestrate.interactive", "TASKS_ORCHESTRATE_INTERACTIVE")
+	_ = viper.BindPFlag("tasks.orchestrate.interactive",
+		cmd.Flags().Lookup("interactive"))
+	_ = viper.BindEnv("tasks.orchestrate.interactive",
+		"TASKS_ORCHESTRATE_INTERACTIVE")
 	_ = viper.BindPFlag("tasks.orchestrate.yes", cmd.Flags().Lookup("yes"))
 	_ = viper.BindEnv("tasks.orchestrate.yes", "TASKS_ORCHESTRATE_YES")
 	return cmd
 }
 
-func orchestratePlanRequiresApprovalOverride(cmd *cobra.Command) (*bool, error) {
-	if cmd.Flags().Changed("plan-requires-approval") || envSet("TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL") {
+func orchestratePlanRequiresApprovalOverride(
+	cmd *cobra.Command,
+) (*bool, error) {
+	if cmd.Flags().Changed("plan-requires-approval") ||
+		envSet("TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL") {
 		v := viper.GetBool("tasks.orchestrate.plan_requires_approval")
 		return &v, nil
 	}

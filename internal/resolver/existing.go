@@ -15,7 +15,9 @@ import (
 // requirements.md is present; for Linear-sourced tasks it refreshes
 // requirements.md from the live issue. Returns StartTarget{IsNew:
 // false} so the caller skips the write step.
-func StartTargetFromExistingTask(ctx context.Context, taskID string) (StartTarget, error) {
+func StartTargetFromExistingTask(
+	ctx context.Context, taskID string,
+) (StartTarget, error) {
 	task, err := TaskByID(taskID)
 	if err != nil {
 		return StartTarget{}, err
@@ -28,7 +30,8 @@ func StartTargetFromExistingTask(ctx context.Context, taskID string) (StartTarge
 	if task.LinearIssue == "" {
 		if _, statErr := os.Stat(reqPath); statErr != nil {
 			if errors.Is(statErr, os.ErrNotExist) {
-				return StartTarget{}, fmt.Errorf("task %q has no requirements.md; cannot re-plan", taskID)
+				return StartTarget{}, fmt.Errorf(
+					"task %q has no requirements.md; cannot re-plan", taskID)
 			}
 			return StartTarget{}, statErr
 		}

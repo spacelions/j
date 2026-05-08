@@ -29,12 +29,14 @@ var ErrNotFound = errors.New("linear: issue not found")
 // supplied string does not match Linear's `<TEAM>-<NUM>` shape. The
 // error wraps the offending value so the caller does not have to
 // reformat it.
-var ErrInvalidIdentifier = errors.New("linear: invalid identifier (expected pattern like ENG-123)")
+var ErrInvalidIdentifier = errors.New(
+	"linear: invalid identifier (expected pattern like ENG-123)")
 
 // ErrNoAPIKey is returned by the dispatch path when --from-linear is
 // supplied but no API key is stored. The message tells the user the
 // exact `j settings set` command to run.
-var ErrNoAPIKey = errors.New("linear: no API key set; run `j settings set linear.api_key=<lin_api_…>`")
+var ErrNoAPIKey = errors.New(
+	"linear: no API key set; run `j settings set linear.api_key=<lin_api_…>`")
 
 // HTTPError wraps a non-2xx HTTP response from the Linear GraphQL
 // endpoint. 401s are mapped to ErrUnauthorized before this type is

@@ -39,21 +39,32 @@ func DrainAgentForError(t *testing.T, a agent.Agent) error {
 // It builds an in-memory session.Service, hands it to runner.New,
 // and iterates the resulting event stream returning the first error
 // it sees (or all events when none surface).
-func runAgent(t *testing.T, a agent.Agent) ([]*session.Event, error) {
+func runAgent(
+	t *testing.T, a agent.Agent,
+) ([]*session.Event, error) {
 	t.Helper()
 	ctx := context.Background()
 	svc := session.InMemoryService()
-	created, err := svc.Create(ctx, &session.CreateRequest{AppName: "t", UserID: "u"})
+	created, err := svc.Create(ctx, &session.CreateRequest{
+		AppName: "t", UserID: "u",
+	})
 	if err != nil {
 		t.Fatalf("testutil: session.Create: %v", err)
 	}
-	r, err := runner.New(runner.Config{AppName: "t", Agent: a, SessionService: svc})
+	r, err := runner.New(runner.Config{
+		AppName: "t", Agent: a, SessionService: svc,
+	})
 	if err != nil {
 		t.Fatalf("testutil: runner.New: %v", err)
 	}
-	msg := &genai.Content{Role: genai.RoleUser, Parts: []*genai.Part{{Text: ""}}}
+	msg := &genai.Content{
+		Role: genai.RoleUser, Parts: []*genai.Part{{Text: ""}},
+	}
 	var events []*session.Event
-	for ev, runErr := range r.Run(ctx, "u", created.Session.ID(), msg, agent.RunConfig{}) {
+	sid := created.Session.ID()
+	for ev, runErr := range r.Run(
+		ctx, "u", sid, msg, agent.RunConfig{},
+	) {
 		if runErr != nil {
 			return events, runErr
 		}
@@ -75,8 +86,11 @@ func (StubModel) Name() string { return "stub" }
 // GenerateContent yields a single error so accidental drives of
 // the LLM branch fail loudly instead of silently returning empty
 // content.
-func (StubModel) GenerateContent(context.Context, *model.LLMRequest, bool) iter.Seq2[*model.LLMResponse, error] {
+func (StubModel) GenerateContent(
+	context.Context, *model.LLMRequest, bool,
+) iter.Seq2[*model.LLMResponse, error] {
 	return func(yield func(*model.LLMResponse, error) bool) {
-		yield(nil, errors.New("testutil.StubModel.GenerateContent should not be called"))
+		yield(nil, errors.New(
+			"testutil.StubModel.GenerateContent should not be called"))
 	}
 }

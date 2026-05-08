@@ -112,7 +112,9 @@ func RunIn(ctx context.Context, dir, name string, args ...string) error {
 // safely killed by the parent's context cancellation without
 // re-introducing a Wait dependency, which is the very seam this
 // helper avoids).
-func Spawn(ctx context.Context, logPath, name string, args ...string) (int, error) {
+func Spawn(
+	ctx context.Context, logPath, name string, args ...string,
+) (int, error) {
 	return SpawnIn(ctx, "", logPath, name, args...)
 }
 
@@ -120,11 +122,14 @@ func Spawn(ctx context.Context, logPath, name string, args ...string) (int, erro
 // whose CLI has no `--workspace`-style flag (e.g. claude) so the
 // workspace concept maps onto the child's CWD via cmd.Dir. An empty
 // dir inherits the parent's CWD, matching exec.Cmd's default.
-func SpawnIn(ctx context.Context, dir, logPath, name string, args ...string) (int, error) {
+func SpawnIn(
+	ctx context.Context, dir, logPath, name string, args ...string,
+) (int, error) {
 	if logPath == "" {
 		return 0, errors.New("run: empty log path")
 	}
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	logFile, err := os.OpenFile(
+		logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return 0, fmt.Errorf("run: open log %q: %w", logPath, err)
 	}
@@ -173,7 +178,10 @@ func SpawnIn(ctx context.Context, dir, logPath, name string, args ...string) (in
 // Errors are intentionally swallowed: the child has already exited
 // and the parent is already reaping; a missing marker is strictly
 // less harmful than a noisy logger goroutine.
-func emitChildExit(w io.Writer, name string, pid int, state *os.ProcessState, started time.Time) {
+func emitChildExit(
+	w io.Writer, name string, pid int,
+	state *os.ProcessState, started time.Time,
+) {
 	fields := map[string]any{
 		"name":        name,
 		"pid":         pid,

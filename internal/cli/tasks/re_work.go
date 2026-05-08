@@ -78,7 +78,8 @@ func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 	if !tasks.IsLegal(task.Status, tasks.EventWorkRestart) {
 		return fmt.Errorf("cannot re-work task in status %q", task.Status)
 	}
-	proceed, err := resolver.ConfirmStatusOverride(ctx, opts.UI, false, "re-work", task, resolver.ReplanAllowed)
+	proceed, err := resolver.ConfirmStatusOverride(
+		ctx, opts.UI, false, "re-work", task, resolver.ReplanAllowed)
 	if err != nil {
 		return err
 	}
@@ -121,12 +122,14 @@ func RunReWork(ctx context.Context, opts ReWorkOptions) (err error) {
 		return runInlineOrchestrator(ctx, opts.JBinary, args)
 	}
 
-	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, args)
+	pid, err := spawnDetachedOrchestrator(
+		ctx, opts.JBinary, agentLogPath, args)
 	if err != nil {
 		return err
 	}
 	stampSpawnOnRow(opts.Stderr, task.ID, agentLogPath, pid)
-	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", task.ID), pid, agentLogPath)
+	uitheme.NormalForkDialog(
+		opts.Stdout, fmt.Sprintf("task %s", task.ID), pid, agentLogPath)
 	return nil
 }
 
@@ -158,28 +161,34 @@ func clearWorkResumeSession(taskID string) error {
 func newReWorkCmd() *cobra.Command {
 	agents := []codingagents.Agent{cursor.New(), claude.New()}
 	cmd := &cobra.Command{
-		Use:   "re-work",
-		Short: "Re-work an existing task: run the worker inline (--interactive) or detached",
-		Long: "Resolves a task (via --from-task or the shared picker) and either " +
-			"re-execs `j tasks orchestrate --phase=from-work` inline " +
-			"(with --interactive=true so the TUI can render in the parent's terminal) " +
-			"or forks it as a detached child so the worker re-runs without the user " +
-			"waiting in-process. Tasks in plan-done or help skip the status-override " +
-			"prompt; any other status renders a yes/no confirm before the orchestrator " +
-			"runs. --tool / --model / --interactive forward into the orchestrate argv " +
-			"as one-off worker overrides; the stored bucket values are left untouched.",
+		Use: "re-work",
+		Short: "Re-work an existing task: run the worker inline " +
+			"(--interactive) or detached",
+		Long: "Resolves a task (via --from-task or the shared picker) and " +
+			"either re-execs `j tasks orchestrate --phase=from-work` " +
+			"inline (with --interactive=true so the TUI can render in the " +
+			"parent's terminal) or forks it as a detached child so the " +
+			"worker re-runs without the user waiting in-process. Tasks in " +
+			"plan-done or help skip the status-override prompt; any other " +
+			"status renders a yes/no confirm before the orchestrator " +
+			"runs. --tool / --model / --interactive forward into the " +
+			"orchestrate argv as one-off worker overrides; the stored " +
+			"bucket values are left untouched.",
 		PersistentPreRunE: preflight.PreRunE,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			return preflight.EnsureAgentSelections(cmd.Context(), preflight.AgentCheckOptions{
-				Stdin:  cmd.InOrStdin(),
-				Stdout: cmd.OutOrStdout(),
-				Stderr: cmd.ErrOrStderr(),
-				Agents: agents,
-			})
+			return preflight.EnsureAgentSelections(
+				cmd.Context(),
+				preflight.AgentCheckOptions{
+					Stdin:  cmd.InOrStdin(),
+					Stdout: cmd.OutOrStdout(),
+					Stderr: cmd.ErrOrStderr(),
+					Agents: agents,
+				})
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var interactive *bool
-			if cmd.Flags().Changed("interactive") || envSet("TASKS_REWORK_INTERACTIVE") {
+			if cmd.Flags().Changed("interactive") ||
+				envSet("TASKS_REWORK_INTERACTIVE") {
 				v := viper.GetBool("tasks.rework.interactive")
 				interactive = &v
 			}
@@ -195,17 +204,23 @@ func newReWorkCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("from-task", "", "Existing task id to re-work (empty triggers the picker)")
-	cmd.Flags().String("tool", "", "Worker tool override (cursor|claude); does not update the bucket")
-	cmd.Flags().String("model", "", "Worker model override; does not update the bucket")
-	cmd.Flags().Bool("interactive", false, "Run worker in interactive (TUI) mode")
-	_ = viper.BindPFlag("tasks.rework.from_task", cmd.Flags().Lookup("from-task"))
+	cmd.Flags().String("from-task", "",
+		"Existing task id to re-work (empty triggers the picker)")
+	cmd.Flags().String("tool", "",
+		"Worker tool override (cursor|claude); does not update the bucket")
+	cmd.Flags().String("model", "",
+		"Worker model override; does not update the bucket")
+	cmd.Flags().Bool("interactive", false,
+		"Run worker in interactive (TUI) mode")
+	_ = viper.BindPFlag(
+		"tasks.rework.from_task", cmd.Flags().Lookup("from-task"))
 	_ = viper.BindEnv("tasks.rework.from_task", "TASKS_REWORK_FROM_TASK")
 	_ = viper.BindPFlag("tasks.rework.tool", cmd.Flags().Lookup("tool"))
 	_ = viper.BindEnv("tasks.rework.tool", "TASKS_REWORK_TOOL")
 	_ = viper.BindPFlag("tasks.rework.model", cmd.Flags().Lookup("model"))
 	_ = viper.BindEnv("tasks.rework.model", "TASKS_REWORK_MODEL")
-	_ = viper.BindPFlag("tasks.rework.interactive", cmd.Flags().Lookup("interactive"))
+	_ = viper.BindPFlag(
+		"tasks.rework.interactive", cmd.Flags().Lookup("interactive"))
 	_ = viper.BindEnv("tasks.rework.interactive", "TASKS_REWORK_INTERACTIVE")
 	return cmd
 }

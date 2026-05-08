@@ -59,7 +59,8 @@ func Resolve(path string) (string, error) {
 	}
 	ext := strings.ToLower(filepath.Ext(abs))
 	if _, ok := markdownExts[ext]; !ok {
-		return "", fmt.Errorf("%q is not a markdown file (expected .md or .markdown)", abs)
+		return "", fmt.Errorf(
+			"%q is not a markdown file (expected .md or .markdown)", abs)
 	}
 	return abs, nil
 }
@@ -96,7 +97,9 @@ func ListInDir(dir string) ([]string, error) {
 		out = append(out, filepath.Join(absDir, name))
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		return strings.ToLower(filepath.Base(out[i])) < strings.ToLower(filepath.Base(out[j]))
+		a := strings.ToLower(filepath.Base(out[i]))
+		b := strings.ToLower(filepath.Base(out[j]))
+		return a < b
 	})
 	return out, nil
 }

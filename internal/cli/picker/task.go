@@ -24,7 +24,9 @@ import (
 // tasks is expected to be pre-sorted by the caller (orchestrators run
 // tasks.SortTasks first). ok=false collapses the abort and empty
 // branches so callers treat them uniformly as "no selection".
-func (p *Picker) PickTask(ctx context.Context, title string, tasks []tasks.Task) (string, bool, error) {
+func (p *Picker) PickTask(
+	ctx context.Context, title string, tasks []tasks.Task,
+) (string, bool, error) {
 	if len(tasks) == 0 {
 		return "", false, nil
 	}

@@ -23,7 +23,9 @@ import (
 // ReVerifyUI is the slice of picker methods RunReVerify drives.
 type ReVerifyUI interface {
 	PickTask(ctx context.Context, ts []tasks.Task) (string, bool, error)
-	ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error)
+	ConfirmStatusOverride(
+		ctx context.Context, cmd, taskID, status string,
+	) (bool, error)
 }
 
 // ReVerifyOptions configures RunReVerify.
@@ -77,7 +79,8 @@ func RunReVerify(ctx context.Context, opts ReVerifyOptions) (err error) {
 	if !tasks.IsLegal(task.Status, tasks.EventVerifyRestart) {
 		return fmt.Errorf("cannot re-verify task in status %q", task.Status)
 	}
-	proceed, err := resolver.ConfirmStatusOverride(ctx, opts.UI, false, "re-verify", task, resolver.VerifyAllowed)
+	proceed, err := resolver.ConfirmStatusOverride(
+		ctx, opts.UI, false, "re-verify", task, resolver.VerifyAllowed)
 	if err != nil {
 		return err
 	}
@@ -105,16 +108,20 @@ func RunReVerify(ctx context.Context, opts ReVerifyOptions) (err error) {
 		return runInlineOrchestrator(ctx, opts.JBinary, args)
 	}
 
-	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, args)
+	pid, err := spawnDetachedOrchestrator(
+		ctx, opts.JBinary, agentLogPath, args)
 	if err != nil {
 		return err
 	}
 	stampSpawnOnRow(opts.Stderr, task.ID, agentLogPath, pid)
-	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", task.ID), pid, agentLogPath)
+	uitheme.NormalForkDialog(
+		opts.Stdout, fmt.Sprintf("task %s", task.ID), pid, agentLogPath)
 	return nil
 }
 
-func resolveReVerifyTaskID(ctx context.Context, opts ReVerifyOptions) (string, bool, error) {
+func resolveReVerifyTaskID(
+	ctx context.Context, opts ReVerifyOptions,
+) (string, bool, error) {
 	if opts.FromTask != "" {
 		return opts.FromTask, true, nil
 	}
@@ -127,7 +134,9 @@ func resolveReVerifyTaskID(ctx context.Context, opts ReVerifyOptions) (string, b
 	return id, ok, err
 }
 
-func pickReVerifyFromStore(ctx context.Context, s *tasks.Store, opts ReVerifyOptions) (string, bool, error) {
+func pickReVerifyFromStore(
+	ctx context.Context, s *tasks.Store, opts ReVerifyOptions,
+) (string, bool, error) {
 	rows, err := s.ListTasks()
 	if err != nil {
 		return "", false, err
@@ -144,26 +153,31 @@ func pickReVerifyFromStore(ctx context.Context, s *tasks.Store, opts ReVerifyOpt
 func newReVerifyCmd() *cobra.Command {
 	agents := []codingagents.Agent{cursor.New(), claude.New()}
 	cmd := &cobra.Command{
-		Use:   "re-verify",
-		Short: "Re-verify an existing task: run the verifier inline (--interactive) or detached",
-		Long: "Resolves a task (via --from-task or the shared picker) and either " +
-			"re-execs `j tasks orchestrate --phase=verify-only` inline " +
-			"(with --interactive=true so the TUI can render in the parent's terminal) " +
-			"or forks it as a detached child. Tasks in work-done / failed / help " +
-			"skip the status-override prompt; any other status renders a yes/no confirm " +
-			"before the orchestrator runs.",
+		Use: "re-verify",
+		Short: "Re-verify an existing task: run the verifier inline " +
+			"(--interactive) or detached",
+		Long: "Resolves a task (via --from-task or the shared picker) " +
+			"and either re-execs `j tasks orchestrate --phase=verify-only` " +
+			"inline (with --interactive=true so the TUI can render in the " +
+			"parent's terminal) or forks it as a detached child. Tasks in " +
+			"work-done / failed / help skip the status-override prompt; " +
+			"any other status renders a yes/no confirm before the " +
+			"orchestrator runs.",
 		PersistentPreRunE: preflight.PreRunE,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			return preflight.EnsureAgentSelections(cmd.Context(), preflight.AgentCheckOptions{
-				Stdin:  cmd.InOrStdin(),
-				Stdout: cmd.OutOrStdout(),
-				Stderr: cmd.ErrOrStderr(),
-				Agents: agents,
-			})
+			return preflight.EnsureAgentSelections(
+				cmd.Context(),
+				preflight.AgentCheckOptions{
+					Stdin:  cmd.InOrStdin(),
+					Stdout: cmd.OutOrStdout(),
+					Stderr: cmd.ErrOrStderr(),
+					Agents: agents,
+				})
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var interactive *bool
-			if cmd.Flags().Changed("interactive") || envSet("TASKS_REVERIFY_INTERACTIVE") {
+			if cmd.Flags().Changed("interactive") ||
+				envSet("TASKS_REVERIFY_INTERACTIVE") {
 				v := viper.GetBool("tasks.reverify.interactive")
 				interactive = &v
 			}
@@ -177,11 +191,16 @@ func newReVerifyCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("from-task", "", "Existing task id to re-verify (empty triggers the picker)")
-	cmd.Flags().Bool("interactive", false, "Run verifier in interactive (TUI) mode")
-	_ = viper.BindPFlag("tasks.reverify.from_task", cmd.Flags().Lookup("from-task"))
+	cmd.Flags().String("from-task", "",
+		"Existing task id to re-verify (empty triggers the picker)")
+	cmd.Flags().Bool("interactive", false,
+		"Run verifier in interactive (TUI) mode")
+	_ = viper.BindPFlag(
+		"tasks.reverify.from_task", cmd.Flags().Lookup("from-task"))
 	_ = viper.BindEnv("tasks.reverify.from_task", "TASKS_REVERIFY_FROM_TASK")
-	_ = viper.BindPFlag("tasks.reverify.interactive", cmd.Flags().Lookup("interactive"))
-	_ = viper.BindEnv("tasks.reverify.interactive", "TASKS_REVERIFY_INTERACTIVE")
+	_ = viper.BindPFlag(
+		"tasks.reverify.interactive", cmd.Flags().Lookup("interactive"))
+	_ = viper.BindEnv(
+		"tasks.reverify.interactive", "TASKS_REVERIFY_INTERACTIVE")
 	return cmd
 }

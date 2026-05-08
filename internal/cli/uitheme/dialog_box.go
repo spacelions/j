@@ -56,7 +56,8 @@ func NormalFprintln(w io.Writer, a ...any) (int, error) {
 	return fmt.Fprint(w, NormalText(fmt.Sprintln(a...)))
 }
 
-// DangerousText renders s as orange terminal text for warnings and destructive actions.
+// DangerousText renders s as orange terminal text for warnings and
+// destructive actions.
 func DangerousText(s string) string {
 	return renderText(dangerStyle, s)
 }
@@ -71,7 +72,8 @@ func DangerousFprintf(w io.Writer, format string, a ...any) (int, error) {
 	return fmt.Fprint(w, DangerousText(fmt.Sprintf(format, a...)))
 }
 
-// DangerousFprintln writes orange terminal text to w using fmt.Sprintln semantics.
+// DangerousFprintln writes orange terminal text to w using
+// fmt.Sprintln semantics.
 func DangerousFprintln(w io.Writer, a ...any) (int, error) {
 	return fmt.Fprint(w, DangerousText(fmt.Sprintln(a...)))
 }
@@ -85,7 +87,8 @@ func DangerousFprintln(w io.Writer, a ...any) (int, error) {
 // the orange frame already conveys that semantic, so saying it twice
 // is noise.
 func DangerousDialogBox(w io.Writer, format string, a ...any) {
-	fmt.Fprintln(w, dangerBoxStyle.Render(dangerStyle.Render(fmt.Sprintf(format, a...))))
+	fmt.Fprintln(w, dangerBoxStyle.Render(
+		dangerStyle.Render(fmt.Sprintf(format, a...))))
 }
 
 func renderText(style lipgloss.Style, s string) string {
@@ -114,7 +117,8 @@ func renderText(style lipgloss.Style, s string) string {
 // log lives under cwd, falling back to the absolute path otherwise.
 func NormalForkDialog(w io.Writer, subject string, pid int, absLogPath string) {
 	block := strings.Join([]string{
-		subjectStyle.Render(fmt.Sprintf("J: %s running in background (PID=%d)", subject, pid)),
+		subjectStyle.Render(fmt.Sprintf(
+			"J: %s running in background (PID=%d)", subject, pid)),
 		"",
 		tailStyle.Render(fmt.Sprintf("tail -f %s", displayLogPath(absLogPath))),
 	}, "\n")

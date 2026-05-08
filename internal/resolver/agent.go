@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/cli/picker"
+	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 )
@@ -68,7 +68,9 @@ type AgentOptions struct {
 
 // Agent walks the precedence chain (explicit → stored → prompt+persist)
 // and returns the resolved agent + model.
-func Agent(ctx context.Context, opts AgentOptions) (codingagents.Agent, string, error) {
+func Agent(
+	ctx context.Context, opts AgentOptions,
+) (codingagents.Agent, string, error) {
 	if opts.ExplicitTool != "" || opts.ExplicitModel != "" {
 		// resolveExplicit never returns ErrNoStoredSelection when at
 		// least one explicit flag is set: missing-half cases surface
@@ -97,7 +99,10 @@ func Agent(ctx context.Context, opts AgentOptions) (codingagents.Agent, string, 
 // AgentFromStore reads the bucket's "tool" / "model" pair and returns
 // the matching agent + model. Nil store, missing entries, or empty
 // values all yield ErrNoStoredSelection.
-func AgentFromStore(ctx context.Context, s *store.Store, bucket string, agents []codingagents.Agent) (codingagents.Agent, string, error) {
+func AgentFromStore(
+	ctx context.Context, s *store.Store, bucket string,
+	agents []codingagents.Agent,
+) (codingagents.Agent, string, error) {
 	if s == nil {
 		return nil, "", ErrNoStoredSelection
 	}
@@ -124,7 +129,10 @@ func AgentFromStore(ctx context.Context, s *store.Store, bucket string, agents [
 // --model pair from the bucket and runs CheckLogin. The store is
 // never written. Both empty → ErrNoStoredSelection so the caller can
 // fall back to AgentFromStore or Agent.
-func resolveAgent(ctx context.Context, s *store.Store, bucket string, agents []codingagents.Agent, explicitTool, explicitModel string) (codingagents.Agent, string, error) {
+func resolveAgent(
+	ctx context.Context, s *store.Store, bucket string,
+	agents []codingagents.Agent, explicitTool, explicitModel string,
+) (codingagents.Agent, string, error) {
 	if explicitTool == "" && explicitModel == "" {
 		return nil, "", ErrNoStoredSelection
 	}
@@ -142,10 +150,12 @@ func resolveAgent(ctx context.Context, s *store.Store, bucket string, agents []c
 		}
 	}
 	if tool == "" {
-		return nil, "", fmt.Errorf("resolver: --model given without stored tool in %s", bucket)
+		return nil, "", fmt.Errorf(
+			"resolver: --model given without stored tool in %s", bucket)
 	}
 	if model == "" {
-		return nil, "", fmt.Errorf("resolver: --tool given without stored model in %s", bucket)
+		return nil, "", fmt.Errorf(
+			"resolver: --tool given without stored model in %s", bucket)
 	}
 	agent, ok := lookupAgent(agents, tool)
 	if !ok {
@@ -157,19 +167,26 @@ func resolveAgent(ctx context.Context, s *store.Store, bucket string, agents []c
 	return agent, model, nil
 }
 
-func resolveExplicit(ctx context.Context, opts AgentOptions) (codingagents.Agent, string, error) {
+func resolveExplicit(
+	ctx context.Context, opts AgentOptions,
+) (codingagents.Agent, string, error) {
 	if opts.Store != nil {
-		return resolveAgent(ctx, opts.Store, opts.Bucket, opts.Agents, opts.ExplicitTool, opts.ExplicitModel)
+		return resolveAgent(ctx, opts.Store, opts.Bucket, opts.Agents,
+			opts.ExplicitTool, opts.ExplicitModel)
 	}
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
-		return resolveAgent(ctx, nil, opts.Bucket, opts.Agents, opts.ExplicitTool, opts.ExplicitModel)
+		return resolveAgent(ctx, nil, opts.Bucket, opts.Agents,
+			opts.ExplicitTool, opts.ExplicitModel)
 	}
 	defer func() { _ = s.Close() }()
-	return resolveAgent(ctx, s, opts.Bucket, opts.Agents, opts.ExplicitTool, opts.ExplicitModel)
+	return resolveAgent(ctx, s, opts.Bucket, opts.Agents,
+		opts.ExplicitTool, opts.ExplicitModel)
 }
 
-func agentFromStoreLazy(ctx context.Context, opts AgentOptions) (codingagents.Agent, string, error) {
+func agentFromStoreLazy(
+	ctx context.Context, opts AgentOptions,
+) (codingagents.Agent, string, error) {
 	if opts.Store != nil {
 		return AgentFromStore(ctx, opts.Store, opts.Bucket, opts.Agents)
 	}
@@ -183,7 +200,8 @@ func agentFromStoreLazy(ctx context.Context, opts AgentOptions) (codingagents.Ag
 
 func persistAgent(opts AgentOptions, tool, model string) {
 	if opts.Store != nil {
-		store.PersistAgentSelection(opts.Store, opts.Stderr, opts.Bucket, tool, model, opts.Interactive)
+		store.PersistAgentSelection(opts.Store, opts.Stderr, opts.Bucket,
+			tool, model, opts.Interactive)
 		return
 	}
 	s, ok := store.OpenSettings(opts.Stderr)
@@ -191,7 +209,8 @@ func persistAgent(opts AgentOptions, tool, model string) {
 		return
 	}
 	defer func() { _ = s.Close() }()
-	store.PersistAgentSelection(s, opts.Stderr, opts.Bucket, tool, model, opts.Interactive)
+	store.PersistAgentSelection(s, opts.Stderr, opts.Bucket,
+		tool, model, opts.Interactive)
 }
 
 func readToolModel(s *store.Store, bucket string) (map[string]string, error) {
@@ -214,7 +233,9 @@ func readToolModel(s *store.Store, bucket string) (map[string]string, error) {
 // opened. Errors from opening or reading the store are swallowed so the
 // caller gets whatever could be resolved (the preflight
 // EnsureAgentSelections call guarantees every bucket is populated).
-func ResolveToolModel(explicitTool, explicitModel, bucket string, stderr io.Writer) (string, string) {
+func ResolveToolModel(
+	explicitTool, explicitModel, bucket string, stderr io.Writer,
+) (string, string) {
 	tool, model := explicitTool, explicitModel
 	if tool != "" && model != "" {
 		return tool, model
@@ -239,7 +260,9 @@ func ResolveToolModel(explicitTool, explicitModel, bucket string, stderr io.Writ
 	return tool, model
 }
 
-func lookupAgent(agents []codingagents.Agent, name string) (codingagents.Agent, bool) {
+func lookupAgent(
+	agents []codingagents.Agent, name string,
+) (codingagents.Agent, bool) {
 	for _, a := range agents {
 		if a.Name() == name {
 			return a, true

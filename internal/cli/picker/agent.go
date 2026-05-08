@@ -20,7 +20,9 @@ type Selector interface {
 // SelectTool renders the agent picker over options. Title is generic
 // ("Select tool") so the same widget serves planner / worker /
 // verifier / tasks selections.
-func (p *Picker) SelectTool(ctx context.Context, options []string) (string, error) {
+func (p *Picker) SelectTool(
+	ctx context.Context, options []string,
+) (string, error) {
 	return p.choose(ctx, "Select tool", options)
 }
 
@@ -28,7 +30,9 @@ func (p *Picker) SelectTool(ctx context.Context, options []string) (string, erro
 // title rationale as SelectTool; the upstream label / tool hint
 // flows through the cli's prompt-before-this if it wants to clarify
 // which role the user is configuring.
-func (p *Picker) SelectModel(ctx context.Context, options []string) (string, error) {
+func (p *Picker) SelectModel(
+	ctx context.Context, options []string,
+) (string, error) {
 	return p.choose(ctx, "Select model", options)
 }
 
@@ -40,7 +44,9 @@ func (p *Picker) SelectModel(ctx context.Context, options []string) (string, err
 // CheckLogin runs last so the user is not asked to authenticate before
 // they have committed to a tool / model. The non-UI variants
 // (read-stored, explicit-flag) live in internal/resolver.
-func PickAgent(ctx context.Context, ui Selector, agents []codingagents.Agent) (codingagents.Agent, string, error) {
+func PickAgent(
+	ctx context.Context, ui Selector, agents []codingagents.Agent,
+) (codingagents.Agent, string, error) {
 	names := make([]string, len(agents))
 	for i, a := range agents {
 		names[i] = a.Name()
@@ -69,7 +75,9 @@ func PickAgent(ctx context.Context, ui Selector, agents []codingagents.Agent) (c
 	return agent, model, nil
 }
 
-func lookupAgent(agents []codingagents.Agent, name string) (codingagents.Agent, bool) {
+func lookupAgent(
+	agents []codingagents.Agent, name string,
+) (codingagents.Agent, bool) {
 	for _, a := range agents {
 		if a.Name() == name {
 			return a, true

@@ -17,8 +17,12 @@ import (
 // huh.ErrUserAborted is propagated verbatim and the cli's deferred
 // guard converts it to a nil return — same contract as the rest of
 // the picker leaves.
-func (p *Picker) ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error) {
-	title := fmt.Sprintf("Task %s is in status %s; %s anyway?", taskID, status, cmd)
+func (p *Picker) ConfirmStatusOverride(
+	ctx context.Context, cmd, taskID, status string,
+) (bool, error) {
+	title := fmt.Sprintf(
+		"Task %s is in status %s; %s anyway?", taskID, status, cmd,
+	)
 	v := false
 	if err := p.run(ctx, huh.NewConfirm().
 		Title(title).

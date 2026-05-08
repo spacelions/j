@@ -29,7 +29,9 @@ type SelectorFake struct {
 	ToolHook func()
 }
 
-func (s *SelectorFake) SelectTool(_ context.Context, options []string) (string, error) {
+func (s *SelectorFake) SelectTool(
+	_ context.Context, options []string,
+) (string, error) {
 	s.ToolCalls++
 	s.LastTools = append([]string(nil), options...)
 	if s.ToolHook != nil {
@@ -44,7 +46,9 @@ func (s *SelectorFake) SelectTool(_ context.Context, options []string) (string, 
 	return options[0], nil
 }
 
-func (s *SelectorFake) SelectModel(_ context.Context, options []string) (string, error) {
+func (s *SelectorFake) SelectModel(
+	_ context.Context, options []string,
+) (string, error) {
 	s.ModelCalls++
 	s.LastModels = append([]string(nil), options...)
 	if s.ModelErr != nil {

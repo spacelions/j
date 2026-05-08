@@ -159,8 +159,9 @@ func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 // intentionally discarded, matching the rest of the j CLI.
 func newDiscardCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "discard",
-		Short: "Discard a task row, its linked git worktree, and its on-disk directory",
+		Use: "discard",
+		Short: "Discard a task row, its linked git worktree, " +
+			"and its on-disk directory",
 		Long: "Removes a single task from <cwd>/.j/tasks/list.db, deletes the " +
 			"matching on-disk directory <cwd>/.j/tasks/<id>/, and removes the " +
 			"git worktree named on the task row with `git worktree remove " +
@@ -188,7 +189,8 @@ func newDiscardCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().String("id", "", "Task ID to discard (empty triggers the picker)")
-	cmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt and discard immediately")
+	cmd.Flags().BoolP("yes", "y", false,
+		"Skip the confirmation prompt and discard immediately")
 	_ = viper.BindPFlag("tasks.discard.id", cmd.Flags().Lookup("id"))
 	_ = viper.BindPFlag("tasks.discard.yes", cmd.Flags().Lookup("yes"))
 	_ = viper.BindEnv("tasks.discard.id", "TASKS_DISCARD_ID")

@@ -15,9 +15,16 @@ import (
 // user the exact `j settings set project.<key>=<value>` command to
 // run.
 var (
-	ErrMissingAPIKey        = errors.New("project.api_key is not set; run `j settings set project.api_key=<your-google-api-key>`")
-	ErrMissingModel         = errors.New("project.model is not set; run `j settings set project.model=<gemini-model>` (e.g. gemini-2.5-flash)")
-	ErrMissingMaxIterations = errors.New("project.max_iterations is not set or is invalid; run `j settings set project.max_iterations=<positive-integer>`")
+	ErrMissingAPIKey = errors.New(
+		"project.api_key is not set; run " +
+			"`j settings set project.api_key=<your-google-api-key>`")
+	ErrMissingModel = errors.New(
+		"project.model is not set; run " +
+			"`j settings set project.model=<gemini-model>` " +
+			"(e.g. gemini-2.5-flash)")
+	ErrMissingMaxIterations = errors.New(
+		"project.max_iterations is not set or is invalid; run " +
+			"`j settings set project.max_iterations=<positive-integer>`")
 )
 
 // DefaultTaskMaxIterations is the fallback applied when
@@ -99,7 +106,9 @@ func LoadProjectConfig() (ProjectConfig, error) {
 	}
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return ProjectConfig{}, fmt.Errorf("store: settings store missing at %q; run `j init`: %w", path, err)
+			return ProjectConfig{}, fmt.Errorf(
+				"store: settings store missing at %q; run `j init`: %w",
+				path, err)
 		}
 		return ProjectConfig{}, fmt.Errorf("store: stat %q: %w", path, err)
 	}
@@ -218,7 +227,10 @@ func LoadPlanRequiresApproval() (bool, error) {
 // store is a silent no-op so callers can pipe the value straight from
 // Options.Store without nil-checks. Plan / work / verify all use this
 // so the on-disk schema is identical.
-func PersistAgentSelection(s *Store, stderr io.Writer, bucket, tool, model string, interactive bool) {
+func PersistAgentSelection(
+	s *Store, stderr io.Writer, bucket, tool, model string,
+	interactive bool,
+) {
 	if s == nil {
 		return
 	}

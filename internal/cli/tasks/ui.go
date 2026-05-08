@@ -47,7 +47,9 @@ func newHuhUI(in io.Reader, out io.Writer) *huhUI {
 	return &huhUI{in: in, out: out}
 }
 
-func (u *huhUI) ConfirmDiscard(ctx context.Context, t tasks.Task) (bool, error) {
+func (u *huhUI) ConfirmDiscard(
+	ctx context.Context, t tasks.Task,
+) (bool, error) {
 	v := true
 	err := huh.NewForm(huh.NewGroup(
 		huh.NewConfirm().
@@ -56,7 +58,8 @@ func (u *huhUI) ConfirmDiscard(ctx context.Context, t tasks.Task) (bool, error) 
 			Affirmative("yes").
 			Negative("no").
 			Value(&v),
-	)).WithInput(u.in).WithOutput(u.out).WithTheme(uitheme.Theme()).RunWithContext(ctx)
+	)).WithInput(u.in).WithOutput(u.out).
+		WithTheme(uitheme.Theme()).RunWithContext(ctx)
 	if errors.Is(err, huh.ErrUserAborted) {
 		return false, nil
 	}
@@ -69,15 +72,20 @@ func (u *huhUI) ConfirmDiscard(ctx context.Context, t tasks.Task) (bool, error) 
 // PickTask delegates to the shared picker.PickTask widget so the
 // label format and abort/empty contract stay uniform across every j
 // subcommand.
-func (u *huhUI) PickTask(ctx context.Context, tasks []tasks.Task) (string, bool, error) {
+func (u *huhUI) PickTask(
+	ctx context.Context, tasks []tasks.Task,
+) (string, bool, error) {
 	return picker.New(u.in, u.out).PickTask(ctx, "Select a task", tasks)
 }
 
 // ConfirmStatusOverride delegates to the shared picker prompt so
 // `j tasks re-plan` reuses the same yes/no widget as `j tasks start`
 // when the resolved task is in a status outside the re-plan allowlist.
-func (u *huhUI) ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error) {
-	return picker.New(u.in, u.out).ConfirmStatusOverride(ctx, cmd, taskID, status)
+func (u *huhUI) ConfirmStatusOverride(
+	ctx context.Context, cmd, taskID, status string,
+) (bool, error) {
+	return picker.New(u.in, u.out).
+		ConfirmStatusOverride(ctx, cmd, taskID, status)
 }
 
 // pickFromStore renders the shared task picker over the rows in s
@@ -97,7 +105,9 @@ func (u *huhUI) ConfirmStatusOverride(ctx context.Context, cmd, taskID, status s
 // Errors from ListTasks or the UI propagate; the UI wraps its own
 // errors so RunDiscard / RunEnter can re-emit them without a second
 // wrap.
-func pickFromStore(ctx context.Context, s *tasks.Store, ui UI, stdout io.Writer) (string, bool, error) {
+func pickFromStore(
+	ctx context.Context, s *tasks.Store, ui UI, stdout io.Writer,
+) (string, bool, error) {
 	rows, err := s.ListTasks()
 	if err != nil {
 		return "", false, err

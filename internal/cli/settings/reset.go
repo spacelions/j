@@ -17,14 +17,18 @@ import (
 
 func newResetCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "reset [bucket|bucket.key ...]",
-		Short: "Remove all project settings, a whole bucket, or one bucket.key (multiple targets allowed)",
-		Args:  cobra.ArbitraryArgs,
+		Use: "reset [bucket|bucket.key ...]",
+		Short: "Remove all project settings, a whole bucket, " +
+			"or one bucket.key (multiple targets allowed)",
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runReset(cmd, args)
 		},
 	}
-	cmd.Flags().BoolP("yes", "y", false, "skip the confirmation prompt for a full reset")
+	cmd.Flags().BoolP(
+		"yes", "y", false,
+		"skip the confirmation prompt for a full reset",
+	)
 	return cmd
 }
 
@@ -176,7 +180,10 @@ func runResetTargets(cmd *cobra.Command, args []string) error {
 			if err := s.Delete(t.bucket, storageKey(t.bucket, t.key)); err != nil {
 				return err
 			}
-			uitheme.DangerousFprintf(cmd.OutOrStdout(), "J: unset %s.%s\n", t.bucket, t.key)
+			uitheme.DangerousFprintf(
+				cmd.OutOrStdout(),
+				"J: unset %s.%s\n", t.bucket, t.key,
+			)
 		}
 		return nil
 	})

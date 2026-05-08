@@ -70,16 +70,19 @@ func activeBeginAt(t tsk.Task) (time.Time, bool) {
 	return zero, true
 }
 
-// WriteTaskTable writes a bordered task table to w. The frame is a thin
-// grey rounded box (`╭ ╮ ╰ ╯` corners, grey ─/│ edges and walls, grey
-// `┬ ┴ ├ ┤ ┼` tees and intersections). The header is grey-bold.
+// WriteTaskTable writes a bordered task table to w. The frame is a
+// thin grey rounded box (`╭ ╮ ╰ ╯` corners, grey ─/│ edges and
+// walls, grey `┬ ┴ ├ ┤ ┼` tees and intersections). The header is
+// grey-bold.
 // Active rows (planning / working / verifying / help) rotate through
 // activeRowPalette so in-flight tasks pop; completed rows render in
 // grey so they recede. width controls horizontal sizing: width <= 0
 // uses natural column widths; width > 0 fits by shrinking the trailing
 // SUMMARY column (truncation with `…` when needed). Writer errors
 // propagate.
-func WriteTaskTable(w io.Writer, taskRows []tsk.Task, now time.Time, width int) error {
+func WriteTaskTable(
+	w io.Writer, taskRows []tsk.Task, now time.Time, width int,
+) error {
 	header := []string{"ID", "STATUS", "TOOL", "MODEL", "SUMMARY"}
 	rows := make([][]string, 0, len(taskRows)+1)
 	rows = append(rows, header)
@@ -122,7 +125,8 @@ func rowStyle(t tsk.Task, activeIdx *int) lipgloss.Style {
 	case tsk.StatusHelp:
 		return helpStyle
 	}
-	style := lipgloss.NewStyle().Foreground(activeRowPalette[*activeIdx%len(activeRowPalette)])
+	style := lipgloss.NewStyle().Foreground(
+		activeRowPalette[*activeIdx%len(activeRowPalette)])
 	*activeIdx++
 	return style
 }
@@ -209,7 +213,9 @@ func buildBorderLine(cols []int, left, mid, right string) string {
 	return b.String()
 }
 
-func buildContentLine(cells []string, cols []int, cellStyle lipgloss.Style) string {
+func buildContentLine(
+	cells []string, cols []int, cellStyle lipgloss.Style,
+) string {
 	var b strings.Builder
 	b.WriteString(borderStyle.Render("│"))
 	for i, c := range cells {

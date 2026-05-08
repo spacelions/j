@@ -17,7 +17,9 @@ import (
 // description echoes the URL so the user can paste it into a browser
 // manually. A user abort (Ctrl-C / Esc) returns ok=false with a nil
 // error so the caller exits the link flow cleanly.
-func (p *Picker) PromptLinearAPIKey(ctx context.Context, openURL string) (string, bool, error) {
+func (p *Picker) PromptLinearAPIKey(
+	ctx context.Context, openURL string,
+) (string, bool, error) {
 	_ = linear.OpenURL(openURL)
 	var token string
 	err := p.run(ctx, huh.NewInput().
@@ -43,7 +45,9 @@ func (p *Picker) PromptLinearAPIKey(ctx context.Context, openURL string) (string
 // with a nil error; an empty project list yields ok=false too so the
 // caller can fall through to the identifier prompt without saving a
 // project.
-func (p *Picker) PickLinearProject(ctx context.Context, projects []linear.Project) (linear.Project, bool, error) {
+func (p *Picker) PickLinearProject(
+	ctx context.Context, projects []linear.Project,
+) (linear.Project, bool, error) {
 	if len(projects) == 0 {
 		return linear.Project{}, false, nil
 	}
@@ -66,7 +70,9 @@ func (p *Picker) PickLinearProject(ctx context.Context, projects []linear.Projec
 	}
 	prj, ok := byLabel[chosen]
 	if !ok {
-		return linear.Project{}, false, fmt.Errorf("picker: unknown project selection %q", chosen)
+		return linear.Project{}, false, fmt.Errorf(
+			"picker: unknown project selection %q", chosen,
+		)
 	}
 	return prj, true, nil
 }
@@ -83,7 +89,9 @@ func (p *Picker) PickLinearProject(ctx context.Context, projects []linear.Projec
 //
 // Abort (Ctrl-C / Esc) returns ok=false with a nil error so the
 // caller exits the source flow cleanly without minting a task.
-func (p *Picker) PickLinearIssue(ctx context.Context, issues []linear.Issue) (linear.Issue, bool, error) {
+func (p *Picker) PickLinearIssue(
+	ctx context.Context, issues []linear.Issue,
+) (linear.Issue, bool, error) {
 	if len(issues) == 0 {
 		return linear.Issue{}, false, nil
 	}
@@ -111,7 +119,9 @@ func (p *Picker) PickLinearIssue(ctx context.Context, issues []linear.Issue) (li
 	}
 	iss, ok := byLabel[chosen]
 	if !ok {
-		return linear.Issue{}, false, fmt.Errorf("picker: unknown issue selection %q", chosen)
+		return linear.Issue{}, false, fmt.Errorf(
+			"picker: unknown issue selection %q", chosen,
+		)
 	}
 	return iss, true, nil
 }

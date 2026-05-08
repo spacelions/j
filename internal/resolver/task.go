@@ -12,10 +12,15 @@ import (
 )
 
 type StatusOverrideUI interface {
-	ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error)
+	ConfirmStatusOverride(
+		ctx context.Context, cmd, taskID, status string,
+	) (bool, error)
 }
 
-func ConfirmStatusOverride(ctx context.Context, ui StatusOverrideUI, yes bool, cmd string, t tasks.Task, allowed func(tasks.Task) bool) (bool, error) {
+func ConfirmStatusOverride(
+	ctx context.Context, ui StatusOverrideUI, yes bool, cmd string,
+	t tasks.Task, allowed func(tasks.Task) bool,
+) (bool, error) {
 	if allowed(t) || yes {
 		return true, nil
 	}
@@ -39,7 +44,9 @@ func VerifyAllowed(t tasks.Task) bool {
 }
 
 type WorkPlanUI interface {
-	PickTask(ctx context.Context, title string, tasks []tasks.Task) (string, bool, error)
+	PickTask(
+		ctx context.Context, title string, tasks []tasks.Task,
+	) (string, bool, error)
 }
 
 type WorkPlanOptions struct {
@@ -54,7 +61,9 @@ type WorkPlan struct {
 	Requirement string
 }
 
-func ResolveWorkPlan(ctx context.Context, opts WorkPlanOptions) (WorkPlan, bool, error) {
+func ResolveWorkPlan(
+	ctx context.Context, opts WorkPlanOptions,
+) (WorkPlan, bool, error) {
 	switch {
 	case opts.TaskID != "":
 		r, err := resolveWorkByTaskID(opts.TaskID)
@@ -65,13 +74,15 @@ func ResolveWorkPlan(ctx context.Context, opts WorkPlanOptions) (WorkPlan, bool,
 		return WorkPlan{}, false, err
 	}
 	if len(rows) == 0 {
-		return WorkPlan{}, false, errors.New("no tasks to work; run `j plan` first")
+		return WorkPlan{}, false, errors.New(
+			"no tasks to work; run `j plan` first")
 	}
 	if id, ok := autoPickAllowed(rows, ReplanAllowed); ok {
 		r, err := resolveWorkByTaskID(id)
 		return r, err == nil, err
 	}
-	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to work", rows)
+	chosen, ok, err := opts.UI.PickTask(
+		ctx, "Select a task to work", rows)
 	if err != nil || !ok {
 		return WorkPlan{}, false, err
 	}
@@ -95,14 +106,22 @@ func resolveWorkByTaskID(id string) (WorkPlan, error) {
 		return WorkPlan{}, fmt.Errorf("work: read plan: %w", err)
 	}
 	var requirement string
-	if data, readErr := os.ReadFile(filepath.Join(taskDir, tasks.RequirementsFileName)); readErr == nil {
+	reqPath := filepath.Join(taskDir, tasks.RequirementsFileName)
+	if data, readErr := os.ReadFile(reqPath); readErr == nil {
 		requirement = string(data)
 	}
-	return WorkPlan{Task: row, PlanPath: planPath, Body: string(body), Requirement: requirement}, nil
+	return WorkPlan{
+		Task:        row,
+		PlanPath:    planPath,
+		Body:        string(body),
+		Requirement: requirement,
+	}, nil
 }
 
 type VerifyTaskUI interface {
-	PickTask(ctx context.Context, title string, tasks []tasks.Task) (string, bool, error)
+	PickTask(
+		ctx context.Context, title string, tasks []tasks.Task,
+	) (string, bool, error)
 }
 
 type VerifyTaskOptions struct {
@@ -119,7 +138,9 @@ type VerifyTask struct {
 	FindingsPath     string
 }
 
-func ResolveVerifyTask(ctx context.Context, opts VerifyTaskOptions) (VerifyTask, bool, error) {
+func ResolveVerifyTask(
+	ctx context.Context, opts VerifyTaskOptions,
+) (VerifyTask, bool, error) {
 	if opts.TaskID != "" {
 		r, err := resolveVerifyByTaskID(opts.TaskID)
 		return r, err == nil, err
@@ -129,13 +150,15 @@ func ResolveVerifyTask(ctx context.Context, opts VerifyTaskOptions) (VerifyTask,
 		return VerifyTask{}, false, err
 	}
 	if len(rows) == 0 {
-		return VerifyTask{}, false, errors.New("no tasks to verify; run `j plan` and `j work` first")
+		return VerifyTask{}, false, errors.New(
+			"no tasks to verify; run `j plan` and `j work` first")
 	}
 	if id, ok := autoPickAllowed(rows, VerifyAllowed); ok {
 		r, err := resolveVerifyByTaskID(id)
 		return r, err == nil, err
 	}
-	chosen, ok, err := opts.UI.PickTask(ctx, "Select a task to verify", rows)
+	chosen, ok, err := opts.UI.PickTask(
+		ctx, "Select a task to verify", rows)
 	if err != nil || !ok {
 		return VerifyTask{}, false, err
 	}
@@ -201,7 +224,9 @@ func listResolvableTasks() ([]tasks.Task, error) {
 	return all, nil
 }
 
-func autoPickAllowed(rows []tasks.Task, allowed func(tasks.Task) bool) (string, bool) {
+func autoPickAllowed(
+	rows []tasks.Task, allowed func(tasks.Task) bool,
+) (string, bool) {
 	var picked string
 	count := 0
 	for _, row := range rows {

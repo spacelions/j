@@ -1,8 +1,9 @@
-// Package preflight is the shared pre-flight surface used by j subcommands
+// Package preflight is the shared pre-flight surface used by j subs
 // that touch per-project state on disk. Ensure verifies the .j layout is
 // present, prompts the user to run `j init` when something is missing, and
-// returns sentinel errors for decline vs accept-and-retry. EnsureAgentSelections
-// fills missing planner/worker/verifier tool+model buckets before commands
+// returns sentinel errors for decline vs accept-and-retry.
+// EnsureAgentSelections fills missing planner/worker/verifier
+// tool+model buckets before commands
 // that spawn coding agents (e.g. `j tasks start` / `j tasks continue`).
 //
 // PreRunE wires Ensure into a cobra PersistentPreRunE so j plan,
@@ -77,7 +78,8 @@ func (u *huhUI) ConfirmInit(ctx context.Context) (bool, error) {
 			Affirmative("yes").
 			Negative("no").
 			Value(&v),
-	)).WithInput(u.in).WithOutput(u.out).WithTheme(uitheme.Theme()).RunWithContext(ctx)
+	)).WithInput(u.in).WithOutput(u.out).
+		WithTheme(uitheme.Theme()).RunWithContext(ctx)
 	if errors.Is(err, huh.ErrUserAborted) {
 		return false, nil
 	}
@@ -111,7 +113,10 @@ func MustReadForm(value *string) *huh.Form {
 	return huh.NewForm(huh.NewGroup(
 		huh.NewInput().
 			Title("Files every agent must read first").
-			Description("Semicolon-separated list (case-sensitive). Leave blank for none.").
+			Description(
+				"Semicolon-separated list (case-sensitive). " +
+					"Leave blank for none.",
+			).
 			Placeholder("AGENTS.md;CLAUDE.md").
 			Value(value),
 	)).WithTheme(uitheme.Theme())
@@ -193,5 +198,9 @@ func PreRunE(cmd *cobra.Command, _ []string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return Ensure(ctx, NewHuhUI(cmd.InOrStdin(), cmd.OutOrStdout()), cmd.ErrOrStderr())
+	return Ensure(
+		ctx,
+		NewHuhUI(cmd.InOrStdin(), cmd.OutOrStdout()),
+		cmd.ErrOrStderr(),
+	)
 }
