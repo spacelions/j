@@ -61,17 +61,17 @@ Commands are scoped to the **current working directory**: each project gets its 
 
 ### Manual phase control
 
-Use these when you want to drive individual phases instead of the automated orchestrator. Every phase is a `j tasks` subcommand; there is no top-level `j plan` / `j work` / `j verify`.
+Use these when you want to re-run or resume individual phases instead of the automated orchestrator.
 
 ```bash
-j tasks re-plan --help         # re-run the planning phase from scratch
-j tasks resume-plan --help     # resume an in-flight plan session
+j tasks re-plan --help       # re-run the planner on an existing task
+j tasks resume-plan --help   # resume an in-flight planner session
 
-j tasks re-work --help         # re-run the work phase
-j tasks resume-work --help     # resume an in-flight work session
+j tasks re-work --help       # re-run the worker on an existing task
+j tasks resume-work --help   # resume an in-flight worker session
 
-j tasks re-verify --help       # re-run the verify phase
-j tasks resume-verify --help   # resume an in-flight verify session
+j tasks re-verify --help     # re-run the verifier on an existing task
+j tasks resume-verify --help # resume an in-flight verifier session
 ```
 
 The verifier expects a final line of exactly `VERDICT: PASS` or `VERDICT: FAIL` in its findings.
@@ -84,8 +84,8 @@ Artifacts land under `.j/tasks/<id>/`: `requirements.md`, `plan.md`, `agent.log`
 |------------|---------|
 | `start` | Create task, spawn detached orchestrator |
 | `continue` | Resume or advance the current phase |
-| `enter` | Open a git worktree for the task's work phase |
-| `discard` | Mark a task as discarded |
+| `enter` | Open a subshell in the task's directory |
+| `discard` | Discard a task, its linked git worktree, and its on-disk directory |
 | `logs` | Print or tail `agent.log` |
 | `show` | Render task files (`requirements`, `plan`, `clarification`, …) |
 | `re-plan` / `resume-plan` | Replan or resume an interrupted planning phase |
@@ -106,7 +106,7 @@ Artifacts land under `.j/tasks/<id>/`: `requirements.md`, `plan.md`, `agent.log`
 `j` can pull tasks from and sync state back to [Linear](https://linear.app):
 
 ```bash
-j settings set linear.api_key <your-api-key>
+j settings set linear.api_key=<your-api-key>
 j tasks start --from-linear ENG-123
 ```
 
