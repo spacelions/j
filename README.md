@@ -57,21 +57,21 @@ Commands are scoped to the **current working directory**: each project gets its 
    j tasks continue --from-task <id>  # skip the picker
    ```
 
-   `continue` dispatches on the current task status to the right plan / work / verify run or resume. Repeat **list → continue** until the task reaches **failed** or **completed**.
+   `continue` dispatches on the current task status to the right `plan` / `work` / `verify` run or resume. Repeat **list → continue** until the task reaches **failed** or **completed**.
 
 ### Manual phase control
 
-Use these when you want to drive individual phases instead of the automated orchestrator. Every phase is a `j tasks` subcommand; there is no top-level `j plan` / `j work` / `j verify`.
+Use these when you want to drive individual phases instead of the automated orchestrator.
 
 ```bash
-j tasks re-plan --help         # re-run the planning phase from scratch
-j tasks resume-plan --help     # resume an in-flight plan session
+j plan -f path/to/task.md     # plan phase (interactive source selection if no -f)
+j plan resume --help           # resume an in-flight plan session
 
-j tasks re-work --help         # re-run the work phase
-j tasks resume-work --help     # resume an in-flight work session
+j work --help                  # work phase against a planned task
+j work resume --help
 
-j tasks re-verify --help       # re-run the verify phase
-j tasks resume-verify --help   # resume an in-flight verify session
+j verify --help                # verify phase after work is done
+j verify resume --help
 ```
 
 The verifier expects a final line of exactly `VERDICT: PASS` or `VERDICT: FAIL` in its findings.
@@ -138,7 +138,7 @@ See [`AGENTS.md`](AGENTS.md): high test coverage, no test-only packages (use `in
 | Area | Role |
 |------|------|
 | [`cmd/j`](cmd/j) | `main` entrypoint |
-| [`internal/cli`](internal/cli) | Cobra commands (`init`, `tasks`, `settings`, `run`, `web`) |
+| [`internal/cli`](internal/cli) | Cobra commands (`plan`, `work`, `verify`, `tasks`, `settings`, `run`, `web`) |
 | [`internal/agents`](internal/agents) | Planner / worker / verifier sub-agents and embedded prompt instructions |
 | [`internal/lifecycle`](internal/lifecycle) | Per-phase lifecycle markers, Linear state sync, PR URL reaping |
 | [`internal/lifecycle/orchestrator`](internal/lifecycle/orchestrator) | Google ADK sequential/loop agent wiring |
