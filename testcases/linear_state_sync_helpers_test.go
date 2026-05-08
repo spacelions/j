@@ -171,6 +171,18 @@ func fireStateSyncTransitionWithPR(
 	)
 }
 
+// readAgentLog returns the full contents of the per-task agent.log,
+// failing the test on a read error so callers can string-match
+// against marker lines without per-test boilerplate.
+func readAgentLog(t *testing.T, path string) string {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile %q: %v", path, err)
+	}
+	return string(body)
+}
+
 func bodyKindList(bodies []string) []string {
 	out := make([]string, 0, len(bodies))
 	for _, b := range bodies {

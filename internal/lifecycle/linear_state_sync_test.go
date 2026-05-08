@@ -187,8 +187,11 @@ func fireStateSyncWithPR(
 }
 
 // fireStateSyncWithLog mirrors fireStateSync but populates
-// AgentLogPath so the needs-clarification branch can locate the
-// task directory holding clarification.md.
+// AgentLogPath. Two branches use it: the needs-clarification branch
+// locates the task directory holding clarification.md via
+// filepath.Dir(AgentLogPath); the issueReminder failure branch
+// routes its marker into the per-task agent.log. An empty path
+// exercises the issueReminder "silent drop" contract.
 func fireStateSyncWithLog(
 	taskID, linearIssue, agentLogPath string,
 	from, to tasks.TaskStatus, ev tasks.Event,
