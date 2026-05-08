@@ -46,17 +46,27 @@ type SourceResult struct {
 type SourceUI interface {
 	SelectSource(ctx context.Context, allowed []Source) (Source, error)
 	PickMarkdownInCwd(ctx context.Context) (string, error)
-	PickTask(ctx context.Context, title string, tasks []tasks.Task) (string, bool, error)
-	PromptLinearAPIKey(ctx context.Context, openURL string) (string, bool, error)
-	PickLinearProject(ctx context.Context, projects []linear.Project) (linear.Project, bool, error)
-	PickLinearIssue(ctx context.Context, issues []linear.Issue) (linear.Issue, bool, error)
+	PickTask(
+		ctx context.Context, title string, tasks []tasks.Task,
+	) (string, bool, error)
+	PromptLinearAPIKey(
+		ctx context.Context, openURL string,
+	) (string, bool, error)
+	PickLinearProject(
+		ctx context.Context, projects []linear.Project,
+	) (linear.Project, bool, error)
+	PickLinearIssue(
+		ctx context.Context, issues []linear.Issue,
+	) (linear.Issue, bool, error)
 }
 
 // SelectSource renders the top-level source widget over the supplied
 // allowed list. A returned Source is guaranteed to be one of `allowed`;
 // an empty allowed list surfaces a wrapped error so misuse is loud at
 // the call site.
-func (p *Picker) SelectSource(ctx context.Context, allowed []Source) (Source, error) {
+func (p *Picker) SelectSource(
+	ctx context.Context, allowed []Source,
+) (Source, error) {
 	if len(allowed) == 0 {
 		return "", errors.New("picker: no sources allowed")
 	}
@@ -90,7 +100,13 @@ func (p *Picker) SelectSource(ctx context.Context, allowed []Source) (Source, er
 // listTasks returns no rows. Callers supply a flow-specific message
 // (e.g. "plan: no tasks to re-plan; run `j plan` first"). Pass nil
 // to fall back to a generic "picker: no tasks available".
-func PickSource(ctx context.Context, ui SourceUI, allowed []Source, listTasks func() ([]tasks.Task, error), emptyTasksErr error) (SourceResult, error) {
+func PickSource(
+	ctx context.Context,
+	ui SourceUI,
+	allowed []Source,
+	listTasks func() ([]tasks.Task, error),
+	emptyTasksErr error,
+) (SourceResult, error) {
 	src, err := ui.SelectSource(ctx, allowed)
 	if err != nil {
 		return SourceResult{}, err
@@ -106,7 +122,9 @@ func PickSource(ctx context.Context, ui SourceUI, allowed []Source, listTasks fu
 		return pickLinearSource(ctx, ui)
 	case SourceTask:
 		if listTasks == nil {
-			return SourceResult{}, errors.New("picker: SourceTask requires a listTasks callback")
+			return SourceResult{}, errors.New(
+				"picker: SourceTask requires a listTasks callback",
+			)
 		}
 		rows, err := listTasks()
 		if err != nil {
@@ -190,12 +208,14 @@ func pickLinearSource(ctx context.Context, ui SourceUI) (SourceResult, error) {
 			project = p.ID
 		}
 	}
-	issues, err := client.ListAssignedIssues(ctx, linear.ListIssuesOpts{ProjectID: project})
+	issues, err := client.ListAssignedIssues(
+		ctx, linear.ListIssuesOpts{ProjectID: project},
+	)
 	if err != nil {
 		return SourceResult{}, err
 	}
 	if len(issues) == 0 {
-		return SourceResult{}, errors.New("picker: no Linear issues assigned to you (use --from-linear ENG-123 to specify directly, or assign yourself to an issue in Linear)")
+		return SourceResult{}, errors.New("no Linear issues assigned to you.")
 	}
 	chosen, ok, err := ui.PickLinearIssue(ctx, issues)
 	if err != nil {
@@ -204,5 +224,8 @@ func pickLinearSource(ctx context.Context, ui SourceUI) (SourceResult, error) {
 	if !ok {
 		return SourceResult{Source: SourceLinear, Cancelled: true}, nil
 	}
-	return SourceResult{Source: SourceLinear, LinearIdentifier: chosen.Identifier}, nil
+	return SourceResult{
+		Source:           SourceLinear,
+		LinearIdentifier: chosen.Identifier,
+	}, nil
 }
