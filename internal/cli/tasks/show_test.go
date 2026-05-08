@@ -46,6 +46,14 @@ func showLeaves() []showLeaf {
 			envName:  "TASKS_SHOW_PLAN_FROM_TASK",
 			cmdArgv:  []string{"show", "plan"},
 		},
+		{
+			name:     "findings",
+			filename: tasks.VerifierFindingsFileName,
+			run:      RunShowFindings,
+			viperKey: "tasks.show.findings.from_task",
+			envName:  "TASKS_SHOW_FINDINGS_FROM_TASK",
+			cmdArgv:  []string{"show", "findings"},
+		},
 	}
 }
 
@@ -443,6 +451,7 @@ func TestNewShowCmd_RegistersLeavesAndParentRunE(t *testing.T) {
 	want := map[string]bool{
 		"requirements": false,
 		"plan":         false,
+		"findings":     false,
 	}
 	for _, sub := range cmd.Commands() {
 		if _, ok := want[sub.Name()]; ok {

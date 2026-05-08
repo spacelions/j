@@ -95,19 +95,27 @@ func RunShowClarification(ctx context.Context, opts ShowOptions) error {
 	return runShowFile(ctx, opts, "clarification.md")
 }
 
+// RunShowFindings is the entry point for
+// `j tasks show findings`.
+func RunShowFindings(ctx context.Context, opts ShowOptions) error {
+	return runShowFile(ctx, opts, tasks.VerifierFindingsFileName)
+}
+
 // newShowCmd builds the parent `show` cobra command and attaches
-// the requirements / plan leaves. The parent RunE renders the
-// resolved task's task.toml; the leaves render requirements.md
-// and plan.md respectively.
+// the requirements / plan / clarification / findings leaves. The
+// parent RunE renders the resolved task's task.toml; the leaves
+// render requirements.md, plan.md, clarification.md, and
+// verifier_findings.md respectively.
 func newShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show",
-		Short: "Render a task's task.toml, requirements.md, or plan.md",
+		Short: "Render a task's task.toml or per-task markdown leaf",
 		Long: "Resolves a task (via --from-task or the shared picker) " +
 			"and renders the chosen artefact via bat (when installed " +
 			"and stdout is a TTY) or cat. Without a subcommand the " +
-			"task.toml is shown; `show requirements` and `show plan` " +
-			"render the respective markdown files. Read-only.",
+			"task.toml is shown; `show requirements`, `show plan`, " +
+			"`show clarification`, and `show findings` render the " +
+			"respective markdown files. Read-only.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return RunShow(cmd.Context(), ShowOptions{
 				TaskID: viper.GetString(
@@ -127,6 +135,7 @@ func newShowCmd() *cobra.Command {
 	cmd.AddCommand(newShowRequirementsCmd())
 	cmd.AddCommand(newShowPlanCmd())
 	cmd.AddCommand(newShowClarificationCmd())
+	cmd.AddCommand(newShowFindingsCmd())
 	return cmd
 }
 
@@ -214,5 +223,35 @@ func newShowClarificationCmd() *cobra.Command {
 		cmd.Flags().Lookup("from-task"))
 	_ = viper.BindEnv("tasks.show.clarification.from_task",
 		"TASKS_SHOW_CLARIFICATION_FROM_TASK")
+	return cmd
+}
+
+func newShowFindingsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "findings",
+		Short: "Render the resolved task's verifier_findings.md",
+		Long: "Renders <cwd>/.j/tasks/<id>/verifier_findings.md via " +
+			"bat (when installed and stdout is a TTY) or cat. " +
+			"Resolves the task via --from-task or the shared " +
+			"picker; an unknown id prints `J: no task` and a " +
+			"missing file prints `J: verifier_findings.md not " +
+			"found for task <id>`. Both short-circuit exits 0 " +
+			"with no subprocess.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return RunShowFindings(cmd.Context(), ShowOptions{
+				TaskID: viper.GetString(
+					"tasks.show.findings.from_task"),
+				Stdin:  cmd.InOrStdin(),
+				Stdout: cmd.OutOrStdout(),
+				Stderr: cmd.ErrOrStderr(),
+			})
+		},
+	}
+	cmd.Flags().String("from-task", "",
+		"Render the named task's verifier_findings.md (no picker)")
+	_ = viper.BindPFlag("tasks.show.findings.from_task",
+		cmd.Flags().Lookup("from-task"))
+	_ = viper.BindEnv("tasks.show.findings.from_task",
+		"TASKS_SHOW_FINDINGS_FROM_TASK")
 	return cmd
 }
