@@ -135,7 +135,8 @@ func SeedRawTaskFile(t *testing.T, id string, body []byte) {
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		t.Fatalf("testutil: mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(taskDir, tasks.TaskFileName), body, 0o644); err != nil {
+	taskFile := filepath.Join(taskDir, tasks.TaskFileName)
+	if err := os.WriteFile(taskFile, body, 0o644); err != nil {
 		t.Fatalf("testutil: write task.toml: %v", err)
 	}
 }

@@ -10,32 +10,14 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/preflight"
 	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
-	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/resolver"
-	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/run"
 )
-
-// StartUI is the slice of picker methods RunStart drives when
-// `--from-file` / `--from-task` are empty: the source picker
-// (markdown | linear | task), the markdown / re-plan / Linear
-// sub-pickers, and the status-override confirmation. *picker.Picker
-// satisfies this surface; tests inject a scripted fake.
-type StartUI interface {
-	SelectSource(ctx context.Context, allowed []picker.Source) (picker.Source, error)
-	PickMarkdownInCwd(ctx context.Context) (string, error)
-	PickTask(ctx context.Context, title string, tasks []tasks.Task) (string, bool, error)
-	PromptLinearAPIKey(ctx context.Context, openURL string) (string, bool, error)
-	PickLinearProject(ctx context.Context, projects []linear.Project) (linear.Project, bool, error)
-	PickLinearIssue(ctx context.Context, issues []linear.Issue) (linear.Issue, bool, error)
-	ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error)
-}
 
 // StartOptions configures RunStart. Stdin/Stdout/Stderr default to the
 // process streams; Agents must be supplied by the caller (the cobra
@@ -93,23 +75,28 @@ type startTarget = resolver.StartTarget
 func newStartCmd() *cobra.Command {
 	agents := []codingagents.Agent{cursor.New(), claude.New()}
 	cmd := &cobra.Command{
-		Use:   "start",
-		Short: "Start a new task: drive planner, then pause for approval or continue in the background",
-		Long: "Validates that every agent bucket (planner, worker, verifier) " +
-			"has a tool/model selection, then runs `j tasks orchestrate --id <id>` either " +
-			"inline (with --interactive=true so the TUI can render in the parent's terminal) " +
-			"or as a detached child that the parent reports a PID for and returns from. " +
-			"Pass --from-file/-f (or TASKS_START_FROM_FILE) to point at a markdown task description; " +
-			"--from-task to re-plan an existing task; " +
-			"without either, the source picker is rendered.",
+		Use: "start",
+		Short: "Start a new task: drive planner, then pause for " +
+			"approval or continue in the background",
+		Long: "Validates that every agent bucket (planner, worker, " +
+			"verifier) has a tool/model selection, then runs " +
+			"`j tasks orchestrate --id <id>` either inline (with " +
+			"--interactive=true so the TUI can render in the parent's " +
+			"terminal) or as a detached child that the parent reports a PID " +
+			"for and returns from. Pass --from-file/-f (or " +
+			"TASKS_START_FROM_FILE) to point at a markdown description; " +
+			"--from-task to re-plan an existing task; without either, the " +
+			"source picker is rendered.",
 		PersistentPreRunE: preflight.PreRunE,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			return preflight.EnsureAgentSelections(cmd.Context(), preflight.AgentCheckOptions{
-				Stdin:  cmd.InOrStdin(),
-				Stdout: cmd.OutOrStdout(),
-				Stderr: cmd.ErrOrStderr(),
-				Agents: agents,
-			})
+			return preflight.EnsureAgentSelections(
+				cmd.Context(),
+				preflight.AgentCheckOptions{
+					Stdin:  cmd.InOrStdin(),
+					Stdout: cmd.OutOrStdout(),
+					Stderr: cmd.ErrOrStderr(),
+					Agents: agents,
+				})
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			approval, err := startPlanRequiresApprovalOverride(cmd)
@@ -117,7 +104,8 @@ func newStartCmd() *cobra.Command {
 				return err
 			}
 			var interactive *bool
-			if cmd.Flags().Changed("interactive") || envSet("TASKS_START_INTERACTIVE") {
+			if cmd.Flags().Changed("interactive") ||
+				envSet("TASKS_START_INTERACTIVE") {
 				v := viper.GetBool("tasks.start.interactive")
 				interactive = &v
 			}
@@ -137,30 +125,7 @@ func newStartCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringP("from-file", "f", "", "Path to a markdown file describing the task")
-	cmd.Flags().String("from-linear", "", "Linear issue identifier (e.g. ENG-123); requires linear.api_key in settings")
-	cmd.Flags().String("from-task", "", "Existing task id to re-plan in place")
-	cmd.Flags().String("tool", "", "Planner tool override (cursor|claude); does not update the bucket")
-	cmd.Flags().String("model", "", "Planner model override; does not update the bucket")
-	cmd.Flags().Bool("interactive", false, "Run planner in interactive (TUI) mode")
-	cmd.Flags().BoolP("yes", "y", false, "Skip status-mismatch confirmation when re-planning")
-	cmd.Flags().Bool("plan-requires-approval", false, "Override project.plan_requires_approval for this run (use =false to skip once)")
-	_ = viper.BindPFlag("tasks.start.from_file", cmd.Flags().Lookup("from-file"))
-	_ = viper.BindEnv("tasks.start.from_file", "TASKS_START_FROM_FILE")
-	_ = viper.BindPFlag("tasks.start.from_linear", cmd.Flags().Lookup("from-linear"))
-	_ = viper.BindEnv("tasks.start.from_linear", "TASKS_START_FROM_LINEAR")
-	_ = viper.BindPFlag("tasks.start.from_task", cmd.Flags().Lookup("from-task"))
-	_ = viper.BindEnv("tasks.start.from_task", "TASKS_START_FROM_TASK")
-	_ = viper.BindPFlag("tasks.start.tool", cmd.Flags().Lookup("tool"))
-	_ = viper.BindEnv("tasks.start.tool", "TASKS_START_TOOL")
-	_ = viper.BindPFlag("tasks.start.model", cmd.Flags().Lookup("model"))
-	_ = viper.BindEnv("tasks.start.model", "TASKS_START_MODEL")
-	_ = viper.BindPFlag("tasks.start.interactive", cmd.Flags().Lookup("interactive"))
-	_ = viper.BindEnv("tasks.start.interactive", "TASKS_START_INTERACTIVE")
-	_ = viper.BindPFlag("tasks.start.yes", cmd.Flags().Lookup("yes"))
-	_ = viper.BindEnv("tasks.start.yes", "TASKS_START_YES")
-	_ = viper.BindPFlag("tasks.start.plan_requires_approval", cmd.Flags().Lookup("plan-requires-approval"))
-	_ = viper.BindEnv("tasks.start.plan_requires_approval", "TASKS_START_PLAN_REQUIRES_APPROVAL")
+	bindStartFlags(cmd)
 	return cmd
 }
 
@@ -194,7 +159,8 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 		if err != nil {
 			return err
 		}
-		proceed, err := resolver.ConfirmStatusOverride(ctx, opts.UI, opts.Yes, "re-plan", task, resolver.ReplanAllowed)
+		proceed, err := resolver.ConfirmStatusOverride(
+			ctx, opts.UI, opts.Yes, "re-plan", task, resolver.ReplanAllowed)
 		if err != nil {
 			return err
 		}
@@ -203,7 +169,8 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 		}
 	}
 
-	planRequiresApproval, err := resolvePlanRequiresApproval(opts.PlanRequiresApproval)
+	planRequiresApproval, err := resolvePlanRequiresApproval(
+		opts.PlanRequiresApproval)
 	if err != nil {
 		return err
 	}
@@ -219,42 +186,58 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 	}
 
 	interactive := resolver.Interactive(opts.Interactive)
-
-	orchestrateArgs := []string{
-		"tasks", "orchestrate",
-		"--id", target.TaskID,
-		"--plan-requires-approval=" + strconv.FormatBool(planRequiresApproval),
-		"--interactive=" + strconv.FormatBool(interactive),
-	}
-	if opts.Tool != "" {
-		orchestrateArgs = append(orchestrateArgs, "--tool="+opts.Tool)
-	}
-	if opts.Model != "" {
-		orchestrateArgs = append(orchestrateArgs, "--model="+opts.Model)
-	}
-	if opts.Yes {
-		orchestrateArgs = append(orchestrateArgs, "--yes")
-	}
+	orchestrateArgs := buildOrchestrateArgs(
+		target.TaskID, planRequiresApproval, interactive, opts,
+	)
 
 	if interactive {
 		persistStartRow(opts.Stderr, target, "", 0)
 		return runInlineOrchestrator(ctx, opts.JBinary, orchestrateArgs)
 	}
 
-	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, orchestrateArgs)
+	pid, err := spawnDetachedOrchestrator(
+		ctx, opts.JBinary, agentLogPath, orchestrateArgs)
 	if err != nil {
 		return err
 	}
 	persistStartRow(opts.Stderr, target, agentLogPath, pid)
-	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", target.TaskID), pid, agentLogPath)
+	uitheme.NormalForkDialog(opts.Stdout,
+		fmt.Sprintf("task %s", target.TaskID), pid, agentLogPath)
 	return nil
+}
+
+// buildOrchestrateArgs assembles the argv passed to
+// `j tasks orchestrate`. Extracted from RunStart so that function
+// stays under the 80-line method cap.
+func buildOrchestrateArgs(
+	taskID string, planRequiresApproval, interactive bool, opts StartOptions,
+) []string {
+	args := []string{
+		"tasks", "orchestrate",
+		"--id", taskID,
+		"--plan-requires-approval=" +
+			strconv.FormatBool(planRequiresApproval),
+		"--interactive=" + strconv.FormatBool(interactive),
+	}
+	if opts.Tool != "" {
+		args = append(args, "--tool="+opts.Tool)
+	}
+	if opts.Model != "" {
+		args = append(args, "--model="+opts.Model)
+	}
+	if opts.Yes {
+		args = append(args, "--yes")
+	}
+	return args
 }
 
 // spawnDetachedOrchestrator resolves the j binary, opens / re-uses
 // the per-task agent.log via run.SpawnIn, and returns the spawned
 // child's PID. Shared between `j tasks start` (planner-first spawn)
 // and `j tasks continue` (resume-after-plan-done spawn).
-func spawnDetachedOrchestrator(ctx context.Context, binaryOverride, agentLogPath string, args []string) (int, error) {
+func spawnDetachedOrchestrator(
+	ctx context.Context, binaryOverride, agentLogPath string, args []string,
+) (int, error) {
 	binary, err := resolveJBinary(binaryOverride)
 	if err != nil {
 		return 0, err
@@ -266,7 +249,9 @@ func spawnDetachedOrchestrator(ctx context.Context, binaryOverride, agentLogPath
 // (blocking, parent's stdin/stdout/stderr inherited) so a TUI can
 // render. Used by the `--interactive=true` paths of `j tasks start`
 // / `re-plan` and unconditionally by `j tasks resume-plan`.
-func runInlineOrchestrator(ctx context.Context, binaryOverride string, args []string) error {
+func runInlineOrchestrator(
+	ctx context.Context, binaryOverride string, args []string,
+) error {
 	binary, err := resolveJBinary(binaryOverride)
 	if err != nil {
 		return err
@@ -274,7 +259,9 @@ func runInlineOrchestrator(ctx context.Context, binaryOverride string, args []st
 	return run.RunIn(ctx, "", binary, args...)
 }
 
-func resolveStartTarget(ctx context.Context, opts StartOptions) (startTarget, error) {
+func resolveStartTarget(
+	ctx context.Context, opts StartOptions,
+) (startTarget, error) {
 	if opts.FromTask != "" {
 		return resolver.StartTargetFromExistingTask(ctx, opts.FromTask)
 	}

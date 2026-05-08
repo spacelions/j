@@ -77,7 +77,9 @@ func RunResumeWork(ctx context.Context, opts ResumeWorkOptions) (err error) {
 	})
 }
 
-func resolveResumeWorkTaskID(ctx context.Context, opts ResumeWorkOptions) (string, bool, error) {
+func resolveResumeWorkTaskID(
+	ctx context.Context, opts ResumeWorkOptions,
+) (string, bool, error) {
 	s, err := tasks.OpenDefault()
 	if err != nil {
 		return "", false, err
@@ -87,7 +89,9 @@ func resolveResumeWorkTaskID(ctx context.Context, opts ResumeWorkOptions) (strin
 	return id, ok, err
 }
 
-func pickResumeWorkFromStore(ctx context.Context, s *tasks.Store, opts ResumeWorkOptions) (string, bool, error) {
+func pickResumeWorkFromStore(
+	ctx context.Context, s *tasks.Store, opts ResumeWorkOptions,
+) (string, bool, error) {
 	rows, err := s.ListTasks()
 	if err != nil {
 		return "", false, err
@@ -115,8 +119,9 @@ func filterTasksWithWorkSession(rows []tasks.Task) []tasks.Task {
 func newResumeWorkCmd() *cobra.Command {
 	agents := []codingagents.Agent{cursor.New(), claude.New()}
 	cmd := &cobra.Command{
-		Use:   "resume-work",
-		Short: "Resume an in-flight worker session in the foreground with --interactive=true",
+		Use: "resume-work",
+		Short: "Resume an in-flight worker session in the foreground " +
+			"with --interactive=true",
 		Long: "Filters tasks to rows with a non-empty work_resume_session and " +
 			"renders the shared task picker. The selected task re-execs " +
 			"`j tasks orchestrate --phase=from-work --interactive=true` " +
@@ -125,12 +130,14 @@ func newResumeWorkCmd() *cobra.Command {
 			"prints `J: no tasks with an active work session` and exits 0.",
 		PersistentPreRunE: preflight.PreRunE,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			return preflight.EnsureAgentSelections(cmd.Context(), preflight.AgentCheckOptions{
-				Stdin:  cmd.InOrStdin(),
-				Stdout: cmd.OutOrStdout(),
-				Stderr: cmd.ErrOrStderr(),
-				Agents: agents,
-			})
+			return preflight.EnsureAgentSelections(
+				cmd.Context(),
+				preflight.AgentCheckOptions{
+					Stdin:  cmd.InOrStdin(),
+					Stdout: cmd.OutOrStdout(),
+					Stderr: cmd.ErrOrStderr(),
+					Agents: agents,
+				})
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return RunResumeWork(cmd.Context(), ResumeWorkOptions{

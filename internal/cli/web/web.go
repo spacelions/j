@@ -16,13 +16,17 @@ func New() *cobra.Command {
 	return &cobra.Command{
 		Use:   "web",
 		Short: "Run the local ADK web server (api + webui) for development",
-		Long:  "Starts the ADK web stack. For development and debugging only; not for production.",
+		Long: "Starts the ADK web stack. For development and " +
+			"debugging only; not for production.",
 		RunE: func(*cobra.Command, []string) error {
 			cfg, err := store.LoadProjectConfig()
 			if err != nil {
 				return err
 			}
-			return orchestrator.Run(context.Background(), cfg, []string{"web", "api", "webui"})
+			return orchestrator.Run(
+				context.Background(), cfg,
+				[]string{"web", "api", "webui"},
+			)
 		},
 	}
 }

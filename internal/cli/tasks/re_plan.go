@@ -27,7 +27,9 @@ import (
 // a scripted fake.
 type RePlanUI interface {
 	PickTask(ctx context.Context, ts []tasks.Task) (string, bool, error)
-	ConfirmStatusOverride(ctx context.Context, cmd, taskID, status string) (bool, error)
+	ConfirmStatusOverride(
+		ctx context.Context, cmd, taskID, status string,
+	) (bool, error)
 }
 
 // RePlanOptions configures RunRePlan. Stdin/Stdout/Stderr default to
@@ -101,7 +103,8 @@ func RunRePlan(ctx context.Context, opts RePlanOptions) (err error) {
 	if !tasks.IsLegal(task.Status, tasks.EventPlanRestart) {
 		return fmt.Errorf("cannot re-plan task in status %q", task.Status)
 	}
-	proceed, err := resolver.ConfirmStatusOverride(ctx, opts.UI, false, "re-plan", task, resolver.ReplanAllowed)
+	proceed, err := resolver.ConfirmStatusOverride(
+		ctx, opts.UI, false, "re-plan", task, resolver.ReplanAllowed)
 	if err != nil {
 		return err
 	}
@@ -144,12 +147,14 @@ func RunRePlan(ctx context.Context, opts RePlanOptions) (err error) {
 		return runInlineOrchestrator(ctx, opts.JBinary, args)
 	}
 
-	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, args)
+	pid, err := spawnDetachedOrchestrator(
+		ctx, opts.JBinary, agentLogPath, args)
 	if err != nil {
 		return err
 	}
 	stampSpawnOnRow(opts.Stderr, task.ID, agentLogPath, pid)
-	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", task.ID), pid, agentLogPath)
+	uitheme.NormalForkDialog(
+		opts.Stdout, fmt.Sprintf("task %s", task.ID), pid, agentLogPath)
 	return nil
 }
 
@@ -181,7 +186,9 @@ func clearPlanResumeSession(taskID string) error {
 // exist) or the picker's selection. ok=false collapses both the
 // empty-store short-circuit (emptyMessage already printed) and the
 // picker user-abort so callers can return nil cleanly.
-func resolveRePlanTaskID(ctx context.Context, opts RePlanOptions) (string, bool, error) {
+func resolveRePlanTaskID(
+	ctx context.Context, opts RePlanOptions,
+) (string, bool, error) {
 	if opts.FromTask != "" {
 		return opts.FromTask, true, nil
 	}
@@ -194,7 +201,9 @@ func resolveRePlanTaskID(ctx context.Context, opts RePlanOptions) (string, bool,
 	return id, ok, err
 }
 
-func pickRePlanFromStore(ctx context.Context, s *tasks.Store, opts RePlanOptions) (string, bool, error) {
+func pickRePlanFromStore(
+	ctx context.Context, s *tasks.Store, opts RePlanOptions,
+) (string, bool, error) {
 	rows, err := s.ListTasks()
 	if err != nil {
 		return "", false, err
@@ -217,28 +226,35 @@ func pickRePlanFromStore(ctx context.Context, s *tasks.Store, opts RePlanOptions
 func newRePlanCmd() *cobra.Command {
 	agents := []codingagents.Agent{cursor.New(), claude.New()}
 	cmd := &cobra.Command{
-		Use:   "re-plan",
-		Short: "Re-plan an existing task: run the planner inline (--interactive) or detached",
-		Long: "Resolves a task (via --from-task or the shared picker) and either " +
-			"re-execs `j tasks orchestrate --plan-requires-approval=true` inline " +
-			"(with --interactive=true so the TUI can render in the parent's terminal) " +
-			"or forks it as a detached child so the planner re-runs without the user " +
-			"waiting in-process. Tasks in plan-done or help skip the status-override " +
-			"prompt; any other status renders a yes/no confirm before the orchestrator " +
-			"runs. --tool / --model / --interactive forward into the orchestrate argv " +
-			"as one-off planner overrides; the stored bucket values are left untouched.",
+		Use: "re-plan",
+		Short: "Re-plan an existing task: run the planner inline " +
+			"(--interactive) or detached",
+		Long: "Resolves a task (via --from-task or the shared picker) and " +
+			"either re-execs `j tasks orchestrate " +
+			"--plan-requires-approval=true` inline (with --interactive=true " +
+			"so the TUI can render in the parent's terminal) or forks it as " +
+			"a detached child so the planner re-runs without the user " +
+			"waiting in-process. Tasks in plan-done or help skip the " +
+			"status-override prompt; any other status renders a yes/no " +
+			"confirm before the orchestrator runs. --tool / --model / " +
+			"--interactive forward into the orchestrate argv as one-off " +
+			"planner overrides; the stored bucket values are left " +
+			"untouched.",
 		PersistentPreRunE: preflight.PreRunE,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			return preflight.EnsureAgentSelections(cmd.Context(), preflight.AgentCheckOptions{
-				Stdin:  cmd.InOrStdin(),
-				Stdout: cmd.OutOrStdout(),
-				Stderr: cmd.ErrOrStderr(),
-				Agents: agents,
-			})
+			return preflight.EnsureAgentSelections(
+				cmd.Context(),
+				preflight.AgentCheckOptions{
+					Stdin:  cmd.InOrStdin(),
+					Stdout: cmd.OutOrStdout(),
+					Stderr: cmd.ErrOrStderr(),
+					Agents: agents,
+				})
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var interactive *bool
-			if cmd.Flags().Changed("interactive") || envSet("TASKS_REPLAN_INTERACTIVE") {
+			if cmd.Flags().Changed("interactive") ||
+				envSet("TASKS_REPLAN_INTERACTIVE") {
 				v := viper.GetBool("tasks.replan.interactive")
 				interactive = &v
 			}
@@ -254,17 +270,23 @@ func newRePlanCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("from-task", "", "Existing task id to re-plan (empty triggers the picker)")
-	cmd.Flags().String("tool", "", "Planner tool override (cursor|claude); does not update the bucket")
-	cmd.Flags().String("model", "", "Planner model override; does not update the bucket")
-	cmd.Flags().Bool("interactive", false, "Run planner in interactive (TUI) mode")
-	_ = viper.BindPFlag("tasks.replan.from_task", cmd.Flags().Lookup("from-task"))
+	cmd.Flags().String("from-task", "",
+		"Existing task id to re-plan (empty triggers the picker)")
+	cmd.Flags().String("tool", "",
+		"Planner tool override (cursor|claude); does not update the bucket")
+	cmd.Flags().String("model", "",
+		"Planner model override; does not update the bucket")
+	cmd.Flags().Bool("interactive", false,
+		"Run planner in interactive (TUI) mode")
+	_ = viper.BindPFlag(
+		"tasks.replan.from_task", cmd.Flags().Lookup("from-task"))
 	_ = viper.BindEnv("tasks.replan.from_task", "TASKS_REPLAN_FROM_TASK")
 	_ = viper.BindPFlag("tasks.replan.tool", cmd.Flags().Lookup("tool"))
 	_ = viper.BindEnv("tasks.replan.tool", "TASKS_REPLAN_TOOL")
 	_ = viper.BindPFlag("tasks.replan.model", cmd.Flags().Lookup("model"))
 	_ = viper.BindEnv("tasks.replan.model", "TASKS_REPLAN_MODEL")
-	_ = viper.BindPFlag("tasks.replan.interactive", cmd.Flags().Lookup("interactive"))
+	_ = viper.BindPFlag(
+		"tasks.replan.interactive", cmd.Flags().Lookup("interactive"))
 	_ = viper.BindEnv("tasks.replan.interactive", "TASKS_REPLAN_INTERACTIVE")
 	return cmd
 }

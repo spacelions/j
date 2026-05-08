@@ -96,7 +96,9 @@ func RunContinue(ctx context.Context, opts ContinueOptions) (err error) {
 // the empty path pickFromStore prints emptyMessage when the store is
 // empty (or the dir is missing) — ListTasks treats both as an empty
 // list, so this site doesn't need its own short-circuit.
-func resolveContinueTask(ctx context.Context, opts ContinueOptions) (tasks.Task, bool, error) {
+func resolveContinueTask(
+	ctx context.Context, opts ContinueOptions,
+) (tasks.Task, bool, error) {
 	s, err := tasks.OpenDefault()
 	if err != nil {
 		return tasks.Task{}, false, err
@@ -110,7 +112,9 @@ func resolveContinueTask(ctx context.Context, opts ContinueOptions) (tasks.Task,
 // once a store handle is open it either loads the named id or runs the
 // shared picker. Splitting it out keeps the open/close cycle in one
 // place so the lock release is structurally guaranteed.
-func resolveContinueTaskFromStore(ctx context.Context, s *tasks.Store, opts ContinueOptions) (tasks.Task, bool, error) {
+func resolveContinueTaskFromStore(
+	ctx context.Context, s *tasks.Store, opts ContinueOptions,
+) (tasks.Task, bool, error) {
 	if opts.TaskID != "" {
 		t, err := s.GetTask(opts.TaskID)
 		if err != nil {
@@ -136,17 +140,23 @@ func resolveContinueTaskFromStore(ctx context.Context, s *tasks.Store, opts Cont
 // dispatchByStatus routes a task to the right phase based on its
 // Status. For planning and working statuses it prints a tooltip
 // directing the user to use the specific subcommand.
-func dispatchByStatus(ctx context.Context, opts ContinueOptions, t tasks.Task) error {
+func dispatchByStatus(
+	ctx context.Context, opts ContinueOptions, t tasks.Task,
+) error {
 	switch t.Status {
 	case tasks.StatusPlanning:
-		uitheme.NormalFprintf(opts.Stdout, "J: task %s is planning; use `j tasks re-plan` or `j tasks resume-plan`\n", t.ID)
+		uitheme.NormalFprintf(opts.Stdout,
+			"J: task %s is planning; use `j tasks re-plan`"+
+				" or `j tasks resume-plan`\n", t.ID)
 		return nil
 	case tasks.StatusPlanPendingApproval:
 		return dispatchPlanApprove(ctx, opts, t)
 	case tasks.StatusPlanDone:
 		return runPlanDoneWork(ctx, opts, t)
 	case tasks.StatusWorking:
-		uitheme.NormalFprintf(opts.Stdout, "J: task %s is working; use `j tasks re-work` or `j tasks resume-work`\n", t.ID)
+		uitheme.NormalFprintf(opts.Stdout,
+			"J: task %s is working; use `j tasks re-work`"+
+				" or `j tasks resume-work`\n", t.ID)
 		return nil
 	case tasks.StatusWorkDone:
 		return reverifyAsDetachedOrchestrator(ctx, opts, t.ID)
@@ -155,7 +165,8 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, t tasks.Task) e
 	case tasks.StatusNeedsClarification:
 		return dispatchClarification(ctx, opts, t)
 	case tasks.StatusFailed, tasks.StatusCompleted:
-		uitheme.NormalFprintf(opts.Stdout, "J: task %s already finished\n", t.ID)
+		uitheme.NormalFprintf(opts.Stdout,
+			"J: task %s already finished\n", t.ID)
 		return nil
 	case tasks.StatusHelp:
 		return dispatchHelp(ctx, opts, t)
@@ -163,34 +174,35 @@ func dispatchByStatus(ctx context.Context, opts ContinueOptions, t tasks.Task) e
 	return fmt.Errorf("task %s has unsupported status %q", t.ID, t.Status)
 }
 
-func reverifyAsDetachedOrchestrator(ctx context.Context, opts ContinueOptions, taskID string) error {
+func reverifyAsDetachedOrchestrator(
+	ctx context.Context, opts ContinueOptions, taskID string,
+) error {
 	taskDir, err := tasks.EnsureDir(taskID)
 	if err != nil {
 		return fmt.Errorf("ensure task dir: %w", err)
 	}
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
-	pid, err := spawnDetachedOrchestrator(ctx, opts.JBinary, agentLogPath, []string{
-		"tasks", "orchestrate",
-		"--id", taskID,
-		"--phase=verify-only",
-	})
+	pid, err := spawnDetachedOrchestrator(
+		ctx, opts.JBinary, agentLogPath,
+		[]string{"tasks", "orchestrate", "--id", taskID, "--phase=verify-only"})
 	if err != nil {
 		return err
 	}
 	stampSpawnOnRow(opts.Stderr, taskID, agentLogPath, pid)
-	uitheme.NormalForkDialog(opts.Stdout, fmt.Sprintf("task %s", taskID), pid, agentLogPath)
+	uitheme.NormalForkDialog(opts.Stdout,
+		fmt.Sprintf("task %s", taskID), pid, agentLogPath)
 	return nil
 }
 
-func resumeVerifyingInline(ctx context.Context, opts ContinueOptions, taskID string) error {
+func resumeVerifyingInline(
+	ctx context.Context, opts ContinueOptions, taskID string,
+) error {
 	if _, err := tasks.EnsureDir(taskID); err != nil {
 		return err
 	}
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
-		"tasks", "orchestrate",
-		"--id", taskID,
-		"--phase=verify-only",
-		"--interactive=true",
+		"tasks", "orchestrate", "--id", taskID,
+		"--phase=verify-only", "--interactive=true",
 	})
 }
 
@@ -219,10 +231,12 @@ func (o ContinueOptions) withDefaults() ContinueOptions {
 func newContinueCmd() *cobra.Command {
 	agents := []codingagents.Agent{cursor.New(), claude.New()}
 	cmd := &cobra.Command{
-		Use:   "continue",
-		Short: "Continue a task by dispatching to the right phase based on status",
-		Long: "Resolves a task (via --from-task or the shared picker) and dispatches " +
-			"to the right phase based on its status: planning -> detached re-plan, " +
+		Use: "continue",
+		Short: "Continue a task by dispatching to the right phase" +
+			" based on status",
+		Long: "Resolves a task (via --from-task or the shared picker) " +
+			"and dispatches to the right phase based on its status: " +
+			"planning -> detached re-plan, " +
 			"plan-done -> direct worker run, working -> work resume, " +
 			"work-done -> `j verify`, verifying -> `j verify resume`. " +
 			"Already-finished tasks (failed, completed) print " +
@@ -234,16 +248,18 @@ func newContinueCmd() *cobra.Command {
 			"the dispatch fires.",
 		PersistentPreRunE: preflight.PreRunE,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			return preflight.EnsureAgentSelections(cmd.Context(), preflight.AgentCheckOptions{
-				Stdin:  cmd.InOrStdin(),
-				Stdout: cmd.OutOrStdout(),
-				Stderr: cmd.ErrOrStderr(),
-				Agents: agents,
-			})
+			return preflight.EnsureAgentSelections(cmd.Context(),
+				preflight.AgentCheckOptions{
+					Stdin:  cmd.InOrStdin(),
+					Stdout: cmd.OutOrStdout(),
+					Stderr: cmd.ErrOrStderr(),
+					Agents: agents,
+				})
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var interactive *bool
-			if cmd.Flags().Changed("interactive") || envSet("TASKS_CONTINUE_INTERACTIVE") {
+			if cmd.Flags().Changed("interactive") ||
+				envSet("TASKS_CONTINUE_INTERACTIVE") {
 				v := viper.GetBool("tasks.continue.interactive")
 				interactive = &v
 			}
@@ -259,17 +275,24 @@ func newContinueCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().String("from-task", "", "Continue the named task without showing the picker")
-	cmd.Flags().String("tool", "", "Coding agent tool for plan-done dispatch (cursor|claude)")
-	cmd.Flags().String("model", "", "Model identifier for plan-done dispatch")
-	cmd.Flags().Bool("interactive", false, "Launch the coding agent in interactive mode on plan-done dispatch")
-	_ = viper.BindPFlag("tasks.continue.from_task", cmd.Flags().Lookup("from-task"))
-	_ = viper.BindPFlag("tasks.continue.tool", cmd.Flags().Lookup("tool"))
-	_ = viper.BindPFlag("tasks.continue.model", cmd.Flags().Lookup("model"))
-	_ = viper.BindPFlag("tasks.continue.interactive", cmd.Flags().Lookup("interactive"))
-	_ = viper.BindEnv("tasks.continue.from_task", "TASKS_CONTINUE_FROM_TASK")
-	_ = viper.BindEnv("tasks.continue.tool", "TASKS_CONTINUE_TOOL")
-	_ = viper.BindEnv("tasks.continue.model", "TASKS_CONTINUE_MODEL")
-	_ = viper.BindEnv("tasks.continue.interactive", "TASKS_CONTINUE_INTERACTIVE")
+	bindContinueFlags(cmd)
 	return cmd
+}
+
+func bindContinueFlags(cmd *cobra.Command) {
+	f := cmd.Flags()
+	f.String("from-task", "", "Continue the named task without showing the picker")
+	f.String("tool", "",
+		"Coding agent tool for plan-done dispatch (cursor|claude)")
+	f.String("model", "", "Model identifier for plan-done dispatch")
+	f.Bool("interactive", false,
+		"Launch the coding agent in interactive mode on plan-done dispatch")
+	bind := func(key, flag, env string) {
+		_ = viper.BindPFlag(key, f.Lookup(flag))
+		_ = viper.BindEnv(key, env)
+	}
+	bind("tasks.continue.from_task", "from-task", "TASKS_CONTINUE_FROM_TASK")
+	bind("tasks.continue.tool", "tool", "TASKS_CONTINUE_TOOL")
+	bind("tasks.continue.model", "model", "TASKS_CONTINUE_MODEL")
+	bind("tasks.continue.interactive", "interactive", "TASKS_CONTINUE_INTERACTIVE")
 }

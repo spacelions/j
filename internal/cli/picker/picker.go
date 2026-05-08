@@ -9,10 +9,10 @@
 //     PickTask leaves; PickSource composite that drives SelectSource
 //     and dispatches to the matching sub-picker.
 //
-// Plus standalone leaves: ConfirmStatusOverride (yes/no prompt). *Picker satisfies the
-// Selector and SourceUI interfaces via duck typing so cli commands'
-// narrow UI interfaces drop it in directly; tests inject scripted
-// fakes that also satisfy those interfaces.
+// Plus standalone leaves: ConfirmStatusOverride (yes/no prompt).
+// *Picker satisfies the Selector and SourceUI interfaces via duck
+// typing so cli commands' narrow UI interfaces drop it in directly;
+// tests inject scripted fakes that also satisfy those interfaces.
 package picker
 
 import (
@@ -69,9 +69,13 @@ func (p *Picker) run(ctx context.Context, field huh.Field) error {
 // the title so callers see immediately which prompt has nothing to
 // show; the title is lower-cased for the error message to match the
 // pre-extraction wording in plan / work / verify.
-func (p *Picker) choose(ctx context.Context, title string, options []string) (string, error) {
+func (p *Picker) choose(
+	ctx context.Context, title string, options []string,
+) (string, error) {
 	if len(options) == 0 {
-		return "", fmt.Errorf("%s: no options available", strings.ToLower(title))
+		return "", fmt.Errorf(
+			"%s: no options available", strings.ToLower(title),
+		)
 	}
 	var v string
 	if err := p.run(ctx, SelectField(title, options, &v)); err != nil {

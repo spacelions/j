@@ -78,20 +78,38 @@ func New() *cobra.Command {
 				v, _ := cmd.Flags().GetString("must-read")
 				opts.MustRead = &v
 			}
-			if cmd.Flags().Changed("plan-requires-approval") || envSet("INIT_PLAN_REQUIRES_APPROVAL") {
+			if cmd.Flags().Changed("plan-requires-approval") ||
+				envSet("INIT_PLAN_REQUIRES_APPROVAL") {
 				v := viper.GetBool("init.plan_requires_approval")
 				opts.PlanRequiresApproval = &v
 			}
 			return Run(cmd.Context(), opts)
 		},
 	}
-	cmd.Flags().BoolP("yes", "y", false, "Skip the confirmation prompt and recreate the layout")
-	cmd.Flags().String("must-read", "", `Pre-seed project.must_read (skip the preflight prompt). Use --must-read="" to seed an empty value.`)
-	cmd.Flags().Bool("plan-requires-approval", store.DefaultPlanRequiresApproval, "Seed project.plan_requires_approval")
+	cmd.Flags().BoolP(
+		"yes", "y", false,
+		"Skip the confirmation prompt and recreate the layout",
+	)
+	cmd.Flags().String(
+		"must-read", "",
+		`Pre-seed project.must_read (skip the preflight prompt). `+
+			`Use --must-read="" to seed an empty value.`,
+	)
+	cmd.Flags().Bool(
+		"plan-requires-approval",
+		store.DefaultPlanRequiresApproval,
+		"Seed project.plan_requires_approval",
+	)
 	_ = viper.BindPFlag("init.yes", cmd.Flags().Lookup("yes"))
 	_ = viper.BindEnv("init.yes", "INIT_YES")
-	_ = viper.BindPFlag("init.plan_requires_approval", cmd.Flags().Lookup("plan-requires-approval"))
-	_ = viper.BindEnv("init.plan_requires_approval", "INIT_PLAN_REQUIRES_APPROVAL")
+	_ = viper.BindPFlag(
+		"init.plan_requires_approval",
+		cmd.Flags().Lookup("plan-requires-approval"),
+	)
+	_ = viper.BindEnv(
+		"init.plan_requires_approval",
+		"INIT_PLAN_REQUIRES_APPROVAL",
+	)
 	return cmd
 }
 
@@ -168,7 +186,9 @@ func seedDefaults(mustRead *string, planRequiresApproval *bool) error {
 	if err != nil {
 		return err
 	}
-	if err := s.Put(store.BucketProject, store.KeyMaxIterations, defaultMaxIterations); err != nil {
+	if err := s.Put(
+		store.BucketProject, store.KeyMaxIterations, defaultMaxIterations,
+	); err != nil {
 		_ = s.Close()
 		return fmt.Errorf("init: persist max_iterations: %w", err)
 	}
@@ -176,12 +196,18 @@ func seedDefaults(mustRead *string, planRequiresApproval *bool) error {
 	if planRequiresApproval != nil {
 		approval = *planRequiresApproval
 	}
-	if err := s.Put(store.BucketProject, store.KeyPlanRequiresApproval, strconv.FormatBool(approval)); err != nil {
+	if err := s.Put(
+		store.BucketProject,
+		store.KeyPlanRequiresApproval,
+		strconv.FormatBool(approval),
+	); err != nil {
 		_ = s.Close()
 		return fmt.Errorf("init: persist plan_requires_approval: %w", err)
 	}
 	if mustRead != nil {
-		if err := s.Put(store.BucketProject, resolver.KeyMustRead, *mustRead); err != nil {
+		if err := s.Put(
+			store.BucketProject, resolver.KeyMustRead, *mustRead,
+		); err != nil {
 			_ = s.Close()
 			return fmt.Errorf("init: persist must_read: %w", err)
 		}

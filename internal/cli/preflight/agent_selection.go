@@ -45,7 +45,11 @@ func EnsureAgentSelections(ctx context.Context, opts AgentCheckOptions) error {
 	if len(opts.Agents) == 0 {
 		return errors.New("preflight: no coding agents configured")
 	}
-	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+	for _, bucket := range []string{
+		store.BucketPlanner,
+		store.BucketWorker,
+		store.BucketVerifier,
+	} {
 		if err := ensureBucketSelection(ctx, opts, bucket); err != nil {
 			return err
 		}
@@ -53,7 +57,9 @@ func EnsureAgentSelections(ctx context.Context, opts AgentCheckOptions) error {
 	return nil
 }
 
-func ensureBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket string) error {
+func ensureBucketSelection(
+	ctx context.Context, opts AgentCheckOptions, bucket string,
+) error {
 	_, _, err := readBucketSelection(ctx, opts, bucket)
 	if err == nil {
 		return nil
@@ -61,7 +67,9 @@ func ensureBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket s
 	if !errors.Is(err, resolver.ErrNoStoredSelection) {
 		return err
 	}
-	uitheme.NormalFprintf(opts.Stderr, "J: Choose your favourite for %s:\n", bucket)
+	uitheme.NormalFprintf(
+		opts.Stderr, "J: Choose your favourite for %s:\n", bucket,
+	)
 	pickedAgent, pickedModel, err := picker.PickAgent(ctx, opts.UI, opts.Agents)
 	if err != nil {
 		return err
@@ -70,7 +78,9 @@ func ensureBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket s
 	return nil
 }
 
-func readBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket string) (codingagents.Agent, string, error) {
+func readBucketSelection(
+	ctx context.Context, opts AgentCheckOptions, bucket string,
+) (codingagents.Agent, string, error) {
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
 		return nil, "", resolver.ErrNoStoredSelection
@@ -79,7 +89,9 @@ func readBucketSelection(ctx context.Context, opts AgentCheckOptions, bucket str
 	return resolver.AgentFromStore(ctx, s, bucket, opts.Agents)
 }
 
-func persistBucketSelection(opts AgentCheckOptions, bucket, tool, model string) {
+func persistBucketSelection(
+	opts AgentCheckOptions, bucket, tool, model string,
+) {
 	s, ok := store.OpenSettings(opts.Stderr)
 	if !ok {
 		return

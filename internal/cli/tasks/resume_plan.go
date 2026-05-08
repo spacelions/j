@@ -90,7 +90,9 @@ func RunResumePlan(ctx context.Context, opts ResumePlanOptions) (err error) {
 	})
 }
 
-func resolveResumePlanTaskID(ctx context.Context, opts ResumePlanOptions) (string, bool, error) {
+func resolveResumePlanTaskID(
+	ctx context.Context, opts ResumePlanOptions,
+) (string, bool, error) {
 	s, err := tasks.OpenDefault()
 	if err != nil {
 		return "", false, err
@@ -100,7 +102,9 @@ func resolveResumePlanTaskID(ctx context.Context, opts ResumePlanOptions) (strin
 	return id, ok, err
 }
 
-func pickResumePlanFromStore(ctx context.Context, s *tasks.Store, opts ResumePlanOptions) (string, bool, error) {
+func pickResumePlanFromStore(
+	ctx context.Context, s *tasks.Store, opts ResumePlanOptions,
+) (string, bool, error) {
 	rows, err := s.ListTasks()
 	if err != nil {
 		return "", false, err
@@ -133,8 +137,9 @@ func filterTasksWithPlanSession(rows []tasks.Task) []tasks.Task {
 func newResumePlanCmd() *cobra.Command {
 	agents := []codingagents.Agent{cursor.New(), claude.New()}
 	cmd := &cobra.Command{
-		Use:   "resume-plan",
-		Short: "Resume an in-flight planner session in the foreground with --interactive=true",
+		Use: "resume-plan",
+		Short: "Resume an in-flight planner session in the foreground " +
+			"with --interactive=true",
 		Long: "Filters tasks to rows with a non-empty plan_resume_session and " +
 			"renders the shared task picker. The selected task re-execs " +
 			"`j tasks orchestrate --plan-requires-approval=true --interactive=true` " +
@@ -143,12 +148,14 @@ func newResumePlanCmd() *cobra.Command {
 			"prints `J: no tasks with an active plan session` and exits 0.",
 		PersistentPreRunE: preflight.PreRunE,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			return preflight.EnsureAgentSelections(cmd.Context(), preflight.AgentCheckOptions{
-				Stdin:  cmd.InOrStdin(),
-				Stdout: cmd.OutOrStdout(),
-				Stderr: cmd.ErrOrStderr(),
-				Agents: agents,
-			})
+			return preflight.EnsureAgentSelections(
+				cmd.Context(),
+				preflight.AgentCheckOptions{
+					Stdin:  cmd.InOrStdin(),
+					Stdout: cmd.OutOrStdout(),
+					Stderr: cmd.ErrOrStderr(),
+					Agents: agents,
+				})
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return RunResumePlan(cmd.Context(), ResumePlanOptions{

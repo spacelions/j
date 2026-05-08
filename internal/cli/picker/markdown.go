@@ -25,7 +25,10 @@ func (p *Picker) PickMarkdownInCwd(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("picker: scan %s: %w", cwd, err)
 	}
 	if len(abs) == 0 {
-		return "", fmt.Errorf("picker: no markdown files in %s (excluding AGENTS.md/README.md)", cwd)
+		return "", fmt.Errorf(
+			"picker: no markdown files in %s "+
+				"(excluding AGENTS.md/README.md)", cwd,
+		)
 	}
 	basenames := make([]string, len(abs))
 	byBase := make(map[string]string, len(abs))

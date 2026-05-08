@@ -21,13 +21,23 @@ import (
 // substitution surface stays inside the tasks package — tests pass a
 // fake Spawner via EnterOptions, mirroring how the UI interface is
 // swapped, without leaking a new abstraction.
-type Spawner func(ctx context.Context, dir string, in io.Reader, out, errw io.Writer) error
+type Spawner func(
+	ctx context.Context,
+	dir string,
+	in io.Reader,
+	out, errw io.Writer,
+) error
 
 // defaultSpawner is the production Spawner. It resolves $SHELL with
 // a /bin/sh fallback, builds an exec.CommandContext rooted at the
 // chosen task directory, wires the streams, and returns the wrapped
 // exit error so cobra surfaces a non-zero shell exit code.
-func defaultSpawner(ctx context.Context, dir string, in io.Reader, out, errw io.Writer) error {
+func defaultSpawner(
+	ctx context.Context,
+	dir string,
+	in io.Reader,
+	out, errw io.Writer,
+) error {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/sh"
@@ -125,7 +135,13 @@ func RunEnter(ctx context.Context, opts EnterOptions) error {
 		fmt.Fprintln(opts.Stdout, taskDir)
 		return nil
 	}
-	if err := opts.Spawner(ctx, taskDir, opts.Stdin, opts.Stdout, opts.Stderr); err != nil {
+	if err := opts.Spawner(
+		ctx,
+		taskDir,
+		opts.Stdin,
+		opts.Stdout,
+		opts.Stderr,
+	); err != nil {
 		return fmt.Errorf("tasks enter: %w", err)
 	}
 	return nil
@@ -139,7 +155,11 @@ func RunEnter(ctx context.Context, opts EnterOptions) error {
 // second open) so the bbolt lock is acquired exactly once per
 // invocation. The picker branch delegates to pickFromStore so the
 // same selector body backs both `tasks enter` and `tasks discard`.
-func resolveEnterID(ctx context.Context, s *tasks.Store, opts EnterOptions) (string, bool, error) {
+func resolveEnterID(
+	ctx context.Context,
+	s *tasks.Store,
+	opts EnterOptions,
+) (string, bool, error) {
 	if opts.TaskID != "" {
 		if _, err := s.GetTask(opts.TaskID); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
@@ -180,7 +200,11 @@ func newEnterCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().String("id", "", "Task ID to enter (empty triggers the picker)")
-	cmd.Flags().Bool("print", false, "Print the absolute task directory instead of spawning a subshell")
+	cmd.Flags().Bool(
+		"print",
+		false,
+		"Print the absolute task directory instead of spawning a subshell",
+	)
 	_ = viper.BindPFlag("tasks.enter.id", cmd.Flags().Lookup("id"))
 	_ = viper.BindPFlag("tasks.enter.print", cmd.Flags().Lookup("print"))
 	_ = viper.BindEnv("tasks.enter.id", "TASKS_ENTER_ID")

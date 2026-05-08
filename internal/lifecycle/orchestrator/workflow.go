@@ -24,18 +24,26 @@ import (
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/genai"
 
-	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/agents/planner"
 	"github.com/spacelions/j/internal/agents/verifier"
 	"github.com/spacelions/j/internal/agents/worker"
+	"github.com/spacelions/j/internal/store"
 )
 
 // Run builds the planner/worker/verifier workflow and executes the ADK
 // universal launcher. The cfg carries the runtime knobs (API key, model,
 // iterations); launcherArgs are passed straight to the launcher parser
 // (nil/empty for console, or "web" "api" "webui" for the local web stack).
-func Run(ctx context.Context, cfg store.ProjectConfig, launcherArgs []string) error {
-	m, err := gemini.NewModel(ctx, cfg.Model, &genai.ClientConfig{APIKey: cfg.APIKey})
+func Run(
+	ctx context.Context,
+	cfg store.ProjectConfig,
+	launcherArgs []string,
+) error {
+	m, err := gemini.NewModel(
+		ctx,
+		cfg.Model,
+		&genai.ClientConfig{APIKey: cfg.APIKey},
+	)
 	if err != nil {
 		return fmt.Errorf("workflow: model: %w", err)
 	}
@@ -57,9 +65,10 @@ func Run(ctx context.Context, cfg store.ProjectConfig, launcherArgs []string) er
 
 	innerBody, err := sequentialagent.New(sequentialagent.Config{
 		AgentConfig: agent.Config{
-			Name:        "code_verify_body",
-			Description: "Single worker -> verifier pass; one iteration of the outer loop.",
-			SubAgents:   []agent.Agent{w, vfr},
+			Name: "code_verify_body",
+			Description: "Single worker -> verifier pass; one iteration" +
+				" of the outer loop.",
+			SubAgents: []agent.Agent{w, vfr},
 		},
 	})
 	if err != nil {
@@ -89,7 +98,8 @@ func Run(ctx context.Context, cfg store.ProjectConfig, launcherArgs []string) er
 		return fmt.Errorf("workflow: root: %w", err)
 	}
 
-	if err := full.NewLauncher().Execute(ctx, &launcher.Config{AgentLoader: agent.NewSingleLoader(root)}, launcherArgs); err != nil {
+	cfgL := &launcher.Config{AgentLoader: agent.NewSingleLoader(root)}
+	if err := full.NewLauncher().Execute(ctx, cfgL, launcherArgs); err != nil {
 		return fmt.Errorf("workflow: %w", err)
 	}
 	return nil

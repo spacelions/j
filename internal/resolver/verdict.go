@@ -14,7 +14,8 @@ func ReadVerdictForTask(taskID string) string {
 	if err != nil {
 		return "FAIL"
 	}
-	return ParseVerdict(filepath.Join(tasksDir, taskID, tasks.VerifierFindingsFileName))
+	return ParseVerdict(filepath.Join(
+		tasksDir, taskID, tasks.VerifierFindingsFileName))
 }
 
 var verdictRegexp = regexp.MustCompile(`(?i)^\s*VERDICT:\s*(PASS|FAIL)\s*$`)

@@ -90,7 +90,9 @@ func removeTaskWorktree(ctx context.Context, stderr io.Writer, t tasks.Task) {
 		return
 	}
 	if len(matches) > 1 {
-		uitheme.DangerousDialogBox(stderr, "J: worktree remove: multiple worktrees matched %q; using %s", name, matches[0].path)
+		uitheme.DangerousDialogBox(stderr,
+			"J: worktree remove: multiple worktrees matched %q; using %s",
+			name, matches[0].path)
 	}
 	path := matches[0].path
 	_, err = run.Output(ctx, "git", "worktree", "remove", "--force", path)
