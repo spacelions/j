@@ -1,7 +1,6 @@
 package testcases_test
 
 import (
-	"context"
 	"io"
 	"path/filepath"
 	"strings"
@@ -30,11 +29,11 @@ func TestVerify_ReVerify_EmptyVerifyResumeSession_HappyPath(
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &recoveryFakeUI{statusOK: true}
-	false_ := false
+
 	if err := clitasks.RunReVerify(
-		context.Background(), clitasks.ReVerifyOptions{
+		t.Context(), clitasks.ReVerifyOptions{
 			FromTask:    id,
-			Interactive: &false_,
+			Interactive: new(false),
 			Stdin:       strings.NewReader(""),
 			Stdout:      io.Discard,
 			Stderr:      io.Discard,

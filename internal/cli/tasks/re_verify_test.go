@@ -286,9 +286,9 @@ func TestRunReVerify_ClearsStaleVerifySession(t *testing.T) {
 		task.Status = tasks.StatusWorkDone
 		task.VerifyResumeSession = "stale-cursor"
 	})
-	if err := RunReVerify(context.Background(), ReVerifyOptions{
+	if err := RunReVerify(t.Context(), ReVerifyOptions{
 		FromTask:    id,
-		Interactive: boolPtr(false),
+		Interactive: new(false),
 		Stdin:       strings.NewReader(""),
 		Stdout:      io.Discard,
 		Stderr:      io.Discard,
