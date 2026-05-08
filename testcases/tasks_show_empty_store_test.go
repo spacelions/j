@@ -8,14 +8,14 @@ import (
 	"github.com/spacelions/j/internal/testutil"
 )
 
-// TestTasksTask_EmptyStore pins the acceptance bullet:
-// `j tasks task` (no `--from-task`) on an empty store short-circuits
+// TestTasksShow_EmptyStore pins the acceptance bullet:
+// `j tasks show` (no `--from-task`) on an empty store short-circuits
 // BEFORE the picker, prints `J: no tasks`, and exits 0.
-func TestTasksTask_EmptyStore(t *testing.T) {
+func TestTasksShow_EmptyStore(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	stdout, _, err := testutil.RunCobra(tasks.New(), "task")
+	stdout, _, err := testutil.RunCobra(tasks.New(), "show")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

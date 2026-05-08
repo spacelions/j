@@ -52,7 +52,8 @@ func New() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolP(simpleFlag, "s", false,
-		"Print plain tabwriter output (no border, no ticking). Use for pipes and scripts.")
+		"Print plain tabwriter output (no border, no ticking). "+
+			"Use for pipes and scripts.")
 	cmd.AddCommand(newDiscardCmd())
 	cmd.AddCommand(newEnterCmd())
 	cmd.AddCommand(newStartCmd())
@@ -66,7 +67,6 @@ func New() *cobra.Command {
 	cmd.AddCommand(newResumeWorkCmd())
 	cmd.AddCommand(newReVerifyCmd())
 	cmd.AddCommand(newResumeVerifyCmd())
-	cmd.AddCommand(newTaskViewCmd())
 	return cmd
 }
 
@@ -131,7 +131,9 @@ func terminalWidth(w io.Writer) int {
 // its task slice on every tick. It re-runs ListTasks, reaps any
 // background children that have since exited, and sorts the result so
 // the rendered table reflects the latest state of the bbolt store.
-func storeReloader(s *tasks.Store, tasksDir string) func() ([]tasks.Task, error) {
+func storeReloader(
+	s *tasks.Store, tasksDir string,
+) func() ([]tasks.Task, error) {
 	return func() ([]tasks.Task, error) {
 		t, err := s.ListTasks()
 		if err != nil {
