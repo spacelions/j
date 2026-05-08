@@ -93,6 +93,22 @@ func TestApply_ForegroundPlanNeedsClarification(t *testing.T) {
 	}
 }
 
+// TestApply_ForegroundWorkNeedsClarification pins the foreground
+// worker-exit edge: from `working` the new event lands the row in
+// `needs-clarification`, mirroring the reaper-event entry.
+func TestApply_ForegroundWorkNeedsClarification(t *testing.T) {
+	got, err := Apply(StatusWorking, EventWorkNeedsClarification)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if got != StatusNeedsClarification {
+		t.Fatalf("Apply = %q, want needs-clarification", got)
+	}
+	if !IsLegal(StatusWorking, EventWorkNeedsClarification) {
+		t.Fatal("IsLegal returned false for foreground worker edge")
+	}
+}
+
 func TestIsLegal_PlanResumeFromPendingApproval(t *testing.T) {
 	if !IsLegal(StatusPlanPendingApproval, EventPlanResume) {
 		t.Error(

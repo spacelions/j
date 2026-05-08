@@ -100,6 +100,9 @@ coverage:
 		-e 'internal/store/tasks/persist\.go:[0-9]+:[[:space:]]+PersistWarn[[:space:]]' \
 		-e 'internal/lifecycle/plan\.go:[0-9]+:[[:space:]]+BeginPlanReuse[[:space:]]' \
 		-e 'internal/lifecycle/verify\.go:[0-9]+:[[:space:]]+BeginVerifyResume[[:space:]]' \
+		-e 'internal/lifecycle/work\.go:[0-9]+:[[:space:]]+clarificationPresent[[:space:]]' \
+		-e 'internal/lifecycle/orchestrator/verify_guard\.go:[0-9]+:[[:space:]]+guardRun[[:space:]]' \
+		-e 'internal/lifecycle/orchestrator/verify_guard\.go:[0-9]+:[[:space:]]+rowStoppedAtClarification[[:space:]]' \
 		-e 'internal/store/tasks/dir\.go:[0-9]+:[[:space:]]+DefaultDir[[:space:]]' \
 		-e 'internal/store/tasks/dir\.go:[0-9]+:[[:space:]]+EnsureDir[[:space:]]' \
 		-e 'internal/store/tasks/dir\.go:[0-9]+:[[:space:]]+RemoveDir[[:space:]]' \

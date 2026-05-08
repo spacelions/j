@@ -28,6 +28,7 @@
 //	    working --> work-done : EventReaperWorkDone
 //	    working --> help : EventWorkError
 //	    working --> help : EventWorkQuit
+//	    working --> needs-clarification : EventWorkNeedsClarification
 //	    working --> needs-clarification : EventReaperWorkNeedsClarification
 //	    working --> working : EventWorkResume
 //	    work-done --> planning : EventPlanRestart
@@ -98,6 +99,7 @@ const (
 	EventWorkDone                    Event = "work_done"
 	EventWorkQuit                    Event = "work_quit"
 	EventWorkError                   Event = "work_error"
+	EventWorkNeedsClarification      Event = "work_needs_clarification"
 	EventReaperWorkDone              Event = "reaper_work_done"
 	EventReaperWorkNeedsClarification Event = "reaper_work_needs_clarification"
 	EventVerifyBegin                 Event = "verify_begin"
@@ -130,12 +132,10 @@ var transitions = []Transition{
 	{StatusPlanning, EventReaperPlanFail, StatusHelp},
 	{StatusPlanning, EventPlanNeedsClarification, StatusNeedsClarification},
 	{StatusPlanning, EventReaperPlanNeedsClarification, StatusNeedsClarification},
-
 	{StatusPlanning, EventPlanRestart, StatusPlanning},
 	{StatusPlanning, EventPlanResume, StatusPlanning},
 	{StatusPlanning, EventWorkRestart, StatusWorking},
 	{StatusPlanning, EventVerifyBegin, StatusVerifying},
-
 	{StatusPlanPendingApproval, EventPlanApprove, StatusPlanDone},
 	{StatusPlanPendingApproval, EventPlanRestart, StatusPlanning},
 	{StatusPlanPendingApproval, EventPlanResume, StatusPlanning},
@@ -145,7 +145,6 @@ var transitions = []Transition{
 	{StatusPlanDone, EventWorkRestart, StatusWorking},
 	{StatusPlanDone, EventVerifyBegin, StatusVerifying},
 	{StatusPlanDone, EventVerifyResume, StatusVerifying},
-
 	{StatusWorking, EventPlanRestart, StatusPlanning},
 	{StatusWorking, EventVerifyRestart, StatusVerifying},
 	{StatusWorking, EventWorkRestart, StatusWorking},
@@ -154,8 +153,8 @@ var transitions = []Transition{
 	{StatusWorking, EventWorkError, StatusHelp},
 	{StatusWorking, EventWorkResume, StatusWorking},
 	{StatusWorking, EventReaperWorkDone, StatusWorkDone},
+	{StatusWorking, EventWorkNeedsClarification, StatusNeedsClarification},
 	{StatusWorking, EventReaperWorkNeedsClarification, StatusNeedsClarification},
-
 	{StatusWorkDone, EventPlanRestart, StatusPlanning},
 	{StatusWorkDone, EventWorkRestart, StatusWorking},
 	{StatusWorkDone, EventVerifyBegin, StatusVerifying},

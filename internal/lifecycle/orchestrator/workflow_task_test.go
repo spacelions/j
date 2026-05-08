@@ -93,6 +93,65 @@ func TestTaskSubAgents_PlanApprovalGate(t *testing.T) {
 	}
 }
 
+// TestRunForTask_WorkClarificationStopsBeforeVerify pins acceptance
+// criteria 1 and 2: a foreground worker that drops `clarification.md`
+// halts the chain at `needs-clarification` and the verifier sub-agent
+// is NOT invoked on the same orchestrator run.
+func TestRunForTask_WorkClarificationStopsBeforeVerify(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := seedChainTask(t, "scripted")
+	stub := stubChain("scripted")
+	stub.workClarification = "need answer X\n"
+	stub.verdict = "VERDICT: PASS"
+
+	if err := RunForTask(context.Background(),
+		store.TaskConfig{MaxIterations: 1}, id,
+		[]codingagents.Agent{stub}, io.Discard,
+		PhaseOverrides{}); err != nil {
+		t.Fatalf("RunForTask: %v", err)
+	}
+	if stub.verifyCalls.Load() != 0 {
+		t.Fatalf("verify calls = %d, want 0 (verifier must skip)",
+			stub.verifyCalls.Load())
+	}
+	row := readChainTaskRow(t, id)
+	if row.Status != tasks.StatusNeedsClarification {
+		t.Fatalf("Status = %q, want needs-clarification", row.Status)
+	}
+}
+
+// TestRunForTaskFromWork_ClarificationStopsBeforeVerify pins the same
+// behaviour on the from-work entry point used by `j tasks continue`
+// on a `plan-done` row.
+func TestRunForTaskFromWork_ClarificationStopsBeforeVerify(
+	t *testing.T,
+) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := seedChainTask(t, "scripted")
+	if err := flipToPlanDone(t, id); err != nil {
+		t.Fatal(err)
+	}
+	stub := stubChain("scripted")
+	stub.workClarification = "halt at work\n"
+	stub.verdict = "VERDICT: PASS"
+
+	if err := RunForTaskFromWork(context.Background(),
+		store.TaskConfig{MaxIterations: 1}, id,
+		[]codingagents.Agent{stub}, io.Discard,
+		PhaseOverrides{}); err != nil {
+		t.Fatalf("RunForTaskFromWork: %v", err)
+	}
+	if stub.verifyCalls.Load() != 0 {
+		t.Fatalf("verify calls = %d, want 0", stub.verifyCalls.Load())
+	}
+	row := readChainTaskRow(t, id)
+	if row.Status != tasks.StatusNeedsClarification {
+		t.Fatalf("Status = %q, want needs-clarification", row.Status)
+	}
+}
+
 // TestTaskSubAgents_FromWork pins the worker→verifier shape used by
 // `j tasks continue` on a `plan-done` row, plus re-work / resume-work.
 func TestTaskSubAgents_FromWork(t *testing.T) {
@@ -455,15 +514,16 @@ func readChainTaskRow(t *testing.T, id string) tasks.Task {
 // so the synchronous lifecycle paths run end to end. Verdict is
 // configurable; planErr / workErr / verifyErr inject failures.
 type stubChainAgent struct {
-	name        string
-	models      []string
-	planCalls   atomic.Int32
-	workCalls   atomic.Int32
-	verifyCalls atomic.Int32
-	verdict     string
-	planErr     error
-	workErr     error
-	verifyErr   error
+	name              string
+	models            []string
+	planCalls         atomic.Int32
+	workCalls         atomic.Int32
+	verifyCalls       atomic.Int32
+	verdict           string
+	planErr           error
+	workErr           error
+	verifyErr         error
+	workClarification string
 }
 
 func stubChain(name string) *stubChainAgent {
@@ -489,8 +549,14 @@ func (a *stubChainAgent) Plan(_ context.Context, req codingagents.PlanRequest) (
 	return 0, nil
 }
 
-func (a *stubChainAgent) Work(context.Context, codingagents.WorkRequest) (int, error) {
+func (a *stubChainAgent) Work(_ context.Context, req codingagents.WorkRequest) (int, error) {
 	a.workCalls.Add(1)
+	if a.workClarification != "" && req.ClarificationPath != "" {
+		if err := os.WriteFile(req.ClarificationPath,
+			[]byte(a.workClarification), 0o644); err != nil {
+			return 0, err
+		}
+	}
 	return 0, a.workErr
 }
 

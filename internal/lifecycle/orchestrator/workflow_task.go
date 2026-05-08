@@ -8,9 +8,6 @@ import (
 
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/workflowagents/sequentialagent"
-	"google.golang.org/adk/runner"
-	"google.golang.org/adk/session"
-	"google.golang.org/genai"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
@@ -80,21 +77,33 @@ func ParseRunPhase(s string) (RunPhase, error) {
 	case string(RunPhaseVerifyOnly):
 		return RunPhaseVerifyOnly, nil
 	}
-	return "", fmt.Errorf("workflow: unknown run phase %q (want full|from-work|verify-only)", s)
+	return "", fmt.Errorf(
+		"workflow: unknown run phase %q "+
+			"(want full|from-work|verify-only)", s)
 }
 
 // RunForTask drives the planner → worker → verifier flow for an
 // already-seeded task end to end.
-func RunForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, overrides PhaseOverrides) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr, RunPhaseFull, false, overrides)
+func RunForTask(
+	ctx context.Context, cfg store.TaskConfig, taskID string,
+	agents []codingagents.Agent, stderr io.Writer,
+	overrides PhaseOverrides,
+) error {
+	return runForTask(ctx, cfg, taskID, agents, stderr,
+		RunPhaseFull, false, overrides)
 }
 
 // RunForTaskWithGate drives an already-seeded task, stopping after the
 // planner when planRequiresApproval is true. A gated run leaves the
 // row at plan-done so `j tasks continue --from-task <id>` can pick up
 // the existing dispatch path.
-func RunForTaskWithGate(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, planRequiresApproval bool, overrides PhaseOverrides) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr, RunPhaseFull, planRequiresApproval, overrides)
+func RunForTaskWithGate(
+	ctx context.Context, cfg store.TaskConfig, taskID string,
+	agents []codingagents.Agent, stderr io.Writer,
+	planRequiresApproval bool, overrides PhaseOverrides,
+) error {
+	return runForTask(ctx, cfg, taskID, agents, stderr,
+		RunPhaseFull, planRequiresApproval, overrides)
 }
 
 // RunForTaskFromWork drives an already-seeded task that is past the
@@ -103,8 +112,13 @@ func RunForTaskWithGate(ctx context.Context, cfg store.TaskConfig, taskID string
 // --interactive=true` surface the agent's TUI; the worker reads
 // resume state from the task row's WorkResumeSession field directly
 // (re-work clears it; resume-work leaves it).
-func RunForTaskFromWork(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, overrides PhaseOverrides) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr, RunPhaseFromWork, false, overrides)
+func RunForTaskFromWork(
+	ctx context.Context, cfg store.TaskConfig, taskID string,
+	agents []codingagents.Agent, stderr io.Writer,
+	overrides PhaseOverrides,
+) error {
+	return runForTask(ctx, cfg, taskID, agents, stderr,
+		RunPhaseFromWork, false, overrides)
 }
 
 // RunForTaskVerifyOnly drives only the verifier phase on an
@@ -112,8 +126,12 @@ func RunForTaskFromWork(ctx context.Context, cfg store.TaskConfig, taskID string
 // VerifyResumeSession to decide between Run / RunResume internally so
 // the orchestrator does not need to thread interactive / resume
 // through here.
-func RunForTaskVerifyOnly(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr, RunPhaseVerifyOnly, false, PhaseOverrides{})
+func RunForTaskVerifyOnly(
+	ctx context.Context, cfg store.TaskConfig, taskID string,
+	agents []codingagents.Agent, stderr io.Writer,
+) error {
+	return runForTask(ctx, cfg, taskID, agents, stderr,
+		RunPhaseVerifyOnly, false, PhaseOverrides{})
 }
 
 // runForTask builds a top-level SequentialAgent over shell-out custom
@@ -141,7 +159,11 @@ func RunForTaskVerifyOnly(ctx context.Context, cfg store.TaskConfig, taskID stri
 // MaxIterations defaults are owned by callers: production callers
 // fetch a sane default via store.LoadTaskConfig; tests that pass a
 // zero-value Config flow through verifier.New's own fallback.
-func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, phase RunPhase, planRequiresApproval bool, overrides PhaseOverrides) error {
+func runForTask(
+	ctx context.Context, cfg store.TaskConfig, taskID string,
+	agents []codingagents.Agent, stderr io.Writer, phase RunPhase,
+	planRequiresApproval bool, overrides PhaseOverrides,
+) error {
 	if taskID == "" {
 		return errors.New("workflow: task id required")
 	}
@@ -152,16 +174,18 @@ func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents
 		stderr = io.Discard
 	}
 
-	subAgents, err := taskSubAgents(cfg, taskID, agents, stderr, phase, planRequiresApproval, overrides)
+	subAgents, err := taskSubAgents(cfg, taskID, agents, stderr,
+		phase, planRequiresApproval, overrides)
 	if err != nil {
 		return err
 	}
 
 	root, err := sequentialagent.New(sequentialagent.Config{
 		AgentConfig: agent.Config{
-			Name:        "planner_worker_verifier_task",
-			Description: "Drives planner → worker → verifier for a single seeded task.",
-			SubAgents:   subAgents,
+			Name: "planner_worker_verifier_task",
+			Description: "Drives planner → worker → verifier for " +
+				"a single seeded task.",
+			SubAgents: subAgents,
 		},
 	})
 	if err != nil {
@@ -175,7 +199,11 @@ func runForTask(ctx context.Context, cfg store.TaskConfig, taskID string, agents
 	return nil
 }
 
-func taskSubAgents(cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, phase RunPhase, planRequiresApproval bool, overrides PhaseOverrides) ([]agent.Agent, error) {
+func taskSubAgents(
+	cfg store.TaskConfig, taskID string,
+	agents []codingagents.Agent, stderr io.Writer, phase RunPhase,
+	planRequiresApproval bool, overrides PhaseOverrides,
+) ([]agent.Agent, error) {
 	switch phase {
 	case RunPhaseVerifyOnly:
 		// The verifier internally decides between Run / RunResume by
@@ -193,11 +221,12 @@ func taskSubAgents(cfg store.TaskConfig, taskID string, agents []codingagents.Ag
 		}
 		return []agent.Agent{verifierAgent}, nil
 	case RunPhaseFromWork:
-		workerAgent, verifierAgent, err := newWorkVerify(cfg, taskID, agents, stderr, overrides.Interactive)
+		workerAgent, guardedVerifier, err := newWorkVerify(
+			cfg, taskID, agents, stderr, overrides.Interactive)
 		if err != nil {
 			return nil, err
 		}
-		return []agent.Agent{workerAgent, verifierAgent}, nil
+		return []agent.Agent{workerAgent, guardedVerifier}, nil
 	case RunPhaseFull:
 		plannerAgent, err := planner.New(planner.Config{
 			TaskID:      taskID,
@@ -217,17 +246,24 @@ func taskSubAgents(cfg store.TaskConfig, taskID string, agents []codingagents.Ag
 		// The planner-then-worker handoff path leaves the worker
 		// non-interactive: the planner's TUI exits cleanly as the
 		// hand-off, and the worker proceeds headless.
-		workerAgent, verifierAgent, err := newWorkVerify(cfg, taskID, agents, stderr, false)
+		workerAgent, guardedVerifier, err := newWorkVerify(
+			cfg, taskID, agents, stderr, false)
 		if err != nil {
 			return nil, err
 		}
-		return []agent.Agent{plannerAgent, workerAgent, verifierAgent}, nil
+		return []agent.Agent{
+			plannerAgent, workerAgent, guardedVerifier,
+		}, nil
 	default:
 		return nil, fmt.Errorf("workflow: unknown phase %q", phase)
 	}
 }
 
-func newWorkVerify(cfg store.TaskConfig, taskID string, agents []codingagents.Agent, stderr io.Writer, workerInteractive bool) (agent.Agent, agent.Agent, error) {
+func newWorkVerify(
+	cfg store.TaskConfig, taskID string,
+	agents []codingagents.Agent, stderr io.Writer,
+	workerInteractive bool,
+) (agent.Agent, agent.Agent, error) {
 	workerAgent, err := worker.New(worker.Config{
 		TaskID:      taskID,
 		Agents:      agents,
@@ -246,41 +282,10 @@ func newWorkVerify(cfg store.TaskConfig, taskID string, agents []codingagents.Ag
 	if err != nil {
 		return nil, nil, fmt.Errorf("workflow: verifier: %w", err)
 	}
-	return workerAgent, verifierAgent, nil
-}
-
-// driveSequential constructs the smallest viable runner.New session
-// the SequentialAgent can run inside and drains the resulting event
-// iterator. The first error short-circuits.
-//
-// The user message is empty: the shell-out custom agents read
-// everything they need from disk (per-task <id>/requirements.md /
-// plan.md / verifier_findings.md); the orchestrator does not have
-// to push a textual prompt.
-func driveSequential(ctx context.Context, root agent.Agent) error {
-	svc := session.InMemoryService()
-	created, err := svc.Create(ctx, &session.CreateRequest{
-		AppName: orchestratorAppName,
-		UserID:  orchestratorUserID,
-	})
+	guarded, err := skipVerifyOnClarification(taskID, verifierAgent)
 	if err != nil {
-		return fmt.Errorf("workflow: create session: %w", err)
+		return nil, nil, fmt.Errorf("workflow: verify guard: %w", err)
 	}
-	r, err := runner.New(runner.Config{
-		AppName:        orchestratorAppName,
-		Agent:          root,
-		SessionService: svc,
-	})
-	if err != nil {
-		return fmt.Errorf("workflow: runner: %w", err)
-	}
-	msg := &genai.Content{Role: genai.RoleUser, Parts: []*genai.Part{{Text: ""}}}
-	for event, runErr := range r.Run(ctx, orchestratorUserID, created.Session.ID(), msg, agent.RunConfig{}) {
-		if runErr != nil {
-			return runErr
-		}
-		_ = event
-	}
-	return nil
+	return workerAgent, guarded, nil
 }
 
