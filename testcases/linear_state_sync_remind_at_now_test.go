@@ -11,11 +11,11 @@ import (
 )
 
 // TestLinearStateSync_ReminderAtIsRFC3339Now pins the "reminderAt ≈
-// now (RFC3339, UTC)" acceptance criterion. The reminder must
-// surface immediately in Linear's inbox, which Linear interprets
-// from the reminderAt timestamp; sending an RFC3339 timestamp
-// snapped to "now" is what guarantees the inbox ping fires
-// without a delay window.
+// now + 1 minute (RFC3339, UTC)" acceptance criterion. The reminder
+// must fire effectively immediately in Linear's inbox; the +1 minute
+// offset is required by Linear's snooze-must-be-future precondition
+// (RFC3339 second-truncation + request transit can otherwise leave
+// the timestamp at or before server-now and trip the rejection).
 func TestLinearStateSync_ReminderAtIsRFC3339Now(t *testing.T) {
 	env := newLinearStateSyncEnv(t)
 	saveLinearAPIKey(t, "lin_api_TEST")
@@ -25,7 +25,7 @@ func TestLinearStateSync_ReminderAtIsRFC3339Now(t *testing.T) {
 	fireStateSyncTransition("task-1", "ENG-1",
 		tasks.StatusPlanning, tasks.StatusPlanDone,
 		tasks.EventPlanDone)
-	after := time.Now().UTC().Add(2 * time.Second)
+	after := time.Now().UTC().Add(time.Minute + 2*time.Second)
 
 	got := env.recordedBodies()
 	if len(got) < 4 {

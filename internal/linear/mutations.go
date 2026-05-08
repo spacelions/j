@@ -28,7 +28,10 @@ const issueUpdateStateMutation = `mutation($id:String!,$stateId:String!){` +
 
 // issueReminderMutation schedules a Linear inbox reminder for the
 // API-key owner on the issue addressed by node id. `reminderAt` is an
-// RFC3339 timestamp; passing "now" surfaces the reminder immediately.
+// RFC3339 timestamp bumped one minute into the future to satisfy
+// Linear's "Snooze date must be in the future" precondition after
+// RFC3339 second-truncation and request transit; the inbox ping still
+// surfaces effectively immediately for the owner.
 const issueReminderMutation = `mutation($id:String!,$reminderAt:DateTime!){` +
 	`issueReminder(id:$id,reminderAt:$reminderAt){success}}`
 
@@ -89,11 +92,13 @@ func (c *Client) UpdateIssueState(
 
 // RemindOnIssue schedules a Linear inbox reminder for the API-key
 // owner on the issue addressed by issueID (GraphQL node id). The
-// reminder fires at "now" (RFC3339 UTC) so it surfaces immediately
-// in the owner's inbox. Used by the linear-state-sync hook to ping
-// the owner on transitions that warrant human attention without
-// posting a comment thread entry that Linear's actor==recipient gate
-// would otherwise suppress.
+// reminderAt timestamp is bumped one minute into the future
+// (RFC3339 UTC) because Linear rejects `reminderAt <= now` after
+// RFC3339 second-truncation and request transit; the inbox ping
+// still surfaces effectively immediately. Used by the
+// linear-state-sync hook to ping the owner on transitions that
+// warrant human attention without posting a comment thread entry
+// that Linear's actor==recipient gate would otherwise suppress.
 func (c *Client) RemindOnIssue(
 	ctx context.Context, issueID string,
 ) error {
@@ -101,8 +106,9 @@ func (c *Client) RemindOnIssue(
 	req := graphQLRequest{
 		Query: issueReminderMutation,
 		Variables: map[string]any{
-			"id":         issueID,
-			"reminderAt": time.Now().UTC().Format(time.RFC3339),
+			"id": issueID,
+			"reminderAt": time.Now().UTC().
+				Add(time.Minute).Format(time.RFC3339),
 		},
 	}
 	if err := c.do(ctx, req, &resp); err != nil {

@@ -229,7 +229,7 @@ func TestRemindOnIssue_OK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RemindOnIssue: %v", err)
 	}
-	after := time.Now().UTC().Add(time.Second)
+	after := time.Now().UTC().Add(time.Minute + time.Second)
 	if !strings.Contains(string(seenBody), "issueReminder") {
 		t.Fatalf("body missing issueReminder: %s", seenBody)
 	}

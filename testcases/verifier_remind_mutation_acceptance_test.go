@@ -44,7 +44,7 @@ func TestVerifier_RemindOnIssue_UsesIssueReminderMutation(
 	); err != nil {
 		t.Fatalf("RemindOnIssue: %v", err)
 	}
-	after := time.Now().UTC().Add(2 * time.Second)
+	after := time.Now().UTC().Add(time.Minute + 2*time.Second)
 
 	body := string(seen)
 	if !strings.Contains(body, "issueReminder(") {
