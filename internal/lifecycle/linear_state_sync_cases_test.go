@@ -374,3 +374,274 @@ func TestLinearStateSync_VerifyBegin_PR_CommentFails_StillReminds(
 		t.Fatalf("stderr = %q", msg)
 	}
 }
+
+func TestLinearStateSync_NeedsClarification_PlanReaper_PostsCommentAndReminder(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	logPath := writeClarification(t, "please clarify foo")
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", logPath,
+		tasks.StatusPlanning, tasks.StatusNeedsClarification,
+		tasks.EventReaperPlanNeedsClarification)
+	got := env.recordedBodies()
+	want := []string{
+		"issue", "states", "issueUpdate", "commentCreate", "reminder",
+	}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	assertVarStr(t, got[2], "stateId", "s-prog")
+	assertVarStr(t, got[3], "body", "please clarify foo")
+	assertVarStr(t, got[4], "id", "node-1")
+}
+
+func TestLinearStateSync_NeedsClarification_WorkReaper_PostsCommentAndReminder(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	logPath := writeClarification(t, "please clarify foo")
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", logPath,
+		tasks.StatusWorking, tasks.StatusNeedsClarification,
+		tasks.EventReaperWorkNeedsClarification)
+	got := env.recordedBodies()
+	want := []string{
+		"issue", "states", "issueUpdate", "commentCreate", "reminder",
+	}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	assertVarStr(t, got[2], "stateId", "s-prog")
+	assertVarStr(t, got[3], "body", "please clarify foo")
+	assertVarStr(t, got[4], "id", "node-1")
+}
+
+func TestLinearStateSync_NeedsClarification_VerifyReaper_PostsCommentAndReminder(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	logPath := writeClarification(t, "please clarify foo")
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", logPath,
+		tasks.StatusVerifying, tasks.StatusNeedsClarification,
+		tasks.EventReaperVerifyNeedsClarification)
+	got := env.recordedBodies()
+	want := []string{
+		"issue", "states", "issueUpdate", "commentCreate", "reminder",
+	}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	assertVarStr(t, got[2], "stateId", "s-prog")
+	assertVarStr(t, got[3], "body", "please clarify foo")
+	assertVarStr(t, got[4], "id", "node-1")
+}
+
+func TestLinearStateSync_NeedsClarification_NoAgentLogPath_StillRemindsAndWarns(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", "",
+		tasks.StatusPlanning, tasks.StatusNeedsClarification,
+		tasks.EventReaperPlanNeedsClarification)
+	got := env.recordedBodies()
+	want := []string{"issue", "states", "issueUpdate", "reminder"}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	if msg := env.stderrText(t); !strings.Contains(
+		msg, "no agent log path") {
+		t.Fatalf("stderr = %q, want no-agent-log-path warning", msg)
+	}
+}
+
+func TestLinearStateSync_NeedsClarification_FileMissing_StillReminds(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	logPath := agentLogPathOnly(t)
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", logPath,
+		tasks.StatusPlanning, tasks.StatusNeedsClarification,
+		tasks.EventReaperPlanNeedsClarification)
+	got := env.recordedBodies()
+	want := []string{"issue", "states", "issueUpdate", "reminder"}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	if msg := env.stderrText(t); !strings.Contains(
+		msg, "clarification.md") {
+		t.Fatalf("stderr = %q, want clarification.md warning", msg)
+	}
+}
+
+func TestLinearStateSync_NeedsClarification_FileEmpty_StillReminds(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	logPath := writeClarification(t, "   \n\t\n")
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", logPath,
+		tasks.StatusPlanning, tasks.StatusNeedsClarification,
+		tasks.EventReaperPlanNeedsClarification)
+	got := env.recordedBodies()
+	want := []string{"issue", "states", "issueUpdate", "reminder"}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	if msg := env.stderrText(t); !strings.Contains(msg, "empty") {
+		t.Fatalf("stderr = %q, want empty-body warning", msg)
+	}
+}
+
+func TestLinearStateSync_NeedsClarification_CommentFails_StillReminds(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	env.commentErrs = []string{"down"}
+	saveAPIKey(t, "lin_api_test")
+	logPath := writeClarification(t, "please clarify foo")
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", logPath,
+		tasks.StatusPlanning, tasks.StatusNeedsClarification,
+		tasks.EventReaperPlanNeedsClarification)
+	got := env.recordedBodies()
+	want := []string{
+		"issue", "states", "issueUpdate", "commentCreate", "reminder",
+	}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	if msg := env.stderrText(t); !strings.Contains(
+		msg, "commentCreate") {
+		t.Fatalf("stderr = %q", msg)
+	}
+}
+
+func TestLinearStateSync_NeedsClarification_UpdateFails_StillPosts(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	env.updateErrors = []string{"boom"}
+	saveAPIKey(t, "lin_api_test")
+	logPath := writeClarification(t, "please clarify foo")
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", logPath,
+		tasks.StatusPlanning, tasks.StatusNeedsClarification,
+		tasks.EventReaperPlanNeedsClarification)
+	got := env.recordedBodies()
+	want := []string{
+		"issue", "states", "issueUpdate", "commentCreate", "reminder",
+	}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	if msg := env.stderrText(t); !strings.Contains(
+		msg, "issueUpdate") {
+		t.Fatalf("stderr = %q, want issueUpdate warning", msg)
+	}
+}
+
+func TestLinearStateSync_NeedsClarification_RemindFails_Warns(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	env.remindErrors = []string{"down"}
+	saveAPIKey(t, "lin_api_test")
+	logPath := writeClarification(t, "please clarify foo")
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", logPath,
+		tasks.StatusPlanning, tasks.StatusNeedsClarification,
+		tasks.EventReaperPlanNeedsClarification)
+	got := env.recordedBodies()
+	want := []string{
+		"issue", "states", "issueUpdate", "commentCreate", "reminder",
+	}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	if msg := env.stderrText(t); !strings.Contains(
+		msg, "issueReminder") {
+		t.Fatalf("stderr = %q", msg)
+	}
+}
+
+func TestLinearStateSync_NeedsClarification_NonReaperEvent_NoCommentNoReminder(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	logPath := writeClarification(t, "please clarify foo")
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", logPath,
+		tasks.StatusPlanning, tasks.StatusNeedsClarification,
+		tasks.EventPlanDone)
+	got := env.recordedBodies()
+	want := []string{"issue", "states", "issueUpdate"}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	assertVarStr(t, got[2], "stateId", "s-prog")
+}
+
+func TestLinearStateSync_PlanResumeFromNeedsClarification_NoCommentNoReminder(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	logPath := writeClarification(t, "please clarify foo")
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", logPath,
+		tasks.StatusNeedsClarification, tasks.StatusPlanning,
+		tasks.EventPlanResume)
+	got := env.recordedBodies()
+	want := []string{"issue", "states", "issueUpdate"}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	assertVarStr(t, got[2], "stateId", "s-todo")
+}
+
+func TestLinearStateSync_WorkResumeFromNeedsClarification_NoCommentNoReminder(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	logPath := writeClarification(t, "please clarify foo")
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", logPath,
+		tasks.StatusNeedsClarification, tasks.StatusWorking,
+		tasks.EventWorkResume)
+	got := env.recordedBodies()
+	want := []string{"issue", "states", "issueUpdate"}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	assertVarStr(t, got[2], "stateId", "s-prog")
+}
+
+func TestLinearStateSync_VerifyResumeFromNeedsClarification_NoCommentNoReminder(
+	t *testing.T,
+) {
+	env := newStateSyncEnv(t)
+	saveAPIKey(t, "lin_api_test")
+	logPath := writeClarification(t, "please clarify foo")
+	InitLinearStateSync()
+	fireStateSyncWithLog("task-1", "ENG-1", logPath,
+		tasks.StatusNeedsClarification, tasks.StatusVerifying,
+		tasks.EventVerifyResume)
+	got := env.recordedBodies()
+	want := []string{"issue", "states", "issueUpdate"}
+	if !equalKinds(bodyKinds(got), want) {
+		t.Fatalf("call order = %v, want %v", bodyKinds(got), want)
+	}
+	assertVarStr(t, got[2], "stateId", "s-prog")
+}
