@@ -3,6 +3,8 @@ package lifecycle
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
@@ -32,12 +34,17 @@ type stateSyncTarget struct {
 // traffic. `Planning` is mapped (ping=false) so re-plan and
 // resume-plan transitions roll the upstream Linear issue back to
 // `Todo` without paging the owner; the user initiated the rollback.
+// `NeedsClarification` is mirrored to "In Progress" with ping=false
+// because its dedicated branch in linearStateSyncHook posts the
+// clarification body as a comment and schedules the inbox reminder
+// itself — mirroring the verify-begin branch.
 var stateSyncTable = map[tasks.TaskStatus]stateSyncTarget{
 	tasks.StatusPlanning:            {"Todo", false},
 	tasks.StatusPlanDone:            {"Todo", true},
 	tasks.StatusPlanPendingApproval: {"Todo", true},
 	tasks.StatusWorking:             {"In Progress", false},
 	tasks.StatusVerifying:           {"In Progress", false},
+	tasks.StatusNeedsClarification:  {"In Progress", false},
 	tasks.StatusCompleted:           {"In Review", true},
 }
 
@@ -87,6 +94,11 @@ func linearStateSyncHook(tr tasks.Transition, task tasks.Task) {
 		ctx, issue.ID, stateID); err != nil {
 		warnLinearSync("issueUpdate: %s", err)
 	}
+	if tr.To == tasks.StatusNeedsClarification &&
+		isNeedsClarificationEvent(tr.Event) {
+		handleNeedsClarification(ctx, client, issue.ID, task)
+		return
+	}
 	if tr.To == tasks.StatusVerifying &&
 		tr.Event == tasks.EventVerifyBegin &&
 		task.PullRequestURL != "" {
@@ -96,6 +108,62 @@ func linearStateSyncHook(tr tasks.Transition, task tasks.Task) {
 	}
 	if target.ping {
 		postInboxReminder(ctx, client, issue.ID)
+	}
+}
+
+// isNeedsClarificationEvent narrows the comment+reminder branch to
+// the three reaper-driven entries into `needs-clarification`. Resume
+// events leaving the state, or any unrelated transition, must NOT
+// trigger the comment / reminder traffic.
+func isNeedsClarificationEvent(ev tasks.Event) bool {
+	switch ev {
+	case tasks.EventReaperPlanNeedsClarification,
+		tasks.EventReaperWorkNeedsClarification,
+		tasks.EventReaperVerifyNeedsClarification:
+		return true
+	}
+	return false
+}
+
+// handleNeedsClarification posts the clarification.md body as a
+// Linear comment and schedules an inbox reminder. The two follow-up
+// calls are independent best-effort steps: a missing/empty/unreadable
+// clarification.md skips the comment but still sends the reminder, so
+// the human is paged either way.
+func handleNeedsClarification(
+	ctx context.Context, client *linear.Client,
+	issueID string, task tasks.Task,
+) {
+	if task.AgentLogPath == "" {
+		warnLinearSync("clarification: no agent log path")
+		return
+	}
+	taskDir := filepath.Dir(task.AgentLogPath)
+	postClarificationComment(ctx, client, issueID, taskDir)
+	postInboxReminder(ctx, client, issueID)
+}
+
+// postClarificationComment reads <taskDir>/clarification.md and posts
+// its content as a Linear comment. Warns and returns on read error or
+// empty body so the caller can still emit the inbox reminder. Warns
+// (but does not return) on commentCreate failure for the same reason.
+func postClarificationComment(
+	ctx context.Context, client *linear.Client,
+	issueID, taskDir string,
+) {
+	path := filepath.Join(taskDir, "clarification.md")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		warnLinearSync("read clarification.md: %s", err)
+		return
+	}
+	if strings.TrimSpace(string(body)) == "" {
+		warnLinearSync("clarification.md is empty")
+		return
+	}
+	if err := client.CreateComment(
+		ctx, issueID, string(body)); err != nil {
+		warnLinearSync("commentCreate: %s", err)
 	}
 }
 
