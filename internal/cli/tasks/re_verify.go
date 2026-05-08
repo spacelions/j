@@ -88,6 +88,11 @@ func RunReVerify(ctx context.Context, opts ReVerifyOptions) (err error) {
 		return nil
 	}
 
+	if task.VerifyResumeSession != "" {
+		task.VerifyResumeSession = ""
+		tasks.PersistWarn(opts.Stderr, task)
+	}
+
 	taskDir, err := tasks.EnsureDir(task.ID)
 	if err != nil {
 		return fmt.Errorf("ensure task dir: %w", err)

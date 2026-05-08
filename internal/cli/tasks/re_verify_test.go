@@ -279,6 +279,39 @@ func TestReVerify_RegisteredAsChild(t *testing.T) {
 	t.Fatal("`j tasks re-verify` should be registered as a child of `j tasks`")
 }
 
+// TestRunReVerify_ClearsStaleVerifySession pins that re-verify
+// blanks a leftover VerifyResumeSession before spawning the
+// orchestrator, so dispatchShellOut routes to a fresh Run rather
+// than RunResume (which the FSM rejects from work-done).
+func TestRunReVerify_ClearsStaleVerifySession(t *testing.T) {
+	setupContinueEnv(t)
+	id := seedTaskFull(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusWorkDone
+		task.VerifyResumeSession = "stale-cursor"
+	})
+	if err := RunReVerify(context.Background(), ReVerifyOptions{
+		FromTask:    id,
+		Interactive: boolPtr(false),
+		Stdin:       strings.NewReader(""),
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Agents:      []codingagents.Agent{newContinueAgent()},
+		UI:          &fakeUI{},
+		JBinary:     noopJBinary(t),
+	}); err != nil {
+		t.Fatalf("RunReVerify: %v", err)
+	}
+	row := readTaskFromBolt(t, id)
+	if row.VerifyResumeSession != "" {
+		t.Fatalf("VerifyResumeSession = %q, want \"\"",
+			row.VerifyResumeSession)
+	}
+	if row.Status != tasks.StatusWorkDone {
+		t.Fatalf("Status = %q, want work-done (FSM flip belongs to "+
+			"the spawned orchestrator)", row.Status)
+	}
+}
+
 func TestRunReVerify_SpawnFails(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, func(task *tasks.Task) {
