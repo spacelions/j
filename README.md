@@ -143,7 +143,7 @@ See [`AGENTS.md`](AGENTS.md): high test coverage, no test-only packages (use `in
 | [`internal/lifecycle`](internal/lifecycle) | Per-phase lifecycle markers, Linear state sync, PR URL reaping |
 | [`internal/lifecycle/orchestrator`](internal/lifecycle/orchestrator) | Google ADK sequential/loop agent wiring |
 | [`internal/coding-agents`](internal/coding-agents) | Coding backends: Cursor and Claude |
-| [`internal/linear`](internal/linear) | GraphQL client for Linear issue queries and mutations |
+| [`internal/tools/linear`](internal/tools/linear) | GraphQL client for Linear issue queries and mutations |
 | [`internal/resolver`](internal/resolver) | Source resolution (markdown, Linear), task lookup, verdict parsing |
 | [`internal/store`](internal/store) | BoltDB task and settings persistence |
 | [`testcases/`](testcases/) | Human-readable manual test steps |

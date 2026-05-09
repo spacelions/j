@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/tools/linear"
 )
 
 // Source is the planning input the user picks at the start of a

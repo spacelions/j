@@ -12,8 +12,8 @@ import (
 
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/uitheme"
-	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/tools/linear"
 )
 
 // TestLinearPickerEmptyAssignedCLIRender pins SPA-54's CLI surfacing:

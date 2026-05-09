@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/tools/linear"
 )
 
 // verifyPushEnv bundles the per-test scaffolding shared by the

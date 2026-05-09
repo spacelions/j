@@ -45,10 +45,10 @@ coverage:
 		-e 'internal/cli/web/web\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
 		-e 'internal/cli/uitheme/dialog_box\.go:[0-9]+:[[:space:]]+displayLogPath[[:space:]]' \
 		-e 'internal/cli/picker/.*\.go:[0-9]+:[[:space:]]+' \
-		-e 'internal/linear/browser\.go:[0-9]+:[[:space:]]+openURL[[:space:]]' \
-		-e 'internal/linear/client\.go:[0-9]+:[[:space:]]+do[[:space:]]' \
-		-e 'internal/linear/config\.go:[0-9]+:[[:space:]]+loadKey[[:space:]]' \
-		-e 'internal/linear/config\.go:[0-9]+:[[:space:]]+saveKey[[:space:]]' \
+		-e 'internal/tools/linear/browser\.go:[0-9]+:[[:space:]]+openURL[[:space:]]' \
+		-e 'internal/tools/linear/client\.go:[0-9]+:[[:space:]]+do[[:space:]]' \
+		-e 'internal/tools/linear/config\.go:[0-9]+:[[:space:]]+loadKey[[:space:]]' \
+		-e 'internal/tools/linear/config\.go:[0-9]+:[[:space:]]+saveKey[[:space:]]' \
 		-e 'internal/cli/plan/linear\.go:[0-9]+:[[:space:]]+runLinear[[:space:]]' \
 		-e 'internal/resolver/source\.go:[0-9]+:[[:space:]]+FetchLinearBody[[:space:]]' \
 		-e 'internal/resolver/source\.go:[0-9]+:[[:space:]]+StartTargetFromLinear[[:space:]]' \

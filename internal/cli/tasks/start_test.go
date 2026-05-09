@@ -18,10 +18,10 @@ import (
 
 	"github.com/spacelions/j/internal/cli/picker"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
+	"github.com/spacelions/j/internal/tools/linear"
 )
 
 // writeStartFile writes a markdown task description into the test's

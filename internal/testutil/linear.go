@@ -9,7 +9,7 @@ import (
 )
 
 // LinearIssueStub mirrors linear.Issue's JSON shape for fixture
-// data. Pure data, so testutil does not import internal/linear and
+// data. Pure data, so testutil does not import internal/tools/linear and
 // the linear package's own tests stay free to define their own
 // fixtures inline. State is rendered as the nested `state.name`
 // shape on the wire when the stub responds to viewer.assignedIssues

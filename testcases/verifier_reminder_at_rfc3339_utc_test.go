@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spacelions/j/internal/linear"
+	"github.com/spacelions/j/internal/tools/linear"
 )
 
 // TestVerifier_RemindOnIssue_ReminderAtIsRFC3339UTC pins the

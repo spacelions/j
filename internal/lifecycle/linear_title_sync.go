@@ -6,8 +6,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/tools/linear"
 )
 
 // linearTitleSyncTimeout bounds the total time the title-sync hook
