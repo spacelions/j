@@ -181,6 +181,10 @@ linters:
       - vendor$
       - third_party$
       - \.claude/
+      # When lint runs from inside .claude/worktrees/<X>/, sibling
+      # worktrees surface as ../<Y>/... which the \.claude/ regex
+      # above does not match. Drop anything that escapes upward.
+      - ^\.\./
 
   settings:
     dupl:

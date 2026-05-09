@@ -256,14 +256,128 @@ func TestFormatLog_ToolResultRawFallback(t *testing.T) {
 	}
 }
 
-// TestFormatLog_SystemNonInit pins the non-init system fall-through:
-// future `system` subtypes survive as raw lines so we notice them.
-func TestFormatLog_SystemNonInit(t *testing.T) {
+// TestFormatLog_SystemUnknownSubtype pins the unknown-subtype
+// fall-through: future `system` subtypes survive as raw lines so we
+// notice them. (The known subtypes are exercised by the golden
+// fixtures and by the focused unit tests below.)
+func TestFormatLog_SystemUnknownSubtype(t *testing.T) {
 	t.Parallel()
 	src := []byte(`{"type":"system","subtype":"warning",` +
 		`"text":"x"}` + "\n")
 	got := New().FormatLog(src)
 	if string(got) != string(src) {
 		t.Fatalf("FormatLog = %q, want raw %q", got, src)
+	}
+}
+
+// TestFormatLog_SystemTaskStarted pins the `task_started` renderer:
+// task_id, description, task_type, and the truncated prompt all reach
+// the marker.
+func TestFormatLog_SystemTaskStarted(t *testing.T) {
+	t.Parallel()
+	src := []byte(`{"type":"system","subtype":"task_started",` +
+		`"task_id":"t1","description":"find foo",` +
+		`"task_type":"local_agent","prompt":"explore the repo"}` +
+		"\n")
+	got := string(New().FormatLog(src))
+	for _, want := range []string{
+		"agent subtask_start",
+		"task_id=t1",
+		"description=find foo",
+		"task_type=local_agent",
+		"prompt=explore the repo",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %q", want, got)
+		}
+	}
+}
+
+// TestFormatLog_SystemTaskProgress pins the `task_progress` renderer:
+// non-zero usage counters and last_tool_name surface; zero values are
+// omitted (no `tool_uses=0`-style noise).
+func TestFormatLog_SystemTaskProgress(t *testing.T) {
+	t.Parallel()
+	src := []byte(`{"type":"system","subtype":"task_progress",` +
+		`"task_id":"t1","description":"reading file",` +
+		`"last_tool_name":"Read","usage":{"total_tokens":12,` +
+		`"tool_uses":3,"duration_ms":4000}}` + "\n")
+	got := string(New().FormatLog(src))
+	for _, want := range []string{
+		"agent subtask_progress",
+		"task_id=t1",
+		"description=reading file",
+		"last_tool_name=Read",
+		"tool_uses=3",
+		"total_tokens=12",
+		"duration_ms=4000",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %q", want, got)
+		}
+	}
+}
+
+// TestFormatLog_SystemTaskProgressZeroUsage pins the zero-omit
+// behaviour: a progress event with zero usage counters must not leak
+// `tool_uses=0` / `total_tokens=0` / `duration_ms=0` into the marker.
+func TestFormatLog_SystemTaskProgressZeroUsage(t *testing.T) {
+	t.Parallel()
+	src := []byte(`{"type":"system","subtype":"task_progress",` +
+		`"task_id":"t1","description":"early"}` + "\n")
+	got := string(New().FormatLog(src))
+	for _, leak := range []string{
+		"tool_uses=0", "total_tokens=0", "duration_ms=0",
+	} {
+		if strings.Contains(got, leak) {
+			t.Fatalf("zero counter leaked %q in %q", leak, got)
+		}
+	}
+}
+
+// TestFormatLog_SystemTaskNotification pins the `task_notification`
+// renderer: status and the truncated summary surface alongside the
+// final usage counters.
+func TestFormatLog_SystemTaskNotification(t *testing.T) {
+	t.Parallel()
+	src := []byte(`{"type":"system","subtype":"task_notification",` +
+		`"task_id":"t1","status":"completed",` +
+		`"summary":"done","usage":{"total_tokens":99,` +
+		`"tool_uses":7,"duration_ms":1234}}` + "\n")
+	got := string(New().FormatLog(src))
+	for _, want := range []string{
+		"agent subtask_done",
+		"task_id=t1",
+		"status=completed",
+		"summary=done",
+		"tool_uses=7",
+		"total_tokens=99",
+		"duration_ms=1234",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in %q", want, got)
+		}
+	}
+}
+
+// TestFormatLog_SystemStatus pins the `status` renderer: the marker
+// surfaces `status=<v>` only and intentionally drops uuid /
+// session_id (the agent.log filename already carries that identity).
+func TestFormatLog_SystemStatus(t *testing.T) {
+	t.Parallel()
+	src := []byte(`{"type":"system","subtype":"status",` +
+		`"status":"requesting","uuid":"u","session_id":"s"}` +
+		"\n")
+	got := string(New().FormatLog(src))
+	if !strings.Contains(got, "agent status") {
+		t.Fatalf("missing marker header: %q", got)
+	}
+	if !strings.Contains(got, "status=requesting") {
+		t.Fatalf("missing status=requesting: %q", got)
+	}
+	for _, leak := range []string{"uuid=", "session_id="} {
+		if strings.Contains(got, leak) {
+			t.Fatalf("noise field %q leaked: %q", leak, got)
+		}
 	}
 }
