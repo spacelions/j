@@ -195,7 +195,7 @@ func headlessArgs(model, prompt string) []string {
 //   - Interactive: launch claude's TUI with the worker prompt as the
 //     initial user message; the user drives the session.
 //   - Headless: same flag set as Plan's headless branch (stream-json
-//     + verbose + include-partial-messages + dangerously-skip-perms),
+//   - verbose + include-partial-messages + dangerously-skip-perms),
 //     fire-and-forget. claude's stdout / stderr are redirected to
 //     req.AgentLogPath via run.SpawnIn — the raw JSON event lines
 //     interleave with the existing lifecycle markers so the per-task

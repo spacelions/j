@@ -194,7 +194,7 @@ func TestSpawnPipedIn_PlumbsCwd(t *testing.T) {
 	deadline := time.Now().Add(pipeWaitTimeout)
 	for {
 		body, _ := os.ReadFile(logPath)
-		for _, line := range strings.Split(string(body), "\n") {
+		for line := range strings.SplitSeq(string(body), "\n") {
 			line = strings.TrimSpace(line)
 			if line == "" || markerLine.MatchString(line) {
 				continue

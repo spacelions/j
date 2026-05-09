@@ -3,6 +3,7 @@ package agentlog
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -130,7 +131,7 @@ type rawJSON json.RawMessage
 
 func (r *rawJSON) UnmarshalJSON(b []byte) error {
 	if r == nil {
-		return fmt.Errorf("rawJSON: nil receiver")
+		return errors.New("rawJSON: nil receiver")
 	}
 	*r = append((*r)[:0], b...)
 	return nil
@@ -206,12 +207,13 @@ func renderContent(c streamContent) []byte {
 		return []byte("thinking: " + oneLine(c.Thinking))
 	case "tool_use":
 		input := strings.TrimSpace(string(c.Input))
-		return []byte(fmt.Sprintf(
-			"tool_use(%s): %s", c.Name, oneLine(input)))
+		return fmt.Appendf(nil,
+			"tool_use(%s): %s", c.Name, oneLine(input))
 	case "tool_result":
 		body := stringifyToolResult(c.Content)
-		return []byte(fmt.Sprintf(
-			"tool_result(%s): %s", c.ToolUseID, oneLine(body)))
+		return fmt.Appendf(nil,
+			"tool_result(%s): %s",
+			c.ToolUseID, oneLine(body))
 	}
 	return nil
 }
