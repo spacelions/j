@@ -89,6 +89,39 @@ func BuildWorkerResume(
 	)
 }
 
+// BuildWorkerClarificationResume composes the resume-from-
+// clarification worker prompt. It replaces BuildWorker /
+// BuildWorkerResume on a resume run that started from
+// needs-clarification: the agent reads the per-task
+// clarification.md (cited twice — once to read, once to delete),
+// restates the question to the user in this session, captures the
+// reply, addresses it, and deletes the file before exiting so
+// Finish() routes to the natural terminal status. The exit
+// contract is appended by appendClarification at the very end of
+// the prompt so a custom worker.md cannot drop the rewrite-to-
+// reroute branch.
+func BuildWorkerClarificationResume(
+	planPath, worktree string, mustRead []string,
+	clarificationPath string,
+) string {
+	return appendClarification(
+		appendWorktreeLine(
+			prependMustRead(
+				fmt.Sprintf(
+					"%s\n\n"+strings.TrimSpace(
+						instructions.WorkerClarificationResume,
+					),
+					strings.TrimSpace(Resolve(store.BucketWorker)),
+					clarificationPath, clarificationPath, planPath,
+				),
+				mustRead,
+			),
+			worktree,
+		),
+		clarificationPath,
+	)
+}
+
 // appendWorktreeLine returns prompt unchanged when worktree is empty
 // and otherwise appends a single trailing line telling the worker /
 // verifier which git worktree to operate against. Centralising the

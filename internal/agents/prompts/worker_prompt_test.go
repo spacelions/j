@@ -174,6 +174,64 @@ func TestBuildWorkerResume_WithMustRead(t *testing.T) {
 	}
 }
 
+// TestBuildWorkerClarificationResume pins the
+// resume-from-clarification worker prompt: the rendered text must
+// be non-empty, embed instructions.Worker, cite the
+// clarification.md path (twice — once to read, once to delete,
+// plus once more from the appendClarification escape hatch tail),
+// mention deleting the file so Finish() routes to the natural
+// terminal status, cite the plan path for context only, and
+// differ from BuildWorkerResume.
+func TestBuildWorkerClarificationResume(t *testing.T) {
+	const (
+		planPath = "/tmp/feature.plan.md"
+		clar     = "/tmp/.j/tasks/abc/clarification.md"
+	)
+	got := BuildWorkerClarificationResume(planPath, "", nil, clar)
+	if got == "" {
+		t.Fatal("BuildWorkerClarificationResume returned empty")
+	}
+	if !strings.Contains(got, strings.TrimSpace(instructions.Worker)) {
+		t.Fatalf("prompt missing instructions.Worker: %q", got)
+	}
+	if strings.Count(got, clar) < 2 {
+		t.Fatalf(
+			"clarification path should appear at least twice: %q",
+			got,
+		)
+	}
+	if !strings.Contains(got, planPath) {
+		t.Fatalf("prompt missing plan path: %q", got)
+	}
+	for _, want := range []string{
+		"paused with an open question",
+		"delete",
+		"natural terminal status",
+		"needs-clarification",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("prompt missing %q: %q", want, got)
+		}
+	}
+	if got == BuildWorkerResume(planPath, "", nil, clar) {
+		t.Fatal("clarification-resume prompt should differ from resume")
+	}
+}
+
+// TestBuildWorkerClarificationResume_WithWorktree pins the
+// worktree-direction suffix on the new builder.
+func TestBuildWorkerClarificationResume_WithWorktree(t *testing.T) {
+	got := BuildWorkerClarificationResume(
+		"p.md", "j-my-task", nil, "c.md",
+	)
+	if !strings.Contains(got, "j-my-task") {
+		t.Fatalf("worktree prompt missing worktree name: %q", got)
+	}
+	if !strings.Contains(got, "git worktree add") {
+		t.Fatalf("worktree prompt missing `git worktree add`: %q", got)
+	}
+}
+
 // TestBuildWorkerResume_NilMustReadByteIdentical pins AC: passing
 // nil/empty mustRead leaves the prompt byte-identical to the
 // pre-must-read output (the must-read block must not bleed in via

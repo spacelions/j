@@ -163,6 +163,67 @@ func TestAppendPlannerSaveSuffix_PMToneNoImplDetail(t *testing.T) {
 	}
 }
 
+// TestBuildPlannerClarificationResume pins the
+// resume-from-clarification planner prompt: the rendered text must
+// be non-empty, embed instructions.Planner, cite the
+// clarification.md path twice (once to read, once to delete),
+// cite the original target path, mention the
+// "delete clarification.md" contract so Finish() routes to the
+// natural terminal status, and differ from BuildPlannerResume.
+func TestBuildPlannerClarificationResume(t *testing.T) {
+	const (
+		target = "/tmp/feature.md"
+		clar   = "/tmp/.j/tasks/abc/clarification.md"
+	)
+	got := BuildPlannerClarificationResume(target, clar, nil)
+	if got == "" {
+		t.Fatal("BuildPlannerClarificationResume returned empty")
+	}
+	if !strings.Contains(got, strings.TrimSpace(instructions.Planner)) {
+		t.Fatalf("prompt missing instructions.Planner: %q", got)
+	}
+	if strings.Count(got, clar) != 2 {
+		t.Fatalf(
+			"clarification path should appear twice (read+delete): %q",
+			got,
+		)
+	}
+	if !strings.Contains(got, target) {
+		t.Fatalf("prompt missing target path: %q", got)
+	}
+	for _, want := range []string{
+		"paused with an open question",
+		"delete",
+		"natural terminal status",
+		"needs-clarification",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("prompt missing %q: %q", want, got)
+		}
+	}
+	if got == BuildPlannerResume(target, nil) {
+		t.Fatal("clarification-resume prompt should differ from resume")
+	}
+}
+
+// TestBuildPlannerClarificationResume_WithMustRead pins the
+// must-read block on the new builder, mirroring its sibling
+// builders.
+func TestBuildPlannerClarificationResume_WithMustRead(t *testing.T) {
+	got := BuildPlannerClarificationResume(
+		"/tmp/feature.md", "/tmp/c.md",
+		[]string{"AGENTS.md", "CLAUDE.md"},
+	)
+	const header = "Before starting, read these project files for required context:"
+	if strings.Count(got, header) != 1 {
+		t.Fatalf("must-read header should appear exactly once: %q", got)
+	}
+	if !strings.Contains(got, "- AGENTS.md") ||
+		!strings.Contains(got, "- CLAUDE.md") {
+		t.Fatalf("must-read block missing entries: %q", got)
+	}
+}
+
 // TestBuildPlannerResume_WithMustRead mirrors
 // TestBuildPlanner_WithMustRead for the resume builder: the bulleted
 // must-read block must appear exactly once, preserve case verbatim,

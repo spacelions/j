@@ -104,3 +104,34 @@ func BuildPlannerResume(targetPath string, mustRead []string) string {
 		mustRead,
 	)
 }
+
+// BuildPlannerClarificationResume composes the resume-from-
+// clarification planner prompt. It replaces BuildPlanner /
+// BuildPlannerResume on a resume run that started from
+// needs-clarification: the agent reads the per-task
+// clarification.md (whose path is cited twice — once to read,
+// once to delete), restates the question to the user in this
+// session, captures the reply, addresses it, and deletes the file
+// before exiting so Finish() routes to the natural terminal
+// status. If the answer is still insufficient the agent rewrites
+// or leaves the file in place; the orchestrator then routes the
+// task back to needs-clarification for another round.
+//
+// Like BuildPlanner / BuildPlannerResume, the exit contract (save
+// requirements.md / plan.md) is appended by the backend in
+// buildPlanPrompt via AppendPlannerSaveSuffix so the reaper sees
+// identical artifacts in either case.
+func BuildPlannerClarificationResume(
+	targetPath, clarificationPath string, mustRead []string,
+) string {
+	return prependMustRead(
+		fmt.Sprintf(
+			"%s\n\n"+strings.TrimSpace(
+				instructions.PlannerClarificationResume,
+			),
+			strings.TrimSpace(Resolve(store.BucketPlanner)),
+			clarificationPath, clarificationPath, targetPath,
+		),
+		mustRead,
+	)
+}

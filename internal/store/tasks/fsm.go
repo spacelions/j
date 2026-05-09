@@ -1,9 +1,9 @@
 // Package tasks provides the FSM governing legal TaskStatus
 // transitions. Apply checks the transition table and returns the
-// destination status (or an error). Callers persist the row and then
-// call Notify to fire observer hooks with the durable snapshot. The
-// table is the single source of truth; IsLegal / LegalEvents validate
-// without mutating. The Mermaid diagram below mirrors the table.
+// destination status (or an error); callers persist the row and
+// then call Notify to fire observer hooks with the durable snapshot.
+// The table is the single source of truth; IsLegal / LegalEvents
+// validate without mutating. The Mermaid diagram below mirrors it.
 //
 //	stateDiagram-v2
 //	    [*] --> planning : EventPlanBegin
@@ -41,6 +41,7 @@
 //	    verifying --> help : EventVerifyError
 //	    verifying --> help : EventVerifyQuit
 //	    verifying --> verifying : EventVerifyResume
+//	    verifying --> needs-clarification : EventVerifyNeedsClarification
 //	    verifying --> needs-clarification : EventReaperVerifyNeedsClarification
 //	    failed --> planning : EventPlanRestart
 //	    failed --> planning : EventPlanResume
@@ -110,6 +111,7 @@ const (
 	EventVerifyQuit                     Event = "verify_quit"
 	EventVerifyError                    Event = "verify_error"
 	EventVerifyStuck                    Event = "verify_stuck"
+	EventVerifyNeedsClarification       Event = "verify_needs_clarification"
 	EventReaperVerifyNeedsClarification Event = "reaper_verify_needs_clarification"
 )
 
@@ -167,11 +169,11 @@ var transitions = []Transition{
 	{StatusVerifying, EventVerifyError, StatusHelp},
 	{StatusVerifying, EventVerifyQuit, StatusHelp},
 	{StatusVerifying, EventVerifyResume, StatusVerifying},
+	{StatusVerifying, EventVerifyNeedsClarification, StatusNeedsClarification},
 	{
 		StatusVerifying, EventReaperVerifyNeedsClarification,
 		StatusNeedsClarification,
 	},
-
 	{StatusFailed, EventPlanRestart, StatusPlanning},
 	{StatusFailed, EventWorkRestart, StatusWorking},
 	{StatusFailed, EventVerifyRestart, StatusVerifying},
@@ -227,12 +229,8 @@ func Apply(from TaskStatus, e Event) (TaskStatus, error) {
 // IsLegal reports whether the edge (from, e) appears in the
 // transition table. It does not fire hooks.
 func IsLegal(from TaskStatus, e Event) bool {
-	for _, tr := range transitions {
-		if tr.From == from && tr.Event == e {
-			return true
-		}
-	}
-	return false
+	_, err := Apply(from, e)
+	return err == nil
 }
 
 // LegalEvents returns every event that is legal from the given

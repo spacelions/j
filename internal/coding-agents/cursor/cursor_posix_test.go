@@ -1328,6 +1328,131 @@ func TestVerify_Headless_SpawnError(t *testing.T) {
 	}
 }
 
+// TestPlan_ResumeFromClarification pins that the cursor backend
+// selects the resume-from-clarification planner template when
+// PlanRequest.ResumeFromClarification is true. The composed prompt
+// must mention the deletion contract, cite the clarification path
+// (twice from the resume body, once from the appendClarification
+// escape hatch tail), and still carry the save-suffix anchors so
+// the reaper sees identical artifacts on the resume turn.
+func TestPlan_ResumeFromClarification(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "spec.md")
+	if err := os.WriteFile(target, []byte("# task\nbody"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	clar := filepath.Join(dir, "clarification.md")
+	calls := installStub(t, "", 0)
+	rid := "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+	_, err := New().Plan(t.Context(), codingagents.PlanRequest{
+		FromFilePath:            target,
+		Model:                   "composer-2-fast",
+		RequirementsOutputPath:  filepath.Join(dir, "requirements.md"),
+		PlanOutputPath:          filepath.Join(dir, "plan.md"),
+		ClarificationPath:       clar,
+		Interactive:             true,
+		ResumeChatID:            rid,
+		Resume:                  true,
+		ResumeFromClarification: true,
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	argv := readCalls(t, calls)
+	prompt := argv[len(argv)-1]
+	if strings.Count(prompt, clar) < 2 {
+		t.Fatalf(
+			"clarification path should appear >=2x in prompt: %q",
+			prompt,
+		)
+	}
+	for _, want := range []string{
+		"paused with an open question", "delete", "Then exit.",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf(
+				"resume-from-clarification prompt missing %q: %q",
+				want, prompt,
+			)
+		}
+	}
+	if !strings.Contains(prompt, strings.TrimSpace(instructions.Planner)) {
+		t.Fatalf("prompt missing instructions.Planner: %q", prompt)
+	}
+}
+
+// TestWork_ResumeFromClarification pins the same selection on the
+// worker side: when WorkRequest.ResumeFromClarification is true the
+// composed prompt must cite the deletion contract.
+func TestWork_ResumeFromClarification(t *testing.T) {
+	dir := t.TempDir()
+	plan := filepath.Join(dir, "spec.plan.md")
+	if err := os.WriteFile(plan, []byte("1. step"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	clar := filepath.Join(dir, "clarification.md")
+	calls := installStub(t, "", 0)
+	_, err := New().Work(t.Context(), codingagents.WorkRequest{
+		PlanPath:                plan,
+		Model:                   "m",
+		ClarificationPath:       clar,
+		Interactive:             true,
+		Resume:                  true,
+		ResumeFromClarification: true,
+	})
+	if err != nil {
+		t.Fatalf("Work: %v", err)
+	}
+	argv := readCalls(t, calls)
+	prompt := argv[len(argv)-1]
+	if strings.Count(prompt, clar) < 2 {
+		t.Fatalf("clarification path should appear >=2x: %q", prompt)
+	}
+	for _, want := range []string{
+		"paused with an open question", "delete",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("worker clarification-resume missing %q: %q",
+				want, prompt)
+		}
+	}
+}
+
+// TestVerify_ResumeFromClarification pins the same selection on the
+// verifier side.
+func TestVerify_ResumeFromClarification(t *testing.T) {
+	dir := t.TempDir()
+	clar := filepath.Join(dir, "clarification.md")
+	calls := installStub(t, "", 0)
+	_, err := New().Verify(t.Context(), codingagents.VerifyRequest{
+		RequirementsPath:           filepath.Join(dir, "requirements.md"),
+		PlanPath:                   filepath.Join(dir, "plan.md"),
+		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),
+		VerifierFindingsOutputPath: filepath.Join(dir, "verifier_findings.md"),
+		ClarificationPath:          clar,
+		Model:                      "m",
+		Interactive:                true,
+		Resume:                     true,
+		ResumeFromClarification:    true,
+	})
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	argv := readCalls(t, calls)
+	prompt := argv[len(argv)-1]
+	if strings.Count(prompt, clar) < 2 {
+		t.Fatalf("clarification path should appear >=2x: %q", prompt)
+	}
+	for _, want := range []string{
+		"paused with an open question", "delete",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("verifier clarification-resume missing %q: %q",
+				want, prompt)
+		}
+	}
+}
+
 // TestWork_Interactive_Resume mirrors TestPlan_Interactive_Resume for
 // the worker side (AC#2 / AC#5c).
 func TestWork_Interactive_Resume(t *testing.T) {

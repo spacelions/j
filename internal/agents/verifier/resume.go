@@ -159,6 +159,7 @@ func runVerifyResume(
 		Interactive:                true,
 		ResumeChatID:               t.VerifyResumeSession,
 		Resume:                     true,
+		ResumeFromClarification:    tasks.ClarificationFileExists(taskDir),
 		MustRead:                   mustReadFiles,
 	})
 	if runErr == nil {
