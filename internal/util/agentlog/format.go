@@ -23,10 +23,10 @@ type LineFormatter interface {
 	FormatStderr(line []byte) [][]byte
 }
 
-// PassThrough returns a formatter that emits stdout / stderr lines
-// unchanged (after stripping fully-blank lines). It is the trivial
-// implementation used by callers that want SpawnPipedIn's serialized
-// write path without any JSON parsing.
+// PassThrough returns a formatter that emits non-empty stdout /
+// stderr lines verbatim. It is the trivial implementation for
+// callers that want SpawnPipedIn's serialized write path without
+// any JSON parsing.
 func PassThrough() LineFormatter { return passThrough{} }
 
 type passThrough struct{}
