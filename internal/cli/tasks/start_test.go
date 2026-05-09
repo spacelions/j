@@ -288,9 +288,6 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 	if !strings.HasSuffix(row.AgentLogPath, wantLog) {
 		t.Fatalf("AgentLogPath = %q, want suffix %q", row.AgentLogPath, wantLog)
 	}
-	if row.BackgroundPID == 0 {
-		t.Fatalf("BackgroundPID = 0, want non-zero (detached child PID)")
-	}
 	if row.Summary == "" {
 		t.Fatalf("Summary should be derived from the markdown body")
 	}
@@ -441,16 +438,13 @@ func TestRunStart_NoFromFile_PicksMarkdown(t *testing.T) {
 	if row.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", row.Status)
 	}
-	if row.BackgroundPID == 0 {
-		t.Fatalf("BackgroundPID = 0; want non-zero")
-	}
 }
 
 // TestRunStart_NoFromFile_PicksTask drives the re-plan branch:
 // pre-seed a task in bbolt; UI.SelectSource returns SourceTask;
 // UI.PickReplanTask returns the existing task's ID. RunStart must
-// NOT mint a new task and must update the existing row's
-// BackgroundPID + AgentLogPath in place.
+// NOT mint a new task and must update the existing row's AgentLogPath
+// in place.
 func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -501,9 +495,6 @@ func TestRunStart_NoFromFile_PicksTask(t *testing.T) {
 		t.Fatalf("row id = %q, want %q (no new task should have been minted)", rows[0].ID, existingID)
 	}
 	row := readTaskFromBolt(t, existingID)
-	if row.BackgroundPID == 0 {
-		t.Fatalf("existing row's BackgroundPID = 0; want non-zero PID stamped on re-plan")
-	}
 	if row.AgentLogPath == "" {
 		t.Fatalf("existing row's AgentLogPath = %q; want non-empty", row.AgentLogPath)
 	}
@@ -567,9 +558,6 @@ func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
 	row := readTaskFromBolt(t, id)
 	if row.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", row.Status)
-	}
-	if row.BackgroundPID == 0 {
-		t.Fatalf("BackgroundPID = 0; want non-zero")
 	}
 	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
@@ -772,8 +760,8 @@ func TestRunStart_NoFromFile_TaskPickerCancelled(t *testing.T) {
 		t.Fatalf("err = %v, want nil (cancelled picker exits cleanly)", err)
 	}
 	row := readTaskFromBolt(t, existingID)
-	if row.BackgroundPID != 0 {
-		t.Fatalf("existing row's BackgroundPID = %d, want 0 (picker cancel must not fire spawn)", row.BackgroundPID)
+	if row.AgentLogPath != "" {
+		t.Fatalf("existing row's AgentLogPath = %q, want empty (picker cancel must not fire spawn)", row.AgentLogPath)
 	}
 }
 
@@ -1164,9 +1152,8 @@ func TestRunStart_ArgvParsesThroughOrchestrateCmd(t *testing.T) {
 
 // TestRunStart_InteractiveRunsInline pins the foreground path:
 // --interactive=true re-execs `j tasks orchestrate` inline (blocking,
-// terminal-attached). The fork dialog must not fire and the seeded
-// row must not carry a BackgroundPID — the orchestrator owns its own
-// PID and the parent never spawns a detached child.
+// terminal-attached). The fork dialog must not fire — the orchestrator
+// runs inline and the parent never spawns a detached child.
 func TestRunStart_InteractiveRunsInline(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -1199,11 +1186,7 @@ func TestRunStart_InteractiveRunsInline(t *testing.T) {
 	if strings.Contains(stdout.String(), "running in background") || strings.Contains(stdout.String(), "tail -f") {
 		t.Fatalf("stdout = %q, want no fork dialog (inline exec)", stdout.String())
 	}
-	id := firstSeededTaskID(t)
-	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0 (inline exec leaves the row's pid untouched)", row.BackgroundPID)
-	}
+	_ = firstSeededTaskID(t)
 }
 
 // containsArg reports whether want appears in args. Tiny helper for

@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -84,9 +83,6 @@ func TestResolve_Errors(t *testing.T) {
 
 func TestResolve_NotRegularFile(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
-		t.Skip("posix-only fifo test")
-	}
 	dir := t.TempDir()
 	pipe := filepath.Join(dir, "spec.md")
 	if err := syscall.Mkfifo(pipe, 0o600); err != nil {
@@ -192,9 +188,6 @@ func TestListInDir_MissingDirectory(t *testing.T) {
 // blow up later inside Resolve.
 func TestListInDir_SkipsNonRegularFile(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
-		t.Skip("posix-only fifo test")
-	}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "spec.md"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)

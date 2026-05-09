@@ -87,13 +87,13 @@ func (lc *VerifyLifecycle) RecordResumeSession(id string) {
 	tasks.PersistWarn(lc.stderr, lc.task)
 }
 
-// RecordBackground stamps PID + log path on the verify task row.
-func (lc *VerifyLifecycle) RecordBackground(pid int, logPath string) {
+// RecordAgentLog stamps the per-task agent.log path on the verify
+// task row. See PlanLifecycle.RecordAgentLog for the SPA-72 rationale.
+func (lc *VerifyLifecycle) RecordAgentLog(logPath string) {
 	if lc.closed {
 		return
 	}
 	lc.closed = true
-	lc.task.BackgroundPID = pid
 	lc.task.AgentLogPath = logPath
 	tasks.PersistWarn(lc.stderr, lc.task)
 }

@@ -95,10 +95,7 @@ func TestRunReVerify_WorkDoneSkipsConfirm(t *testing.T) {
 	if ui.statusCalls != 0 {
 		t.Fatalf("ConfirmStatusOverride should be skipped for work-done: calls=%d", ui.statusCalls)
 	}
-	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID == 0 {
-		t.Fatalf("BackgroundPID = 0; want non-zero detached child PID")
-	}
+	_ = readTaskFromBolt(t, id)
 }
 
 func TestRunReVerify_InteractiveRunsInline(t *testing.T) {
@@ -258,10 +255,7 @@ func TestRunReVerify_FromCompletedSpawnsAfterConfirm(t *testing.T) {
 		t.Fatalf("ConfirmStatusOverride calls = %d, want 1",
 			ui.statusCalls)
 	}
-	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID == 0 {
-		t.Fatalf("BackgroundPID = 0, want non-zero detached child PID")
-	}
+	_ = readTaskFromBolt(t, id)
 }
 
 func TestReVerify_RegisteredAsChild(t *testing.T) {

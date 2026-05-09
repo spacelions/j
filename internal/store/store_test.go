@@ -3,7 +3,6 @@ package store
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -50,9 +49,6 @@ func TestDefaultPath_RootedInCwd(t *testing.T) {
 // the test skips rather than failing - the same line is exercised in
 // CI on Linux where the failure is deterministic.
 func TestDefaultDir_CwdRemoved(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("cwd cannot be removed while in use on windows")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root may bypass relevant FS errors")
 	}
@@ -703,9 +699,6 @@ func TestEnsureProject_GitignoreReadFails(t *testing.T) {
 // .gitignore read-only so OpenFile with O_APPEND|O_WRONLY returns
 // EACCES, exercising the append-error branch.
 func TestEnsureProject_GitignoreAppendFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix file-mode semantics required")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses file-mode permissions")
 	}
@@ -754,9 +747,6 @@ func TestEnsureProject_MkdirJDirFails(t *testing.T) {
 // TestEnsureProject_PropagatesCwdError exercises the DefaultDir
 // propagation branch by removing cwd out from under the helper.
 func TestEnsureProject_PropagatesCwdError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("cwd cannot be removed while in use on windows")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root may bypass relevant FS errors")
 	}
@@ -877,9 +867,6 @@ func TestProjectInitialized_WrongTypeArtifacts(t *testing.T) {
 // TestProjectInitialized_StatError forces a non-NotExist stat error
 // (read-protected .j) so the propagation path is covered.
 func TestProjectInitialized_StatError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix file-mode semantics required")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses file-mode permissions")
 	}
@@ -901,9 +888,6 @@ func TestProjectInitialized_StatError(t *testing.T) {
 // TestProjectInitialized_PropagatesCwdError covers the DefaultDir
 // failure path.
 func TestProjectInitialized_PropagatesCwdError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("cwd cannot be removed while in use on windows")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root may bypass relevant FS errors")
 	}
@@ -942,9 +926,6 @@ func TestTouchBoltFile_BoltOpenFails(t *testing.T) {
 // (errno other than ENOENT) by chmod'ing the parent directory to
 // 0o000 so stat on the inner path returns EACCES rather than NotExist.
 func TestTouchBoltFile_StatNonENOENT(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix file-mode semantics required")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses file-mode permissions")
 	}
@@ -970,9 +951,6 @@ func TestTouchBoltFile_StatNonENOENT(t *testing.T) {
 // exists but before EnsureProject runs. The existing .j dir survives
 // the no-op MkdirAll for the parent, but the child mkdir fails.
 func TestEnsureProject_MkdirTasksDirFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix file-mode semantics required")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses file-mode permissions")
 	}

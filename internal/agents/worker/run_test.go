@@ -209,7 +209,7 @@ func TestRun_ConfirmStatusOverrideDeclined(t *testing.T) {
 	}
 }
 
-func TestRun_BackgroundPID(t *testing.T) {
+func TestRun_RecordsAgentLog(t *testing.T) {
 	setupRunEnv(t)
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
@@ -230,8 +230,8 @@ func TestRun_BackgroundPID(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 	row := testutil.ReadTaskRow(t, id)
-	if row.BackgroundPID != 42 {
-		t.Fatalf("BackgroundPID = %d, want 42", row.BackgroundPID)
+	if row.AgentLogPath == "" {
+		t.Fatalf("AgentLogPath = %q, want non-empty", row.AgentLogPath)
 	}
 	if !strings.Contains(stdout.String(), "running in background") {
 		t.Fatalf("stdout = %q, missing background message", stdout.String())

@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -210,9 +209,6 @@ func TestDefaultViewer_FallbackToIOCopy(t *testing.T) {
 }
 
 func TestDefaultViewer_RunsCatBinary(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires POSIX cat")
-	}
 	withLookPath(t, exec.LookPath)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.txt")
@@ -358,9 +354,6 @@ func waitForSubstring(
 }
 
 func TestStreamViewer_StreamsTailOutput(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires POSIX tail")
-	}
 	if _, err := exec.LookPath("tail"); err != nil {
 		t.Skip("tail not on PATH")
 	}
@@ -399,9 +392,6 @@ func TestStreamViewer_StreamsTailOutput(t *testing.T) {
 }
 
 func TestRunTailIntoTspin_PipesEndToEnd(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires POSIX tail and cat")
-	}
 	tailPath, err := exec.LookPath("tail")
 	if err != nil {
 		t.Skip("tail not on PATH")
@@ -484,9 +474,6 @@ func TestRunTailIntoTspin_TspinLookPathError(t *testing.T) {
 }
 
 func TestRunTailIntoTspin_TspinStartError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires POSIX tail")
-	}
 	tailPath, err := exec.LookPath("tail")
 	if err != nil {
 		t.Skip("tail not on PATH")
@@ -750,9 +737,6 @@ func TestResolveTaskFile_PickerErrorPropagates(t *testing.T) {
 }
 
 func TestResolveTaskFile_StatNonNotExistError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires POSIX symlink semantics")
-	}
 	t.Chdir(t.TempDir())
 	taskDir := seedTaskWithFile(t, "id-loop", "x", "", "")
 	loopPath := filepath.Join(taskDir, tasks.RequirementsFileName)
@@ -773,9 +757,6 @@ func TestResolveTaskFile_StatNonNotExistError(t *testing.T) {
 }
 
 func TestResolveTaskFile_DefaultDirError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("cwd cannot be removed while in use on windows")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root may bypass relevant FS errors")
 	}

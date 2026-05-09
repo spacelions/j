@@ -175,7 +175,7 @@ func runWorker(
 				return err
 			}
 		} else {
-			lc.RecordBackground(pid, agentLogPath)
+			lc.RecordAgentLog(agentLogPath)
 			uitheme.NormalForkDialog(
 				opts.Stdout, agent.Name(), pid, agentLogPath,
 			)

@@ -189,7 +189,7 @@ func reverifyAsDetachedOrchestrator(
 	if err != nil {
 		return err
 	}
-	stampSpawnOnRow(opts.Stderr, taskID, agentLogPath, pid)
+	stampSpawnOnRow(opts.Stderr, taskID, agentLogPath)
 	uitheme.NormalForkDialog(opts.Stdout,
 		"task "+taskID, pid, agentLogPath)
 	return nil

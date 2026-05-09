@@ -111,8 +111,8 @@ func TestRunResumePlan_PickerAbort(t *testing.T) {
 		t.Fatalf("RunResumePlan: %v", err)
 	}
 	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0 (picker abort must not fire spawn)", row.BackgroundPID)
+	if row.AgentLogPath != "" {
+		t.Fatalf("AgentLogPath = %q, want empty (picker abort must not fire spawn)", row.AgentLogPath)
 	}
 }
 
@@ -144,10 +144,7 @@ func TestRunResumePlan_HappyPath(t *testing.T) {
 	if strings.Join(args, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", args, want)
 	}
-	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0 (resume-plan runs inline; the orchestrator owns row stamping)", row.BackgroundPID)
-	}
+	_ = readTaskFromBolt(t, id)
 	if strings.Contains(stdout.String(), "running in background") || strings.Contains(stdout.String(), "tail -f") {
 		t.Fatalf("stdout = %q, want no fork dialog (inline exec)", stdout.String())
 	}

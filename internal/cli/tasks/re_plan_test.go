@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -108,8 +107,8 @@ func TestRunRePlan_StatusOverrideDeclined(t *testing.T) {
 			ui.statusCmd, ui.statusTaskID, ui.statusStatus, id, tasks.StatusWorking)
 	}
 	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0 (decline must not fire spawn)", row.BackgroundPID)
+	if row.AgentLogPath != "" {
+		t.Fatalf("AgentLogPath = %q, want empty (decline must not fire spawn)", row.AgentLogPath)
 	}
 }
 
@@ -142,9 +141,6 @@ func TestRunRePlan_PlanDoneSkipsConfirm(t *testing.T) {
 		t.Fatalf("argv = %v, want %v", args, want)
 	}
 	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID == 0 {
-		t.Fatalf("BackgroundPID = 0, want non-zero detached child PID")
-	}
 	wantLog := filepath.Join(".j/tasks", id, tasks.AgentLogFileName)
 	if !strings.HasSuffix(row.AgentLogPath, wantLog) {
 		t.Fatalf("AgentLogPath = %q, want suffix %q", row.AgentLogPath, wantLog)
@@ -269,8 +265,7 @@ func TestRunRePlan_PickerHappy(t *testing.T) {
 
 // TestRunRePlan_InteractiveRunsInline pins the foreground path:
 // --interactive=true re-execs `j tasks orchestrate` inline (blocking,
-// terminal-attached). No fork dialog fires and the row's
-// BackgroundPID stays 0 because the inline exec owns its own PID.
+// terminal-attached). No fork dialog fires.
 func TestRunRePlan_InteractiveRunsInline(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, nil)
@@ -296,10 +291,7 @@ func TestRunRePlan_InteractiveRunsInline(t *testing.T) {
 	if strings.Contains(stdout.String(), "running in background") || strings.Contains(stdout.String(), "tail -f") {
 		t.Fatalf("stdout = %q, want no fork dialog (inline exec)", stdout.String())
 	}
-	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0 (inline exec)", row.BackgroundPID)
-	}
+	_ = readTaskFromBolt(t, id)
 }
 
 // TestRunRePlan_SpawnFails pins the SpawnIn error branch: pointing
@@ -320,8 +312,8 @@ func TestRunRePlan_SpawnFails(t *testing.T) {
 		t.Fatal("expected spawn failure")
 	}
 	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0 (no row mutation on spawn failure)", row.BackgroundPID)
+	if row.AgentLogPath != "" {
+		t.Fatalf("AgentLogPath = %q, want empty (no row mutation on spawn failure)", row.AgentLogPath)
 	}
 }
 
@@ -460,13 +452,10 @@ func TestRunRePlan_OpenDefaultFails(t *testing.T) {
 }
 
 // requireRemovedCWD runs fn after deleting the current directory so
-// tasks.DefaultDir() → os.Getwd() returns an error. Skips on Windows
-// and when running as root, and when the OS caches the inode.
+// tasks.DefaultDir() → os.Getwd() returns an error. Skips when
+// running as root, and when the OS caches the inode.
 func requireRemovedCWD(t *testing.T, fn func() error) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("cwd cannot be removed while in use on windows")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root may bypass relevant FS errors")
 	}

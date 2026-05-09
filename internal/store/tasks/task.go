@@ -23,7 +23,7 @@ import (
 const AgentLogFileName = "agent.log"
 
 // TaskFileName is the per-task TOML file that holds the row metadata
-// (status, summary, resume sessions, phase timestamps, background PID).
+// (status, summary, resume sessions, phase timestamps, agent log path).
 // It lives alongside requirements.md / plan.md / agent.log inside
 // `<cwd>/.j/tasks/<id>/`. One file per task means concurrent writers
 // to different tasks never contend, and atomic write+rename guarantees
@@ -88,12 +88,6 @@ type Task struct {
 	VerifyEndAt   time.Time `toml:"verify_end_at"`
 	DoneAt        time.Time `toml:"done_at"`
 
-	// BackgroundPID is the OS process id of the detached coding-agent
-	// child spawned for a fire-and-forget headless `j plan` or `j work`
-	// run. It is non-zero only while the row is in flight (planning or
-	// working) and the child has not yet been reaped by `j tasks`.
-	// Foreground (interactive) and resume runs leave it at 0.
-	BackgroundPID int `toml:"background_pid,omitempty"`
 	// AgentLogPath is the absolute path of the per-task log file that
 	// captures the spawned child's stdout/stderr (typically
 	// `<cwd>/.j/tasks/<id>/agent.log`). It is set whenever a

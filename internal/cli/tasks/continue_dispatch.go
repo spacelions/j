@@ -51,11 +51,15 @@ func resumeWorkInlineOrchestrator(
 	})
 }
 
-// stampSpawnOnRow records BackgroundPID + AgentLogPath on the
-// existing task row after a detached orchestrator spawn. Best-effort
-// — any read / write error surfaces as a single warning on stderr.
-// The detached child is already running, so we never roll back.
-func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
+// stampSpawnOnRow records the per-task agent.log path on the existing
+// task row after a detached orchestrator spawn. Best-effort — any
+// read / write error surfaces as a single warning on stderr. The
+// detached child is already running, so we never roll back. The
+// detached child's pid is no longer recorded on the row (SPA-72): the
+// per-task `flock` is the source of truth for liveness, and the
+// trailing `agent.log` carries the `session_start` marker that names
+// the orchestrator pid for users tailing the log.
+func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string) {
 	s, err := tasks.OpenDefault()
 	if err != nil {
 		uitheme.DangerousDialogBox(stderr, "J: tasks dir: %v", err)
@@ -64,11 +68,11 @@ func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string, pid int) {
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(taskID)
 	if err != nil {
-		uitheme.DangerousDialogBox(stderr, "J: tasks get %q: %v", taskID, err)
+		uitheme.DangerousDialogBox(
+			stderr, "J: tasks get %q: %v", taskID, err)
 		return
 	}
 	row.AgentLogPath = agentLogPath
-	row.BackgroundPID = pid
 	if err := s.PutTask(row); err != nil {
 		uitheme.DangerousDialogBox(stderr, "J: tasks put: %v", err)
 	}
@@ -110,7 +114,7 @@ func latestPhase(t tasks.Task) string {
 	case t.WorkResumeSession != "":
 		return "work"
 	case t.PlanResumeSession != "":
-		return "plan"
+		return cmdPlan
 	}
 	return ""
 }
@@ -124,7 +128,7 @@ func latestEndAt(t tasks.Task) string {
 	}{
 		{"verify", t.VerifyEndAt},
 		{"work", t.WorkEndAt},
-		{"plan", t.PlanEndAt},
+		{cmdPlan, t.PlanEndAt},
 	}
 	var best string
 	var bestT time.Time
@@ -174,7 +178,7 @@ func runPlanDoneWork(
 	if err != nil {
 		return err
 	}
-	stampSpawnOnRow(opts.Stderr, t.ID, agentLogPath, pid)
+	stampSpawnOnRow(opts.Stderr, t.ID, agentLogPath)
 	uitheme.NormalForkDialog(
 		opts.Stdout, "task "+t.ID, pid, agentLogPath)
 	return nil

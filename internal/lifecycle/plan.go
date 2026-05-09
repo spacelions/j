@@ -165,14 +165,18 @@ func BeginPlanExisting(t tasks.Task, stderr io.Writer, agentName,
 	return lc
 }
 
-// RecordBackground stamps the spawned child's PID and the agent log
-// path on the in-memory task row and re-persists it.
-func (lc *PlanLifecycle) RecordBackground(pid int, logPath string) {
+// RecordAgentLog stamps the per-task agent.log path on the in-memory
+// task row and re-persists it. The lifecycle is closed afterwards so
+// Finish becomes a no-op — the orchestrator hand-off to a detached
+// child is the terminal event for this lifecycle's bookkeeping. The
+// pid field that used to live alongside this method was retired in
+// SPA-72: the per-task `flock` is now the source of truth for "who is
+// holding the row".
+func (lc *PlanLifecycle) RecordAgentLog(logPath string) {
 	if lc.closed {
 		return
 	}
 	lc.closed = true
-	lc.task.BackgroundPID = pid
 	lc.task.AgentLogPath = logPath
 	tasks.PersistWarn(lc.stderr, lc.task)
 }

@@ -30,6 +30,14 @@ import (
 // tight loop while the child is mid-write.
 const waitForExitPollInterval = 100 * time.Millisecond
 
+// TerminateGrace is the wall-clock window Run / RunIn give a phase
+// child to react to a forwarded SIGTERM (via exec.Cmd.Cancel) before
+// exec escalates to SIGKILL via cmd.WaitDelay. Two seconds matches
+// Terminate's grace and is short enough that an interactive Ctrl+C
+// feels snappy while still letting a coding-agent flush the open
+// agent.log fd.
+const TerminateGrace = 2 * time.Second
+
 // Output runs name with args and returns its captured stdout. The wrapped
 // error includes name plus stderr (or stdout if stderr is empty) so the
 // caller can surface a useful message without re-reading the streams.
@@ -62,12 +70,22 @@ func Run(ctx context.Context, name string, args ...string) error {
 // whose CLI has no `--workspace`-style flag (e.g. claude) so the
 // workspace concept maps onto the child's CWD via cmd.Dir. An empty
 // dir inherits the parent's CWD, matching exec.Cmd's default.
+//
+// On ctx cancellation the child receives SIGTERM (via cmd.Cancel) and
+// gets TerminateGrace to exit cleanly before exec escalates to
+// SIGKILL via cmd.WaitDelay. This is the cascade the orchestrator's
+// SIGTERM signal handler relies on so the per-task flock truly
+// releases on shutdown.
 func RunIn(ctx context.Context, dir, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.Cancel = func() error {
+		return cmd.Process.Signal(syscall.SIGTERM)
+	}
+	cmd.WaitDelay = TerminateGrace
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s: %w", name, err)
 	}
@@ -226,6 +244,18 @@ func WaitForExit(ctx context.Context, pid int) error {
 			}
 		}
 	}
+}
+
+// applyDetachAttrs configures cmd so the spawned child runs in a
+// fresh POSIX session (setsid). Detaching from the parent's
+// controlling terminal lets the child survive SIGHUP / terminal
+// close, which is the equivalent of `nohup` for fire-and-forget
+// background runs of cursor-agent.
+func applyDetachAttrs(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setsid = true
 }
 
 // IsAlive reports whether the OS process identified by pid is still

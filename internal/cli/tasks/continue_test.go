@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -139,14 +138,10 @@ func setupContinueEnv(t *testing.T) {
 // shell script that prints "Logged in" and exits 0 so
 // cursor.Agent.CheckLogin succeeds without the real binary. The stub
 // ignores argv, so it covers the `status` subcommand and any future
-// caller. Skips on Windows; only the four PreRunE tests need it, so we
-// wire it per-test rather than from setupContinueEnv to keep the
-// OS-skip localized.
+// caller. Only the four PreRunE tests need it, so we wire it per-test
+// rather than from setupContinueEnv to keep the helper localized.
 func installCursorAgentLoginStub(t *testing.T) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("posix-only stub")
-	}
 	dir := t.TempDir()
 	body := "#!/bin/sh\nprintf 'Logged in\\n'\nexit 0\n"
 	bin := filepath.Join(dir, "cursor-agent")
@@ -221,10 +216,7 @@ func TestRunContinue_PlanDoneDispatchesToOrchestratorFromWork(t *testing.T) {
 	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
 		t.Fatalf("argv = %v, want %v", args, wantArgs)
 	}
-	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID == 0 {
-		t.Fatalf("BackgroundPID = 0; want non-zero detached child PID")
-	}
+	_ = readTaskFromBolt(t, id)
 }
 
 // TestRunContinue_PlanDoneForwardsToolModel pins that --tool / --model
@@ -308,12 +300,8 @@ func TestRunContinue_PlanDoneInlineWhenInteractive(t *testing.T) {
 	if !containsArg(args, "--phase=from-work") {
 		t.Fatalf("argv = %v, want --phase=from-work", args)
 	}
-	// Inline path does not stamp BackgroundPID (the parent waits).
-	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0 (inline path)",
-			row.BackgroundPID)
-	}
+	// Inline path runs synchronously; nothing further to assert here.
+	_ = readTaskFromBolt(t, id)
 }
 
 // TestRunContinue_WorkingShowsTooltip pins working -> tooltip message
@@ -379,10 +367,7 @@ func TestRunContinue_WorkDoneDispatchesToVerify(t *testing.T) {
 	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
 		t.Fatalf("argv = %v, want %v", args, wantArgs)
 	}
-	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID == 0 {
-		t.Fatalf("BackgroundPID = 0; want non-zero detached child PID")
-	}
+	_ = readTaskFromBolt(t, id)
 }
 
 // TestRunContinue_VerifyingDispatchesToVerifyResume pins verifying ->
@@ -966,7 +951,7 @@ func TestStampSpawnOnRow_KnownTask(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedTaskFull(t, nil)
 	var stderr bytes.Buffer
-	stampSpawnOnRow(&stderr, id, "/tmp/agent.log", 12345)
+	stampSpawnOnRow(&stderr, id, "/tmp/agent.log")
 	if stderr.Len() > 0 {
 		t.Fatalf("unexpected stderr: %q", stderr.String())
 	}
@@ -984,16 +969,12 @@ func TestStampSpawnOnRow_KnownTask(t *testing.T) {
 		t.Fatalf("AgentLogPath = %q, want /tmp/agent.log",
 			row.AgentLogPath)
 	}
-	if row.BackgroundPID != 12345 {
-		t.Fatalf("BackgroundPID = %d, want 12345",
-			row.BackgroundPID)
-	}
 }
 
 func TestStampSpawnOnRow_UnknownID(t *testing.T) {
 	setupContinueEnv(t)
 	var stderr bytes.Buffer
-	stampSpawnOnRow(&stderr, "ghost-id", "", 0)
+	stampSpawnOnRow(&stderr, "ghost-id", "")
 	if !strings.Contains(stderr.String(), "ghost-id") {
 		t.Fatalf("stderr = %q, want ghost-id mention", stderr.String())
 	}

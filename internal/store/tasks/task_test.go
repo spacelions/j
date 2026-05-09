@@ -208,7 +208,6 @@ func TestTask_TOML_OmitsZeroFields(t *testing.T) {
 		"plan_resume_session",
 		"work_resume_session",
 		"verify_resume_session",
-		"background_pid",
 		"agent_log_path",
 		"linear_issue",
 	} {

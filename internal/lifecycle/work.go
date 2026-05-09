@@ -111,14 +111,15 @@ func (lc *WorkLifecycle) RecordResumeSession(id string) {
 	tasks.PersistWarn(lc.stderr, lc.task)
 }
 
-// RecordBackground stamps the spawned child's PID and the agent log
-// path on the in-memory work task row and re-persists it.
-func (lc *WorkLifecycle) RecordBackground(pid int, logPath string) {
+// RecordAgentLog stamps the per-task agent.log path on the in-memory
+// work task row and re-persists it. See PlanLifecycle.RecordAgentLog
+// for the SPA-72 rationale; the pid argument was dropped because the
+// per-task `flock` is now the source of truth for liveness.
+func (lc *WorkLifecycle) RecordAgentLog(logPath string) {
 	if lc.closed {
 		return
 	}
 	lc.closed = true
-	lc.task.BackgroundPID = pid
 	lc.task.AgentLogPath = logPath
 	tasks.PersistWarn(lc.stderr, lc.task)
 }

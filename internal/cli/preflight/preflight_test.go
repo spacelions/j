@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -210,9 +209,6 @@ func TestEnsure_EnsureProjectFails(t *testing.T) {
 // TestEnsure_PropagatesProjectInitializedError fires when stat on
 // .j returns a non-NotExist error.
 func TestEnsure_PropagatesProjectInitializedError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix file-mode semantics required")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses file-mode permissions")
 	}

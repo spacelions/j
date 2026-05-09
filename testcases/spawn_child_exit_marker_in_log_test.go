@@ -1,5 +1,3 @@
-//go:build !windows
-
 package testcases_test
 
 import (

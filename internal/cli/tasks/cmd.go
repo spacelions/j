@@ -79,10 +79,10 @@ func New() *cobra.Command {
 // "no project yet" and "project exists, no tasks".
 //
 // Between ListTasks and SortTasks the helper reaps any background
-// runs whose detached cursor-agent child has exited so the printed
+// runs whose detached coding-agent child has exited so the printed
 // rows reflect fresh state. Reaping mutates the store (best-effort:
 // PutTask errors are warned on stderr) and is opt-in per row: only
-// entries with a non-zero BackgroundPID are touched.
+// entries whose per-task lock file is no longer held are touched.
 func listTasks(stdout io.Writer, simple bool) error {
 	s, err := tasks.OpenDefault()
 	if err != nil {

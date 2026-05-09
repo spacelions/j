@@ -9,7 +9,6 @@ import (
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
-	"github.com/spacelions/j/internal/util/run"
 )
 
 func reapBackgroundTasks(s *tasks.Store, stderr io.Writer,
@@ -22,15 +21,25 @@ func reapBackgroundTasks(s *tasks.Store, stderr io.Writer,
 	return out
 }
 
+// maybeReap finalises a row that was last seen in flight if the
+// per-task `flock` is no longer held. The lock file is the source of
+// truth post SPA-72 — kernel-level releases on process death make
+// stale-pid reaping safe without explicit liveness probes. A task
+// directory without a lock file is treated as "never spawned",
+// matching the legacy `BackgroundPID == 0` short-circuit.
 func maybeReap(s *tasks.Store, stderr io.Writer, tasksDir string,
 	t tasks.Task,
 ) tasks.Task {
-	if t.BackgroundPID == 0 {
+	switch t.Status {
+	case tasks.StatusPlanning, tasks.StatusWorking:
+	default:
 		return t
 	}
-	if run.IsAlive(t.BackgroundPID) {
+	probe, err := tasks.TryAcquireForReap(t.ID)
+	if err != nil || probe == nil {
 		return t
 	}
+	_ = probe.Release()
 	switch t.Status {
 	case tasks.StatusPlanning:
 		return finalisePlanReap(s, stderr, tasksDir, t)
@@ -46,7 +55,6 @@ func finalisePlanReap(s *tasks.Store, stderr io.Writer, tasksDir string,
 ) tasks.Task {
 	taskDir := filepath.Join(tasksDir, t.ID)
 	t.PlanEndAt = time.Now().UTC()
-	t.BackgroundPID = 0
 
 	clarPath := filepath.Join(taskDir, tasks.ClarificationFileName)
 	if _, err := os.Stat(clarPath); err == nil {
@@ -81,7 +89,6 @@ func finaliseWorkReap(s *tasks.Store, stderr io.Writer, tasksDir string,
 ) tasks.Task {
 	taskDir := filepath.Join(tasksDir, t.ID)
 	t.WorkEndAt = time.Now().UTC()
-	t.BackgroundPID = 0
 
 	clarPath := filepath.Join(taskDir, tasks.ClarificationFileName)
 	if _, err := os.Stat(clarPath); err == nil {
