@@ -105,22 +105,19 @@ func TestWorkLifecycle_FinishErrorPath(t *testing.T) {
 	}
 }
 
-// TestWorkLifecycle_RecordBackground_StampsPIDAndPath drives the
-// happy path of RecordBackground for the work flow.
-func TestWorkLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
+// TestWorkLifecycle_RecordAgentLog_StampsPath drives the happy path of
+// RecordAgentLog for the work flow.
+func TestWorkLifecycle_RecordAgentLog_StampsPath(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
-	lc.RecordBackground(54321, "/tmp/agent.log")
+	lc.RecordAgentLog("/tmp/agent.log")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
 	if got.Status != tasks.StatusWorking {
 		t.Fatalf("Status = %q, want working", got.Status)
-	}
-	if got.BackgroundPID != 54321 {
-		t.Fatalf("BackgroundPID = %d", got.BackgroundPID)
 	}
 	if got.AgentLogPath != "/tmp/agent.log" {
 		t.Fatalf("AgentLogPath = %q", got.AgentLogPath)
@@ -150,22 +147,22 @@ func TestWorkLifecycle_RecordResumeSession(t *testing.T) {
 	}
 }
 
-// TestWorkLifecycle_RecordBackground_ClosedShortCircuit pins the
+// TestWorkLifecycle_RecordAgentLog_ClosedShortCircuit pins the
 // second-call no-op for the work flow.
-func TestWorkLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
+func TestWorkLifecycle_RecordAgentLog_ClosedShortCircuit(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
 	lc.Finish(nil)
-	lc.RecordBackground(99999, "/tmp/should-not-stick.log")
+	lc.RecordAgentLog("/tmp/should-not-stick.log")
 	got := listAllTasks(t)[0]
 	if got.Status != tasks.StatusWorkDone {
 		t.Fatalf("Status = %q, want work-done", got.Status)
 	}
-	if got.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
+	if got.AgentLogPath != "" {
+		t.Fatalf("AgentLogPath = %q, want empty", got.AgentLogPath)
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -43,9 +42,6 @@ func (s *safeBuf) String() string {
 // The test cancels the cobra context once the seed substring shows
 // up to keep the streaming command from hanging the suite.
 func TestTasksLogs_RendersAgentLog(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires POSIX tail")
-	}
 	if _, err := exec.LookPath("tail"); err != nil {
 		t.Skip("tail not on PATH")
 	}

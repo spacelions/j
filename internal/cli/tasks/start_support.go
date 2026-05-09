@@ -38,16 +38,15 @@ type StartUI interface {
 }
 
 func persistStartRow(stderr io.Writer, target startTarget,
-	agentLogPath string, pid int,
+	agentLogPath string, _ int,
 ) {
 	if target.IsNew {
 		t := tasks.Task{
-			ID:            target.TaskID,
-			Summary:       tasks.Summary(target.Body, target.Source),
-			PlanBeginAt:   time.Now().UTC(),
-			AgentLogPath:  agentLogPath,
-			BackgroundPID: pid,
-			LinearIssue:   target.LinearIssue,
+			ID:           target.TaskID,
+			Summary:      tasks.Summary(target.Body, target.Source),
+			PlanBeginAt:  time.Now().UTC(),
+			AgentLogPath: agentLogPath,
+			LinearIssue:  target.LinearIssue,
 		}
 		if _, err := tasks.ApplyAndPersistWarn(
 			stderr, &t, tasks.EventPlanBegin); err != nil {
@@ -55,7 +54,7 @@ func persistStartRow(stderr io.Writer, target startTarget,
 		}
 		return
 	}
-	stampSpawnOnRow(stderr, target.TaskID, agentLogPath, pid)
+	stampSpawnOnRow(stderr, target.TaskID, agentLogPath)
 }
 
 func resolveJBinary(override string) (string, error) {

@@ -109,20 +109,18 @@ func RunReVerify(ctx context.Context, opts ReVerifyOptions) (err error) {
 		"--interactive=" + strconv.FormatBool(interactive),
 	}
 
-	if interactive {
-		stampSpawnOnRow(opts.Stderr, task.ID, "", 0)
-		return runInlineOrchestrator(ctx, opts.JBinary, args)
-	}
-
-	pid, err := spawnDetachedOrchestrator(
-		ctx, opts.JBinary, agentLogPath, args)
-	if err != nil {
+	if err := takeoverIfHeld(ctx, opts.Stderr, task.ID); err != nil {
 		return err
 	}
-	stampSpawnOnRow(opts.Stderr, task.ID, agentLogPath, pid)
-	uitheme.NormalForkDialog(
-		opts.Stdout, "task "+task.ID, pid, agentLogPath)
-	return nil
+	return launchOrchestrator(ctx, launchOptions{
+		taskID:       task.ID,
+		jBinary:      opts.JBinary,
+		args:         args,
+		agentLogPath: agentLogPath,
+		interactive:  interactive,
+		stdout:       opts.Stdout,
+		stderr:       opts.Stderr,
+	})
 }
 
 func resolveReVerifyTaskID(

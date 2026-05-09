@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -399,9 +398,6 @@ func TestRunDiscard_GetTaskNonNotExistError(t *testing.T) {
 // remove so DefaultTasksDir -> os.Getwd fails. On macOS / FUSE
 // getwd may succeed via cached inodes; in that case the test skips.
 func TestRunDiscard_DefaultTasksPathError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("cwd cannot be removed while in use on windows")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root may bypass relevant FS errors")
 	}
@@ -432,11 +428,8 @@ func TestRunDiscard_DefaultTasksPathError(t *testing.T) {
 // failure branch: the per-task dir exists, the bbolt row is
 // successfully removed, but RemoveTaskDir cannot unlink the
 // directory because its parent (.j/rows) is read-only. Skipped on
-// root and Windows.
+// root.
 func TestRunDiscard_RemoveTaskDirError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix file-mode semantics required")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses file-mode permissions")
 	}
@@ -766,9 +759,6 @@ func TestRunDiscard_NoIDListDecodeError(t *testing.T) {
 }
 
 func TestRunDiscard_RemovesWorktreeOnConfirm(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("git stub requires POSIX /bin/sh")
-	}
 	t.Chdir(t.TempDir())
 	logFile := filepath.Join(t.TempDir(), "git-stub.log")
 	installGitTestStub(t, logFile)
@@ -821,9 +811,6 @@ func TestRunDiscard_RemovesWorktreeOnConfirm(t *testing.T) {
 // fallback recomputes that slug from cwd basename + summary and the
 // `git worktree remove --force` runs against the matching path.
 func TestRunDiscard_EmptyWorktree_FallsBackToComputedName(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("git stub requires POSIX /bin/sh")
-	}
 	projectDir := filepath.Join(t.TempDir(), "myproj")
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		t.Fatalf("mkdir projectDir: %v", err)
@@ -881,9 +868,6 @@ func TestRunDiscard_EmptyWorktree_FallsBackToComputedName(t *testing.T) {
 // listed worktree, the lookup runs but no `worktree remove` is
 // invoked. The row + dir are still discarded.
 func TestRunDiscard_EmptyWorktree_NoComputedMatch_NoRemove(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("git stub requires POSIX /bin/sh")
-	}
 	projectDir := filepath.Join(t.TempDir(), "myproj")
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		t.Fatalf("mkdir projectDir: %v", err)
@@ -925,9 +909,6 @@ func TestRunDiscard_EmptyWorktree_NoComputedMatch_NoRemove(t *testing.T) {
 }
 
 func TestRunDiscard_WorktreeNotListed_NoRemove(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("git stub requires POSIX /bin/sh")
-	}
 	t.Chdir(t.TempDir())
 	logFile := filepath.Join(t.TempDir(), "git-stub.log")
 	installGitTestStub(t, logFile)
@@ -965,9 +946,6 @@ func TestRunDiscard_WorktreeNotListed_NoRemove(t *testing.T) {
 }
 
 func TestRunDiscard_MultipleMatches_PicksFirstAndWarns(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("git stub requires POSIX /bin/sh")
-	}
 	t.Chdir(t.TempDir())
 	logFile := filepath.Join(t.TempDir(), "git-stub.log")
 	installGitTestStub(t, logFile)
@@ -1014,9 +992,6 @@ func TestRunDiscard_MultipleMatches_PicksFirstAndWarns(t *testing.T) {
 }
 
 func TestRunDiscard_ListFails_WarnsAndContinues(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("git stub requires POSIX /bin/sh")
-	}
 	t.Chdir(t.TempDir())
 	logFile := filepath.Join(t.TempDir(), "git-stub.log")
 	installGitTestStub(t, logFile)
@@ -1057,9 +1032,6 @@ func TestRunDiscard_ListFails_WarnsAndContinues(t *testing.T) {
 }
 
 func TestRunDiscard_RemoveFails_WarnsAndContinues(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("git stub requires POSIX /bin/sh")
-	}
 	t.Chdir(t.TempDir())
 	logFile := filepath.Join(t.TempDir(), "git-stub.log")
 	installGitTestStub(t, logFile)
@@ -1130,9 +1102,6 @@ func TestRunDiscard_GitMissing_WarnsAndContinues(t *testing.T) {
 }
 
 func TestRunDiscard_BranchMatchFallback(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("git stub requires POSIX /bin/sh")
-	}
 	t.Chdir(t.TempDir())
 	logFile := filepath.Join(t.TempDir(), "git-stub.log")
 	installGitTestStub(t, logFile)

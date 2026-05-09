@@ -10,12 +10,14 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/coding-agents/deepseek"
 	"github.com/spacelions/j/internal/lifecycle/orchestrator"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/agentlog"
 )
 
@@ -90,7 +92,43 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 	if err != nil {
 		return err
 	}
+	ctx = tasks.WithPhase(ctx, phaseTagFor(opts.Phase))
+	lock, err := acquireOrchestrateLock(ctx, opts)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Release() }()
+	ctx, stop := installOrchestrateSignalHandler(ctx)
+	defer stop()
 	emitSessionStart(opts.Stderr, opts.TaskID, opts.Phase)
+	return dispatchOrchestratePhase(ctx, cfg, opts)
+}
+
+// acquireOrchestrateLock takes the per-task flock for this orchestrate
+// run. On contention the user-facing "task already in use" message is
+// written to stderr before the *LockedError is bubbled up; non-locked
+// failures pass through wrapped.
+func acquireOrchestrateLock(
+	ctx context.Context, opts OrchestrateOptions,
+) (*tasks.Lock, error) {
+	lock, err := tasks.AcquireLock(ctx, opts.TaskID)
+	if err == nil {
+		return lock, nil
+	}
+	var locked *tasks.LockedError
+	if errors.As(err, &locked) {
+		uitheme.DangerousDialogBox(opts.Stderr,
+			"J: %s", contentionMessage(opts.TaskID, locked.Holder))
+	}
+	return nil, err
+}
+
+// dispatchOrchestratePhase fans out to the matching orchestrator entry
+// point based on opts.Phase. Extracted from RunOrchestrate to keep the
+// per-method cyclomatic complexity inside the linter budget.
+func dispatchOrchestratePhase(
+	ctx context.Context, cfg store.TaskConfig, opts OrchestrateOptions,
+) error {
 	overrides := orchestrator.PhaseOverrides{
 		Tool:        opts.Tool,
 		Model:       opts.Model,
@@ -111,14 +149,14 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 		return orchestrator.RunForTaskFromWork(
 			ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, overrides)
 	case orchestrator.RunPhaseFull, "":
-		planRequiresApproval, err := resolvePlanRequiresApproval(
+		approval, err := resolvePlanRequiresApproval(
 			opts.PlanRequiresApproval)
 		if err != nil {
 			return err
 		}
 		return orchestrator.RunForTaskWithGate(
 			ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr,
-			planRequiresApproval, overrides)
+			approval, overrides)
 	}
 	return fmt.Errorf("tasks: unknown phase %q", opts.Phase)
 }

@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -468,12 +467,9 @@ func TestRunEnter_ListDecodeError_Picker(t *testing.T) {
 
 // TestRunEnter_DefaultTasksPathError mirrors the same-named test in
 // delete_test.go: replace cwd with one that is then removed so
-// DefaultTasksDir -> os.Getwd fails. Skipped on root / windows /
+// DefaultTasksDir -> os.Getwd fails. Skipped on root /
 // macOS-FUSE-cached-inode environments where getwd still succeeds.
 func TestRunEnter_DefaultTasksPathError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("cwd cannot be removed while in use on windows")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root may bypass relevant FS errors")
 	}
@@ -504,9 +500,6 @@ func TestRunEnter_DefaultTasksPathError(t *testing.T) {
 // TestRunEnter_DefaultTasksPathError_Picker exercises the same
 // failure mode on the picker branch (no --id).
 func TestRunEnter_DefaultTasksPathError_Picker(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("cwd cannot be removed while in use on windows")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root may bypass relevant FS errors")
 	}
@@ -587,9 +580,6 @@ func TestEnterOptions_WithDefaults_KeepsProvided(t *testing.T) {
 // the shell prints a sentinel and exits cleanly. Touching cmd.Dir
 // is verified separately in TestDefaultSpawner_RunsInDir.
 func TestDefaultSpawner_RunsCommand(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("default spawner targets POSIX shells")
-	}
 	t.Setenv("SHELL", "/bin/sh")
 	dir := t.TempDir()
 	var stdout bytes.Buffer
@@ -608,9 +598,6 @@ func TestDefaultSpawner_RunsCommand(t *testing.T) {
 // resolves macOS's /var -> /private/var prefix so the assertion is
 // portable across linux + darwin.
 func TestDefaultSpawner_RunsInDir(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("default spawner targets POSIX shells")
-	}
 	t.Setenv("SHELL", "/bin/sh")
 	dir := t.TempDir()
 	err := defaultSpawner(t.Context(), dir, strings.NewReader("echo ok > sentinel\n"), io.Discard, io.Discard)
@@ -630,9 +617,6 @@ func TestDefaultSpawner_RunsInDir(t *testing.T) {
 // branch: with SHELL unset, defaultSpawner must fall back to
 // /bin/sh and still complete cleanly.
 func TestDefaultSpawner_FallbackShell(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("default spawner targets POSIX shells")
-	}
 	t.Setenv("SHELL", "")
 	dir := t.TempDir()
 	err := defaultSpawner(t.Context(), dir, strings.NewReader("exit 0\n"), io.Discard, io.Discard)

@@ -122,9 +122,9 @@ func TestVerifyLifecycle_FinishErrorPath(t *testing.T) {
 	}
 }
 
-// TestVerifyLifecycle_RecordBackground_StampsPIDAndPath pins the
-// happy path of RecordBackground for the verify flow.
-func TestVerifyLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
+// TestVerifyLifecycle_RecordAgentLog_StampsPath pins the happy path of
+// RecordAgentLog for the verify flow.
+func TestVerifyLifecycle_RecordAgentLog_StampsPath(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
@@ -141,14 +141,11 @@ func TestVerifyLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 	}
 	_ = s.Close()
 	lc := BeginVerifyRestart(existing, io.Discard, "cursor", "m", "v-cursor", "")
-	lc.RecordBackground(54321, "/tmp/agent.log")
+	lc.RecordAgentLog("/tmp/agent.log")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 	got := listAllTasks(t)[0]
 	if got.Status != tasks.StatusVerifying {
 		t.Fatalf("Status = %q, want verifying", got.Status)
-	}
-	if got.BackgroundPID != 54321 {
-		t.Fatalf("BackgroundPID = %d", got.BackgroundPID)
 	}
 	if got.AgentLogPath != "/tmp/agent.log" {
 		t.Fatalf("AgentLogPath = %q", got.AgentLogPath)
@@ -186,9 +183,9 @@ func TestVerifyLifecycle_RecordResumeSession(t *testing.T) {
 	}
 }
 
-// TestVerifyLifecycle_RecordBackground_ClosedShortCircuit pins the
+// TestVerifyLifecycle_RecordAgentLog_ClosedShortCircuit pins the
 // second-call no-op for the verify flow.
-func TestVerifyLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
+func TestVerifyLifecycle_RecordAgentLog_ClosedShortCircuit(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
@@ -206,13 +203,13 @@ func TestVerifyLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 	_ = s.Close()
 	lc := BeginVerifyRestart(existing, io.Discard, "cursor", "m", "v-cursor", "")
 	lc.Finish(VerifyOutcomeSuccess, nil)
-	lc.RecordBackground(99999, "/tmp/should-not-stick.log")
+	lc.RecordAgentLog("/tmp/should-not-stick.log")
 	got := listAllTasks(t)[0]
 	if got.Status != tasks.StatusCompleted {
 		t.Fatalf("Status = %q, want completed", got.Status)
 	}
-	if got.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
+	if got.AgentLogPath != "" {
+		t.Fatalf("AgentLogPath = %q, want empty", got.AgentLogPath)
 	}
 }
 

@@ -102,8 +102,8 @@ func TestRunResumeVerify_PickerAbort(t *testing.T) {
 		t.Fatalf("RunResumeVerify: %v", err)
 	}
 	row := readTaskFromBolt(t, id)
-	if row.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0 (picker abort must not fire spawn)", row.BackgroundPID)
+	if row.AgentLogPath != "" {
+		t.Fatalf("AgentLogPath = %q, want empty (picker abort must not fire spawn)", row.AgentLogPath)
 	}
 }
 

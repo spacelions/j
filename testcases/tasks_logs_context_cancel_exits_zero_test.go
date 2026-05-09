@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -25,9 +24,6 @@ import (
 // the context (simulating Ctrl+C), and asserts the command returns
 // nil (exit code 0).
 func TestTasksLogs_ContextCancelExitsZero(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires POSIX tail")
-	}
 	if _, err := exec.LookPath("tail"); err != nil {
 		t.Skip("tail not on PATH")
 	}

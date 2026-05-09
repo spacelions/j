@@ -69,24 +69,21 @@ func TestPlanLifecycle_Finish_ErrorPath(t *testing.T) {
 	}
 }
 
-// TestPlanLifecycle_RecordBackground_StampsPIDAndPath drives the
-// happy path of RecordBackground: the in-memory task row carries the
-// PID and log path, status stays at planning, and a stray Finish call
-// is a silent no-op thanks to the closed flag.
-func TestPlanLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
+// TestPlanLifecycle_RecordAgentLog_StampsPath drives the happy path of
+// RecordAgentLog: the in-memory task row carries the log path, status
+// stays at planning, and a stray Finish call is a silent no-op thanks
+// to the closed flag.
+func TestPlanLifecycle_RecordAgentLog_StampsPath(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
-	lc.RecordBackground(99887, "/tmp/agent.log")
+	lc.RecordAgentLog("/tmp/agent.log")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 	got := listAllTasks(t)[0]
 	if got.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", got.Status)
-	}
-	if got.BackgroundPID != 99887 {
-		t.Fatalf("BackgroundPID = %d", got.BackgroundPID)
 	}
 	if got.AgentLogPath != "/tmp/agent.log" {
 		t.Fatalf("AgentLogPath = %q", got.AgentLogPath)
@@ -119,10 +116,10 @@ func TestPlanLifecycle_RecordResumeSession(t *testing.T) {
 	}
 }
 
-// TestPlanLifecycle_RecordBackground_ClosedShortCircuit pins the
+// TestPlanLifecycle_RecordAgentLog_ClosedShortCircuit pins the
 // second-call no-op: once a lifecycle has been finalised, a
-// subsequent RecordBackground does nothing.
-func TestPlanLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
+// subsequent RecordAgentLog does nothing.
+func TestPlanLifecycle_RecordAgentLog_ClosedShortCircuit(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
@@ -130,13 +127,10 @@ func TestPlanLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {
 	seedPlanApprovalDisabled(t)
 	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
-	lc.RecordBackground(11111, "/tmp/should-not-stick.log")
+	lc.RecordAgentLog("/tmp/should-not-stick.log")
 	got := listAllTasks(t)[0]
 	if got.Status != tasks.StatusPlanDone {
 		t.Fatalf("Status = %q, want plan-done", got.Status)
-	}
-	if got.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0 (closed branch)", got.BackgroundPID)
 	}
 	if got.AgentLogPath != "" {
 		t.Fatalf("AgentLogPath = %q, want empty", got.AgentLogPath)

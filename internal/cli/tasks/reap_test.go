@@ -2,9 +2,9 @@ package tasks
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,24 +15,6 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
-
-// spawnSleepingChild forks a `sleep 10` and returns its PID so a
-// reaper test can plug it in as a "live BackgroundPID". The
-// cleanup kills the child after the test so leaks do not pile up
-// in CI. The duration is long enough for the reaper poll to
-// observe the child as alive without making the test slow.
-func spawnSleepingChild(t *testing.T) int {
-	t.Helper()
-	cmd := exec.Command("sleep", "10")
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start sleep: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	})
-	return cmd.Process.Pid
-}
 
 // openTestStore returns a tasks-mode *Store rooted in t.TempDir().
 // The store is closed by t.Cleanup; tests that need the underlying
@@ -72,24 +54,53 @@ func seedTaskDir(t *testing.T, id, requirements, plan string) string {
 	return dir
 }
 
-// TestReap_LivePIDLeftAlone exercises the alive-child branch: the
-// PID belongs to a real running process, so reapBackgroundTasks
+// seedStaleLockFile creates the per-task `.lock` file with no kernel
+// holder. TryAcquireForReap can flock it without contention, modeling
+// the post-crash scenario where the previous holder exited (kernel
+// released the flock automatically) but the file lingers on disk.
+func seedStaleLockFile(t *testing.T, id string) {
+	t.Helper()
+	dir, err := tasks.EnsureDir(id)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	path := filepath.Join(dir, tasks.LockFileName)
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatalf("write stale lock: %v", err)
+	}
+}
+
+// seedHeldLock acquires the per-task `.lock` for the duration of the
+// test and registers a Cleanup that releases it. The reaper's
+// TryAcquireForReap will see the lock as held and skip the row,
+// modeling a still-alive holder.
+func seedHeldLock(t *testing.T, id string) {
+	t.Helper()
+	lock, err := tasks.AcquireLock(context.Background(), id)
+	if err != nil {
+		t.Fatalf("AcquireLock: %v", err)
+	}
+	t.Cleanup(func() { _ = lock.Release() })
+}
+
+// TestReap_LockHeldLeftAlone exercises the alive-holder branch: the
+// per-task lock is held by the test process, so reapBackgroundTasks
 // must NOT mutate the row.
-func TestReap_LivePIDLeftAlone(t *testing.T) {
+func TestReap_LockHeldLeftAlone(t *testing.T) {
 	s := openTestStore(t)
-	pid := spawnSleepingChild(t)
 	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
+	id := "live-task"
+	seedHeldLock(t, id)
 	begin := time.Now().UTC().Add(-time.Minute)
 	in := []tasks.Task{{
-		ID:            "live-task",
-		Status:        tasks.StatusPlanning,
-		BackgroundPID: pid,
-		PlanBeginAt:   begin,
-		Summary:       "alive",
-		AgentLogPath:  filepath.Join(tasksDir, "live-task", "agent.log"),
+		ID:           id,
+		Status:       tasks.StatusPlanning,
+		PlanBeginAt:  begin,
+		Summary:      "alive",
+		AgentLogPath: filepath.Join(tasksDir, id, "agent.log"),
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
 	if len(out) != 1 {
@@ -99,18 +110,15 @@ func TestReap_LivePIDLeftAlone(t *testing.T) {
 	if got.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", got.Status)
 	}
-	if got.BackgroundPID != pid {
-		t.Fatalf("BackgroundPID cleared on live row: %d", got.BackgroundPID)
-	}
 	if !got.PlanEndAt.IsZero() {
 		t.Fatalf("PlanEndAt should remain nil on live row: %v", got.PlanEndAt)
 	}
 }
 
 // TestReap_DeadPlanning_WithArtifacts exercises the plan-done branch:
-// the PID is dead and both requirements.md + plan.md exist on disk.
-// The row flips to plan-done, summary refreshes from requirements,
-// PlanEndAt is stamped, and BackgroundPID is cleared.
+// the lock file is stale (no holder) and both requirements.md +
+// plan.md exist on disk. The row flips to plan-done, summary refreshes
+// from requirements, and PlanEndAt is stamped.
 func TestReap_DeadPlanning_WithArtifacts(t *testing.T) {
 	s := openTestStore(t)
 	putProjectPlanRequiresApproval(t, "false")
@@ -120,21 +128,18 @@ func TestReap_DeadPlanning_WithArtifacts(t *testing.T) {
 	}
 	id := "done-with-artifacts"
 	seedTaskDir(t, id, "# refined heading\nbody", "1. step\n2. step")
+	seedStaleLockFile(t, id)
 	begin := time.Now().UTC().Add(-time.Minute)
 	in := []tasks.Task{{
-		ID:            id,
-		Status:        tasks.StatusPlanning,
-		BackgroundPID: deadPID(t),
-		PlanBeginAt:   begin,
-		Summary:       "stale",
+		ID:          id,
+		Status:      tasks.StatusPlanning,
+		PlanBeginAt: begin,
+		Summary:     "stale",
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
 	got := out[0]
 	if got.Status != tasks.StatusPlanDone {
 		t.Fatalf("Status = %q, want plan-done", got.Status)
-	}
-	if got.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
 	}
 	if got.PlanEndAt.IsZero() {
 		t.Fatalf("PlanEndAt should be stamped")
@@ -152,7 +157,7 @@ func TestReap_DeadPlanning_WithArtifacts(t *testing.T) {
 }
 
 // TestReap_DeadPlanning_NoArtifacts pins the help-status branch: the
-// PID is dead but neither requirements nor plan made it to disk
+// lock is stale but neither requirements nor plan made it to disk
 // (e.g. the spawned child crashed early), so the row flips to help.
 func TestReap_DeadPlanning_NoArtifacts(t *testing.T) {
 	s := openTestStore(t)
@@ -162,11 +167,11 @@ func TestReap_DeadPlanning_NoArtifacts(t *testing.T) {
 	}
 	id := "dead-without-artifacts"
 	seedTaskDir(t, id, "", "")
+	seedStaleLockFile(t, id)
 	in := []tasks.Task{{
-		ID:            id,
-		Status:        tasks.StatusPlanning,
-		BackgroundPID: deadPID(t),
-		Summary:       "fallback",
+		ID:      id,
+		Status:  tasks.StatusPlanning,
+		Summary: "fallback",
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
 	got := out[0]
@@ -175,9 +180,6 @@ func TestReap_DeadPlanning_NoArtifacts(t *testing.T) {
 	}
 	if got.PlanEndAt.IsZero() {
 		t.Fatalf("PlanEndAt should be stamped on help transition")
-	}
-	if got.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
 	}
 	if got.Summary != "fallback" {
 		t.Fatalf("Summary should not be overwritten when artifacts are missing: %q", got.Summary)
@@ -195,10 +197,10 @@ func TestReap_DeadPlanning_OnlyPlanMissing(t *testing.T) {
 	}
 	id := "dead-missing-plan"
 	seedTaskDir(t, id, "# heading\nbody", "")
+	seedStaleLockFile(t, id)
 	in := []tasks.Task{{
-		ID:            id,
-		Status:        tasks.StatusPlanning,
-		BackgroundPID: deadPID(t),
+		ID:     id,
+		Status: tasks.StatusPlanning,
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
 	if out[0].Status != tasks.StatusHelp {
@@ -206,9 +208,9 @@ func TestReap_DeadPlanning_OnlyPlanMissing(t *testing.T) {
 	}
 }
 
-// TestReap_DeadWorking pins the work-done branch: a dead PID on a
-// working row flips to work-done, stamps WorkEndAt, and clears
-// BackgroundPID. There is no artifact gate.
+// TestReap_DeadWorking pins the work-done branch: a stale lock on a
+// working row flips to work-done and stamps WorkEndAt. There is no
+// artifact gate.
 func TestReap_DeadWorking(t *testing.T) {
 	s := openTestStore(t)
 	tasksDir, err := tasks.DefaultDir()
@@ -217,20 +219,17 @@ func TestReap_DeadWorking(t *testing.T) {
 	}
 	id := "dead-working"
 	seedTaskDir(t, id, "", "")
+	seedStaleLockFile(t, id)
 	begin := time.Now().UTC().Add(-time.Minute)
 	in := []tasks.Task{{
-		ID:            id,
-		Status:        tasks.StatusWorking,
-		BackgroundPID: deadPID(t),
-		WorkBeginAt:   begin,
+		ID:          id,
+		Status:      tasks.StatusWorking,
+		WorkBeginAt: begin,
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
 	got := out[0]
 	if got.Status != tasks.StatusWorkDone {
 		t.Fatalf("Status = %q, want work-done", got.Status)
-	}
-	if got.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
 	}
 	if got.WorkEndAt.IsZero() {
 		t.Fatalf("WorkEndAt should be stamped")
@@ -238,42 +237,43 @@ func TestReap_DeadWorking(t *testing.T) {
 }
 
 // TestReap_NonActiveStateUntouched pins the in-flight allowlist:
-// rows in non-active statuses are ignored even when BackgroundPID
-// is set. Only planning and working transition through the reaper.
+// rows in non-active statuses are ignored even when a stale lock file
+// is present. Only planning and working transition through the reaper.
 func TestReap_NonActiveStateUntouched(t *testing.T) {
 	s := openTestStore(t)
 	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
+	id := "stale-help"
+	seedTaskDir(t, id, "", "")
+	seedStaleLockFile(t, id)
 	in := []tasks.Task{{
-		ID:            "stale-help",
-		Status:        tasks.StatusHelp,
-		BackgroundPID: deadPID(t),
-		Summary:       "old",
+		ID:      id,
+		Status:  tasks.StatusHelp,
+		Summary: "old",
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
 	got := out[0]
 	if got.Status != tasks.StatusHelp {
 		t.Fatalf("Status = %q, want help (untouched)", got.Status)
 	}
-	if got.BackgroundPID == 0 {
-		t.Fatal("BackgroundPID should not be cleared for non-active rows")
-	}
 }
 
-// TestReap_ZeroPIDUntouched covers the BackgroundPID == 0 short-circuit:
-// foreground (interactive) and resume rows have no spawned child to
-// reap, so the helper returns them verbatim without doing IsAlive
-// or stat work.
-func TestReap_ZeroPIDUntouched(t *testing.T) {
+// TestReap_NoLockFileUntouched covers the no-lock-file short-circuit:
+// foreground (interactive) and never-spawned rows have no per-task
+// `.lock` on disk, so the helper returns them verbatim without any
+// transition.
+func TestReap_NoLockFileUntouched(t *testing.T) {
 	s := openTestStore(t)
 	tasksDir, err := tasks.DefaultDir()
 	if err != nil {
 		t.Fatalf("DefaultTasksDir: %v", err)
 	}
+	id := "no-lock"
+	seedTaskDir(t, id, "", "")
 	in := []tasks.Task{{
-		ID:     "no-bg",
+		ID:     id,
 		Status: tasks.StatusPlanning,
 	}}
 	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
@@ -281,8 +281,8 @@ func TestReap_ZeroPIDUntouched(t *testing.T) {
 	if got.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning untouched", got.Status)
 	}
-	if got.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
+	if !got.PlanEndAt.IsZero() {
+		t.Fatalf("PlanEndAt should remain zero: %v", got.PlanEndAt)
 	}
 }
 
@@ -292,6 +292,10 @@ func TestReap_ZeroPIDUntouched(t *testing.T) {
 // in-memory transition for the printer.
 func TestReap_PutErrorWarns(t *testing.T) {
 	id := "put-error"
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	seedTaskDir(t, id, "", "")
+	seedStaleLockFile(t, id)
 	parent := filepath.Join(t.TempDir(), "parent")
 	if err := os.WriteFile(parent, []byte("blocker"), 0o644); err != nil {
 		t.Fatal(err)
@@ -299,9 +303,8 @@ func TestReap_PutErrorWarns(t *testing.T) {
 	s := tasks.Open(parent)
 	var stderr bytes.Buffer
 	in := []tasks.Task{{
-		ID:            id,
-		Status:        tasks.StatusPlanning,
-		BackgroundPID: deadPID(t),
+		ID:     id,
+		Status: tasks.StatusPlanning,
 	}}
 	out := reapBackgroundTasks(s, &stderr, parent, in)
 	if out[0].Status != tasks.StatusHelp {
@@ -313,21 +316,21 @@ func TestReap_PutErrorWarns(t *testing.T) {
 }
 
 // TestReap_ListTasksWiresThroughCommand drives the cobra-wired path
-// end-to-end: a `planning` row with a dead PID and on-disk
+// end-to-end: a `planning` row with a stale lock and on-disk
 // artifacts must come out as `plan-done` after `j tasks` runs.
 func TestReap_ListTasksWiresThroughCommand(t *testing.T) {
 	s := openTestStore(t)
 	putProjectPlanRequiresApproval(t, "false")
 	id := "wired-task"
 	seedTaskDir(t, id, "# wired heading\nbody", "1. step")
+	seedStaleLockFile(t, id)
 	begin := time.Now().UTC().Add(-time.Hour)
 	row := tasks.Task{
-		ID:            id,
-		Status:        tasks.StatusPlanning,
-		PlanTool:      "cursor",
-		PlanModel:     "sonnet-4",
-		BackgroundPID: deadPID(t),
-		PlanBeginAt:   begin,
+		ID:          id,
+		Status:      tasks.StatusPlanning,
+		PlanTool:    "cursor",
+		PlanModel:   "sonnet-4",
+		PlanBeginAt: begin,
 	}
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -355,36 +358,18 @@ func TestReap_ListTasksWiresThroughCommand(t *testing.T) {
 	if persisted.Status != tasks.StatusPlanDone {
 		t.Fatalf("persisted Status = %q", persisted.Status)
 	}
-	if persisted.BackgroundPID != 0 {
-		t.Fatalf("BackgroundPID = %d, want 0", persisted.BackgroundPID)
-	}
 }
 
-// deadPID runs `true` to completion (cmd.Wait reaps the child) and
-// returns its PID. By the time the function returns the child has
-// exited so signal(0) yields ESRCH and run.IsAlive reports dead.
-// PID reuse is theoretically possible but vanishingly unlikely
-// within the few milliseconds between Wait and the reaper's IsAlive
-// poll on a typical test host where PIDs increment sequentially.
-func deadPID(t *testing.T) int {
-	t.Helper()
-	cmd := exec.Command("true")
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("run true: %v", err)
-	}
-	return cmd.Process.Pid
-}
-
-// TestReap_DeadPlanning_WithClarification pins the clarification branch:
-// TestReap_Dead_WithClarification pins the clarification branch: a dead
-// PID with clarification.md present must flip to needs-clarification.
+// TestReap_Dead_WithClarification pins the clarification branch: a
+// stale lock with clarification.md present must flip to
+// needs-clarification.
 func TestReap_Dead_WithClarification(t *testing.T) {
 	cases := []struct {
 		name      string
 		id        string
 		status    tasks.TaskStatus
 		req, plan string
-		makeTask  func(pid int) tasks.Task
+		makeTask  func(id string) tasks.Task
 	}{
 		{
 			name:   "planning",
@@ -392,12 +377,11 @@ func TestReap_Dead_WithClarification(t *testing.T) {
 			status: tasks.StatusPlanning,
 			req:    "# req\nbody",
 			plan:   "1. step",
-			makeTask: func(pid int) tasks.Task {
+			makeTask: func(id string) tasks.Task {
 				return tasks.Task{
-					ID:            "dead-planning-clarification",
-					Status:        tasks.StatusPlanning,
-					BackgroundPID: pid,
-					PlanBeginAt:   time.Now().UTC().Add(-time.Minute),
+					ID:          id,
+					Status:      tasks.StatusPlanning,
+					PlanBeginAt: time.Now().UTC().Add(-time.Minute),
 				}
 			},
 		},
@@ -405,12 +389,11 @@ func TestReap_Dead_WithClarification(t *testing.T) {
 			name:   "working",
 			id:     "dead-working-clarification",
 			status: tasks.StatusWorking,
-			makeTask: func(pid int) tasks.Task {
+			makeTask: func(id string) tasks.Task {
 				return tasks.Task{
-					ID:            "dead-working-clarification",
-					Status:        tasks.StatusWorking,
-					BackgroundPID: pid,
-					WorkBeginAt:   time.Now().UTC().Add(-time.Minute),
+					ID:          id,
+					Status:      tasks.StatusWorking,
+					WorkBeginAt: time.Now().UTC().Add(-time.Minute),
 				}
 			},
 		},
@@ -423,20 +406,18 @@ func TestReap_Dead_WithClarification(t *testing.T) {
 				t.Fatalf("DefaultTasksDir: %v", err)
 			}
 			dir := seedTaskDir(t, tc.id, tc.req, tc.plan)
+			seedStaleLockFile(t, tc.id)
 			if err := os.WriteFile(
 				filepath.Join(dir, tasks.ClarificationFileName),
 				[]byte("needs input\n"), 0o644,
 			); err != nil {
 				t.Fatal(err)
 			}
-			in := []tasks.Task{tc.makeTask(deadPID(t))}
+			in := []tasks.Task{tc.makeTask(tc.id)}
 			out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
 			got := out[0]
 			if got.Status != tasks.StatusNeedsClarification {
 				t.Fatalf("Status = %q, want needs-clarification", got.Status)
-			}
-			if got.BackgroundPID != 0 {
-				t.Fatalf("BackgroundPID = %d, want 0", got.BackgroundPID)
 			}
 			persisted, err := s.GetTask(tc.id)
 			if err != nil {
@@ -528,6 +509,7 @@ func TestReap_TransitionsEmitMarkers(t *testing.T) {
 			}
 			id := "reap-" + c.name
 			dir := seedTaskDir(t, id, c.requirements, c.plan)
+			seedStaleLockFile(t, id)
 			if c.clarif != "" {
 				if err := os.WriteFile(
 					filepath.Join(dir, tasks.ClarificationFileName),
@@ -540,10 +522,9 @@ func TestReap_TransitionsEmitMarkers(t *testing.T) {
 			t.Cleanup(tasks.ResetHooksForTest)
 			lifecycle.Init()
 			in := []tasks.Task{{
-				ID:            id,
-				Status:        c.status,
-				BackgroundPID: deadPID(t),
-				AgentLogPath:  logPath,
+				ID:           id,
+				Status:       c.status,
+				AgentLogPath: logPath,
 			}}
 			out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
 			got := out[0]
