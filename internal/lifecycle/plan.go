@@ -177,6 +177,22 @@ func (lc *PlanLifecycle) RecordBackground(pid int, logPath string) {
 	tasks.PersistWarn(lc.stderr, lc.task)
 }
 
+// RecordResumeSession stamps id onto the in-memory task row's
+// PlanResumeSession field and re-persists. Used for the post-run
+// capture path (deepseek-tui has no pre-run session-id binding flag,
+// so the orchestrator captures the id after the first turn writes
+// to disk and threads it back here so a later resume run finds it).
+// A no-op when id is empty so call sites do not need to gate the
+// helper themselves. Does NOT close the lifecycle: Finish must still
+// run to stamp the terminal status.
+func (lc *PlanLifecycle) RecordResumeSession(id string) {
+	if id == "" {
+		return
+	}
+	lc.task.PlanResumeSession = id
+	tasks.PersistWarn(lc.stderr, lc.task)
+}
+
 // Finish stamps plan_end_at, decides the terminal status from
 // runErr, the on-disk clarification.md, and the plan-requires-approval
 // setting, and rewrites the task. Calling Finish twice is a silent

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
@@ -134,6 +135,7 @@ func runPlanInTaskDir(
 		taskID, fromFilePath, sourceBody,
 		resumeID, agentLogPath, linearIssue,
 	)
+	beginAt := time.Now().UTC()
 	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           fromFilePath,
 		Model:                  opts.Model,
@@ -160,6 +162,12 @@ func runPlanInTaskDir(
 			)
 			return nil
 		}
+	}
+
+	if planErr == nil && resumeID == "" {
+		codingagents.CaptureAndRecordResume(
+			ctx, opts.Agent, lc, taskDir, beginAt, opts.Stderr,
+		)
 	}
 
 	refinedReq, planMD := readPlanArtifacts(

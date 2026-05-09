@@ -155,6 +155,37 @@ func TestVerifyLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 	}
 }
 
+// TestVerifyLifecycle_RecordResumeSession pins the post-run-capture
+// path: RecordResumeSession mutates VerifyResumeSession in place,
+// re-persists the row, and Finish writes the same value through.
+func TestVerifyLifecycle_RecordResumeSession(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
+	}
+	id := seedWorkDoneTask(t, "x")
+	dbPath, err := tasks.DefaultDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := tasks.Open(dbPath)
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	lc := BeginVerifyRestart(existing, io.Discard,
+		"deepseek", "deepseek-v4-pro", "", "")
+	lc.RecordResumeSession("")
+	lc.RecordResumeSession("captured-id-3")
+	lc.Finish(VerifyOutcomeSuccess, nil)
+	got := listAllTasks(t)[0]
+	if got.VerifyResumeSession != "captured-id-3" {
+		t.Fatalf("VerifyResumeSession = %q, want captured-id-3",
+			got.VerifyResumeSession)
+	}
+}
+
 // TestVerifyLifecycle_RecordBackground_ClosedShortCircuit pins the
 // second-call no-op for the verify flow.
 func TestVerifyLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {

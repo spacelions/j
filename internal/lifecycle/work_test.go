@@ -127,6 +127,29 @@ func TestWorkLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 	}
 }
 
+// TestWorkLifecycle_RecordResumeSession pins the post-run-capture
+// path: RecordResumeSession mutates WorkResumeSession in place,
+// re-persists the row, and Finish writes the same value through.
+func TestWorkLifecycle_RecordResumeSession(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
+	}
+	lc := NewWorkTask(io.Discard, "deepseek", "deepseek-v4-pro",
+		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
+	lc.RecordResumeSession("")
+	if got := lc.Task().WorkResumeSession; got != "" {
+		t.Fatalf("empty id should not stick: got %q", got)
+	}
+	lc.RecordResumeSession("captured-id-2")
+	lc.Finish(nil)
+	got := listAllTasks(t)[0]
+	if got.WorkResumeSession != "captured-id-2" {
+		t.Fatalf("WorkResumeSession = %q, want captured-id-2",
+			got.WorkResumeSession)
+	}
+}
+
 // TestWorkLifecycle_RecordBackground_ClosedShortCircuit pins the
 // second-call no-op for the work flow.
 func TestWorkLifecycle_RecordBackground_ClosedShortCircuit(t *testing.T) {

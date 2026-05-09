@@ -99,6 +99,18 @@ func fillWorktree(task *tasks.Task) {
 	task.Worktree = tasks.WorktreeNameFor(project, *task)
 }
 
+// RecordResumeSession stamps id onto the in-memory work task row's
+// WorkResumeSession field and re-persists. See PlanLifecycle's
+// equivalent for the post-run-capture rationale; deepseek-tui mints
+// the session id after its first turn writes to disk.
+func (lc *WorkLifecycle) RecordResumeSession(id string) {
+	if id == "" {
+		return
+	}
+	lc.task.WorkResumeSession = id
+	tasks.PersistWarn(lc.stderr, lc.task)
+}
+
 // RecordBackground stamps the spawned child's PID and the agent log
 // path on the in-memory work task row and re-persists it.
 func (lc *WorkLifecycle) RecordBackground(pid int, logPath string) {

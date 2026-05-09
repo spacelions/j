@@ -13,6 +13,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/coding-agents/deepseek"
 	"github.com/spacelions/j/internal/lifecycle/orchestrator"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/util/agentlog"
@@ -62,7 +63,7 @@ type OrchestrateOptions struct {
 	Stderr io.Writer
 
 	// Agents is the wired coding-agent set; defaults are
-	// `[]codingagents.Agent{cursor.New(), claude.New()}` when the
+	// `[]codingagents.Agent{cursor.New(), claude.New(), deepseek.New()}` when the
 	// cobra wiring fires (tests inject scripted ones).
 	Agents []codingagents.Agent
 }
@@ -209,7 +210,9 @@ func newOrchestrateCmd() *cobra.Command {
 				Stdin:                cmd.InOrStdin(),
 				Stdout:               cmd.OutOrStdout(),
 				Stderr:               cmd.ErrOrStderr(),
-				Agents:               []codingagents.Agent{cursor.New(), claude.New()},
+				Agents: []codingagents.Agent{
+					cursor.New(), claude.New(), deepseek.New(),
+				},
 			})
 		},
 	}

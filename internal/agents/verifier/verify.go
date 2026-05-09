@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/uitheme"
@@ -23,7 +24,6 @@ import (
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
-	"github.com/spacelions/j/internal/util/run"
 )
 
 // defaultMaxIterations bounds the verifier / worker fix loop.
@@ -188,28 +188,24 @@ func runVerifyLoop(
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	clarifyPath := filepath.Join(res.TaskDir, tasks.ClarificationFileName)
+	verifyWorkspace := codingagents.ProjectRootWorkspace()
+	beginAt := time.Now().UTC()
 	for i := range opts.MaxIterations {
 		lc.IterationBegin(i, opts.MaxIterations)
-		req := codingagents.VerifyRequest{
-			RequirementsPath:           res.RequirementsPath,
-			PlanPath:                   res.PlanPath,
-			VerifierPlanOutputPath:     res.VerifierPlanPath,
-			VerifierFindingsOutputPath: res.FindingsPath,
-			ClarificationPath:          clarifyPath,
-			Model:                      model,
-			Interactive:                opts.Interactive,
-			Resume:                     i > 0,
-			ResumeChatID:               resumeID,
-			Worktree:                   res.Task.Worktree,
-			AgentLogPath:               agentLogPath,
-			MustRead:                   mustReadFiles,
-		}
-		pid, err := verifierAgent.Verify(ctx, req)
-		if err != nil {
+		req := buildVerifyReq(
+			res, model, resumeID, opts.Interactive, i,
+			clarifyPath, agentLogPath, mustReadFiles,
+		)
+		if err := runVerifyTurn(
+			ctx, verifierAgent, req,
+		); err != nil {
 			return lifecycle.VerifyOutcomeNoRetries, err
 		}
-		if err := run.WaitForExit(ctx, pid); err != nil {
-			return lifecycle.VerifyOutcomeNoRetries, err
+		if i == 0 && resumeID == "" {
+			resumeID = codingagents.CaptureAndRecordResume(
+				ctx, verifierAgent, lc, verifyWorkspace,
+				beginAt, opts.Stderr,
+			)
 		}
 		verdict := resolver.ParseVerdict(res.FindingsPath)
 		lc.Verdict(i, verdict, res.FindingsPath)
@@ -224,23 +220,10 @@ func runVerifyLoop(
 		if i+1 >= opts.MaxIterations {
 			break
 		}
-		workReq := codingagents.WorkRequest{
-			PlanPath:                   res.PlanPath,
-			Model:                      res.Task.WorkModel,
-			ClarificationPath:          clarifyPath,
-			Interactive:                opts.Interactive,
-			ResumeChatID:               res.Task.WorkResumeSession,
-			Resume:                     true,
-			FixFindings:                true,
-			VerifierFindingsOutputPath: res.FindingsPath,
-			Worktree:                   res.Task.Worktree,
-			AgentLogPath:               agentLogPath,
-		}
-		workPID, err := workerAgent.Work(ctx, workReq)
-		if err != nil {
-			return lifecycle.VerifyOutcomeNoRetries, err
-		}
-		if err := run.WaitForExit(ctx, workPID); err != nil {
+		if err := runFixTurn(
+			ctx, workerAgent, opts.Interactive, res,
+			clarifyPath, agentLogPath,
+		); err != nil {
 			return lifecycle.VerifyOutcomeNoRetries, err
 		}
 	}

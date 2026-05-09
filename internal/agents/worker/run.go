@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/uitheme"
@@ -153,6 +154,8 @@ func runWorker(
 	clarificationPath := filepath.Join(taskDir, tasks.ClarificationFileName)
 	resumeFromClarification := resumeMode &&
 		tasks.ClarificationFileExists(taskDir)
+	workspace := taskDir
+	beginAt := time.Now().UTC()
 	pid, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:                res.PlanPath,
 		Model:                   model,
@@ -178,6 +181,11 @@ func runWorker(
 			)
 			return nil
 		}
+	}
+	if workErr == nil && resumeID == "" {
+		codingagents.CaptureAndRecordResume(
+			ctx, agent, lc, workspace, beginAt, opts.Stderr,
+		)
 	}
 	lc.Finish(workErr)
 	if workErr != nil {

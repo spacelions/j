@@ -21,8 +21,8 @@ import (
 
 // ResumeOptions configures RunResume. Stdin/Stdout/Stderr default to
 // the process streams; UI defaults to the huh implementation; Agents
-// must be supplied by the caller (the cobra wiring injects
-// `[]codingagents.Agent{cursor.New(), claude.New()}`, tests inject
+// must be supplied by the caller (the cobra wiring injects every
+// registered backend — cursor, claude, deepseek — tests inject
 // scripted ones).
 //
 // TaskID short-circuits the selector: when non-empty Run loads that
