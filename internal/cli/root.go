@@ -30,6 +30,7 @@ func NewRoot() *cobra.Command {
 	lifecycle.Init()
 	lifecycle.InitLinearPush()
 	lifecycle.InitLinearStateSync()
+	lifecycle.InitLinearTitleSync()
 	lifecycle.InitLinearVerifyPush()
 	viper.SetEnvPrefix("J")
 	viper.AutomaticEnv()

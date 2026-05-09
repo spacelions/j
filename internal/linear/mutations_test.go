@@ -212,6 +212,75 @@ func TestUpdateIssueState_Unauthorized(t *testing.T) {
 	}
 }
 
+func TestUpdateIssueTitle_OK(t *testing.T) {
+	var seenBody []byte
+	srv := issueServer(t, func(w http.ResponseWriter, r *http.Request) {
+		seenBody, _ = io.ReadAll(r.Body)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"issueUpdate": map[string]any{"success": true},
+			},
+		})
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	err := c.UpdateIssueTitle(
+		t.Context(), "node-1", "❗ new title")
+	if err != nil {
+		t.Fatalf("UpdateIssueTitle: %v", err)
+	}
+	if !strings.Contains(string(seenBody), "title:$title") {
+		t.Fatalf("body missing title:$title: %s", seenBody)
+	}
+	req := decodeReq(t, seenBody)
+	if req.Variables["id"] != "node-1" {
+		t.Fatalf("id var = %v", req.Variables["id"])
+	}
+	if req.Variables["title"] != "❗ new title" {
+		t.Fatalf("title var = %v", req.Variables["title"])
+	}
+}
+
+func TestUpdateIssueTitle_GraphQLError(t *testing.T) {
+	srv := issueServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"issueUpdate": map[string]any{"success": false},
+			},
+			"errors": []map[string]string{{"message": "bad title"}},
+		})
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	err := c.UpdateIssueTitle(t.Context(), "id", "t")
+	if err == nil || !strings.Contains(err.Error(), "bad title") {
+		t.Fatalf("err = %v, want graphql 'bad title'", err)
+	}
+}
+
+func TestUpdateIssueTitle_Unauthorized(t *testing.T) {
+	srv := issueServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	err := c.UpdateIssueTitle(t.Context(), "id", "t")
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("err = %v, want ErrUnauthorized", err)
+	}
+}
+
+func TestUpdateIssueTitle_HTTP500(t *testing.T) {
+	srv := issueServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("boom"))
+	})
+	c := NewClient("k", WithEndpoint(srv.URL))
+	err := c.UpdateIssueTitle(t.Context(), "id", "t")
+	var hErr *HTTPError
+	if !errors.As(err, &hErr) ||
+		hErr.Status != http.StatusInternalServerError {
+		t.Fatalf("err = %v, want *HTTPError with 500", err)
+	}
+}
+
 func TestRemindOnIssue_OK(t *testing.T) {
 	var seenBody []byte
 	srv := issueServer(t, func(w http.ResponseWriter, r *http.Request) {
