@@ -93,6 +93,32 @@ func TestPlanLifecycle_RecordBackground_StampsPIDAndPath(t *testing.T) {
 	}
 }
 
+// TestPlanLifecycle_RecordResumeSession pins the post-run-capture
+// path: RecordResumeSession mutates PlanResumeSession in place,
+// re-persists the row, and Finish writes the same value through.
+// An empty id is a no-op so call sites do not need to gate the
+// helper themselves.
+func TestPlanLifecycle_RecordResumeSession(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("store.EnsureProject: %v", err)
+	}
+	seedPlanApprovalDisabled(t)
+	lc := NewPlanTask(io.Discard, "deepseek", "deepseek-v4-pro",
+		tasks.NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
+	lc.RecordResumeSession("")
+	if got := lc.Task().PlanResumeSession; got != "" {
+		t.Fatalf("empty id should not stick: got %q", got)
+	}
+	lc.RecordResumeSession("captured-id-1")
+	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
+	got := listAllTasks(t)[0]
+	if got.PlanResumeSession != "captured-id-1" {
+		t.Fatalf("PlanResumeSession = %q, want captured-id-1",
+			got.PlanResumeSession)
+	}
+}
+
 // TestPlanLifecycle_RecordBackground_ClosedShortCircuit pins the
 // second-call no-op: once a lifecycle has been finalised, a
 // subsequent RecordBackground does nothing.

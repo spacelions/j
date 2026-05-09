@@ -14,15 +14,16 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/coding-agents/deepseek"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/util/run"
 )
 
 // StartOptions configures RunStart. Stdin/Stdout/Stderr default to the
 // process streams; Agents must be supplied by the caller (the cobra
-// wiring injects `[]codingagents.Agent{cursor.New(), claude.New()}`,
-// tests inject scripted ones); UI defaults to picker.New so the source
-// / file / re-plan pickers work.
+// wiring injects every registered backend — cursor, claude,
+// deepseek — tests inject scripted ones); UI defaults to picker.New
+// so the source / file / re-plan pickers work.
 type StartOptions struct {
 	// FromFile is the markdown task description path. When set, the
 	// source picker is skipped and the markdown branch fires directly.
@@ -72,7 +73,7 @@ type StartOptions struct {
 type startTarget = resolver.StartTarget
 
 func newStartCmd() *cobra.Command {
-	agents := []codingagents.Agent{cursor.New(), claude.New()}
+	agents := []codingagents.Agent{cursor.New(), claude.New(), deepseek.New()}
 	cmd := &cobra.Command{
 		Use: "start",
 		Short: "Start a new task: drive planner, then pause for " +

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/uitheme"
@@ -153,6 +154,8 @@ func runWorker(
 	clarificationPath := filepath.Join(taskDir, tasks.ClarificationFileName)
 	resumeFromClarification := resumeMode &&
 		tasks.ClarificationFileExists(taskDir)
+	workspace := taskDir
+	beginAt := time.Now().UTC()
 	pid, workErr := agent.Work(ctx, codingagents.WorkRequest{
 		PlanPath:                res.PlanPath,
 		Model:                   model,
@@ -177,6 +180,15 @@ func runWorker(
 				opts.Stdout, agent.Name(), pid, agentLogPath,
 			)
 			return nil
+		}
+	}
+	if workErr == nil && resumeID == "" {
+		if id, capErr := codingagents.CaptureResumeID(
+			ctx, agent, workspace, beginAt,
+		); capErr != nil {
+			uitheme.DangerousDialogBox(opts.Stderr, "J: %v", capErr)
+		} else {
+			lc.RecordResumeSession(id)
 		}
 	}
 	lc.Finish(workErr)

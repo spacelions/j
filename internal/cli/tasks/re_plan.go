@@ -16,6 +16,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/coding-agents/deepseek"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
 )
@@ -35,8 +36,8 @@ type RePlanUI interface {
 // RePlanOptions configures RunRePlan. Stdin/Stdout/Stderr default to
 // the process streams; UI defaults to the huh-backed implementation;
 // Agents must be supplied by the caller (the cobra wiring injects
-// `[]codingagents.Agent{cursor.New(), claude.New()}`, tests inject
-// scripted ones).
+// every registered backend — cursor, claude, deepseek — tests
+// inject scripted ones).
 type RePlanOptions struct {
 	// FromTask, when set, resolves the task by ID and skips the
 	// picker. Empty triggers the shared task picker over every row.
@@ -224,7 +225,7 @@ func pickRePlanFromStore(
 // help). viper.BindPFlag / viper.BindEnv only fail on programmer
 // errors so their returned errors are intentionally discarded.
 func newRePlanCmd() *cobra.Command {
-	agents := []codingagents.Agent{cursor.New(), claude.New()}
+	agents := []codingagents.Agent{cursor.New(), claude.New(), deepseek.New()}
 	cmd := &cobra.Command{
 		Use: "re-plan",
 		Short: "Re-plan an existing task: run the planner inline " +

@@ -16,6 +16,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/coding-agents/deepseek"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
 )
@@ -159,7 +160,7 @@ func clearWorkResumeSession(taskID string) error {
 
 // newReWorkCmd builds the `j tasks re-work` cobra subcommand.
 func newReWorkCmd() *cobra.Command {
-	agents := []codingagents.Agent{cursor.New(), claude.New()}
+	agents := []codingagents.Agent{cursor.New(), claude.New(), deepseek.New()}
 	cmd := &cobra.Command{
 		Use: "re-work",
 		Short: "Re-work an existing task: run the worker inline " +

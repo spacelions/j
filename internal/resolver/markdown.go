@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
@@ -134,6 +135,7 @@ func runPlanInTaskDir(
 		taskID, fromFilePath, sourceBody,
 		resumeID, agentLogPath, linearIssue,
 	)
+	beginAt := time.Now().UTC()
 	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:           fromFilePath,
 		Model:                  opts.Model,
@@ -162,6 +164,12 @@ func runPlanInTaskDir(
 		}
 	}
 
+	if planErr == nil && resumeID == "" {
+		captureAndRecordPlan(
+			ctx, opts.Stderr, lc, opts.Agent, taskDir, beginAt,
+		)
+	}
+
 	refinedReq, planMD := readPlanArtifacts(
 		opts.Stderr, planErr, requirementsPath, planPath,
 	)
@@ -176,6 +184,22 @@ func runPlanInTaskDir(
 		taskID,
 	)
 	return nil
+}
+
+// captureAndRecordPlan asks the agent for the post-run session id
+// (deepseek-tui mints it after the first turn writes to disk) and
+// threads it onto lc. Scan failures surface as best-effort warnings.
+func captureAndRecordPlan(
+	ctx context.Context, stderr io.Writer,
+	lc *lifecycle.PlanLifecycle, agent codingagents.Agent,
+	workspace string, since time.Time,
+) {
+	id, err := codingagents.CaptureResumeID(ctx, agent, workspace, since)
+	if err != nil {
+		uitheme.DangerousDialogBox(stderr, "J: %v", err)
+		return
+	}
+	lc.RecordResumeSession(id)
 }
 
 // readPlanArtifacts reads the planner-produced requirements.md and

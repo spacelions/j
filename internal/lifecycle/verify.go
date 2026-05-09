@@ -76,6 +76,17 @@ func openVerifyLifecycle(stderr io.Writer, task tasks.Task,
 	}
 }
 
+// RecordResumeSession stamps id onto the in-memory verify task row's
+// VerifyResumeSession field and re-persists. See PlanLifecycle's
+// equivalent for the post-run-capture rationale.
+func (lc *VerifyLifecycle) RecordResumeSession(id string) {
+	if id == "" {
+		return
+	}
+	lc.task.VerifyResumeSession = id
+	tasks.PersistWarn(lc.stderr, lc.task)
+}
+
 // RecordBackground stamps PID + log path on the verify task row.
 func (lc *VerifyLifecycle) RecordBackground(pid int, logPath string) {
 	if lc.closed {

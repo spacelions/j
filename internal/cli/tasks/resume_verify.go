@@ -13,6 +13,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
+	"github.com/spacelions/j/internal/coding-agents/deepseek"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
 )
@@ -118,7 +119,7 @@ func filterTasksWithVerifySession(rows []tasks.Task) []tasks.Task {
 
 // newResumeVerifyCmd builds the `j tasks resume-verify` cobra subcommand.
 func newResumeVerifyCmd() *cobra.Command {
-	agents := []codingagents.Agent{cursor.New(), claude.New()}
+	agents := []codingagents.Agent{cursor.New(), claude.New(), deepseek.New()}
 	cmd := &cobra.Command{
 		Use:   "resume-verify",
 		Short: "Resume an in-flight verifier session in the foreground",

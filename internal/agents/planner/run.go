@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
@@ -72,6 +73,7 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 	)
 	resumeFromClarification := resumeMode &&
 		tasks.ClarificationFileExists(taskDir)
+	beginAt := time.Now().UTC()
 	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
 		FromFilePath:            requirementsPath,
 		Model:                   opts.Model,
@@ -93,24 +95,60 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 		}
 	}
 
-	var refinedReq, planMD string
-	if planErr == nil {
-		if data, readErr := os.ReadFile(requirementsPath); readErr == nil {
-			refinedReq = string(data)
-		} else {
-			uitheme.DangerousDialogBox(
-				stderr, "J: read %s: %v",
-				requirementsPath, readErr,
-			)
-		}
-		if data, readErr := os.ReadFile(planPath); readErr == nil {
-			planMD = string(data)
-		} else {
-			uitheme.DangerousDialogBox(stderr, "J: read %s: %v", planPath, readErr)
-		}
+	if planErr == nil && resumeID == "" {
+		captureAndRecordPlan(ctx, opts.Agent, taskDir, beginAt, stderr, lc)
 	}
+
+	refinedReq, planMD := readPlanArtifacts(
+		stderr, planErr, requirementsPath, planPath,
+	)
 	lc.Finish(planErr, refinedReq, planMD, requirementsPath)
 	return planErr
+}
+
+// captureAndRecordPlan asks the agent for the post-run session id
+// (deepseek-tui mints it after its first turn writes to disk) and
+// threads it onto the lifecycle row. A scan failure surfaces as a
+// best-effort warning so it never fails the run.
+func captureAndRecordPlan(
+	ctx context.Context, agent codingagents.Agent,
+	workspace string, since time.Time, stderr io.Writer,
+	lc *lifecycle.PlanLifecycle,
+) {
+	id, err := codingagents.CaptureResumeID(ctx, agent, workspace, since)
+	if err != nil {
+		uitheme.DangerousDialogBox(stderr, "J: %v", err)
+		return
+	}
+	lc.RecordResumeSession(id)
+}
+
+// readPlanArtifacts reads the planner-produced requirements.md and
+// plan.md when planErr is nil, surfacing read failures as warnings on
+// stderr so the lifecycle still records what it can.
+func readPlanArtifacts(
+	stderr io.Writer, planErr error,
+	requirementsPath, planPath string,
+) (refinedReq, planMD string) {
+	if planErr != nil {
+		return "", ""
+	}
+	if data, readErr := os.ReadFile(requirementsPath); readErr == nil {
+		refinedReq = string(data)
+	} else {
+		uitheme.DangerousDialogBox(
+			stderr, "J: read %s: %v",
+			requirementsPath, readErr,
+		)
+	}
+	if data, readErr := os.ReadFile(planPath); readErr == nil {
+		planMD = string(data)
+	} else {
+		uitheme.DangerousDialogBox(
+			stderr, "J: read %s: %v", planPath, readErr,
+		)
+	}
+	return refinedReq, planMD
 }
 
 // beginPlanLifecycle picks the correct lifecycle helper given the
