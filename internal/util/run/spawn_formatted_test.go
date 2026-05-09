@@ -172,6 +172,39 @@ func TestSpawnFormattedIn_PartialLineAtEOF(t *testing.T) {
 	waitForLogContains(t, logPath, "no-newline")
 }
 
+func TestDrainFormatted_AllowsSuppressedLines(t *testing.T) {
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "out.log")
+	logFile, err := os.OpenFile(
+		logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go drainFormatted(pr, logFile, func([]byte) []byte { return nil }, done)
+	if _, err := pw.WriteString("hidden\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	if err := logFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) != 0 {
+		t.Fatalf("log = %q, want empty", data)
+	}
+}
+
 // waitForLogContainsAndExit polls logPath for every needle plus the
 // `child exit` marker and returns the file body.
 func waitForLogContainsAndExit(

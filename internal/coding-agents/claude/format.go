@@ -128,9 +128,6 @@ func renderAssistant(env envelope, raw []byte) []byte {
 	for _, b := range env.Message.Content {
 		buf.Write(renderBlock(b))
 	}
-	if buf.Len() == 0 {
-		return raw
-	}
 	return buf.Bytes()
 }
 
