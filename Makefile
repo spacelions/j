@@ -3,7 +3,8 @@ SHELL := /bin/bash
 BIN_DIR := bin
 BIN     := $(BIN_DIR)/j
 
-.PHONY: build clean coverage test e2e race lint lint-fix install-hooks
+.PHONY: build clean coverage line-coverage branch-coverage test e2e race
+.PHONY: lint lint-fix install-hooks
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-X github.com/spacelions/j/internal/cli/version.Version=$(VERSION)"
@@ -33,13 +34,29 @@ lint-fix:
 install-hooks:
 	@go tool lefthook install --reset-hooks-path
 
-coverage:
+coverage: line-coverage
+
+line-coverage:
 	@set -euo pipefail; \
 	coverage_pkgs=$$(go list ./internal/... | \
 		rg -v '/internal/testutil$$'); \
 	go test -covermode=atomic -coverprofile=cover.out $$coverage_pkgs; \
 	total=$$(go tool cover -func=cover.out | awk '/^total:/ {print $$3}'); \
 	echo "total coverage: $$total"; \
+	below=$$(go tool cover -func=cover.out | \
+		awk '$$NF != "100.0%" && !/^total:/ {print}'); \
+	below=$$(printf '%s\n' "$$below" | \
+		rg -v -f coverage.allowlist | rg -v '^$$' || true); \
+	if [ -n "$$below" ]; then \
+		echo "the following non-allowlisted symbols are below 100% coverage:" >&2; \
+		echo "$$below" >&2; \
+		exit 1; \
+	fi
+
+branch-coverage:
+	@set -euo pipefail; \
+	coverage_pkgs=$$(go list ./internal/... | \
+		rg -v '/internal/testutil$$'); \
 	branch_num=0; branch_den=0; \
 	while IFS= read -r dir; do \
 		if ! out=$$(go tool gobco -branch "$$dir" 2>&1); then \
@@ -59,13 +76,4 @@ coverage:
 		if (den == 0) { print "100.0"; exit } \
 		printf "%.1f", num * 100 / den; \
 	}'); \
-	echo "branch coverage: $$branch_pct% ($$branch_num/$$branch_den)"; \
-	below=$$(go tool cover -func=cover.out | \
-		awk '$$NF != "100.0%" && !/^total:/ {print}'); \
-	below=$$(printf '%s\n' "$$below" | \
-		rg -v -f coverage.allowlist | rg -v '^$$' || true); \
-	if [ -n "$$below" ]; then \
-		echo "the following non-allowlisted symbols are below 100% coverage:" >&2; \
-		echo "$$below" >&2; \
-		exit 1; \
-	fi
+	echo "branch coverage: $$branch_pct% ($$branch_num/$$branch_den)"

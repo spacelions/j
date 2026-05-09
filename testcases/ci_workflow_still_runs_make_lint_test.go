@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -35,10 +36,21 @@ func TestCI_Workflow_StillRunsMakeLint(t *testing.T) {
 		}
 	}
 
-	// At least one step must run `make lint`.
-	runLint := regexp.MustCompile(`(?m)^\s+run:\s*make lint\s*$`)
-	if !runLint.MatchString(body) {
-		t.Fatalf("ci.yml: no step runs `make lint`; CI lint coverage " +
-			"would regress")
+	for _, cmd := range []string{
+		"make lint",
+		"make test",
+		"make e2e",
+		"make line-coverage",
+	} {
+		run := regexp.MustCompile(`(?m)^\s+run:\s*` +
+			regexp.QuoteMeta(cmd) + `\s*$`)
+		if !run.MatchString(body) {
+			t.Fatalf("ci.yml: no step runs `%s`; CI coverage "+
+				"would regress", cmd)
+		}
+	}
+
+	if strings.Contains(body, "make branch-coverage") {
+		t.Fatalf("ci.yml: must not run `make branch-coverage`")
 	}
 }

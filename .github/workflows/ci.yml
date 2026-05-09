@@ -23,3 +23,6 @@ jobs:
       - name: e2e
         if: always()
         run: make e2e
+      - name: line-coverage
+        if: always()
+        run: make line-coverage
