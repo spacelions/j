@@ -18,14 +18,15 @@ import (
 const Binary = "cursor-agent"
 
 const (
-	argPrint            = "--print"
-	argOutputFormat     = "--output-format"
-	argOutputFormatText = "text"
-	argForce            = "--force"
-	argTrust            = "--trust"
-	argWorkspace        = "--workspace"
-	argResume           = "--resume"
-	argModel            = "--model"
+	argPrint                  = "--print"
+	argOutputFormat           = "--output-format"
+	argOutputFormatStreamJSON = "stream-json"
+	argStreamPartialOutput    = "--stream-partial-output"
+	argForce                  = "--force"
+	argTrust                  = "--trust"
+	argWorkspace              = "--workspace"
+	argResume                 = "--resume"
+	argModel                  = "--model"
 )
 
 // Agent is a Cursor-backed planner. It is stateless: every method shells
@@ -118,12 +119,14 @@ func (*Agent) CheckLogin(ctx context.Context) error {
 }
 
 // Plan runs cursor-agent against req. The agent saves
-// requirements.md / plan.md into the per-task folder before exiting;
-// the orchestrator reads them after. Interactive launches the TUI
-// with --mode plan; headless drops --mode plan (it is read-only and
-// blocks the save instructions) and adds --force --trust to
-// auto-approve tool calls. Headless is fire-and-forget: stdio is
-// redirected to req.AgentLogPath and the spawned PID is returned.
+// requirements.md / plan.md into the per-task folder before exiting.
+// Interactive launches the TUI with --mode plan; headless drops it
+// (read-only blocks the save instructions) and adds --force --trust
+// to auto-approve tool calls. Headless also asks for `--output-format
+// stream-json --stream-partial-output` so cursor-agent emits one JSON
+// event per assistant content block / tool call / tool result; those
+// lines land verbatim in req.AgentLogPath via run.Spawn, interleaved
+// with the existing lifecycle markers.
 func (*Agent) Plan(
 	ctx context.Context, req codingagents.PlanRequest,
 ) (int, error) {
@@ -150,7 +153,9 @@ func (*Agent) Plan(
 		hargs = append(hargs, argResume, req.ResumeChatID)
 	}
 	hargs = append(hargs,
-		argPrint, argOutputFormat, argOutputFormatText,
+		argPrint,
+		argOutputFormat, argOutputFormatStreamJSON,
+		argStreamPartialOutput,
 		argForce, argTrust, argModel, req.Model,
 		argWorkspace, workspace, prompt,
 	)
@@ -171,16 +176,13 @@ func (*Agent) Plan(
 //     exits. The interactive branch does not gain --force/--trust
 //     because the user can approve tool calls and the workspace
 //     trust prompt manually in the TUI.
-//   - Headless: --print --output-format text --force --trust against
-//     the worker prompt, fire-and-forget. --force auto-approves tool
-//     calls (no interactive approval prompts) and --trust skips the
-//     workspace trust prompt (it only takes effect with
-//     --print/headless); together they make `j work` against cursor
-//     actually run end-to-end without stalling on prompts.
-//     cursor-agent's stdout/stderr are redirected to req.AgentLogPath
-//     via run.Spawn and the spawned PID is returned so `j work` can
-//     record it for later reaping. The interactive path stays
-//     synchronous and returns 0.
+//   - Headless: same flag set as Plan's headless branch (the
+//     stream-json, stream-partial-output, force, and trust flags),
+//     fire-and-forget. --force / --trust auto-approve tool calls
+//     and the workspace trust prompt; stdout / stderr go into
+//     req.AgentLogPath via run.Spawn so agent.log captures every
+//     assistant content block / tool call / tool result. The
+//     spawned PID is returned. The interactive path returns 0.
 func (*Agent) Work(
 	ctx context.Context, req codingagents.WorkRequest,
 ) (int, error) {
@@ -203,7 +205,9 @@ func (*Agent) Work(
 	}
 
 	pargs := []string{
-		argPrint, argOutputFormat, argOutputFormatText,
+		argPrint,
+		argOutputFormat, argOutputFormatStreamJSON,
+		argStreamPartialOutput,
 		argForce, argTrust, argModel, req.Model,
 		argWorkspace, workspace, prompt,
 	}
@@ -217,27 +221,14 @@ func (*Agent) Work(
 	return pid, nil
 }
 
-// Verify runs cursor-agent against the requirements + plan pair. The
-// agent saves the draft verifier plan and the findings markdown
-// before exiting; the orchestrator reads the findings afterwards to
-// derive the VERDICT verdict. Two flavours mirror Plan / Work:
-//
-//   - Interactive: launch cursor's TUI without --mode plan. The
-//     verifier must edit verifier_plan.md / verifier_findings.md
-//     and (on FAIL) project files, so plan mode would block those
-//     writes. The interactive branch does not gain --force/--trust;
-//     the user can approve writes manually in the TUI.
-//   - Headless: --print --output-format text --force --trust against
-//     the verifier prompt, fire-and-forget. Same headless flag set
-//     as Work; --mode plan is intentionally absent for the same
-//     reason: the verifier needs write access to its output files.
-//
-// Unlike Plan and Work, Verify runs with `--workspace <project-root>`
-// (not `.j/tasks/<id>/`): the verifier inspects the worktree named
-// in req.Worktree via `git worktree list`, which only works from the
-// repository's main checkout. Plan and Work still use
-// DefaultWorkspace because they want the self-contained per-task
-// folder.
+// Verify runs cursor-agent against the requirements + plan pair.
+// The agent saves verifier_plan.md / verifier_findings.md before
+// exiting; the orchestrator reads them after. Interactive launches
+// the TUI without --mode plan (the verifier needs writes); headless
+// uses Work's flag set (stream-json + stream-partial-output via
+// run.Spawn). Verify runs with `--workspace <project-root>` so the
+// verifier can `git worktree list` the target worktree — Plan and
+// Work use DefaultWorkspace for their self-contained per-task dir.
 func (*Agent) Verify(
 	ctx context.Context, req codingagents.VerifyRequest,
 ) (int, error) {
@@ -260,7 +251,9 @@ func (*Agent) Verify(
 	}
 
 	pargs := []string{
-		argPrint, argOutputFormat, argOutputFormatText,
+		argPrint,
+		argOutputFormat, argOutputFormatStreamJSON,
+		argStreamPartialOutput,
 		argForce, argTrust, argModel, req.Model,
 		argWorkspace, workspace, prompt,
 	}

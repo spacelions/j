@@ -397,7 +397,8 @@ func TestPlan_Headless(t *testing.T) {
 	}
 	want := []string{
 		"--print",
-		"--output-format", "text",
+		"--output-format", "stream-json",
+		"--verbose", "--include-partial-messages",
 		"--dangerously-skip-permissions",
 		"--model", "sonnet",
 		"--",
@@ -452,7 +453,8 @@ func TestPlan_Headless_FirstRun_SessionID(t *testing.T) {
 	want := []string{
 		"--session-id", rid,
 		"--print",
-		"--output-format", "text",
+		"--output-format", "stream-json",
+		"--verbose", "--include-partial-messages",
 		"--dangerously-skip-permissions",
 		"--model", "sonnet",
 		"--",
@@ -773,7 +775,8 @@ func TestWork_Headless(t *testing.T) {
 	}
 	want := []string{
 		"--print",
-		"--output-format", "text",
+		"--output-format", "stream-json",
+		"--verbose", "--include-partial-messages",
 		"--dangerously-skip-permissions",
 		"--model", "sonnet",
 		"--",
@@ -823,7 +826,8 @@ func TestWork_Headless_Resume(t *testing.T) {
 	want := []string{
 		"--resume", rid,
 		"--print",
-		"--output-format", "text",
+		"--output-format", "stream-json",
+		"--verbose", "--include-partial-messages",
 		"--dangerously-skip-permissions",
 		"--model", "sonnet",
 		"--",
@@ -1151,7 +1155,8 @@ func TestVerify_Headless(t *testing.T) {
 	}
 	want := []string{
 		"--print",
-		"--output-format", "text",
+		"--output-format", "stream-json",
+		"--verbose", "--include-partial-messages",
 		"--dangerously-skip-permissions",
 		"--model", "sonnet",
 		"--",
@@ -1203,7 +1208,8 @@ func TestVerify_Headless_Resume(t *testing.T) {
 	want := []string{
 		"--resume", rid,
 		"--print",
-		"--output-format", "text",
+		"--output-format", "stream-json",
+		"--verbose", "--include-partial-messages",
 		"--dangerously-skip-permissions",
 		"--model", "sonnet",
 		"--",

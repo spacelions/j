@@ -24,7 +24,9 @@ const Binary = "claude"
 const (
 	argPrint                      = "--print"
 	argOutputFormat               = "--output-format"
-	argOutputFormatText           = "text"
+	argOutputFormatStreamJSON     = "stream-json"
+	argVerbose                    = "--verbose"
+	argIncludePartialMessages     = "--include-partial-messages"
 	argDangerouslySkipPermissions = "--dangerously-skip-permissions"
 	argModel                      = "--model"
 )
@@ -109,18 +111,23 @@ func (*Agent) CheckLogin(ctx context.Context) error {
 //     `--permission-mode plan` and ask claude to save both files
 //     before exiting via a suffix on the prompt. The TUI is allowed
 //     to leave plan mode and approve writes manually.
-//   - Headless (req.Interactive == false): `--print --output-format text
-//     --dangerously-skip-permissions --model <m> -- <prompt>`. We drop
-//     `--permission-mode plan` here on purpose: plan mode is read-only
-//     and would forbid every write tool call, blocking the prompt's
-//     "save requirements/plan" instructions.
+//   - Headless (req.Interactive == false): `--print --output-format
+//     stream-json --verbose --include-partial-messages
+//     --dangerously-skip-permissions --model <m> -- <prompt>`. We
+//     drop `--permission-mode plan` here on purpose: plan mode is
+//     read-only and would forbid every write tool call, blocking
+//     the prompt's "save requirements/plan" instructions.
 //     `--dangerously-skip-permissions` auto-approves tool calls and
 //     skips the workspace-trust prompt; combined they make the
-//     headless run actually complete without stalling. The literal
-//     `--` separator pins the prompt as a positional so a leading
-//     `-`/`--` line in the user's spec body is not parsed as a flag
-//     (which would otherwise make the CLI bail with an "unknown
-//     option" error and never start the session).
+//     headless run complete without stalling. The stream-json,
+//     verbose, and include-partial-messages flags together make
+//     claude emit one JSON event per turn (system init, assistant
+//     content, tool_use, tool_result, final result) instead of only
+//     the final assistant text — those raw event lines land verbatim
+//     in agent.log via run.SpawnIn so a tailer can `jq` over them
+//     to surface thinking / tool calls. The literal `--` separator
+//     pins the prompt as a positional so a leading `-` / `--` line
+//     in the user's spec body is not parsed as a flag.
 //
 // cmd.Dir is set to the per-task workspace dir so claude's CLAUDE.md
 // auto-discovery and tool scope land where the user expects.
@@ -157,14 +164,25 @@ func (a *Agent) Plan(
 	return pid, nil
 }
 
-// headlessArgs returns the argv tail used by Plan / Work / Verify
-// in headless mode: `--print --output-format text
-// --dangerously-skip-permissions --model <m> -- <prompt>`. The
-// literal `--` pins the prompt as a positional so a leading `-` /
-// `--` line in the user's spec body is not mis-parsed as a flag.
+// headlessArgs returns the argv tail used by Plan / Work / Verify in
+// headless mode: `--print --output-format stream-json --verbose
+// --include-partial-messages --dangerously-skip-permissions --model
+// <m> -- <prompt>`. `--verbose` is required by the claude CLI
+// whenever stream-json is selected with `--print` (the help text
+// spells out the dependency); `--include-partial-messages` makes
+// claude flush assistant deltas as they arrive instead of only at
+// turn end. With these flags claude emits one JSON event per turn
+// step (system init, assistant content blocks, tool_use, tool_result,
+// final result) rather than just the final assistant text, so the
+// raw event lines land verbatim in agent.log via run.SpawnIn and a
+// tailer can `jq` over them. The literal `--` pins the prompt as a
+// positional so a leading `-` / `--` line in the user's spec body is
+// not mis-parsed as a flag.
 func headlessArgs(model, prompt string) []string {
 	return []string{
-		argPrint, argOutputFormat, argOutputFormatText,
+		argPrint,
+		argOutputFormat, argOutputFormatStreamJSON,
+		argVerbose, argIncludePartialMessages,
 		argDangerouslySkipPermissions,
 		argModel, model, "--", prompt,
 	}
@@ -176,9 +194,14 @@ func headlessArgs(model, prompt string) []string {
 //
 //   - Interactive: launch claude's TUI with the worker prompt as the
 //     initial user message; the user drives the session.
-//   - Headless: `--print --output-format text --dangerously-skip-permissions
-//     --model <m>`, fire-and-forget. claude's stdout/stderr are
-//     redirected to req.AgentLogPath via run.SpawnIn and the spawned
+//   - Headless: same flag set as Plan's headless branch
+//     (stream-json, verbose, include-partial-messages,
+//     dangerously-skip-permissions), fire-and-forget. claude's
+//     stdout / stderr are redirected to
+//     req.AgentLogPath via run.SpawnIn — the raw JSON event lines
+//     interleave with the existing lifecycle markers so the per-task
+//     agent.log captures every assistant content block / tool call /
+//     tool result, not just the final assistant text. The spawned
 //     PID is returned so `j work` can record it for later reaping.
 func (a *Agent) Work(
 	ctx context.Context, req codingagents.WorkRequest,
