@@ -273,9 +273,8 @@ func renderResult(ev streamEvent) [][]byte {
 }
 
 // oneLine collapses internal newlines into the literal `\n` escape
-// so a multi-line thinking / tool_use / tool_result block still
-// renders as a single agent.log line. Tab is left alone — `bat`,
-// `tail`, and `less -R` all handle it.
+// so a multi-line thinking / tool_use / tool_result block renders
+// as a single agent.log line. Tab is left alone.
 func oneLine(s string) string {
 	if s == "" {
 		return s
