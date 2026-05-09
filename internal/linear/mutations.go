@@ -26,6 +26,12 @@ const commentCreateMutation = `mutation($id:String!,$body:String!){` +
 const issueUpdateStateMutation = `mutation($id:String!,$stateId:String!){` +
 	`issueUpdate(id:$id,input:{stateId:$stateId}){success}}`
 
+// issueUpdateTitleMutation overwrites the title of the issue addressed
+// by node id. Same `issueUpdate` shape as the description / state
+// variants; the only field set is `title`.
+const issueUpdateTitleMutation = `mutation($id:String!,$title:String!){` +
+	`issueUpdate(id:$id,input:{title:$title}){success}}`
+
 // issueReminderMutation schedules a Linear inbox reminder for the
 // API-key owner on the issue addressed by node id. `reminderAt` is an
 // RFC3339 timestamp bumped one minute into the future to satisfy
@@ -79,6 +85,30 @@ func (c *Client) UpdateIssueState(
 		Query: issueUpdateStateMutation,
 		Variables: map[string]any{
 			"id": issueID, "stateId": stateID,
+		},
+	}
+	if err := c.do(ctx, req, &resp); err != nil {
+		return err
+	}
+	if msg := firstGraphQLError(resp.Errors); msg != "" {
+		return fmt.Errorf("linear: %s", msg)
+	}
+	return nil
+}
+
+// UpdateIssueTitle overwrites the title of the issue addressed by
+// issueID (the GraphQL node id, not the `<TEAM>-<NUM>` identifier).
+// Used by the linear-title-sync hook to mirror the J task status
+// onto the upstream issue's title via a leading emoji prefix. Error
+// mapping matches UpdateIssueDescription.
+func (c *Client) UpdateIssueTitle(
+	ctx context.Context, issueID, title string,
+) error {
+	var resp mutationResponse
+	req := graphQLRequest{
+		Query: issueUpdateTitleMutation,
+		Variables: map[string]any{
+			"id": issueID, "title": title,
 		},
 	}
 	if err := c.do(ctx, req, &resp); err != nil {
