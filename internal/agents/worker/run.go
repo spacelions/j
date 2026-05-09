@@ -183,13 +183,9 @@ func runWorker(
 		}
 	}
 	if workErr == nil && resumeID == "" {
-		if id, capErr := codingagents.CaptureResumeID(
-			ctx, agent, workspace, beginAt,
-		); capErr != nil {
-			uitheme.DangerousDialogBox(opts.Stderr, "J: %v", capErr)
-		} else {
-			lc.RecordResumeSession(id)
-		}
+		codingagents.CaptureAndRecordResume(
+			ctx, agent, lc, workspace, beginAt, opts.Stderr,
+		)
 	}
 	lc.Finish(workErr)
 	if workErr != nil {

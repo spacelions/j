@@ -96,7 +96,9 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 	}
 
 	if planErr == nil && resumeID == "" {
-		captureAndRecordPlan(ctx, opts.Agent, taskDir, beginAt, stderr, lc)
+		codingagents.CaptureAndRecordResume(
+			ctx, opts.Agent, lc, taskDir, beginAt, stderr,
+		)
 	}
 
 	refinedReq, planMD := readPlanArtifacts(
@@ -104,23 +106,6 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 	)
 	lc.Finish(planErr, refinedReq, planMD, requirementsPath)
 	return planErr
-}
-
-// captureAndRecordPlan asks the agent for the post-run session id
-// (deepseek-tui mints it after its first turn writes to disk) and
-// threads it onto the lifecycle row. A scan failure surfaces as a
-// best-effort warning so it never fails the run.
-func captureAndRecordPlan(
-	ctx context.Context, agent codingagents.Agent,
-	workspace string, since time.Time, stderr io.Writer,
-	lc *lifecycle.PlanLifecycle,
-) {
-	id, err := codingagents.CaptureResumeID(ctx, agent, workspace, since)
-	if err != nil {
-		uitheme.DangerousDialogBox(stderr, "J: %v", err)
-		return
-	}
-	lc.RecordResumeSession(id)
 }
 
 // readPlanArtifacts reads the planner-produced requirements.md and

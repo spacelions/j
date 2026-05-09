@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/spacelions/j/internal/agents/prompts"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/util/run"
 )
@@ -127,7 +128,7 @@ func (a *Agent) Plan(
 	ctx context.Context, req codingagents.PlanRequest,
 ) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.FromFilePath)
-	prompt := buildPlanPrompt(req)
+	prompt := prompts.PlanPrompt(req)
 
 	if req.Interactive {
 		args := append(
@@ -183,7 +184,7 @@ func (a *Agent) Work(
 	ctx context.Context, req codingagents.WorkRequest,
 ) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.PlanPath)
-	prompt := buildWorkPrompt(req)
+	prompt := prompts.WorkPrompt(req)
 
 	if req.Interactive {
 		args := append(
@@ -221,7 +222,7 @@ func (a *Agent) Verify(
 	ctx context.Context, req codingagents.VerifyRequest,
 ) (int, error) {
 	workspace := codingagents.ProjectRootWorkspace()
-	prompt := buildVerifyPrompt(req)
+	prompt := prompts.VerifyPrompt(req)
 
 	if req.Interactive {
 		args := append(

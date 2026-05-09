@@ -202,9 +202,9 @@ func runVerifyLoop(
 			return lifecycle.VerifyOutcomeNoRetries, err
 		}
 		if i == 0 && resumeID == "" {
-			resumeID = captureVerifyResume(
-				ctx, opts.Stderr, lc, verifierAgent,
-				verifyWorkspace, beginAt,
+			resumeID = codingagents.CaptureAndRecordResume(
+				ctx, verifierAgent, lc, verifyWorkspace,
+				beginAt, opts.Stderr,
 			)
 		}
 		verdict := resolver.ParseVerdict(res.FindingsPath)

@@ -5,11 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
-
-	codingagents "github.com/spacelions/j/internal/coding-agents"
 )
 
 func TestAgent_Name(t *testing.T) {
@@ -106,111 +103,6 @@ func TestExecArgs(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("execArgs = %v, want %v", got, want)
-	}
-}
-
-// TestBuildPlanPrompt pins both branches of the planner prompt
-// builder: a fresh run composes BuildPlanner; a resume run switches
-// to BuildPlannerResume. Both branches receive the
-// AppendPlannerSaveSuffix tail (the marker is the literal "Save"
-// instruction the suffix injects).
-func TestBuildPlanPrompt(t *testing.T) {
-	cases := []struct {
-		name   string
-		resume bool
-	}{
-		{"fresh", false},
-		{"resume", true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			req := codingagents.PlanRequest{
-				FromFilePath:           "/tmp/x.md",
-				RequirementsOutputPath: "/tmp/req.md",
-				PlanOutputPath:         "/tmp/plan.md",
-				ClarificationPath:      "/tmp/clarification.md",
-				Resume:                 tc.resume,
-			}
-			got := buildPlanPrompt(req)
-			if got == "" {
-				t.Fatal("empty prompt")
-			}
-			if !strings.Contains(got, "/tmp/req.md") {
-				t.Fatalf("missing requirements path: %q", got)
-			}
-			if !strings.Contains(got, "/tmp/plan.md") {
-				t.Fatalf("missing plan path: %q", got)
-			}
-		})
-	}
-}
-
-// TestBuildWorkPrompt pins the three branches of the worker prompt
-// builder: fix-findings (highest precedence), resume, and fresh.
-func TestBuildWorkPrompt(t *testing.T) {
-	cases := []struct {
-		name        string
-		resume      bool
-		fixFindings bool
-		wantPath    string
-	}{
-		{"fresh", false, false, "/tmp/plan.md"},
-		{"resume", true, false, "/tmp/plan.md"},
-		{"fix-findings", false, true, "/tmp/findings.md"},
-		{"fix-beats-resume", true, true, "/tmp/findings.md"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			req := codingagents.WorkRequest{
-				PlanPath:                   "/tmp/plan.md",
-				VerifierFindingsOutputPath: "/tmp/findings.md",
-				ClarificationPath:          "/tmp/clarification.md",
-				Resume:                     tc.resume,
-				FixFindings:                tc.fixFindings,
-			}
-			got := buildWorkPrompt(req)
-			if got == "" {
-				t.Fatal("empty prompt")
-			}
-			if !strings.Contains(got, tc.wantPath) {
-				t.Fatalf("missing %q: %q", tc.wantPath, got)
-			}
-		})
-	}
-}
-
-// TestBuildVerifyPrompt pins the resume vs first-run branches of the
-// verifier prompt builder. Both branches embed the requirements + plan
-// paths; only the first-run prompt cites the verifier_findings.md
-// path (the resume template tells the previous session to inspect
-// progress and continue, with no save-suffix).
-func TestBuildVerifyPrompt(t *testing.T) {
-	cases := []struct {
-		name       string
-		resume     bool
-		wantMarker string
-	}{
-		{"fresh", false, "/tmp/findings.md"},
-		{"resume", true, "/tmp/req.md"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			req := codingagents.VerifyRequest{
-				RequirementsPath:           "/tmp/req.md",
-				PlanPath:                   "/tmp/plan.md",
-				VerifierPlanOutputPath:     "/tmp/vplan.md",
-				VerifierFindingsOutputPath: "/tmp/findings.md",
-				ClarificationPath:          "/tmp/clarification.md",
-				Resume:                     tc.resume,
-			}
-			got := buildVerifyPrompt(req)
-			if got == "" {
-				t.Fatal("empty prompt")
-			}
-			if !strings.Contains(got, tc.wantMarker) {
-				t.Fatalf("missing %q: %q", tc.wantMarker, got)
-			}
-		})
 	}
 }
 
