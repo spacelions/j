@@ -151,20 +151,39 @@ func (*Agent) Plan(
 		return 0, nil
 	}
 
-	var hargs []string
-	if req.ResumeChatID != "" {
-		hargs = append(hargs, argResume, req.ResumeChatID)
+	return runHeadless(
+		ctx, req.ResumeChatID, req.Model,
+		workspace, prompt, req.AgentLogPath)
+}
+
+// runHeadless is the shared headless dispatcher for Plan / Work /
+// Verify. It builds the argv (optional `--resume <id>` plus `--print
+// --output-format stream-json --stream-partial-output --force --trust
+// --model <m> --workspace <ws> <prompt>`) and pipes the stream-json
+// output through agentlog.CursorStream() into the per-task agent.log
+// via run.SpawnPiped. stream-json + stream-partial-output is what
+// surfaces the full assistant content / tool_use / tool_result trace
+// in agent.log instead of only the final assistant text.
+func runHeadless(
+	ctx context.Context,
+	resumeID, model, workspace, prompt, agentLogPath string,
+) (int, error) {
+	var args []string
+	if resumeID != "" {
+		args = append(args, argResume, resumeID)
 	}
-	hargs = append(hargs,
-		argPrint, argOutputFormat, argOutputFormatStreamJSON,
+	args = append(args,
+		argPrint,
+		argOutputFormat, argOutputFormatStreamJSON,
 		argStreamPartialOutput,
-		argForce, argTrust, argModel, req.Model,
+		argForce, argTrust,
+		argModel, model,
 		argWorkspace, workspace, prompt,
 	)
 	pid, err := run.SpawnPiped(
-		ctx, req.AgentLogPath,
+		ctx, agentLogPath,
 		agentlog.CursorStream(),
-		Binary, hargs...)
+		Binary, args...)
 	if err != nil {
 		return 0, fmt.Errorf("cursor-agent: %w", err)
 	}
@@ -216,23 +235,9 @@ func (*Agent) Work(
 		return 0, nil
 	}
 
-	pargs := []string{
-		argPrint, argOutputFormat, argOutputFormatStreamJSON,
-		argStreamPartialOutput,
-		argForce, argTrust, argModel, req.Model,
-		argWorkspace, workspace, prompt,
-	}
-	if req.ResumeChatID != "" {
-		pargs = append([]string{argResume, req.ResumeChatID}, pargs...)
-	}
-	pid, err := run.SpawnPiped(
-		ctx, req.AgentLogPath,
-		agentlog.CursorStream(),
-		Binary, pargs...)
-	if err != nil {
-		return 0, fmt.Errorf("cursor-agent: %w", err)
-	}
-	return pid, nil
+	return runHeadless(
+		ctx, req.ResumeChatID, req.Model,
+		workspace, prompt, req.AgentLogPath)
 }
 
 // Verify runs cursor-agent against the requirements + plan pair. The
@@ -278,23 +283,9 @@ func (*Agent) Verify(
 		return 0, nil
 	}
 
-	pargs := []string{
-		argPrint, argOutputFormat, argOutputFormatStreamJSON,
-		argStreamPartialOutput,
-		argForce, argTrust, argModel, req.Model,
-		argWorkspace, workspace, prompt,
-	}
-	if req.ResumeChatID != "" {
-		pargs = append([]string{argResume, req.ResumeChatID}, pargs...)
-	}
-	pid, err := run.SpawnPiped(
-		ctx, req.AgentLogPath,
-		agentlog.CursorStream(),
-		Binary, pargs...)
-	if err != nil {
-		return 0, fmt.Errorf("cursor-agent: %w", err)
-	}
-	return pid, nil
+	return runHeadless(
+		ctx, req.ResumeChatID, req.Model,
+		workspace, prompt, req.AgentLogPath)
 }
 
 // parseModels extracts cursor-agent model IDs from --list-models output.

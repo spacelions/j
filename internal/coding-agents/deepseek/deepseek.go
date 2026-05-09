@@ -201,11 +201,12 @@ func runPhase(
 		topArgs(workspace, resumeID),
 		execArgs(model, prompt)...,
 	)
-	// deepseek-tui's TUI prints its full reasoning + tool-call trace
-	// to stdout, so plain run.Spawn captures the agent.log content we
-	// want without any extra flag. claude / cursor go through
-	// `--output-format stream-json` because their headless mode
-	// otherwise collapses the run down to the final assistant text.
+	// deepseek-tui already streams its full reasoning + tool-call
+	// trace to stdout (the TUI prints everything as text), so the
+	// plain run.Spawn path captures the agent.log content we want
+	// without a per-line formatter. claude / cursor use the
+	// SpawnPiped path because their headless mode otherwise collapses
+	// the run down to the final assistant message.
 	pid, err := run.Spawn(ctx, agentLogPath, Binary, args...)
 	if err != nil {
 		return 0, fmt.Errorf("deepseek-tui: %w", err)
