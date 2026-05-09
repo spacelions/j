@@ -9,6 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version-file: .go-version
@@ -17,6 +19,27 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: line-cap
         run: go tool lefthook run pre-commit --command line-cap --all-files
+      - name: commit-message
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          zero_sha="0000000000000000000000000000000000000000"
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [ "$BEFORE_SHA" = "$zero_sha" ]; then
+            range="${GITHUB_SHA}^..${GITHUB_SHA}"
+          else
+            range="${BEFORE_SHA}..${GITHUB_SHA}"
+          fi
+
+          mapfile -t subjects < <(git log --format=%s "$range")
+          for subject in "${subjects[@]}"; do
+            .hooks/check-commit-message <(printf '%s\n' "$subject")
+          done
       - name: lint
         run: make lint
       - name: test

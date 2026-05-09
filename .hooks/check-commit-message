@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Validate a git commit message file against the project SPA format.
+set -euo pipefail
+
+allowed_types="feat, chore, build, fix, style, docs, refactor"
+required_format="<type>(<component>)[SPA-<number>]: <title>"
+type_pattern='(feat|chore|build|fix|style|docs|refactor)'
+pattern="^${type_pattern}"'\([^)]+\)\[SPA-[0-9]+\]: .+$'
+
+if [ "$#" -ne 1 ]; then
+	echo "usage: $0 <commit-message-file>" >&2
+	echo "required format: $required_format" >&2
+	exit 2
+fi
+
+message_file=$1
+subject=""
+if ! IFS= read -r subject < "$message_file"; then
+	:
+fi
+
+if [[ "$subject" =~ $pattern ]]; then
+	exit 0
+fi
+
+{
+	echo "invalid commit message:"
+	echo "  got: $subject"
+	echo "required format:"
+	echo "  $required_format"
+	echo "allowed types: $allowed_types"
+	echo "example:"
+	echo "  feat(githooks)[SPA-81]: enforce commit hook"
+} >&2
+
+exit 1
