@@ -466,6 +466,21 @@ func TestNewOrchestrateCmd_PhaseEnvBinding(t *testing.T) {
 	}
 }
 
+func TestNewOrchestrateCmd_RejectsUnknownPhase(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	cmd := newOrchestrateCmd()
+	cmd.SetArgs([]string{"--phase", "worker"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("Execute succeeded, want phase parse error")
+	}
+	if !strings.Contains(err.Error(), "unknown run phase") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 // TestRunOrchestrate_FromWorkRunsWorkVerify pins that Phase=FromWork
 // drives only worker → verifier without re-running the planner. The
 // seeded task already has plan.md staged because the planner phase
