@@ -15,6 +15,7 @@ import (
 
 	"github.com/spacelions/j/internal/agents/prompts"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/util/agentlog"
 	"github.com/spacelions/j/internal/util/run"
 )
 
@@ -156,8 +157,10 @@ func (a *Agent) Plan(
 		sessionArgs(req.ResumeChatID, req.Resume),
 		headlessArgs(req.Model, prompt)...,
 	)
-	pid, err := run.SpawnIn(
-		ctx, workspace, req.AgentLogPath, Binary, hargs...,
+	pid, err := run.SpawnPipedIn(
+		ctx, workspace, req.AgentLogPath,
+		agentlog.ClaudeStream(),
+		Binary, hargs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
@@ -222,8 +225,10 @@ func (a *Agent) Work(
 		sessionArgs(req.ResumeChatID, req.Resume),
 		headlessArgs(req.Model, prompt)...,
 	)
-	pid, err := run.SpawnIn(
-		ctx, workspace, req.AgentLogPath, Binary, pargs...,
+	pid, err := run.SpawnPipedIn(
+		ctx, workspace, req.AgentLogPath,
+		agentlog.ClaudeStream(),
+		Binary, pargs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
@@ -260,8 +265,10 @@ func (a *Agent) Verify(
 		sessionArgs(req.ResumeChatID, req.Resume),
 		headlessArgs(req.Model, prompt)...,
 	)
-	pid, err := run.SpawnIn(
-		ctx, workspace, req.AgentLogPath, Binary, pargs...,
+	pid, err := run.SpawnPipedIn(
+		ctx, workspace, req.AgentLogPath,
+		agentlog.ClaudeStream(),
+		Binary, pargs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
