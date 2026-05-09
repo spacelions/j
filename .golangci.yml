@@ -180,6 +180,7 @@ linters:
     paths:
       - vendor$
       - third_party$
+      - \.claude/
 
   settings:
     dupl:
