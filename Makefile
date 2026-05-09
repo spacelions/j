@@ -35,7 +35,9 @@ install-hooks:
 
 coverage:
 	@set -euo pipefail; \
-	go test -covermode=atomic -coverprofile=cover.out ./internal/...; \
+	coverage_pkgs=$$(go list ./internal/... | \
+		rg -v '/internal/testutil$$'); \
+	go test -covermode=atomic -coverprofile=cover.out $$coverage_pkgs; \
 	total=$$(go tool cover -func=cover.out | awk '/^total:/ {print $$3}'); \
 	echo "total coverage: $$total"; \
 	branch_num=0; branch_den=0; \
@@ -52,7 +54,7 @@ coverage:
 		num=$${ratio%/*}; den=$${ratio#*/}; \
 		branch_num=$$((branch_num + num)); \
 		branch_den=$$((branch_den + den)); \
-	done < <(go list -f '{{.Dir}}' ./internal/...); \
+	done < <(go list -f '{{.Dir}}' $$coverage_pkgs); \
 	branch_pct=$$(awk -v num="$$branch_num" -v den="$$branch_den" 'BEGIN { \
 		if (den == 0) { print "100.0"; exit } \
 		printf "%.1f", num * 100 / den; \
