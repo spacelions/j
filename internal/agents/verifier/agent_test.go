@@ -277,3 +277,5 @@ func (a *scriptedVerifyAgent) Verify(_ context.Context, req codingagents.VerifyR
 	}
 	return 0, nil
 }
+
+func (*scriptedVerifyAgent) FormatLog(line []byte) []byte { return line }

@@ -270,6 +270,8 @@ func (s *scriptedAgent) Verify(_ context.Context, req codingagents.VerifyRequest
 	return 0, nil
 }
 
+func (*scriptedAgent) FormatLog(line []byte) []byte { return line }
+
 // taskFilePath returns the absolute path of a body file (e.g.
 // tasks.PlanFileName) for an existing task id under the current
 // working directory's `.j/tasks/<id>/`.
@@ -1472,6 +1474,8 @@ func (s *spawnVerifyAgent) Verify(_ context.Context, req codingagents.VerifyRequ
 	return pid, nil
 }
 
+func (*spawnVerifyAgent) FormatLog(line []byte) []byte { return line }
+
 // TestRunVerifyLoop_WaitsForSpawnedChild pins the bugfix: an agent
 // that returns a non-zero PID for a spawned child whose findings
 // write is delayed must not be parseVerdict-ed until the child
@@ -1554,6 +1558,8 @@ func (a *liveChildAgent) Verify(_ context.Context, req codingagents.VerifyReques
 	}
 	return a.pid, nil
 }
+
+func (*liveChildAgent) FormatLog(line []byte) []byte { return line }
 
 // startLongChild spawns a real `sleep 5` child whose PID stays
 // alive for the duration of the test. The cleanup hook kills and

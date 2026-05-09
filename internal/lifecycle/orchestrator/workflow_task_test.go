@@ -578,6 +578,8 @@ func (a *stubChainAgent) Verify(_ context.Context, req codingagents.VerifyReques
 	return 0, nil
 }
 
+func (*stubChainAgent) FormatLog(line []byte) []byte { return line }
+
 // seedPlanApprovalDisabled writes plan_requires_approval=false.
 func seedPlanApprovalDisabled(t *testing.T) {
 	t.Helper()

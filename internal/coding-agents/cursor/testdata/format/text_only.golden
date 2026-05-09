@@ -1,0 +1,4 @@
+TS  agent init — cwd=<redacted-cwd> model=Composer 2 Fast
+TS  agent user — text=say hi in one short sentence
+TS  agent message — text=Hi—nice to meet you.
+TS  agent result — duration_ms=27439 ok=true subtype=success

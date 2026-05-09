@@ -1,0 +1,3 @@
+TS  agent init — model=claude-sonnet-4-6 tools=Bash,Read,Write
+TS  agent message — text=Hi there! How can I help you today?
+TS  agent result — duration_ms=3432 stop_reason=end_turn subtype=success

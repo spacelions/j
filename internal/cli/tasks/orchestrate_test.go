@@ -90,6 +90,8 @@ func (a *chainAgent) Verify(_ context.Context, req codingagents.VerifyRequest) (
 	return 0, nil
 }
 
+func (*chainAgent) FormatLog(line []byte) []byte { return line }
+
 // seedOrchestrateTask seeds a planning row + per-task dir + every
 // agent bucket so RunOrchestrate's downstream plan / work / verify
 // shell-out branches see the inputs they expect.

@@ -359,6 +359,28 @@ func TestSessionsDir_HomeOverride(t *testing.T) {
 	}
 }
 
+// TestFormatLog_Identity pins the deepseek formatter contract: every
+// input line passes through unchanged. The TUI prints plain human
+// text rather than stream-json so there is nothing to render — the
+// method exists only to satisfy the codingagents.Agent interface.
+func TestFormatLog_Identity(t *testing.T) {
+	a := New()
+	cases := [][]byte{
+		nil,
+		{},
+		[]byte("\n"),
+		[]byte("plain log line\n"),
+		[]byte(`{"type":"unused"}` + "\n"),
+		[]byte("\xff\xfe binary bytes \x00 mid line"),
+	}
+	for _, in := range cases {
+		got := a.FormatLog(in)
+		if string(got) != string(in) {
+			t.Fatalf("FormatLog(%q) = %q, want passthrough", in, got)
+		}
+	}
+}
+
 // TestSessionsDir_FallsBackToUserHome pins the no-override branch:
 // when DEEPSEEK_HOME is unset, sessionsDir derives the path from
 // os.UserHomeDir().

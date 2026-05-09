@@ -1,0 +1,8 @@
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"<redacted-cwd>","session_id":"<redacted-uuid>","model":"Composer 2 Fast","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"list files in the workspace and summarize"}]},"session_id":"<redacted-uuid>"}
+{"type":"tool_call","subtype":"started","call_id":"<redacted-uuid>","tool_call":{"globToolCall":{"args":{"targetDirectory":"/tmp/spa73","globPattern":"**/*"}}},"session_id":"<redacted-uuid>"}
+{"type":"tool_call","subtype":"completed","call_id":"<redacted-uuid>","tool_call":{"globToolCall":{"args":{"targetDirectory":"/tmp/spa73","globPattern":"**/*"},"result":{"success":{"path":"/tmp/spa73","files":["sample.txt"],"totalFiles":1}}}},"session_id":"<redacted-uuid>"}
+{"type":"thinking","subtype":"delta","text":"I have collected sufficient information.","session_id":"<redacted-uuid>"}
+{"type":"thinking","subtype":"completed","session_id":"<redacted-uuid>"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"There is one file: sample.txt"}]},"session_id":"<redacted-uuid>"}
+{"type":"result","subtype":"success","duration_ms":8664,"is_error":false,"result":"There is one file: sample.txt","session_id":"<redacted-uuid>"}

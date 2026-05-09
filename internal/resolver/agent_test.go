@@ -116,6 +116,8 @@ func (s *stubAgent) Verify(context.Context, codingagents.VerifyRequest) (int, er
 	return 0, errors.New("resolver: Verify should not be called")
 }
 
+func (*stubAgent) FormatLog(line []byte) []byte { return line }
+
 func TestFromStore_NilStore(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
 	_, _, err := AgentFromStore(t.Context(), nil, store.BucketPlanner, []codingagents.Agent{cursor})

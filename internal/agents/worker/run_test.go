@@ -44,6 +44,8 @@ func (a *runTestAgent) Verify(context.Context, codingagents.VerifyRequest) (int,
 	return 0, errors.New("should not be called")
 }
 
+func (*runTestAgent) FormatLog(line []byte) []byte { return line }
+
 func (a *runTestAgent) NewResumeID(context.Context) (string, error) {
 	if a.resumeIDErr != nil {
 		return "", a.resumeIDErr

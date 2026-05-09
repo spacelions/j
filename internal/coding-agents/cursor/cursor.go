@@ -21,7 +21,6 @@ const (
 	argPrint                  = "--print"
 	argOutputFormat           = "--output-format"
 	argOutputFormatStreamJSON = "stream-json"
-	argStreamPartialOutput    = "--stream-partial-output"
 	argForce                  = "--force"
 	argTrust                  = "--trust"
 	argWorkspace              = "--workspace"
@@ -123,11 +122,14 @@ func (*Agent) CheckLogin(ctx context.Context) error {
 // Interactive launches the TUI with --mode plan; headless drops it
 // (read-only blocks the save instructions) and adds --force --trust
 // to auto-approve tool calls. Headless also asks for `--output-format
-// stream-json --stream-partial-output` so cursor-agent emits one JSON
-// event per assistant content block / tool call / tool result; those
-// lines land verbatim in req.AgentLogPath via run.Spawn, interleaved
-// with the existing lifecycle markers.
-func (*Agent) Plan(
+// stream-json` so cursor-agent emits one JSON event per assistant
+// content block / tool call / tool result; the run helper renders
+// each event as an agentlog-style marker line via Agent.FormatLog
+// before it lands in req.AgentLogPath. `--stream-partial-output` was
+// dropped in SPA-73: each text delta would otherwise produce its own
+// envelope (30–200+ per turn) and the formatter has nothing useful to
+// add over the aggregated per-block events.
+func (a *Agent) Plan(
 	ctx context.Context, req codingagents.PlanRequest,
 ) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.FromFilePath)
@@ -155,11 +157,13 @@ func (*Agent) Plan(
 	hargs = append(hargs,
 		argPrint,
 		argOutputFormat, argOutputFormatStreamJSON,
-		argStreamPartialOutput,
 		argForce, argTrust, argModel, req.Model,
 		argWorkspace, workspace, prompt,
 	)
-	pid, err := run.Spawn(ctx, req.AgentLogPath, Binary, hargs...)
+	pid, err := run.SpawnFormattedIn(
+		ctx, "", req.AgentLogPath,
+		a.FormatLog, Binary, hargs...,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("cursor-agent: %w", err)
 	}
@@ -176,14 +180,13 @@ func (*Agent) Plan(
 //     exits. The interactive branch does not gain --force/--trust
 //     because the user can approve tool calls and the workspace
 //     trust prompt manually in the TUI.
-//   - Headless: same flag set as Plan's headless branch (the
-//     stream-json, stream-partial-output, force, and trust flags),
-//     fire-and-forget. --force / --trust auto-approve tool calls
-//     and the workspace trust prompt; stdout / stderr go into
-//     req.AgentLogPath via run.Spawn so agent.log captures every
-//     assistant content block / tool call / tool result. The
-//     spawned PID is returned. The interactive path returns 0.
-func (*Agent) Work(
+//   - Headless: same flag set as Plan's headless branch (stream-json,
+//     force, trust), fire-and-forget. --force / --trust auto-approve
+//     tool calls and the workspace trust prompt; stdout / stderr go
+//     through run.SpawnFormattedIn so each stream-json event lands in
+//     req.AgentLogPath as an agentlog-style marker line. The spawned
+//     PID is returned. The interactive path returns 0.
+func (a *Agent) Work(
 	ctx context.Context, req codingagents.WorkRequest,
 ) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.PlanPath)
@@ -207,14 +210,16 @@ func (*Agent) Work(
 	pargs := []string{
 		argPrint,
 		argOutputFormat, argOutputFormatStreamJSON,
-		argStreamPartialOutput,
 		argForce, argTrust, argModel, req.Model,
 		argWorkspace, workspace, prompt,
 	}
 	if req.ResumeChatID != "" {
 		pargs = append([]string{argResume, req.ResumeChatID}, pargs...)
 	}
-	pid, err := run.Spawn(ctx, req.AgentLogPath, Binary, pargs...)
+	pid, err := run.SpawnFormattedIn(
+		ctx, "", req.AgentLogPath,
+		a.FormatLog, Binary, pargs...,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("cursor-agent: %w", err)
 	}
@@ -225,11 +230,11 @@ func (*Agent) Work(
 // The agent saves verifier_plan.md / verifier_findings.md before
 // exiting; the orchestrator reads them after. Interactive launches
 // the TUI without --mode plan (the verifier needs writes); headless
-// uses Work's flag set (stream-json + stream-partial-output via
-// run.Spawn). Verify runs with `--workspace <project-root>` so the
-// verifier can `git worktree list` the target worktree — Plan and
-// Work use DefaultWorkspace for their self-contained per-task dir.
-func (*Agent) Verify(
+// uses Work's flag set (stream-json via run.SpawnFormattedIn).
+// Verify runs with `--workspace <project-root>` so the verifier can
+// `git worktree list` the target worktree — Plan and Work use
+// DefaultWorkspace for their self-contained per-task dir.
+func (a *Agent) Verify(
 	ctx context.Context, req codingagents.VerifyRequest,
 ) (int, error) {
 	workspace := codingagents.ProjectRootWorkspace()
@@ -253,14 +258,16 @@ func (*Agent) Verify(
 	pargs := []string{
 		argPrint,
 		argOutputFormat, argOutputFormatStreamJSON,
-		argStreamPartialOutput,
 		argForce, argTrust, argModel, req.Model,
 		argWorkspace, workspace, prompt,
 	}
 	if req.ResumeChatID != "" {
 		pargs = append([]string{argResume, req.ResumeChatID}, pargs...)
 	}
-	pid, err := run.Spawn(ctx, req.AgentLogPath, Binary, pargs...)
+	pid, err := run.SpawnFormattedIn(
+		ctx, "", req.AgentLogPath,
+		a.FormatLog, Binary, pargs...,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("cursor-agent: %w", err)
 	}

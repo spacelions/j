@@ -144,6 +144,8 @@ func (a *deletingWorkAgent) Verify(
 	return 0, errors.New("Verify must not be called from worker test")
 }
 
+func (*deletingWorkAgent) FormatLog(line []byte) []byte { return line }
+
 // noopWorkerUI satisfies worker.UI without exercising any prompts;
 // every call returns a zero value because the worker.Execute path
 // driven here goes through TaskID + explicit Tool / Model and

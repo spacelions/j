@@ -26,7 +26,6 @@ const (
 	argOutputFormat               = "--output-format"
 	argOutputFormatStreamJSON     = "stream-json"
 	argVerbose                    = "--verbose"
-	argIncludePartialMessages     = "--include-partial-messages"
 	argDangerouslySkipPermissions = "--dangerously-skip-permissions"
 	argModel                      = "--model"
 )
@@ -155,8 +154,9 @@ func (a *Agent) Plan(
 		sessionArgs(req.ResumeChatID, req.Resume),
 		headlessArgs(req.Model, prompt)...,
 	)
-	pid, err := run.SpawnIn(
-		ctx, workspace, req.AgentLogPath, Binary, hargs...,
+	pid, err := run.SpawnFormattedIn(
+		ctx, workspace, req.AgentLogPath,
+		a.FormatLog, Binary, hargs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
@@ -166,23 +166,21 @@ func (a *Agent) Plan(
 
 // headlessArgs returns the argv tail used by Plan / Work / Verify in
 // headless mode: `--print --output-format stream-json --verbose
-// --include-partial-messages --dangerously-skip-permissions --model
-// <m> -- <prompt>`. `--verbose` is required by the claude CLI
-// whenever stream-json is selected with `--print` (the help text
-// spells out the dependency); `--include-partial-messages` makes
-// claude flush assistant deltas as they arrive instead of only at
-// turn end. With these flags claude emits one JSON event per turn
-// step (system init, assistant content blocks, tool_use, tool_result,
-// final result) rather than just the final assistant text, so the
-// raw event lines land verbatim in agent.log via run.SpawnIn and a
-// tailer can `jq` over them. The literal `--` pins the prompt as a
-// positional so a leading `-` / `--` line in the user's spec body is
-// not mis-parsed as a flag.
+// --dangerously-skip-permissions --model <m> -- <prompt>`.
+// `--verbose` is required by the claude CLI whenever stream-json is
+// selected with `--print` (the help text spells out the dependency).
+// `--include-partial-messages` was dropped in SPA-73: the run helper
+// now parses the per-turn aggregated events (system init, assistant
+// content blocks, tool_use, tool_result, final result) and renders
+// them as agentlog-style marker lines via Agent.FormatLog, so the
+// 30–200 partial-delta lines per turn are pure noise we can skip.
+// The literal `--` pins the prompt as a positional so a leading `-`
+// / `--` line in the user's spec body is not mis-parsed as a flag.
 func headlessArgs(model, prompt string) []string {
 	return []string{
 		argPrint,
 		argOutputFormat, argOutputFormatStreamJSON,
-		argVerbose, argIncludePartialMessages,
+		argVerbose,
 		argDangerouslySkipPermissions,
 		argModel, model, "--", prompt,
 	}
@@ -226,8 +224,9 @@ func (a *Agent) Work(
 		sessionArgs(req.ResumeChatID, req.Resume),
 		headlessArgs(req.Model, prompt)...,
 	)
-	pid, err := run.SpawnIn(
-		ctx, workspace, req.AgentLogPath, Binary, pargs...,
+	pid, err := run.SpawnFormattedIn(
+		ctx, workspace, req.AgentLogPath,
+		a.FormatLog, Binary, pargs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
@@ -264,8 +263,9 @@ func (a *Agent) Verify(
 		sessionArgs(req.ResumeChatID, req.Resume),
 		headlessArgs(req.Model, prompt)...,
 	)
-	pid, err := run.SpawnIn(
-		ctx, workspace, req.AgentLogPath, Binary, pargs...,
+	pid, err := run.SpawnFormattedIn(
+		ctx, workspace, req.AgentLogPath,
+		a.FormatLog, Binary, pargs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)

@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","apiKeySource":"login","cwd":"<redacted-cwd>","session_id":"<redacted-uuid>","model":"Composer 2 Fast","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"say hi in one short sentence"}]},"session_id":"<redacted-uuid>"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hi—nice to meet you."}]},"session_id":"<redacted-uuid>"}
+{"type":"result","subtype":"success","duration_ms":27439,"is_error":false,"result":"Hi—nice to meet you.","session_id":"<redacted-uuid>"}

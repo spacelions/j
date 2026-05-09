@@ -158,3 +158,5 @@ func (a *deletingPlanAgent) Verify(
 ) (int, error) {
 	return 0, errors.New("Verify must not be called from planner test")
 }
+
+func (*deletingPlanAgent) FormatLog(line []byte) []byte { return line }

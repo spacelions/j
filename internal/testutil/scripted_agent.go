@@ -60,3 +60,7 @@ func (a *ScriptedAgent) Verify(
 ) (int, error) {
 	return 0, errors.New("testutil.ScriptedAgent.Verify should not be called")
 }
+
+// FormatLog satisfies codingagents.Agent. The fake never spawns a
+// child so the formatter is the identity transform.
+func (a *ScriptedAgent) FormatLog(line []byte) []byte { return line }
