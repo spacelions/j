@@ -115,19 +115,20 @@ func (*Agent) CheckLogin(ctx context.Context) error {
 //     stream-json --verbose --include-partial-messages
 //     --dangerously-skip-permissions --model <m> -- <prompt>`. We
 //     drop `--permission-mode plan` here on purpose: plan mode is
-//     read-only and would forbid every write tool call, blocking
-//     the prompt's "save requirements/plan" instructions.
+//     read-only and would forbid every write tool call, blocking the
+//     prompt's "save requirements/plan" instructions.
 //     `--dangerously-skip-permissions` auto-approves tool calls and
 //     skips the workspace-trust prompt; combined they make the
-//     headless run complete without stalling. The stream-json,
-//     verbose, and include-partial-messages flags together make
+//     headless run actually complete without stalling. The
+//     stream-json + verbose + include-partial-messages combo makes
 //     claude emit one JSON event per turn (system init, assistant
-//     content, tool_use, tool_result, final result) instead of only
-//     the final assistant text — those raw event lines land verbatim
-//     in agent.log via run.SpawnIn so a tailer can `jq` over them
-//     to surface thinking / tool calls. The literal `--` separator
-//     pins the prompt as a positional so a leading `-` / `--` line
-//     in the user's spec body is not parsed as a flag.
+//     content blocks, tool_use, tool_result, final result) instead
+//     of just the final assistant text — those raw event lines land
+//     verbatim in the per-task agent.log via run.SpawnIn so a tailer
+//     can `jq` over them to surface thinking / tool calls. The
+//     literal `--` separator pins the prompt as a positional so a
+//     leading `-` / `--` line in the user's spec body is not parsed
+//     as a flag.
 //
 // cmd.Dir is set to the per-task workspace dir so claude's CLAUDE.md
 // auto-discovery and tool scope land where the user expects.
@@ -155,8 +156,10 @@ func (a *Agent) Plan(
 		sessionArgs(req.ResumeChatID, req.Resume),
 		headlessArgs(req.Model, prompt)...,
 	)
-	pid, err := run.SpawnIn(
-		ctx, workspace, req.AgentLogPath, Binary, hargs...,
+	pid, err := run.SpawnPipedIn(
+		ctx, workspace, req.AgentLogPath,
+		agentlog.ClaudeStream(),
+		Binary, hargs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
@@ -169,15 +172,11 @@ func (a *Agent) Plan(
 // --include-partial-messages --dangerously-skip-permissions --model
 // <m> -- <prompt>`. `--verbose` is required by the claude CLI
 // whenever stream-json is selected with `--print` (the help text
-// spells out the dependency); `--include-partial-messages` makes
-// claude flush assistant deltas as they arrive instead of only at
-// turn end. With these flags claude emits one JSON event per turn
-// step (system init, assistant content blocks, tool_use, tool_result,
-// final result) rather than just the final assistant text, so the
-// raw event lines land verbatim in agent.log via run.SpawnIn and a
-// tailer can `jq` over them. The literal `--` pins the prompt as a
-// positional so a leading `-` / `--` line in the user's spec body is
-// not mis-parsed as a flag.
+// spells out the dependency); `--include-partial-messages` lets a
+// tailer of agent.log see assistant deltas as they arrive instead of
+// only after the turn finishes. The literal `--` pins the prompt as
+// a positional so a leading `-` / `--` line in the user's spec body
+// is not mis-parsed as a flag.
 func headlessArgs(model, prompt string) []string {
 	return []string{
 		argPrint,
@@ -194,15 +193,14 @@ func headlessArgs(model, prompt string) []string {
 //
 //   - Interactive: launch claude's TUI with the worker prompt as the
 //     initial user message; the user drives the session.
-//   - Headless: same flag set as Plan's headless branch
-//     (stream-json, verbose, include-partial-messages,
-//     dangerously-skip-permissions), fire-and-forget. claude's
-//     stdout / stderr are redirected to
+//   - Headless: same flag set as Plan's headless branch (stream-json
+//     + verbose + include-partial-messages + dangerously-skip-perms),
+//     fire-and-forget. claude's stdout / stderr are redirected to
 //     req.AgentLogPath via run.SpawnIn — the raw JSON event lines
-//     interleave with the existing lifecycle markers so the per-task
-//     agent.log captures every assistant content block / tool call /
-//     tool result, not just the final assistant text. The spawned
-//     PID is returned so `j work` can record it for later reaping.
+//     interleave with the existing lifecycle markers so a tailer
+//     sees every assistant content block / tool call / tool result,
+//     not just the final assistant text. The spawned PID is
+//     returned so `j work` can record it for later reaping.
 func (a *Agent) Work(
 	ctx context.Context, req codingagents.WorkRequest,
 ) (int, error) {
@@ -226,8 +224,10 @@ func (a *Agent) Work(
 		sessionArgs(req.ResumeChatID, req.Resume),
 		headlessArgs(req.Model, prompt)...,
 	)
-	pid, err := run.SpawnIn(
-		ctx, workspace, req.AgentLogPath, Binary, pargs...,
+	pid, err := run.SpawnPipedIn(
+		ctx, workspace, req.AgentLogPath,
+		agentlog.ClaudeStream(),
+		Binary, pargs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
@@ -264,8 +264,10 @@ func (a *Agent) Verify(
 		sessionArgs(req.ResumeChatID, req.Resume),
 		headlessArgs(req.Model, prompt)...,
 	)
-	pid, err := run.SpawnIn(
-		ctx, workspace, req.AgentLogPath, Binary, pargs...,
+	pid, err := run.SpawnPipedIn(
+		ctx, workspace, req.AgentLogPath,
+		agentlog.ClaudeStream(),
+		Binary, pargs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)

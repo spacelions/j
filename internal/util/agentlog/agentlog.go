@@ -17,6 +17,7 @@
 package agentlog
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -113,6 +114,32 @@ func formatValue(v any) string {
 	default:
 		return fmt.Sprintf("%v", x)
 	}
+}
+
+// WriteLines appends one or more pre-formatted lines to w under the
+// same emit lock Emit uses, so concurrent SpawnPipedIn stdout / stderr
+// readers and the lifecycle marker writer cannot interleave mid-line.
+// Each line gets a trailing `\n` if it lacks one. A nil w or zero-len
+// batch is a silent no-op (mirrors Emit's nil-writer convention).
+func WriteLines(w io.Writer, lines [][]byte) error {
+	if w == nil || len(lines) == 0 {
+		return nil
+	}
+	emitMu.Lock()
+	defer emitMu.Unlock()
+	for _, l := range lines {
+		if _, err := w.Write(l); err != nil {
+			return fmt.Errorf("agentlog: write line: %w", err)
+		}
+		if bytes.HasSuffix(l, []byte{'\n'}) {
+			continue
+		}
+		if _, err := w.Write([]byte{'\n'}); err != nil {
+			return fmt.Errorf(
+				"agentlog: write newline: %w", err)
+		}
+	}
+	return nil
 }
 
 // EmitTo opens path in O_APPEND mode and emits one marker. An empty
