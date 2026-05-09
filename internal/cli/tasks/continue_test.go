@@ -78,53 +78,6 @@ func (a *continueAgent) Verify(_ context.Context, req codingagents.VerifyRequest
 	return 0, nil
 }
 
-// seedTaskFull writes a task row plus its requirements.md / plan.md
-// files. The mutate hook lets each test override fields. The agent
-// buckets are pre-populated so RunContinue's EnsureAgentSelections
-// skips its prompt path.
-func seedTaskFull(t *testing.T, mutate func(*tasks.Task)) string {
-	t.Helper()
-	id := tasks.NewTaskID()
-	taskDir, err := tasks.EnsureDir(id)
-	if err != nil {
-		t.Fatalf("EnsureTaskDir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(taskDir, tasks.RequirementsFileName), []byte("# req\nbody"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(taskDir, tasks.PlanFileName), []byte("1. step\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	begin := time.Now().UTC().Add(-2 * time.Hour)
-	end := begin.Add(time.Hour)
-	task := tasks.Task{
-		ID:                id,
-		Status:            tasks.StatusPlanDone,
-		PlanTool:          "cursor",
-		PlanModel:         "sonnet-4",
-		WorkTool:          "cursor",
-		WorkModel:         "sonnet-4",
-		VerifyTool:        "cursor",
-		VerifyModel:       "sonnet-4",
-		PlanResumeSession: "plan-cursor",
-		Summary:           "seed",
-		PlanBeginAt:       begin,
-		PlanEndAt:         end,
-	}
-	if mutate != nil {
-		mutate(&task)
-	}
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-	if err := s.PutTask(task); err != nil {
-		t.Fatal(err)
-	}
-	return id
-}
-
 func setupContinueEnv(t *testing.T) {
 	t.Helper()
 	t.Chdir(t.TempDir())
@@ -155,7 +108,7 @@ func installCursorAgentLoginStub(t *testing.T) {
 // suggesting `j tasks re-plan` or `j tasks resume-plan`.
 func TestRunContinue_PlanningShowsTooltip(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusPlanning
 	})
 	agent := newContinueAgent()
@@ -187,7 +140,7 @@ func TestRunContinue_PlanningShowsTooltip(t *testing.T) {
 // The in-process worker no longer fires from this path.
 func TestRunContinue_PlanDoneDispatchesToOrchestratorFromWork(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil) // default is plan-done
+	id := testutil.SeedFullTask(t, nil) // default is plan-done
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
 	err := RunContinue(t.Context(), ContinueOptions{
@@ -224,7 +177,7 @@ func TestRunContinue_PlanDoneDispatchesToOrchestratorFromWork(t *testing.T) {
 // path so the child's preflight surfaces tool problems.
 func TestRunContinue_PlanDoneForwardsToolModel(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil)
+	id := testutil.SeedFullTask(t, nil)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
 	err := RunContinue(t.Context(), ContinueOptions{
@@ -257,7 +210,7 @@ func TestRunContinue_PlanDoneForwardsToolModel(t *testing.T) {
 // detached orchestrator spawn fails (binary missing).
 func TestRunContinue_PlanDoneSpawnFails(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil)
+	id := testutil.SeedFullTask(t, nil)
 	err := RunContinue(t.Context(), ContinueOptions{
 		TaskID:  id,
 		Stdin:   strings.NewReader(""),
@@ -277,7 +230,7 @@ func TestRunContinue_PlanDoneSpawnFails(t *testing.T) {
 // blocks on the child instead of forking).
 func TestRunContinue_PlanDoneInlineWhenInteractive(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil)
+	id := testutil.SeedFullTask(t, nil)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
 	err := RunContinue(t.Context(), ContinueOptions{
@@ -308,7 +261,7 @@ func TestRunContinue_PlanDoneInlineWhenInteractive(t *testing.T) {
 // suggesting `j tasks re-work` or `j tasks resume-work`.
 func TestRunContinue_WorkingShowsTooltip(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorking
 		task.WorkResumeSession = "work-cursor"
 	})
@@ -339,7 +292,7 @@ func TestRunContinue_WorkingShowsTooltip(t *testing.T) {
 // detached `j tasks orchestrate --phase=verify-only`.
 func TestRunContinue_WorkDoneDispatchesToVerify(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorkDone
 		task.WorkResumeSession = "work-cursor"
 	})
@@ -376,7 +329,7 @@ func TestRunContinue_WorkDoneDispatchesToVerify(t *testing.T) {
 // exits.
 func TestRunContinue_VerifyingDispatchesToVerifyResume(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusVerifying
 		task.VerifyResumeSession = "verify-cursor"
 	})
@@ -404,7 +357,7 @@ func TestRunContinue_VerifyingDispatchesToVerifyResume(t *testing.T) {
 // no dispatch, exit 0.
 func TestRunContinue_FailedShortCircuits(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusFailed
 	})
 	agent := newContinueAgent()
@@ -434,7 +387,7 @@ func TestRunContinue_FailedShortCircuits(t *testing.T) {
 // completed status.
 func TestRunContinue_CompletedShortCircuits(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusCompleted
 	})
 	agent := newContinueAgent()
@@ -466,7 +419,7 @@ func TestRunContinue_HelpFromVerifyEnd(t *testing.T) {
 	t1 := time.Now().UTC().Add(-3 * time.Hour)
 	t2 := t1.Add(time.Hour)
 	t3 := t2.Add(time.Hour)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusHelp
 		task.VerifyResumeSession = "verify-cursor"
 		task.WorkResumeSession = "work-cursor"
@@ -504,7 +457,7 @@ func TestRunContinue_HelpFromWorkEnd(t *testing.T) {
 	setupContinueEnv(t)
 	t1 := time.Now().UTC().Add(-2 * time.Hour)
 	t2 := t1.Add(time.Hour)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusHelp
 		task.WorkResumeSession = "work-cursor"
 		task.PlanEndAt = t1
@@ -539,7 +492,7 @@ func TestRunContinue_HelpFromWorkEnd(t *testing.T) {
 func TestRunContinue_HelpFromPlanEnd(t *testing.T) {
 	setupContinueEnv(t)
 	t1 := time.Now().UTC().Add(-2 * time.Hour)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusHelp
 		task.PlanResumeSession = "plan-cursor"
 		task.PlanEndAt = t1
@@ -573,7 +526,7 @@ func TestRunContinue_HelpFromPlanEnd(t *testing.T) {
 // spawning a detached orchestrator with --phase=from-work.
 func TestRunContinue_HelpFromCursorFallback(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusHelp
 		task.PlanEndAt = time.Time{}
 		task.PlanResumeSession = "plan-cursor"
@@ -607,7 +560,7 @@ func TestRunContinue_HelpFromCursorFallback(t *testing.T) {
 // *EndAt timestamps and every resume cursor empty cannot be dispatched.
 func TestRunContinue_HelpNoSignal(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusHelp
 		task.PlanEndAt = time.Time{}
 		task.PlanResumeSession = ""
@@ -657,8 +610,8 @@ func TestRunContinue_MissingTaskFromFlag(t *testing.T) {
 // returns nil with no dispatch.
 func TestRunContinue_PickerCancel(t *testing.T) {
 	setupContinueEnv(t)
-	seedTaskFull(t, nil)
-	seedTaskFull(t, nil)
+	testutil.SeedFullTask(t, nil)
+	testutil.SeedFullTask(t, nil)
 	agent := newContinueAgent()
 	if err := RunContinue(t.Context(), ContinueOptions{
 		Stdin:  strings.NewReader(""),
@@ -680,7 +633,7 @@ func TestRunContinue_PickerCancel(t *testing.T) {
 // --phase=from-work rather than the agent.Work counter ticking.
 func TestRunContinue_PickerHappy(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil) // plan-done -> detached orchestrator
+	id := testutil.SeedFullTask(t, nil) // plan-done -> detached orchestrator
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	agent := newContinueAgent()
 	ui := &fakeUI{pickReturn: id}
@@ -891,7 +844,7 @@ func TestDispatchByStatus_UnknownStatus(t *testing.T) {
 // longer attempts a spawn — it prints a tooltip and returns nil.
 func TestRunContinue_PlanningSpawnFails(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusPlanning
 	})
 	agent := newContinueAgent()
@@ -949,7 +902,7 @@ func TestNewContinueCmd_InteractiveFlagBindToViper(t *testing.T) {
 
 func TestStampSpawnOnRow_KnownTask(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil)
+	id := testutil.SeedFullTask(t, nil)
 	var stderr bytes.Buffer
 	stampSpawnOnRow(&stderr, id, "/tmp/agent.log")
 	if stderr.Len() > 0 {
@@ -1003,7 +956,7 @@ func TestPickReVerifyFromStore_EmptyBucket(t *testing.T) {
 
 func TestPickReVerifyFromStore_PickerHappy(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil)
+	id := testutil.SeedFullTask(t, nil)
 	s, err := tasks.OpenDefault()
 	if err != nil {
 		t.Fatal(err)
@@ -1069,7 +1022,7 @@ func TestNewContinueCmd_ToolModelEnvBindings(t *testing.T) {
 // --phase=from-work (inheriting the runPlanDoneWork fix).
 func TestRunContinue_PlanApproveDispatchesToOrchestratorFromWork(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusPlanPendingApproval
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
@@ -1115,7 +1068,7 @@ func TestRunContinue_NeedsClarification_VerifyResume(t *testing.T) {
 	t1 := time.Now().UTC().Add(-3 * time.Hour)
 	t2 := t1.Add(time.Hour)
 	t3 := t2.Add(time.Hour)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusNeedsClarification
 		task.VerifyResumeSession = "verify-cursor"
 		task.PlanEndAt = t1
@@ -1164,7 +1117,7 @@ func TestRunContinue_NeedsClarification_WorkResume(t *testing.T) {
 	setupContinueEnv(t)
 	t1 := time.Now().UTC().Add(-2 * time.Hour)
 	t2 := t1.Add(time.Hour)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusNeedsClarification
 		task.WorkResumeSession = "work-cursor"
 		task.PlanEndAt = t1

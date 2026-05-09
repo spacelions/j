@@ -14,9 +14,6 @@ import (
 	"github.com/spacelions/j/internal/cli/preflight"
 	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/coding-agents/claude"
-	"github.com/spacelions/j/internal/coding-agents/cursor"
-	"github.com/spacelions/j/internal/coding-agents/deepseek"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
 )
@@ -155,7 +152,7 @@ func pickReVerifyFromStore(
 
 // newReVerifyCmd builds the `j tasks re-verify` cobra subcommand.
 func newReVerifyCmd() *cobra.Command {
-	agents := []codingagents.Agent{cursor.New(), claude.New(), deepseek.New()}
+	agents := defaultAgents()
 	cmd := &cobra.Command{
 		Use: "re-verify",
 		Short: "Re-verify an existing task: run the verifier inline " +

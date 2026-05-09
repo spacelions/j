@@ -4,18 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store/tasks"
-	"github.com/spacelions/j/internal/tools/linear"
 )
-
-// linearPushTimeout bounds the total time the hook spends talking
-// to Linear. The hook is best-effort and never blocks the
-// transition; this limit keeps a hung HTTP call from leaking past
-// the lifecycle boundary.
-const linearPushTimeout = 30 * time.Second
 
 // InitLinearPush registers the hook that mirrors planner artefacts
 // (`requirements.md`, `plan.md`) back to the upstream Linear issue
@@ -69,31 +61,16 @@ func linearPushHook(tr tasks.Transition, task tasks.Task) {
 	if !ok {
 		return
 	}
-	token, err := linear.LoadAPIKey()
-	if err != nil {
-		warnLinear("load api key: %s", err)
-		return
-	}
-	if token == "" {
-		warnLinear("no API key set")
-		return
-	}
-	ctx, cancel := context.WithTimeout(
-		context.Background(), linearPushTimeout)
-	defer cancel()
-	client := linear.NewClient(token)
-	issue, err := client.GetIssue(ctx, task.LinearIssue)
-	if err != nil {
-		warnLinear("resolve %s: %s", task.LinearIssue, err)
-		return
-	}
-	if err := client.UpdateIssueDescription(
-		ctx, issue.ID, requirements); err != nil {
-		warnLinear("issueUpdate: %s", err)
-	}
-	if err := client.CreateComment(ctx, issue.ID, plan); err != nil {
-		warnLinear("commentCreate: %s", err)
-	}
+	runLinearHook(task, warnLinear, func(ctx context.Context, run linearHookRun) {
+		if err := run.client.UpdateIssueDescription(
+			ctx, run.issue.ID, requirements); err != nil {
+			warnLinear("issueUpdate: %s", err)
+		}
+		if err := run.client.CreateComment(
+			ctx, run.issue.ID, plan); err != nil {
+			warnLinear("commentCreate: %s", err)
+		}
+	})
 }
 
 // readPlanArtefacts reads requirements.md and plan.md from the per-

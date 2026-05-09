@@ -12,6 +12,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // TestRunResumePlan_NoActiveSession pins the empty-filtered-list
@@ -19,7 +20,7 @@ import (
 // fires and the user-facing message is printed instead.
 func TestRunResumePlan_NoActiveSession(t *testing.T) {
 	setupContinueEnv(t)
-	seedTaskFull(t, func(task *tasks.Task) {
+	testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.PlanResumeSession = ""
 	})
 	ui := &fakeUI{}
@@ -65,10 +66,10 @@ func TestRunResumePlan_NoTasksAtAll(t *testing.T) {
 // rows without PlanResumeSession are not surfaced to the picker.
 func TestRunResumePlan_PickerOnlyShowsRowsWithSession(t *testing.T) {
 	setupContinueEnv(t)
-	keep := seedTaskFull(t, func(task *tasks.Task) {
+	keep := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.PlanResumeSession = "active-cursor"
 	})
-	skip := seedTaskFull(t, func(task *tasks.Task) {
+	skip := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.PlanResumeSession = ""
 	})
 	ui := &fakeUI{} // empty pickReturn -> picker abort
@@ -97,7 +98,7 @@ func TestRunResumePlan_PickerOnlyShowsRowsWithSession(t *testing.T) {
 // returns ok=false; RunResumePlan exits cleanly with no spawn.
 func TestRunResumePlan_PickerAbort(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.PlanResumeSession = "active-cursor"
 	})
 	ui := &fakeUI{}
@@ -123,7 +124,7 @@ func TestRunResumePlan_PickerAbort(t *testing.T) {
 // and no fork dialog fires.
 func TestRunResumePlan_HappyPath(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.PlanResumeSession = "active-cursor"
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
@@ -157,7 +158,7 @@ func TestRunResumePlan_HappyPath(t *testing.T) {
 // test fails if the edge is removed.
 func TestRunResumePlan_HappyPath_PlanPendingApproval(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusPlanPendingApproval
 		task.PlanResumeSession = "active-cursor"
 	})
@@ -187,7 +188,7 @@ func TestRunResumePlan_HappyPath_PlanPendingApproval(t *testing.T) {
 // pointing JBinary at a missing path surfaces the run.RunIn error.
 func TestRunResumePlan_SpawnFails(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.PlanResumeSession = "active-cursor"
 	})
 	ui := &fakeUI{pickReturn: id}
@@ -208,7 +209,7 @@ func TestRunResumePlan_SpawnFails(t *testing.T) {
 // branch from the picker (something other than abort).
 func TestRunResumePlan_PickerErrorPropagates(t *testing.T) {
 	setupContinueEnv(t)
-	seedTaskFull(t, func(task *tasks.Task) {
+	testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.PlanResumeSession = "active-cursor"
 	})
 	boom := errInjected("picker boom")
@@ -328,7 +329,7 @@ func TestNewResumePlanCmd_PreRunE_DefaultedAgents(t *testing.T) {
 // FSM edge {completed, EventPlanResume, planning} must permit it.
 func TestRunResumePlan_HappyPath_Completed(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusCompleted
 		task.PlanResumeSession = "sess-x"
 	})
@@ -358,7 +359,7 @@ func TestRunResumePlan_HappyPath_Completed(t *testing.T) {
 // the `failed` source status.
 func TestRunResumePlan_HappyPath_Failed(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusFailed
 		task.PlanResumeSession = "sess-x"
 	})

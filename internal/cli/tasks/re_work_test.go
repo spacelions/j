@@ -12,6 +12,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 func TestRunReWork_NoTasks(t *testing.T) {
@@ -50,7 +51,7 @@ func TestRunReWork_FromTaskNotFound(t *testing.T) {
 
 func TestRunReWork_StatusOverrideDeclined(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorking
 	})
 	ui := &fakeUI{statusReturn: false}
@@ -71,7 +72,7 @@ func TestRunReWork_StatusOverrideDeclined(t *testing.T) {
 
 func TestRunReWork_HappyPath(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil) // plan-done
+	id := testutil.SeedFullTask(t, nil) // plan-done
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	if err := RunReWork(t.Context(), ReWorkOptions{
 		FromTask:    id,
@@ -94,7 +95,7 @@ func TestRunReWork_HappyPath(t *testing.T) {
 
 func TestRunReWork_InteractiveRunsInline(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil)
+	id := testutil.SeedFullTask(t, nil)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	err := RunReWork(t.Context(), ReWorkOptions{
 		FromTask:    id,
@@ -117,7 +118,7 @@ func TestRunReWork_InteractiveRunsInline(t *testing.T) {
 
 func TestRunReWork_SpawnFails(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil)
+	id := testutil.SeedFullTask(t, nil)
 	err := RunReWork(t.Context(), ReWorkOptions{
 		FromTask: id,
 		Stdin:    strings.NewReader(""),
@@ -195,7 +196,7 @@ func TestRunReWork_SpawnsAfterConfirm(t *testing.T) {
 	} {
 		t.Run(string(status), func(t *testing.T) {
 			setupContinueEnv(t)
-			id := seedTaskFull(t, func(task *tasks.Task) { task.Status = status })
+			id := testutil.SeedFullTask(t, func(task *tasks.Task) { task.Status = status })
 			argvPath := filepath.Join(t.TempDir(), "argv.txt")
 			ui := &fakeUI{statusReturn: true}
 			if err := RunReWork(t.Context(), ReWorkOptions{
@@ -238,7 +239,7 @@ func TestRunReWork_RegisteredAsChild(t *testing.T) {
 func TestClearWorkResumeSession_EmptySessionReturnsNil(t *testing.T) {
 	setupContinueEnv(t)
 	// seedTaskFull sets PlanResumeSession only; WorkResumeSession is empty.
-	id := seedTaskFull(t, nil)
+	id := testutil.SeedFullTask(t, nil)
 	if err := clearWorkResumeSession(id); err != nil {
 		t.Fatalf("clearWorkResumeSession: %v", err)
 	}
@@ -246,7 +247,7 @@ func TestClearWorkResumeSession_EmptySessionReturnsNil(t *testing.T) {
 
 func TestClearWorkResumeSession_PopulatedSessionClears(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.WorkResumeSession = "session-xyz"
 	})
 	if err := clearWorkResumeSession(id); err != nil {

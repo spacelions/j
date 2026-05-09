@@ -21,6 +21,8 @@ require (
 	google.golang.org/genai v1.54.0
 )
 
+require github.com/rillig/gobco v1.3.4 // indirect
+
 require (
 	4d63.com/gocheckcompilerdirectives v1.3.0 // indirect
 	4d63.com/gochecknoglobals v0.2.2 // indirect
@@ -308,4 +310,5 @@ require (
 tool (
 	github.com/evilmartians/lefthook/v2
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+	github.com/rillig/gobco
 )

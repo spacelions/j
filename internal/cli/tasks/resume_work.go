@@ -9,9 +9,6 @@ import (
 
 	"github.com/spacelions/j/internal/cli/preflight"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/coding-agents/claude"
-	"github.com/spacelions/j/internal/coding-agents/cursor"
-	"github.com/spacelions/j/internal/coding-agents/deepseek"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -58,7 +55,7 @@ func RunResumeWork(ctx context.Context, opts ResumeWorkOptions) error {
 
 // newResumeWorkCmd builds the `j tasks resume-work` cobra subcommand.
 func newResumeWorkCmd() *cobra.Command {
-	agents := []codingagents.Agent{cursor.New(), claude.New(), deepseek.New()}
+	agents := defaultAgents()
 	cmd := &cobra.Command{
 		Use: "resume-work",
 		Short: "Resume an in-flight worker session in the foreground " +

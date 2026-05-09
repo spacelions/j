@@ -9,9 +9,6 @@ import (
 
 	"github.com/spacelions/j/internal/cli/preflight"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/coding-agents/claude"
-	"github.com/spacelions/j/internal/coding-agents/cursor"
-	"github.com/spacelions/j/internal/coding-agents/deepseek"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -60,7 +57,7 @@ func RunResumePlan(ctx context.Context, opts ResumePlanOptions) error {
 
 // newResumePlanCmd builds the `j tasks resume-plan` cobra subcommand.
 func newResumePlanCmd() *cobra.Command {
-	agents := []codingagents.Agent{cursor.New(), claude.New(), deepseek.New()}
+	agents := defaultAgents()
 	cmd := &cobra.Command{
 		Use: "resume-plan",
 		Short: "Resume an in-flight planner session in the foreground " +

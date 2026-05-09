@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
@@ -38,6 +39,49 @@ func SeedAgentBucket(t *testing.T, bucket, tool, model string) {
 			t.Fatalf("testutil: Put %s: %v", kv[0], err)
 		}
 	}
+}
+
+// SeedFullTask writes a task row plus requirements.md and plan.md
+// files. The mutate hook lets each test override fields.
+func SeedFullTask(t *testing.T, mutate func(*tasks.Task)) string {
+	t.Helper()
+	id := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(id)
+	if err != nil {
+		t.Fatalf("testutil: EnsureTaskDir: %v", err)
+	}
+	if err := WriteFile(
+		filepath.Join(taskDir, tasks.RequirementsFileName),
+		"# req\nbody",
+	); err != nil {
+		t.Fatalf("testutil: write requirements: %v", err)
+	}
+	if err := WriteFile(
+		filepath.Join(taskDir, tasks.PlanFileName), "1. step\n",
+	); err != nil {
+		t.Fatalf("testutil: write plan: %v", err)
+	}
+	begin := time.Now().UTC().Add(-2 * time.Hour)
+	end := begin.Add(time.Hour)
+	task := tasks.Task{
+		ID:                id,
+		Status:            tasks.StatusPlanDone,
+		PlanTool:          "cursor",
+		PlanModel:         "sonnet-4",
+		WorkTool:          "cursor",
+		WorkModel:         "sonnet-4",
+		VerifyTool:        "cursor",
+		VerifyModel:       "sonnet-4",
+		PlanResumeSession: "plan-cursor",
+		Summary:           "seed",
+		PlanBeginAt:       begin,
+		PlanEndAt:         end,
+	}
+	if mutate != nil {
+		mutate(&task)
+	}
+	SeedTaskRow(t, task)
+	return id
 }
 
 // SeedAgentBucketToolModel writes only tool and model (no interactive

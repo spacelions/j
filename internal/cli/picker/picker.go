@@ -50,6 +50,9 @@ func New(in io.Reader, out io.Writer) *Picker {
 // with a "ui: " prefix so genuine UI failures still surface
 // distinguishably.
 func (p *Picker) run(ctx context.Context, field huh.Field) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("ui: %w", err)
+	}
 	err := huh.NewForm(huh.NewGroup(field)).
 		WithInput(p.in).
 		WithOutput(p.out).

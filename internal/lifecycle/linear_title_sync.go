@@ -3,17 +3,10 @@ package lifecycle
 import (
 	"context"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/spacelions/j/internal/store/tasks"
-	"github.com/spacelions/j/internal/tools/linear"
 )
-
-// linearTitleSyncTimeout bounds the total time the title-sync hook
-// spends talking to Linear. Mirrors linearStateSyncTimeout so the
-// title-sync hook's worst-case budget matches its sibling.
-const linearTitleSyncTimeout = 30 * time.Second
 
 // alertPrefix decorates titles whose task entered an
 // "abnormal / needs attention" status (needs-clarification, failed,
@@ -43,27 +36,18 @@ func linearTitleSyncHook(tr tasks.Transition, task tasks.Task) {
 	if task.LinearIssue == "" {
 		return
 	}
-	token, ok := loadLinearToken()
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(
-		context.Background(), linearTitleSyncTimeout)
-	defer cancel()
-	client := linear.NewClient(token)
-	issue, err := client.GetIssue(ctx, task.LinearIssue)
-	if err != nil {
-		warnLinearSync("resolve %s: %s", task.LinearIssue, err)
-		return
-	}
-	newTitle := decorateTitle(issue.Title, tr.To)
-	if newTitle == issue.Title {
-		return
-	}
-	if err := client.UpdateIssueTitle(
-		ctx, issue.ID, newTitle); err != nil {
-		warnLinearSync("issueUpdate title: %s", err)
-	}
+	runLinearHook(task, warnLinearSync, func(
+		ctx context.Context, run linearHookRun,
+	) {
+		newTitle := decorateTitle(run.issue.Title, tr.To)
+		if newTitle == run.issue.Title {
+			return
+		}
+		if err := run.client.UpdateIssueTitle(
+			ctx, run.issue.ID, newTitle); err != nil {
+			warnLinearSync("issueUpdate title: %s", err)
+		}
+	})
 }
 
 // decorateTitle returns current with any existing ❗/👀 prefix

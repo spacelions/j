@@ -12,6 +12,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 func TestRunReVerify_NoTasks(t *testing.T) {
@@ -53,7 +54,7 @@ func TestRunReVerify_FromTaskNotFound(t *testing.T) {
 
 func TestRunReVerify_StatusOverrideDeclined(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorking
 	})
 	ui := &fakeUI{statusReturn: false}
@@ -75,7 +76,7 @@ func TestRunReVerify_StatusOverrideDeclined(t *testing.T) {
 
 func TestRunReVerify_WorkDoneSkipsConfirm(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorkDone
 	})
 	ui := &fakeUI{}
@@ -100,7 +101,7 @@ func TestRunReVerify_WorkDoneSkipsConfirm(t *testing.T) {
 
 func TestRunReVerify_InteractiveRunsInline(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorkDone
 	})
 	var stdout bytes.Buffer
@@ -235,7 +236,7 @@ func TestNewReVerifyCmd_RunE_InteractiveFlag(t *testing.T) {
 // `completed` is outside VerifyAllowed so the override prompt fires.
 func TestRunReVerify_FromCompletedSpawnsAfterConfirm(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusCompleted
 	})
 	ui := &fakeUI{statusReturn: true}
@@ -276,7 +277,7 @@ func TestReVerify_RegisteredAsChild(t *testing.T) {
 // than RunResume (which the FSM rejects from work-done).
 func TestRunReVerify_ClearsStaleVerifySession(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorkDone
 		task.VerifyResumeSession = "stale-cursor"
 	})
@@ -305,7 +306,7 @@ func TestRunReVerify_ClearsStaleVerifySession(t *testing.T) {
 
 func TestRunReVerify_SpawnFails(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorkDone
 	})
 	err := RunReVerify(t.Context(), ReVerifyOptions{

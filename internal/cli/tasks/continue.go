@@ -16,9 +16,6 @@ import (
 	"github.com/spacelions/j/internal/cli/uitheme"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/coding-agents/claude"
-	"github.com/spacelions/j/internal/coding-agents/cursor"
-	"github.com/spacelions/j/internal/coding-agents/deepseek"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
 )
@@ -229,7 +226,7 @@ func (o ContinueOptions) withDefaults() ContinueOptions {
 // plan-done dispatch path; resume phases ignore them. viper bind
 // errors are discarded since they only surface on programmer errors.
 func newContinueCmd() *cobra.Command {
-	agents := []codingagents.Agent{cursor.New(), claude.New(), deepseek.New()}
+	agents := defaultAgents()
 	cmd := &cobra.Command{
 		Use: "continue",
 		Short: "Continue a task by dispatching to the right phase" +

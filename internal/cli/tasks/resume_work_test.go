@@ -9,11 +9,12 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 func seedWorkingTaskWithWorkSession(t *testing.T) string {
 	t.Helper()
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorking
 		task.WorkTool = "cursor"
 		task.WorkModel = "sonnet-4"
@@ -130,7 +131,7 @@ func TestFilterTasksWithWorkSession(t *testing.T) {
 // FSM edge {completed, EventWorkResume, working} must permit it.
 func TestRunResumeWork_HappyPath_Completed(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusCompleted
 		task.WorkResumeSession = "sess-x"
 	})
@@ -160,7 +161,7 @@ func TestRunResumeWork_HappyPath_Completed(t *testing.T) {
 // the `failed` source status.
 func TestRunResumeWork_HappyPath_Failed(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusFailed
 		task.WorkResumeSession = "sess-x"
 	})

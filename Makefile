@@ -38,6 +38,17 @@ coverage:
 	go test -covermode=atomic -coverprofile=cover.out ./internal/...; \
 	total=$$(go tool cover -func=cover.out | awk '/^total:/ {print $$3}'); \
 	echo "total coverage: $$total"; \
+	branch_dirs=$$(go list -f '{{.Dir}}' ./internal/...); \
+	branch_output=$$(go tool gobco -branch $$branch_dirs); \
+	printf '%s\n' "$$branch_output"; \
+	branch_ratio=$$(printf '%s\n' "$$branch_output" | \
+		awk '/^Branch coverage:/ {print $$3}'); \
+	branch_pct=$$(awk -v ratio="$$branch_ratio" 'BEGIN { \
+		split(ratio, parts, "/"); \
+		if (parts[2] == 0) { print "100.0"; exit } \
+		printf "%.1f", parts[1] * 100 / parts[2]; \
+	}'); \
+	echo "branch coverage: $$branch_pct%"; \
 	below=$$(go tool cover -func=cover.out | awk '$$NF != "100.0%" && !/^total:/ {print}'); \
 	below=$$(printf '%s\n' "$$below" | grep -Ev \
 		-e 'internal/lifecycle/orchestrator/workflow\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
