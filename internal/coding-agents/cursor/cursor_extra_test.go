@@ -1,7 +1,6 @@
 package cursor
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/spacelions/j/internal/agents/instructions"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // spawnWaitTimeout bounds the polling helpers below. The cursor stub
@@ -28,37 +28,7 @@ const spawnWaitTimeout = 5 * time.Second
 // reintroducing a synchronous Wait.
 func waitForCalls(t *testing.T, callsPath string, want int) []string {
 	t.Helper()
-	deadline := time.Now().Add(spawnWaitTimeout)
-	for {
-		argv := readCallsBestEffort(callsPath)
-		if len(argv) >= want {
-			return argv
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timeout waiting for %d argv entries at %s, got %d: %v",
-				want, callsPath, len(argv), argv)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
-// readCallsBestEffort returns the argv recorded so far at path, with
-// every read error swallowed so the polling loop in waitForCalls can
-// retry. Treats both "file does not exist" and "empty file" as
-// "child has not finished yet" and yields a nil slice.
-func readCallsBestEffort(path string) []string {
-	b, err := os.ReadFile(path)
-	if err != nil || len(b) == 0 {
-		return nil
-	}
-	parts := strings.Split(string(b), "\x00")
-	if parts[len(parts)-1] == "" {
-		parts = parts[:len(parts)-1]
-	}
-	if len(parts) == 0 {
-		return nil
-	}
-	return parts
+	return testutil.WaitForNullArgs(t, callsPath, want, spawnWaitTimeout)
 }
 
 // waitForLog polls logPath until want is found in its contents or the
@@ -66,18 +36,7 @@ func readCallsBestEffort(path string) []string {
 // landed in the per-task agent log.
 func waitForLog(t *testing.T, logPath, want string) string {
 	t.Helper()
-	deadline := time.Now().Add(spawnWaitTimeout)
-	for {
-		data, err := os.ReadFile(logPath)
-		if err == nil && strings.Contains(string(data), want) {
-			return string(data)
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timeout waiting for %q in %s; last contents %q (err=%v)",
-				want, logPath, data, err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	return testutil.WaitForLog(t, logPath, want, spawnWaitTimeout)
 }
 
 // installStub writes a `cursor-agent` shell script into t.TempDir(),
@@ -89,45 +48,21 @@ func waitForLog(t *testing.T, logPath, want string) string {
 // the real os/exec layer.
 func installStub(t *testing.T, stdout string, exitCode int) (callsPath string) {
 	t.Helper()
-	dir := t.TempDir()
-	callsPath = filepath.Join(dir, "calls.log")
-	stdoutPath := filepath.Join(dir, "stdout.txt")
-	if err := os.WriteFile(stdoutPath, []byte(stdout), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	body := fmt.Sprintf(`#!/bin/sh
-: > %q
-for a in "$@"; do printf '%%s\0' "$a" >> %q; done
-cat %q
-exit %d
-`, callsPath, callsPath, stdoutPath, exitCode)
-	bin := filepath.Join(dir, Binary)
-	if err := os.WriteFile(bin, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return callsPath
+	return testutil.InstallExecutableStub(
+		t,
+		testutil.ExecutableStubOptions{
+			Binary:   Binary,
+			Stdout:   stdout,
+			ExitCode: exitCode,
+		},
+	).CallsPath
 }
 
 // readCalls returns the argv recorded by installStub. An empty file
 // yields a nil slice so callers can compare with reflect.DeepEqual.
 func readCalls(t *testing.T, path string) []string {
 	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read calls.log: %v", err)
-	}
-	if len(b) == 0 {
-		return nil
-	}
-	parts := strings.Split(string(b), "\x00")
-	if parts[len(parts)-1] == "" {
-		parts = parts[:len(parts)-1]
-	}
-	if len(parts) == 0 {
-		return nil
-	}
-	return parts
+	return testutil.ReadNullArgs(t, path)
 }
 
 func TestListModels(t *testing.T) {

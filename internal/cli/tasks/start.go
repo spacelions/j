@@ -100,12 +100,8 @@ func newStartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var interactive *bool
-			if cmd.Flags().Changed(flagKeyInteractive) ||
-				envSet("TASKS_START_INTERACTIVE") {
-				v := viper.GetBool("tasks.start.interactive")
-				interactive = &v
-			}
+			interactive := explicitBoolPtr(cmd, flagKeyInteractive,
+				"tasks.start.interactive", "TASKS_START_INTERACTIVE")
 			return RunStart(cmd.Context(), StartOptions{
 				FromFile:             viper.GetString("tasks.start.from_file"),
 				FromLinear:           viper.GetString("tasks.start.from_linear"),

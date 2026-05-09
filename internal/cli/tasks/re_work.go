@@ -181,12 +181,8 @@ func newReWorkCmd() *cobra.Command {
 				})
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var interactive *bool
-			if cmd.Flags().Changed(flagKeyInteractive) ||
-				envSet("TASKS_REWORK_INTERACTIVE") {
-				v := viper.GetBool("tasks.rework.interactive")
-				interactive = &v
-			}
+			interactive := explicitBoolPtr(cmd, flagKeyInteractive,
+				"tasks.rework.interactive", "TASKS_REWORK_INTERACTIVE")
 			return RunReWork(cmd.Context(), ReWorkOptions{
 				FromTask:    viper.GetString("tasks.rework.from_task"),
 				Tool:        viper.GetString("tasks.rework.tool"),
@@ -207,15 +203,19 @@ func newReWorkCmd() *cobra.Command {
 		"Worker model override; does not update the bucket")
 	cmd.Flags().Bool(flagKeyInteractive, false,
 		"Run worker in interactive (TUI) mode")
-	_ = viper.BindPFlag(
-		"tasks.rework.from_task", cmd.Flags().Lookup(flagKeyFromTask))
-	_ = viper.BindEnv("tasks.rework.from_task", "TASKS_REWORK_FROM_TASK")
-	_ = viper.BindPFlag("tasks.rework.tool", cmd.Flags().Lookup(flagKeyTool))
-	_ = viper.BindEnv("tasks.rework.tool", "TASKS_REWORK_TOOL")
-	_ = viper.BindPFlag("tasks.rework.model", cmd.Flags().Lookup(flagKeyModel))
-	_ = viper.BindEnv("tasks.rework.model", "TASKS_REWORK_MODEL")
-	_ = viper.BindPFlag(
-		"tasks.rework.interactive", cmd.Flags().Lookup(flagKeyInteractive))
-	_ = viper.BindEnv("tasks.rework.interactive", "TASKS_REWORK_INTERACTIVE")
+	bindFlagEnv(cmd,
+		flagEnvBinding{
+			"tasks.rework.from_task", flagKeyFromTask,
+			"TASKS_REWORK_FROM_TASK",
+		},
+		flagEnvBinding{"tasks.rework.tool", flagKeyTool, "TASKS_REWORK_TOOL"},
+		flagEnvBinding{
+			"tasks.rework.model", flagKeyModel, "TASKS_REWORK_MODEL",
+		},
+		flagEnvBinding{
+			"tasks.rework.interactive", flagKeyInteractive,
+			"TASKS_REWORK_INTERACTIVE",
+		},
+	)
 	return cmd
 }

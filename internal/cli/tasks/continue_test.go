@@ -95,13 +95,7 @@ func setupContinueEnv(t *testing.T) {
 // rather than from setupContinueEnv to keep the helper localized.
 func installCursorAgentLoginStub(t *testing.T) {
 	t.Helper()
-	dir := t.TempDir()
-	body := "#!/bin/sh\nprintf 'Logged in\\n'\nexit 0\n"
-	bin := filepath.Join(dir, "cursor-agent")
-	if err := os.WriteFile(bin, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	testutil.InstallCursorAgentLoginStub(t)
 }
 
 // TestRunContinue_PlanningShowsTooltip pins planning -> tooltip message

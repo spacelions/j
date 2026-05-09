@@ -9,10 +9,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
-
-	"github.com/spacelions/j/internal/cli/preflight"
 	"github.com/spacelions/j/internal/cli/uitheme"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
@@ -218,80 +214,4 @@ func (o ContinueOptions) withDefaults() ContinueOptions {
 		o.UI = newHuhUI(o.Stdin, o.Stderr)
 	}
 	return o
-}
-
-// newContinueCmd builds the `j tasks continue` cobra subcommand with
-// --from-task, --tool, --model, and --interactive flags. --tool,
-// --model, and --interactive are forwarded into worker.Run on the
-// plan-done dispatch path; resume phases ignore them. viper bind
-// errors are discarded since they only surface on programmer errors.
-func newContinueCmd() *cobra.Command {
-	agents := defaultAgents()
-	cmd := &cobra.Command{
-		Use: "continue",
-		Short: "Continue a task by dispatching to the right phase" +
-			" based on status",
-		Long: "Resolves a task (via --from-task or the shared picker) " +
-			"and dispatches to the right phase based on its status: " +
-			"planning -> detached re-plan, " +
-			"plan-done -> direct worker run, working -> work resume, " +
-			"work-done -> `j verify`, verifying -> `j verify resume`. " +
-			"Already-finished tasks (failed, completed) print " +
-			"`J: task <id> already finished` and exit 0; a `help` row " +
-			"resumes whichever phase produced the failure (latest *EndAt " +
-			"wins, falling back to the non-empty resume cursor). " +
-			"Validates that every agent bucket (planner, worker, verifier) has " +
-			"a tool/model selection — prompting once per missing bucket — before " +
-			"the dispatch fires.",
-		PersistentPreRunE: preflight.PreRunE,
-		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			return preflight.EnsureAgentSelections(cmd.Context(),
-				preflight.AgentCheckOptions{
-					Stdin:  cmd.InOrStdin(),
-					Stdout: cmd.OutOrStdout(),
-					Stderr: cmd.ErrOrStderr(),
-					Agents: agents,
-				})
-		},
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			var interactive *bool
-			if cmd.Flags().Changed(flagKeyInteractive) ||
-				envSet("TASKS_CONTINUE_INTERACTIVE") {
-				v := viper.GetBool("tasks.continue.interactive")
-				interactive = &v
-			}
-			return RunContinue(cmd.Context(), ContinueOptions{
-				TaskID:      viper.GetString("tasks.continue.from_task"),
-				Tool:        viper.GetString("tasks.continue.tool"),
-				Model:       viper.GetString("tasks.continue.model"),
-				Interactive: interactive,
-				Stdin:       cmd.InOrStdin(),
-				Stdout:      cmd.OutOrStdout(),
-				Stderr:      cmd.ErrOrStderr(),
-				Agents:      agents,
-			})
-		},
-	}
-	bindContinueFlags(cmd)
-	return cmd
-}
-
-func bindContinueFlags(cmd *cobra.Command) {
-	f := cmd.Flags()
-	f.String(flagKeyFromTask, "",
-		"Continue the named task without showing the picker")
-	f.String("tool", "",
-		"Coding agent tool for plan-done dispatch (cursor|claude)")
-	f.String("model", "", "Model identifier for plan-done dispatch")
-	f.Bool(flagKeyInteractive, false,
-		"Launch the coding agent in interactive mode on plan-done dispatch")
-	bind := func(key, flag, env string) {
-		_ = viper.BindPFlag(key, f.Lookup(flag))
-		_ = viper.BindEnv(key, env)
-	}
-	bind("tasks.continue.from_task", flagKeyFromTask, "TASKS_CONTINUE_FROM_TASK")
-	bind("tasks.continue.tool", "tool", "TASKS_CONTINUE_TOOL")
-	bind("tasks.continue.model", "model", "TASKS_CONTINUE_MODEL")
-	bind("tasks.continue.interactive", flagKeyInteractive,
-		"TASKS_CONTINUE_INTERACTIVE")
 }

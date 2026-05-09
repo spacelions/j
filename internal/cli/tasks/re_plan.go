@@ -248,12 +248,8 @@ func newRePlanCmd() *cobra.Command {
 				})
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var interactive *bool
-			if cmd.Flags().Changed(flagKeyInteractive) ||
-				envSet("TASKS_REPLAN_INTERACTIVE") {
-				v := viper.GetBool("tasks.replan.interactive")
-				interactive = &v
-			}
+			interactive := explicitBoolPtr(cmd, flagKeyInteractive,
+				"tasks.replan.interactive", "TASKS_REPLAN_INTERACTIVE")
 			return RunRePlan(cmd.Context(), RePlanOptions{
 				FromTask:    viper.GetString("tasks.replan.from_task"),
 				Tool:        viper.GetString("tasks.replan.tool"),
@@ -274,15 +270,19 @@ func newRePlanCmd() *cobra.Command {
 		"Planner model override; does not update the bucket")
 	cmd.Flags().Bool(flagKeyInteractive, false,
 		"Run planner in interactive (TUI) mode")
-	_ = viper.BindPFlag(
-		"tasks.replan.from_task", cmd.Flags().Lookup(flagKeyFromTask))
-	_ = viper.BindEnv("tasks.replan.from_task", "TASKS_REPLAN_FROM_TASK")
-	_ = viper.BindPFlag("tasks.replan.tool", cmd.Flags().Lookup(flagKeyTool))
-	_ = viper.BindEnv("tasks.replan.tool", "TASKS_REPLAN_TOOL")
-	_ = viper.BindPFlag("tasks.replan.model", cmd.Flags().Lookup(flagKeyModel))
-	_ = viper.BindEnv("tasks.replan.model", "TASKS_REPLAN_MODEL")
-	_ = viper.BindPFlag(
-		"tasks.replan.interactive", cmd.Flags().Lookup(flagKeyInteractive))
-	_ = viper.BindEnv("tasks.replan.interactive", "TASKS_REPLAN_INTERACTIVE")
+	bindFlagEnv(cmd,
+		flagEnvBinding{
+			"tasks.replan.from_task", flagKeyFromTask,
+			"TASKS_REPLAN_FROM_TASK",
+		},
+		flagEnvBinding{"tasks.replan.tool", flagKeyTool, "TASKS_REPLAN_TOOL"},
+		flagEnvBinding{
+			"tasks.replan.model", flagKeyModel, "TASKS_REPLAN_MODEL",
+		},
+		flagEnvBinding{
+			"tasks.replan.interactive", flagKeyInteractive,
+			"TASKS_REPLAN_INTERACTIVE",
+		},
+	)
 	return cmd
 }

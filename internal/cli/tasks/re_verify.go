@@ -176,12 +176,9 @@ func newReVerifyCmd() *cobra.Command {
 				})
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var interactive *bool
-			if cmd.Flags().Changed(flagKeyInteractive) ||
-				envSet("TASKS_REVERIFY_INTERACTIVE") {
-				v := viper.GetBool("tasks.reverify.interactive")
-				interactive = &v
-			}
+			interactive := explicitBoolPtr(cmd, flagKeyInteractive,
+				"tasks.reverify.interactive",
+				"TASKS_REVERIFY_INTERACTIVE")
 			return RunReVerify(cmd.Context(), ReVerifyOptions{
 				FromTask:    viper.GetString("tasks.reverify.from_task"),
 				Interactive: interactive,
@@ -196,12 +193,15 @@ func newReVerifyCmd() *cobra.Command {
 		"Existing task id to re-verify (empty triggers the picker)")
 	cmd.Flags().Bool(flagKeyInteractive, false,
 		"Run verifier in interactive (TUI) mode")
-	_ = viper.BindPFlag(
-		"tasks.reverify.from_task", cmd.Flags().Lookup(flagKeyFromTask))
-	_ = viper.BindEnv("tasks.reverify.from_task", "TASKS_REVERIFY_FROM_TASK")
-	_ = viper.BindPFlag(
-		"tasks.reverify.interactive", cmd.Flags().Lookup(flagKeyInteractive))
-	_ = viper.BindEnv(
-		"tasks.reverify.interactive", "TASKS_REVERIFY_INTERACTIVE")
+	bindFlagEnv(cmd,
+		flagEnvBinding{
+			"tasks.reverify.from_task", flagKeyFromTask,
+			"TASKS_REVERIFY_FROM_TASK",
+		},
+		flagEnvBinding{
+			"tasks.reverify.interactive", flagKeyInteractive,
+			"TASKS_REVERIFY_INTERACTIVE",
+		},
+	)
 	return cmd
 }

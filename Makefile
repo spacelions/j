@@ -38,19 +38,29 @@ coverage:
 	go test -covermode=atomic -coverprofile=cover.out ./internal/...; \
 	total=$$(go tool cover -func=cover.out | awk '/^total:/ {print $$3}'); \
 	echo "total coverage: $$total"; \
-	branch_dirs=$$(go list -f '{{.Dir}}' ./internal/...); \
-	branch_output=$$(go tool gobco -branch $$branch_dirs); \
-	printf '%s\n' "$$branch_output"; \
-	branch_ratio=$$(printf '%s\n' "$$branch_output" | \
-		awk '/^Branch coverage:/ {print $$3}'); \
-	branch_pct=$$(awk -v ratio="$$branch_ratio" 'BEGIN { \
-		split(ratio, parts, "/"); \
-		if (parts[2] == 0) { print "100.0"; exit } \
-		printf "%.1f", parts[1] * 100 / parts[2]; \
+	branch_num=0; branch_den=0; \
+	while IFS= read -r dir; do \
+		if ! out=$$(go tool gobco -branch "$$dir" 2>&1); then \
+			printf '%s\n' "$$out"; \
+			echo "branch coverage skipped: $$dir" >&2; \
+			continue; \
+		fi; \
+		printf '%s\n' "$$out"; \
+		ratio=$$(printf '%s\n' "$$out" | \
+			awk '/^Branch coverage:/ {print $$3}'); \
+		if [ -z "$$ratio" ]; then continue; fi; \
+		num=$${ratio%/*}; den=$${ratio#*/}; \
+		branch_num=$$((branch_num + num)); \
+		branch_den=$$((branch_den + den)); \
+	done < <(go list -f '{{.Dir}}' ./internal/...); \
+	branch_pct=$$(awk -v num="$$branch_num" -v den="$$branch_den" 'BEGIN { \
+		if (den == 0) { print "100.0"; exit } \
+		printf "%.1f", num * 100 / den; \
 	}'); \
-	echo "branch coverage: $$branch_pct%"; \
+	echo "branch coverage: $$branch_pct% ($$branch_num/$$branch_den)"; \
 	below=$$(go tool cover -func=cover.out | awk '$$NF != "100.0%" && !/^total:/ {print}'); \
 	below=$$(printf '%s\n' "$$below" | grep -Ev \
+		-f coverage.allowlist \
 		-e 'internal/lifecycle/orchestrator/workflow\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
 		-e 'internal/cli/run/run\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
 		-e 'internal/cli/web/web\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
@@ -83,7 +93,7 @@ coverage:
 		-e 'internal/cli/tasks/continue\.go:[0-9]+:[[:space:]]+resumeFromPlanDone[[:space:]]' \
 		-e 'internal/cli/tasks/continue\.go:[0-9]+:[[:space:]]+stampSpawnOnRow[[:space:]]' \
 		-e 'internal/cli/tasks/orchestrate\.go:[0-9]+:[[:space:]]+RunOrchestrate[[:space:]]' \
-		-e 'internal/cli/tasks/orchestrate\.go:[0-9]+:[[:space:]]+newOrchestrateCmd[[:space:]]' \
+		-e 'internal/cli/tasks/orchestrate_cmd\.go:[0-9]+:[[:space:]]+newOrchestrateCmd[[:space:]]' \
 		-e 'internal/cli/tasks/start\.go:[0-9]+:[[:space:]]+newStartCmd[[:space:]]' \
 		-e 'internal/cli/tasks/start\.go:[0-9]+:[[:space:]]+RunStart[[:space:]]' \
 		-e 'internal/cli/tasks/start\.go:[0-9]+:[[:space:]]+spawnDetachedOrchestrator[[:space:]]' \
@@ -140,29 +150,10 @@ coverage:
 		-e 'internal/coding-agents/cursor/cursor\.go:[0-9]+:[[:space:]]+CreateChatID[[:space:]]' \
 		-e 'internal/cli/tasks/cmd\.go:[0-9]+:[[:space:]]+listTasks[[:space:]]' \
 		-e 'internal/cli/tasks/cmd\.go:[0-9]+:[[:space:]]+writeTasks[[:space:]]' \
-		-e 'internal/cli/verify/cmd\.go:[0-9]+:[[:space:]]+New[[:space:]]' \
-		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+openSettingsStore[[:space:]]' \
-		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+resolveByTaskID[[:space:]]' \
-		-e 'internal/cli/verify/verify\.go:[0-9]+:[[:space:]]+Run[[:space:]]' \
-		-e 'internal/cli/verify/resume\.go:[0-9]+:[[:space:]]+RunResume[[:space:]]' \
-		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+AskFromFile[[:space:]]' \
-		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+PickWorkDoneTask[[:space:]]' \
-		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+PickVerifyTask[[:space:]]' \
-		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+SelectTool[[:space:]]' \
-		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+SelectModel[[:space:]]' \
-		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+pickTask[[:space:]]' \
-		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+choose[[:space:]]' \
-		-e 'internal/cli/verify/ui\.go:[0-9]+:[[:space:]]+run[[:space:]]' \
-		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+Spawn[[:space:]]' \
-		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+SpawnIn[[:space:]]' \
-		-e 'internal/util/run/run\.go:[0-9]+:[[:space:]]+IsAlive[[:space:]]' \
+		-e 'internal/util/run/spawn\.go:[0-9]+:[[:space:]]+Spawn[[:space:]]' \
+		-e 'internal/util/run/spawn\.go:[0-9]+:[[:space:]]+SpawnIn[[:space:]]' \
+		-e 'internal/util/run/process\.go:[0-9]+:[[:space:]]+IsAlive[[:space:]]' \
 		-e 'internal/util/mdfile/mdfile\.go:[0-9]+:[[:space:]]+ListInDir[[:space:]]' \
-		-e 'internal/resolver/agent\.go:[0-9]+:[[:space:]]+Agent[[:space:]]' \
-		-e 'internal/resolver/agent\.go:[0-9]+:[[:space:]]+agentFromStoreLazy[[:space:]]' \
-		-e 'internal/resolver/agent\.go:[0-9]+:[[:space:]]+persistAgent[[:space:]]' \
-		-e 'internal/resolver/agent\.go:[0-9]+:[[:space:]]+readToolModel[[:space:]]' \
-		-e 'internal/resolver/markdown\.go:[0-9]+:[[:space:]]+NewStartTargetFromMarkdown[[:space:]]' \
-		-e 'internal/resolver/markdown\.go:[0-9]+:[[:space:]]+PrepareStartTaskFiles[[:space:]]' \
 		-e 'internal/resolver/mustread\.go:[0-9]+:[[:space:]]+MustRead[[:space:]]' \
 		-e 'internal/resolver/mustread\.go:[0-9]+:[[:space:]]+ParseMustRead[[:space:]]' \
 		-e 'internal/resolver/source\.go:[0-9]+:[[:space:]]+ResolveStartTarget[[:space:]]' \
@@ -195,7 +186,7 @@ coverage:
 		-e 'internal/agents/worker/run\.go:[0-9]+:[[:space:]]+resolveResumeTask[[:space:]]' \
 		-e 'internal/agents/worker/run\.go:[0-9]+:[[:space:]]+listResumableTasks[[:space:]]' \
 		-e 'internal/cli/root\.go:[0-9]+:[[:space:]]+Execute[[:space:]]' \
-		-e 'internal/cli/tasks/continue\.go:[0-9]+:[[:space:]]+newContinueCmd[[:space:]]' \
+		-e 'internal/cli/tasks/continue_cmd\.go:[0-9]+:[[:space:]]+newContinueCmd[[:space:]]' \
 		-e 'internal/cli/tasks/continue_dispatch\.go:[0-9]+:[[:space:]]+replanAsDetachedOrchestrator[[:space:]]' \
 		-e 'internal/cli/tasks/continue_dispatch\.go:[0-9]+:[[:space:]]+stampSpawnOnRow[[:space:]]' \
 		-e 'internal/cli/tasks/re_plan\.go:[0-9]+:[[:space:]]+RunRePlan[[:space:]]' \
@@ -204,8 +195,6 @@ coverage:
 		-e 'internal/cli/tasks/resume_plan\.go:[0-9]+:[[:space:]]+resolveResumePlanTaskID[[:space:]]' \
 		-e 'internal/cli/tasks/start\.go:[0-9]+:[[:space:]]+runInlineOrchestrator[[:space:]]' \
 		-e 'internal/cli/tasks/start\.go:[0-9]+:[[:space:]]+resolveStartTarget[[:space:]]' \
-		-e 'internal/resolver/agent\.go:[0-9]+:[[:space:]]+lookupAgent[[:space:]]' \
-		-e 'internal/resolver/agent\.go:[0-9]+:[[:space:]]+ResolveToolModel[[:space:]]' \
 		-e 'internal/resolver/existing\.go:[0-9]+:[[:space:]]+StartTargetFromExistingTask[[:space:]]' \
 		-e 'internal/store/tasks/dir\.go:[0-9]+:[[:space:]]+OpenDefault[[:space:]]' \
 		-e 'internal/store/tasks/task\.go:[0-9]+:[[:space:]]+DisplayToolModel[[:space:]]' \

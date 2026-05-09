@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/store"
@@ -92,13 +91,9 @@ func (o StartOptions) withDefaults() StartOptions {
 }
 
 func startPlanRequiresApprovalOverride(cmd *cobra.Command) (*bool, error) {
-	approvalSet := cmd.Flags().Changed("plan-requires-approval") ||
-		envSet("TASKS_START_PLAN_REQUIRES_APPROVAL")
-	if approvalSet {
-		v := viper.GetBool("tasks.start.plan_requires_approval")
-		return &v, nil
-	}
-	return nil, nil
+	return explicitBoolPtr(cmd, "plan-requires-approval",
+		"tasks.start.plan_requires_approval",
+		"TASKS_START_PLAN_REQUIRES_APPROVAL"), nil
 }
 
 func envSet(name string) bool {
@@ -128,27 +123,26 @@ func bindStartFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("plan-requires-approval", false,
 		"Override project.plan_requires_approval for this run "+
 			"(use =false to skip once)")
-	bindings := []struct{ key, flag, env string }{
-		{"tasks.start.from_file", "from-file", "TASKS_START_FROM_FILE"},
-		{
+	bindFlagEnv(cmd,
+		bindEnv("tasks.start.from_file", "from-file", "TASKS_START_FROM_FILE"),
+		bindEnv(
 			"tasks.start.from_linear", "from-linear",
 			"TASKS_START_FROM_LINEAR",
-		},
-		{"tasks.start.from_task", flagKeyFromTask, "TASKS_START_FROM_TASK"},
-		{"tasks.start.tool", flagKeyTool, "TASKS_START_TOOL"},
-		{"tasks.start.model", flagKeyModel, "TASKS_START_MODEL"},
-		{
+		),
+		bindEnv(
+			"tasks.start.from_task", flagKeyFromTask,
+			"TASKS_START_FROM_TASK",
+		),
+		bindEnv("tasks.start.tool", flagKeyTool, "TASKS_START_TOOL"),
+		bindEnv("tasks.start.model", flagKeyModel, "TASKS_START_MODEL"),
+		bindEnv(
 			"tasks.start.interactive", flagKeyInteractive,
 			"TASKS_START_INTERACTIVE",
-		},
-		{"tasks.start.yes", "yes", "TASKS_START_YES"},
-		{
+		),
+		bindEnv("tasks.start.yes", "yes", "TASKS_START_YES"),
+		bindEnv(
 			"tasks.start.plan_requires_approval", "plan-requires-approval",
 			"TASKS_START_PLAN_REQUIRES_APPROVAL",
-		},
-	}
-	for _, b := range bindings {
-		_ = viper.BindPFlag(b.key, cmd.Flags().Lookup(b.flag))
-		_ = viper.BindEnv(b.key, b.env)
-	}
+		),
+	)
 }
