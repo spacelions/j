@@ -15,7 +15,6 @@ import (
 
 	"github.com/spacelions/j/internal/agents/prompts"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/util/agentlog"
 	"github.com/spacelions/j/internal/util/run"
 )
 
@@ -116,8 +115,8 @@ func (*Agent) CheckLogin(ctx context.Context) error {
 //     stream-json --verbose --include-partial-messages
 //     --dangerously-skip-permissions --model <m> -- <prompt>`. We
 //     drop `--permission-mode plan` here on purpose: plan mode is
-//     read-only and would forbid every write tool call, blocking the
-//     prompt's "save requirements/plan" instructions.
+//     read-only and would forbid every write tool call, blocking
+//     the prompt's "save requirements/plan" instructions.
 //     `--dangerously-skip-permissions` auto-approves tool calls and
 //     skips the workspace-trust prompt; combined they make the
 //     headless run actually complete without stalling. The
@@ -157,10 +156,8 @@ func (a *Agent) Plan(
 		sessionArgs(req.ResumeChatID, req.Resume),
 		headlessArgs(req.Model, prompt)...,
 	)
-	pid, err := run.SpawnPipedIn(
-		ctx, workspace, req.AgentLogPath,
-		agentlog.ClaudeStream(),
-		Binary, hargs...,
+	pid, err := run.SpawnIn(
+		ctx, workspace, req.AgentLogPath, Binary, hargs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
@@ -198,10 +195,10 @@ func headlessArgs(model, prompt string) []string {
 //     + verbose + include-partial-messages + dangerously-skip-perms),
 //     fire-and-forget. claude's stdout / stderr are redirected to
 //     req.AgentLogPath via run.SpawnIn — the raw JSON event lines
-//     interleave with the existing lifecycle markers so a tailer
-//     sees every assistant content block / tool call / tool result,
-//     not just the final assistant text. The spawned PID is
-//     returned so `j work` can record it for later reaping.
+//     interleave with the existing lifecycle markers so the per-task
+//     agent.log captures every assistant content block / tool call /
+//     tool result, not just the final assistant text. The spawned
+//     PID is returned so `j work` can record it for later reaping.
 func (a *Agent) Work(
 	ctx context.Context, req codingagents.WorkRequest,
 ) (int, error) {
@@ -225,10 +222,8 @@ func (a *Agent) Work(
 		sessionArgs(req.ResumeChatID, req.Resume),
 		headlessArgs(req.Model, prompt)...,
 	)
-	pid, err := run.SpawnPipedIn(
-		ctx, workspace, req.AgentLogPath,
-		agentlog.ClaudeStream(),
-		Binary, pargs...,
+	pid, err := run.SpawnIn(
+		ctx, workspace, req.AgentLogPath, Binary, pargs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
@@ -265,10 +260,8 @@ func (a *Agent) Verify(
 		sessionArgs(req.ResumeChatID, req.Resume),
 		headlessArgs(req.Model, prompt)...,
 	)
-	pid, err := run.SpawnPipedIn(
-		ctx, workspace, req.AgentLogPath,
-		agentlog.ClaudeStream(),
-		Binary, pargs...,
+	pid, err := run.SpawnIn(
+		ctx, workspace, req.AgentLogPath, Binary, pargs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)

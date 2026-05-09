@@ -45,20 +45,17 @@ func (passThrough) FormatStderr(line []byte) [][]byte {
 	return [][]byte{prefixed("stderr: ", line)}
 }
 
-// ClaudeStream returns a formatter that parses Anthropic's
-// `--output-format stream-json --verbose` event stream into
-// `label: content` log lines (`session:`, `text:`, `thinking:`,
-// `tool_use(...):`, `tool_result(...):`, `result:`). Unknown JSON
-// shapes and non-JSON lines are emitted as `unparsed: <raw>` so a
-// human reading agent.log still sees the bytes.
+// ClaudeStream parses Anthropic's `--output-format stream-json
+// --verbose` events into `label: content` log lines (`session:`,
+// `text:`, `thinking:`, `tool_use(...):`, `tool_result(...):`,
+// `result:`). Unknown JSON / non-JSON lines round-trip as
+// `unparsed: <raw>` so nothing is silently lost.
 func ClaudeStream() LineFormatter { return jsonStream{} }
 
-// CursorStream is the cursor-agent counterpart to ClaudeStream. The
-// cursor-agent stream-json schema mirrors Anthropic's (system init,
-// assistant / user content blocks, result), so the two backends
-// share the same parser; the named constructor exists to give
-// callers a stable API surface even if the schemas drift apart
-// later.
+// CursorStream is the cursor-agent counterpart to ClaudeStream.
+// cursor-agent's stream-json schema mirrors Anthropic's, so the two
+// share the same parser; the named constructor exists so callers
+// get a stable API even if the schemas drift apart later.
 func CursorStream() LineFormatter { return jsonStream{} }
 
 // jsonStream is the shared formatter used by ClaudeStream() and

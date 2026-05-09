@@ -119,17 +119,10 @@ func (*Agent) CheckLogin(ctx context.Context) error {
 	return nil
 }
 
-// Plan runs cursor-agent against req. The agent saves
-// requirements.md / plan.md into the per-task folder before exiting;
-// the orchestrator reads them after. Interactive launches the TUI
-// with --mode plan; headless drops --mode plan (it is read-only and
-// blocks the save instructions) and adds --force --trust to
-// auto-approve tool calls. Headless asks for `--output-format
-// stream-json --stream-partial-output` so cursor-agent emits one
-// JSON event per assistant content block / tool call / tool result
-// (instead of just the final assistant text); those raw event lines
-// land verbatim in req.AgentLogPath via run.Spawn, interleaved with
-// the existing lifecycle markers. The spawned PID is returned.
+// Plan runs cursor-agent against req. Interactive launches the TUI
+// with --mode plan; headless drops --mode plan (read-only blocks
+// the save instructions) and pipes stream-json output through
+// agentlog.CursorStream() into req.AgentLogPath via runHeadless.
 func (*Agent) Plan(
 	ctx context.Context, req codingagents.PlanRequest,
 ) (int, error) {
@@ -190,30 +183,14 @@ func runHeadless(
 	return pid, nil
 }
 
-// Work runs cursor-agent against a previously generated plan markdown.
-// The agent edits files in the plan's directory directly, so we do not
-// pass --mode plan and we do not capture stdout for a file write. Two
-// flavours are supported:
-//
-//   - Interactive: launch cursor's TUI with the worker prompt as the
-//     initial user message; the user drives the session until cursor
-//     exits. The interactive branch does not gain --force/--trust
-//     because the user can approve tool calls and the workspace
-//     trust prompt manually in the TUI.
-//   - Headless: same flag set as Plan's headless branch
-//     (stream-json + stream-partial-output + --force --trust),
-//     fire-and-forget. --force auto-approves tool calls (no
-//     interactive approval prompts) and --trust skips the workspace
-//     trust prompt (it only takes effect with --print/headless);
-//     together they make `j work` against cursor actually run
-//     end-to-end without stalling on prompts. cursor-agent's
-//     stdout / stderr go straight into req.AgentLogPath via
-//     run.Spawn — the JSON event lines interleave with the existing
-//     lifecycle markers so the per-task agent.log captures every
-//     assistant content block / tool call / tool result, not just
-//     the final assistant text. The spawned PID is returned so
-//     `j work` can record it for later reaping. The interactive
-//     path stays synchronous and returns 0.
+// Work runs cursor-agent against a previously generated plan
+// markdown. Interactive launches the TUI with the worker prompt as
+// the initial user message; the user drives the session and
+// approves tool calls / workspace trust manually. Headless reuses
+// the Plan headless flag set (stream-json piped through
+// agentlog.CursorStream() into req.AgentLogPath); --force --trust
+// auto-approve tool calls and the workspace trust prompt so the
+// run does not stall.
 func (*Agent) Work(
 	ctx context.Context, req codingagents.WorkRequest,
 ) (int, error) {
@@ -240,28 +217,14 @@ func (*Agent) Work(
 		workspace, prompt, req.AgentLogPath)
 }
 
-// Verify runs cursor-agent against the requirements + plan pair. The
-// agent saves the draft verifier plan and the findings markdown
-// before exiting; the orchestrator reads the findings afterwards to
-// derive the VERDICT verdict. Two flavours mirror Plan / Work:
-//
-//   - Interactive: launch cursor's TUI without --mode plan. The
-//     verifier must edit verifier_plan.md / verifier_findings.md
-//     and (on FAIL) project files, so plan mode would block those
-//     writes. The interactive branch does not gain --force/--trust;
-//     the user can approve writes manually in the TUI.
-//   - Headless: same headless flag set as Work (stream-json +
-//     stream-partial-output landing verbatim in req.AgentLogPath via
-//     run.Spawn), fire-and-forget. --mode plan is intentionally
-//     absent for the same reason as Work: the verifier needs write
-//     access to its output files.
-//
-// Unlike Plan and Work, Verify runs with `--workspace <project-root>`
-// (not `.j/tasks/<id>/`): the verifier inspects the worktree named
-// in req.Worktree via `git worktree list`, which only works from the
-// repository's main checkout. Plan and Work still use
-// DefaultWorkspace because they want the self-contained per-task
-// folder.
+// Verify runs cursor-agent against the requirements + plan pair.
+// The agent saves the draft verifier plan and the findings markdown
+// before exiting. Interactive and headless flag sets mirror Work;
+// `--mode plan` is intentionally absent because the verifier needs
+// write access to verifier_plan.md / verifier_findings.md. Verify
+// uses `--workspace <project-root>` so the agent can `git worktree
+// list` the target worktree (which only works from the repository's
+// main checkout).
 func (*Agent) Verify(
 	ctx context.Context, req codingagents.VerifyRequest,
 ) (int, error) {
