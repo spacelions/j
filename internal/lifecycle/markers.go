@@ -127,6 +127,8 @@ func eventToPhaseVerb(e tasks.Event) (phase, verb string) {
 		return phaseVerify, "error"
 	case tasks.EventVerifyStuck:
 		return phaseVerify, "stuck"
+	case tasks.EventVerifyNeedsClarification:
+		return phaseVerify, "needs clarification"
 	case tasks.EventReaperVerifyNeedsClarification:
 		return phaseVerify, "needs clarification"
 	}

@@ -117,15 +117,16 @@ func linearStateSyncHook(tr tasks.Transition, task tasks.Task) {
 }
 
 // isNeedsClarificationEvent narrows the comment+reminder branch to
-// the five entries into `needs-clarification`: the foreground planner
-// and worker exits (`EventPlanNeedsClarification`,
-// `EventWorkNeedsClarification`) plus the three reaper-driven events.
-// Resume events leaving the state, or any unrelated transition, must
-// NOT trigger the comment / reminder traffic.
+// the entries into `needs-clarification`: the three foreground exits
+// (`EventPlanNeedsClarification`, `EventWorkNeedsClarification`,
+// `EventVerifyNeedsClarification`) plus the three reaper-driven
+// events. Resume events leaving the state, or any unrelated
+// transition, must NOT trigger the comment / reminder traffic.
 func isNeedsClarificationEvent(ev tasks.Event) bool {
 	switch ev {
 	case tasks.EventPlanNeedsClarification,
 		tasks.EventWorkNeedsClarification,
+		tasks.EventVerifyNeedsClarification,
 		tasks.EventReaperPlanNeedsClarification,
 		tasks.EventReaperWorkNeedsClarification,
 		tasks.EventReaperVerifyNeedsClarification:

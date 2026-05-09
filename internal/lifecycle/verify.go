@@ -2,6 +2,8 @@ package lifecycle
 
 import (
 	"io"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spacelions/j/internal/store/tasks"
@@ -86,7 +88,11 @@ func (lc *VerifyLifecycle) RecordBackground(pid int, logPath string) {
 }
 
 // Finish stamps verify_end_at and picks the terminal status from
-// (outcome, runErr).
+// (outcome, runErr, clarification.md presence). runErr wins, then
+// clarification.md (the resume agent re-raised the question), then
+// the PASS / FAIL outcome — mirroring the planner / worker matrix
+// so AC4's "task goes back to needs-clarification for another
+// round" symmetry holds across all three phases.
 func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
 	if lc.closed {
 		return
@@ -94,19 +100,47 @@ func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
 	lc.closed = true
 	lc.task.VerifyEndAt = time.Now().UTC()
 
-	var ev tasks.Event
-	switch {
-	case runErr != nil:
-		ev = tasks.EventVerifyError
-	case outcome == VerifyOutcomeSuccess:
-		ev = tasks.EventVerifyPass
-	default:
-		ev = tasks.EventVerifyFail
-	}
+	ev := lc.pickFinishEvent(outcome, runErr)
 	if _, err := tasks.ApplyAndPersistWarn(
 		lc.stderr, &lc.task, ev); err != nil {
 		panic("verify finish: " + err.Error())
 	}
+}
+
+// pickFinishEvent decides which event drives the verify-finish
+// transition. Error path takes precedence over the clarification
+// check; clarification.md presence wins over the PASS/FAIL outcome
+// so a re-raised question never silently lands at completed/failed.
+// Mirrors PlanLifecycle.pickFinishEvent and
+// WorkLifecycle.pickFinishEvent.
+func (lc *VerifyLifecycle) pickFinishEvent(
+	outcome VerifyOutcome, runErr error,
+) tasks.Event {
+	if runErr != nil {
+		return tasks.EventVerifyError
+	}
+	if lc.clarificationPresent() {
+		return tasks.EventVerifyNeedsClarification
+	}
+	if outcome == VerifyOutcomeSuccess {
+		return tasks.EventVerifyPass
+	}
+	return tasks.EventVerifyFail
+}
+
+// clarificationPresent reports whether the verifier left
+// `<tasksDir>/<task.ID>/clarification.md` on disk. A missing tasks
+// dir or any other stat error counts as "absent" so the historical
+// PASS/FAIL matrix stays the default.
+func (lc *VerifyLifecycle) clarificationPresent() bool {
+	tasksDir, err := tasks.DefaultDir()
+	if err != nil {
+		return false
+	}
+	path := filepath.Join(
+		tasksDir, lc.task.ID, tasks.ClarificationFileName)
+	_, err = os.Stat(path)
+	return err == nil
 }
 
 // IterationBegin records the iteration cap so a later FAIL Verdict
