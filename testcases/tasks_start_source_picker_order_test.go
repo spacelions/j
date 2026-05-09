@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/spacelions/j/internal/cli/picker"
-	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/resolver"
 	storetasks "github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/tools/linear"
 )
 
 // recordingStartUI captures the `allowed` slice that

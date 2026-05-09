@@ -130,14 +130,14 @@ linters:
       # G101 false positive: URL constant is not a credential
       - linters: [gosec]
         text: "G101"
-        path: "internal/linear/client\\.go"
+        path: "internal/tools/linear/client\\.go"
       # Test token constants are intentional test fixtures
       - linters: [gosec]
         text: "G101"
         path: "_test\\.go|testcases/"
       # exec.Command without context is intentional in browser opener and test helpers
       - linters: [noctx]
-        path: "internal/linear/browser\\.go"
+        path: "internal/tools/linear/browser\\.go"
       - linters: [noctx]
         path: "_test\\.go"
       # Test-local error types don't need to follow package naming conventions

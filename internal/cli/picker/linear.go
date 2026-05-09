@@ -8,7 +8,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 
-	"github.com/spacelions/j/internal/linear"
+	"github.com/spacelions/j/internal/tools/linear"
 )
 
 // PromptLinearAPIKey opens openURL in the user's default browser

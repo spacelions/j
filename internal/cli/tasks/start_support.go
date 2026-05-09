@@ -11,9 +11,9 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/picker"
-	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/tools/linear"
 )
 
 // StartUI is the slice of picker methods RunStart drives when

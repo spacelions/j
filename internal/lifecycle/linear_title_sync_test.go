@@ -10,9 +10,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/tools/linear"
 )
 
 // titleSyncEnv mirrors stateSyncEnv but classifies issueUpdate

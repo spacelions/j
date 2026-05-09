@@ -7,8 +7,8 @@ import (
 	"io"
 
 	"github.com/spacelions/j/internal/cli/picker"
-	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/tools/linear"
 )
 
 // StartUI is the picker surface RunStart needs. Mirrors
