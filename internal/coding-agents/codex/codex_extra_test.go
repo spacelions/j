@@ -51,6 +51,22 @@ func readCalls(t *testing.T, path string) []string {
 	return testutil.ReadNullArgs(t, path)
 }
 
+func assertNoPlannerModeArgs(t *testing.T, argv []string) {
+	t.Helper()
+	for _, banned := range []string{
+		argAskForApproval,
+		argOnRequest,
+		argSandbox,
+		argReadOnly,
+	} {
+		for _, arg := range argv {
+			if arg == banned {
+				t.Fatalf("argv includes planner-only arg %q: %v", arg, argv)
+			}
+		}
+	}
+}
+
 // TestCheckLogin_LoggedIn pins the happy path: `codex login status`
 // exits 0 and CheckLogin returns nil.
 func TestCheckLogin_LoggedIn(t *testing.T) {
@@ -106,10 +122,11 @@ func planRequest(
 	}
 }
 
-// TestPlan_Interactive pins the interactive flow's argv shape:
-// `[-m m] -- <prompt>` with the prompt as the trailing positional.
-// The headless `exec` subcommand and resume keyword must NOT appear
-// when ResumeChatID is empty.
+// TestPlan_Interactive pins the planner interactive argv shape:
+// `[-m m] --ask-for-approval on-request --sandbox read-only --
+// <prompt>` with the prompt as the trailing positional. The headless
+// `exec` subcommand and resume keyword must NOT appear when
+// ResumeChatID is empty.
 func TestPlan_Interactive(t *testing.T) {
 	dir, target := stagePlanFiles(t)
 	calls := installStub(t, "", 0)
@@ -124,11 +141,16 @@ func TestPlan_Interactive(t *testing.T) {
 		t.Fatalf("Plan pid = %d, want 0 for interactive", pid)
 	}
 	argv := readCalls(t, calls)
-	// Leading args: -m gpt-5.5 -- <prompt>. Length is 4.
-	if len(argv) != 4 {
-		t.Fatalf("argv = %v, want len 4", argv)
+	// Leading args plus trailing prompt positional. Length is 8.
+	if len(argv) != 8 {
+		t.Fatalf("argv = %v, want len 8", argv)
 	}
-	want := []string{"-m", "gpt-5.5", "--"}
+	want := []string{
+		"-m", "gpt-5.5",
+		"--ask-for-approval", "on-request",
+		"--sandbox", "read-only",
+		"--",
+	}
 	for i, v := range want {
 		if argv[i] != v {
 			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
@@ -147,7 +169,8 @@ func TestPlan_Interactive(t *testing.T) {
 }
 
 // TestPlan_Interactive_Resume pins the interactive resume flow's
-// argv: `resume <id> -m <m> -- <prompt>`.
+// argv: `resume <id> -m <m> --ask-for-approval on-request
+// --sandbox read-only -- <prompt>`.
 func TestPlan_Interactive_Resume(t *testing.T) {
 	dir, target := stagePlanFiles(t)
 	calls := installStub(t, "", 0)
@@ -160,10 +183,15 @@ func TestPlan_Interactive_Resume(t *testing.T) {
 		t.Fatalf("Plan: %v", err)
 	}
 	argv := readCalls(t, calls)
-	if len(argv) != 6 {
-		t.Fatalf("argv = %v, want len 6", argv)
+	if len(argv) != 10 {
+		t.Fatalf("argv = %v, want len 10", argv)
 	}
-	want := []string{"resume", rid, "-m", "gpt-5.5", "--"}
+	want := []string{
+		"resume", rid, "-m", "gpt-5.5",
+		"--ask-for-approval", "on-request",
+		"--sandbox", "read-only",
+		"--",
+	}
 	for i, v := range want {
 		if argv[i] != v {
 			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
@@ -199,6 +227,7 @@ func TestPlan_Headless(t *testing.T) {
 	if len(argv) != len(want)+1 {
 		t.Fatalf("argv = %v, want len %d", argv, len(want)+1)
 	}
+	assertNoPlannerModeArgs(t, argv)
 	for i, v := range want {
 		if argv[i] != v {
 			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
@@ -232,6 +261,7 @@ func TestPlan_Headless_Resume(t *testing.T) {
 	if len(argv) != len(want)+1 {
 		t.Fatalf("argv = %v, want len %d", argv, len(want)+1)
 	}
+	assertNoPlannerModeArgs(t, argv)
 	for i, v := range want {
 		if argv[i] != v {
 			t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
@@ -346,6 +376,7 @@ func TestWork(t *testing.T) {
 			if len(argv) != expectedLen {
 				t.Fatalf("argv = %v, want len %d", argv, expectedLen)
 			}
+			assertNoPlannerModeArgs(t, argv)
 			for i, v := range want {
 				if argv[i] != v {
 					t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)
@@ -445,6 +476,7 @@ func TestVerify(t *testing.T) {
 			if len(argv) != expectedLen {
 				t.Fatalf("argv = %v, want len %d", argv, expectedLen)
 			}
+			assertNoPlannerModeArgs(t, argv)
 			for i, v := range want {
 				if argv[i] != v {
 					t.Fatalf("arg[%d] = %q, want %q", i, argv[i], v)

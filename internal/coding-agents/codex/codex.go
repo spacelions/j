@@ -53,6 +53,11 @@ const (
 	argModel   = "-m"
 	argSkipGit = "--skip-git-repo-check"
 	argBypass  = "--dangerously-bypass-approvals-and-sandbox"
+
+	argAskForApproval = "--ask-for-approval"
+	argOnRequest      = "on-request"
+	argSandbox        = "--sandbox"
+	argReadOnly       = "read-only"
 )
 
 // defaultModels is the picker list shown for `j plan / j work / j verify`.
@@ -117,11 +122,12 @@ func (*Agent) CheckLogin(ctx context.Context) error {
 
 // Plan runs codex against req. Two flavours are supported:
 //
-//   - Interactive: launch the codex TUI with the prompt as the
-//     initial user message (`codex [-m <m>] -- <prompt>`) and the
-//     per-task workspace as cmd.Dir. For resume runs we use
-//     `codex resume <id> [-m <m>] -- <prompt>` so the picker is
-//     skipped and the previous thread continues.
+//   - Interactive: launch the codex TUI in read-only sandbox mode
+//     with approval-on-request behavior and the prompt as the initial
+//     user message (`codex [-m <m>] --ask-for-approval on-request
+//     --sandbox read-only -- <prompt>`) in the per-task workspace.
+//     For resume runs we use `codex resume <id> [-m <m>] ...` so the
+//     picker is skipped and the previous thread continues.
 //   - Headless: `codex exec [resume <id>] [-m <m>] --skip-git-repo-check
 //     --dangerously-bypass-approvals-and-sandbox -- <prompt>`. The
 //     bypass flag auto-approves shell + write tool calls so the
@@ -135,10 +141,15 @@ func (a *Agent) Plan(
 ) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.FromFilePath)
 	prompt := prompts.PlanPrompt(req)
-	return a.runPhase(
-		ctx, req.Interactive, workspace, req.ResumeChatID,
-		req.Model, prompt, req.AgentLogPath,
-	)
+	return a.runPhase(ctx, phaseRun{
+		interactive:  req.Interactive,
+		workspace:    workspace,
+		agentLogPath: req.AgentLogPath,
+		interactiveArgs: interactivePlannerArgs(
+			req.ResumeChatID, req.Model, prompt,
+		),
+		headlessArgs: headlessArgs(req.ResumeChatID, req.Model, prompt),
+	})
 }
 
 // Work runs codex against a previously generated plan markdown.
@@ -147,10 +158,13 @@ func (a *Agent) Work(
 ) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.PlanPath)
 	prompt := prompts.WorkPrompt(req)
-	return a.runPhase(
-		ctx, req.Interactive, workspace, req.ResumeChatID,
-		req.Model, prompt, req.AgentLogPath,
-	)
+	return a.runPhase(ctx, phaseRun{
+		interactive:     req.Interactive,
+		workspace:       workspace,
+		agentLogPath:    req.AgentLogPath,
+		interactiveArgs: interactiveArgs(req.ResumeChatID, req.Model, prompt),
+		headlessArgs:    headlessArgs(req.ResumeChatID, req.Model, prompt),
+	})
 }
 
 // Verify runs codex against the requirements + plan pair. Like the
@@ -161,30 +175,40 @@ func (a *Agent) Verify(
 ) (int, error) {
 	workspace := codingagents.ProjectRootWorkspace()
 	prompt := prompts.VerifyPrompt(req)
-	return a.runPhase(
-		ctx, req.Interactive, workspace, req.ResumeChatID,
-		req.Model, prompt, req.AgentLogPath,
-	)
+	return a.runPhase(ctx, phaseRun{
+		interactive:     req.Interactive,
+		workspace:       workspace,
+		agentLogPath:    req.AgentLogPath,
+		interactiveArgs: interactiveArgs(req.ResumeChatID, req.Model, prompt),
+		headlessArgs:    headlessArgs(req.ResumeChatID, req.Model, prompt),
+	})
 }
 
-// runPhase is the shared dispatcher for Plan / Work / Verify. The
-// interactive vs headless split is identical across phases — only the
-// workspace and prompt differ — so threading them through this helper
-// keeps every phase under the 80-line method cap.
-func (a *Agent) runPhase(
-	ctx context.Context, interactive bool,
-	workspace, resumeID, model, prompt, agentLogPath string,
-) (int, error) {
-	if interactive {
-		args := interactiveArgs(resumeID, model, prompt)
-		if err := run.RunIn(ctx, workspace, Binary, args...); err != nil {
+type phaseRun struct {
+	interactive     bool
+	workspace       string
+	agentLogPath    string
+	interactiveArgs []string
+	headlessArgs    []string
+}
+
+// runPhase is the shared dispatcher for Plan / Work / Verify.
+func (a *Agent) runPhase(ctx context.Context, phase phaseRun) (int, error) {
+	if phase.interactive {
+		if err := run.RunIn(
+			ctx, phase.workspace, Binary, phase.interactiveArgs...,
+		); err != nil {
 			return 0, fmt.Errorf("codex: %w", err)
 		}
 		return 0, nil
 	}
-	args := headlessArgs(resumeID, model, prompt)
 	pid, err := run.SpawnFormattedIn(
-		ctx, workspace, agentLogPath, a.FormatLog, Binary, args...,
+		ctx,
+		phase.workspace,
+		phase.agentLogPath,
+		a.FormatLog,
+		Binary,
+		phase.headlessArgs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("codex: %w", err)
@@ -199,6 +223,19 @@ func (a *Agent) runPhase(
 func interactiveArgs(resumeID, model, prompt string) []string {
 	args := leadArgs("", resumeID)
 	args = appendModel(args, model)
+	return append(args, "--", prompt)
+}
+
+// interactivePlannerArgs returns the argv for interactive planning.
+// It keeps the regular interactive resume / model / prompt layout and
+// adds Codex's read-only sandbox plus approval-on-request behavior.
+func interactivePlannerArgs(resumeID, model, prompt string) []string {
+	args := leadArgs("", resumeID)
+	args = appendModel(args, model)
+	args = append(args,
+		argAskForApproval, argOnRequest,
+		argSandbox, argReadOnly,
+	)
 	return append(args, "--", prompt)
 }
 

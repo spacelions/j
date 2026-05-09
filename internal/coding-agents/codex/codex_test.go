@@ -54,9 +54,10 @@ func TestListModels_StaticAliases(t *testing.T) {
 }
 
 // TestInteractiveArgs pins the argv built for the interactive
-// entrypoint: fresh runs go straight to `codex [-m m] -- <prompt>`,
-// resume runs prepend `resume <id>`, and the literal `--` separator
-// always lands so a leading-dash prompt body is not parsed as a flag.
+// Work / Verify entrypoint: fresh runs go straight to
+// `codex [-m m] -- <prompt>`, resume runs prepend `resume <id>`, and
+// the literal `--` separator always lands so a leading-dash prompt
+// body is not parsed as a flag.
 func TestInteractiveArgs(t *testing.T) {
 	cases := []struct {
 		name, resume, model, prompt string
@@ -84,6 +85,65 @@ func TestInteractiveArgs(t *testing.T) {
 			got := interactiveArgs(tc.resume, tc.model, tc.prompt)
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("interactiveArgs = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestInteractivePlannerArgs pins the argv built for interactive
+// planning. It adds read-only sandboxing and approval-on-request
+// behavior while preserving resume, model, and prompt placement.
+func TestInteractivePlannerArgs(t *testing.T) {
+	cases := []struct {
+		name, resume, model, prompt string
+		want                        []string
+	}{
+		{
+			"fresh-with-model", "", "gpt-5.5", "do work",
+			[]string{
+				"-m", "gpt-5.5",
+				"--ask-for-approval", "on-request",
+				"--sandbox", "read-only",
+				"--", "do work",
+			},
+		},
+		{
+			"fresh-no-model", "", "", "do work",
+			[]string{
+				"--ask-for-approval", "on-request",
+				"--sandbox", "read-only",
+				"--", "do work",
+			},
+		},
+		{
+			"resume-with-model", "abc", "gpt-5.5", "do work",
+			[]string{
+				"resume", "abc", "-m", "gpt-5.5",
+				"--ask-for-approval", "on-request",
+				"--sandbox", "read-only",
+				"--", "do work",
+			},
+		},
+		{
+			"resume-no-model", "abc", "", "do work",
+			[]string{
+				"resume", "abc",
+				"--ask-for-approval", "on-request",
+				"--sandbox", "read-only",
+				"--", "do work",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := interactivePlannerArgs(
+				tc.resume, tc.model, tc.prompt,
+			)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf(
+					"interactivePlannerArgs = %v, want %v",
+					got, tc.want,
+				)
 			}
 		})
 	}
