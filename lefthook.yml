@@ -1,11 +1,20 @@
 # Lefthook config. Install once per clone with `make install-hooks`
 # (which runs `go tool lefthook install` and wires the git hooks).
 #
+# commit-msg runs:
+#   1. commit-message: fails if the commit subject does not follow the
+#      project SPA message format.
+#
 # pre-commit runs:
 #   1. line-cap: fails if any staged non-test file exceeds 300 lines, any
 #      line exceeds 80 chars, or any method exceeds 80 lines.
 #   2. lint:     runs `make lint` (golangci-lint over the whole module).
 #   3. tests:    runs `make test`.
+
+commit-msg:
+  commands:
+    commit-message:
+      run: .hooks/check-commit-message {1}
 
 pre-commit:
   piped: true

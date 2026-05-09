@@ -4,6 +4,10 @@
 - Do not introduce seams, use allowlist instead
 - MUST not introduce a package only for testing, use testutil instead.
 
+- Commit messages must follow:
+  `<type>(<component>)[SPA-<number>]: title`, where `<type>` is one of
+  `feat`, `chore`, `build`, `fix`, `style`, `docs`, or `refactor`.
+
 - Command line tools
   - use `fd` to replace `find`
   - use `z` to replace `cd`, 

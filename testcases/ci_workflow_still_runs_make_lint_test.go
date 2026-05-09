@@ -1,10 +1,7 @@
 package testcases_test
 
 import (
-	"os"
-	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -14,17 +11,7 @@ import (
 // push/PR. The hook addition is a local-developer convenience; CI
 // coverage must not regress.
 func TestCI_Workflow_StillRunsMakeLint(t *testing.T) {
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
-	}
-	repoRoot := filepath.Dir(filepath.Dir(thisFile))
-	path := filepath.Join(repoRoot, ".github", "workflows", "ci.yml")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile %s: %v", path, err)
-	}
-	body := string(raw)
+	body := readRepoFile(t, ".github", "workflows", "ci.yml")
 
 	// Trigger must include `push` and `pull_request` so lint runs on
 	// both events that gate merges.
