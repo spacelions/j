@@ -96,6 +96,8 @@ func (s *stubAgent) Verify(context.Context, codingagents.VerifyRequest) (int, er
 	return 0, errors.New("picker: Verify should not be called")
 }
 
+func (*stubAgent) FormatLog(line []byte) []byte { return line }
+
 func TestPick_Success(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4", "gpt-5")
 	codex := newStubAgent("codex", "o4")

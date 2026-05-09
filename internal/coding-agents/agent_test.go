@@ -38,6 +38,8 @@ func (stubAgent) Verify(
 	return 0, nil
 }
 
+func (stubAgent) FormatLog(line []byte) []byte { return line }
+
 // capturingAgent embeds stubAgent and implements ResumeIDCapturer
 // with a closure so tests can pin the call's return values.
 type capturingAgent struct {

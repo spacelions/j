@@ -133,3 +133,5 @@ func (a *capturingPlanAgent) Verify(
 ) (int, error) {
 	return 0, errors.New("Verify must not be called")
 }
+
+func (*capturingPlanAgent) FormatLog(line []byte) []byte { return line }

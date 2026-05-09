@@ -1,0 +1,6 @@
+TS  agent init — model=claude-sonnet-4-6 tools=Bash,Read
+TS  agent thinking — text=Let me list the files in the current working directory.
+TS  agent tool_use — input={"command":"ls -la","description":"List files"} name=Bash
+TS  agent tool_result — bytes=152 ok=true
+TS  agent message — text=The directory contains one file (sample.txt, 12 bytes).
+TS  agent result — duration_ms=7126 stop_reason=end_turn subtype=success

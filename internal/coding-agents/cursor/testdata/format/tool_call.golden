@@ -1,0 +1,7 @@
+TS  agent init — cwd=<redacted-cwd> model=Composer 2 Fast
+TS  agent user — text=list files in the workspace and summarize
+TS  agent tool_use — input={"globPattern":"**/*","targetDirectory":"/tmp/spa73"} name=glob
+TS  agent tool_result — bytes=71 name=glob ok=true
+TS  agent thinking — text=I have collected sufficient information.
+TS  agent message — text=There is one file: sample.txt
+TS  agent result — duration_ms=8664 ok=true subtype=success

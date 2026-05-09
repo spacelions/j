@@ -69,6 +69,8 @@ func (a *resumePlanChainAgent) Verify(context.Context, codingagents.VerifyReques
 		"plan-pending-approval when PlanRequiresApproval=true")
 }
 
+func (*resumePlanChainAgent) FormatLog(line []byte) []byte { return line }
+
 // putProjectKey writes a project-bucket setting (max_iterations,
 // plan_requires_approval, ...). Mirrors the orchestrate-test helper
 // at internal/cli/tasks/orchestrate_test.go:writeBucketKey but lives

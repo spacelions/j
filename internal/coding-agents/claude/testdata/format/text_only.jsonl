@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","cwd":"<redacted-cwd>","session_id":"<redacted-uuid>","tools":["Bash","Read","Write"],"model":"claude-sonnet-4-6","permissionMode":"bypassPermissions","apiKeySource":"none"}
+{"type":"assistant","message":{"model":"claude-sonnet-4-6","id":"<redacted-uuid>","type":"message","role":"assistant","content":[{"type":"text","text":"Hi there! How can I help you today?"}],"stop_reason":null,"usage":{"input_tokens":3,"output_tokens":12}},"session_id":"<redacted-uuid>","uuid":"<redacted-uuid>"}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":3432,"duration_api_ms":5349,"num_turns":1,"result":"Hi there! How can I help you today?","stop_reason":"end_turn","session_id":"<redacted-uuid>","uuid":"<redacted-uuid>"}

@@ -400,7 +400,6 @@ func TestPlan_Headless(t *testing.T) {
 	want := []string{
 		"--print",
 		"--output-format", "stream-json",
-		"--stream-partial-output",
 		"--force",
 		"--trust",
 		"--model", "sonnet-4",
@@ -460,7 +459,6 @@ func TestPlan_Headless_ResumeChatID(t *testing.T) {
 		"--resume", rid,
 		"--print",
 		"--output-format", "stream-json",
-		"--stream-partial-output",
 		"--force",
 		"--trust",
 		"--model", "sonnet-4",
@@ -613,7 +611,6 @@ func TestWork_Headless(t *testing.T) {
 	want := []string{
 		"--print",
 		"--output-format", "stream-json",
-		"--stream-partial-output",
 		"--force",
 		"--trust",
 		"--model", "sonnet-4",
@@ -661,7 +658,6 @@ func TestWork_Headless_ResumeChatID(t *testing.T) {
 		"--resume", rid,
 		"--print",
 		"--output-format", "stream-json",
-		"--stream-partial-output",
 		"--force",
 		"--trust",
 		"--model", "sonnet-4",
@@ -1234,7 +1230,6 @@ func TestVerify_Headless(t *testing.T) {
 	want := []string{
 		"--print",
 		"--output-format", "stream-json",
-		"--stream-partial-output",
 		"--force",
 		"--trust",
 		"--model", "sonnet-4",
@@ -1291,7 +1286,6 @@ func TestVerify_Headless_ResumeChatID(t *testing.T) {
 		"--resume", rid,
 		"--print",
 		"--output-format", "stream-json",
-		"--stream-partial-output",
 		"--force",
 		"--trust",
 		"--model", "sonnet-4",

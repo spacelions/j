@@ -75,6 +75,17 @@ type Agent interface {
 	// a non-zero PID means a detached background child was started
 	// (headless only); 0 means synchronous completion.
 	Verify(ctx context.Context, req VerifyRequest) (int, error)
+
+	// FormatLog transforms one raw child-stdout/stderr line into the
+	// bytes the run helper writes to agent.log. Backends with
+	// structured output (claude, cursor) parse stream-json and emit
+	// agentlog-style marker lines; backends with no structured
+	// output return the input unchanged. Returned bytes include
+	// their own trailing newline(s); a single source line may map
+	// to multiple output lines (e.g. multi-content-block assistant
+	// events). Must be deterministic and side-effect free — the run
+	// helper calls it once per line off a drain goroutine.
+	FormatLog(line []byte) []byte
 }
 
 // PlanRequest is the input to Agent.Plan.

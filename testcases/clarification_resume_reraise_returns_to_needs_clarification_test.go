@@ -268,6 +268,8 @@ func (a *reraisePlanAgent) Verify(
 	return 0, errors.New("Verify must not be called")
 }
 
+func (*reraisePlanAgent) FormatLog(line []byte) []byte { return line }
+
 type reraiseWorkAgent struct {
 	name     string
 	clarPath string
@@ -317,6 +319,8 @@ func (a *reraiseWorkAgent) Verify(
 	return 0, errors.New("Verify must not be called")
 }
 
+func (*reraiseWorkAgent) FormatLog(line []byte) []byte { return line }
+
 type reraiseVerifyAgent struct {
 	name     string
 	clarPath string
@@ -365,3 +369,5 @@ func (a *reraiseVerifyAgent) Verify(
 	}
 	return 0, nil
 }
+
+func (*reraiseVerifyAgent) FormatLog(line []byte) []byte { return line }

@@ -151,3 +151,5 @@ func (a *deletingVerifyAgent) Verify(
 	}
 	return 0, nil
 }
+
+func (*deletingVerifyAgent) FormatLog(line []byte) []byte { return line }

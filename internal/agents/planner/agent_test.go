@@ -409,6 +409,8 @@ func (a *scriptedPlanAgent) Verify(context.Context, codingagents.VerifyRequest) 
 	return 0, errors.New("scriptedPlanAgent.Verify should not be called")
 }
 
+func (*scriptedPlanAgent) FormatLog(line []byte) []byte { return line }
+
 func seedPlanApproval(t *testing.T, v bool) {
 	t.Helper()
 	path, err := store.DefaultPath()

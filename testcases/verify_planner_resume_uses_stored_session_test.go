@@ -55,6 +55,8 @@ func (a *resumePlanCaptureAgent) Verify(context.Context, codingagents.VerifyRequ
 	return 0, errors.New("Verify should not be called")
 }
 
+func (*resumePlanCaptureAgent) FormatLog(line []byte) []byte { return line }
+
 // TestVerify_PlannerResume_UsesStoredSession is the black-box pin
 // for SPA-33: when the row carries a non-empty PlanResumeSession the
 // planner phase MUST (a) skip NewResumeID, (b) deliver the stored

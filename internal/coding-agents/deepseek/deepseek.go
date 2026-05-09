@@ -145,24 +145,24 @@ func parseDoctor(out string) (doctorReport, bool) {
 //     `--auto` auto-approves writes; `--yolo` (top-level shell-execution
 //     toggle) is intentionally omitted to keep the permission boundary
 //     tighter.
-func (*Agent) Plan(
+func (a *Agent) Plan(
 	ctx context.Context, req codingagents.PlanRequest,
 ) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.FromFilePath)
 	prompt := prompts.PlanPrompt(req)
-	return runPhase(
+	return a.runPhase(
 		ctx, req.Interactive, workspace, req.ResumeChatID,
 		req.Model, prompt, req.AgentLogPath,
 	)
 }
 
 // Work runs deepseek-tui against a previously generated plan markdown.
-func (*Agent) Work(
+func (a *Agent) Work(
 	ctx context.Context, req codingagents.WorkRequest,
 ) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.PlanPath)
 	prompt := prompts.WorkPrompt(req)
-	return runPhase(
+	return a.runPhase(
 		ctx, req.Interactive, workspace, req.ResumeChatID,
 		req.Model, prompt, req.AgentLogPath,
 	)
@@ -171,12 +171,12 @@ func (*Agent) Work(
 // Verify runs deepseek-tui against the requirements + plan pair. Like
 // cursor / claude, the verifier uses the project root workspace so it
 // can `git worktree list` the target worktree.
-func (*Agent) Verify(
+func (a *Agent) Verify(
 	ctx context.Context, req codingagents.VerifyRequest,
 ) (int, error) {
 	workspace := codingagents.ProjectRootWorkspace()
 	prompt := prompts.VerifyPrompt(req)
-	return runPhase(
+	return a.runPhase(
 		ctx, req.Interactive, workspace, req.ResumeChatID,
 		req.Model, prompt, req.AgentLogPath,
 	)
@@ -186,7 +186,7 @@ func (*Agent) Verify(
 // interactive vs headless split is identical across phases — only the
 // workspace and prompt differ — so threading them through this helper
 // keeps every phase under the 80-line method cap.
-func runPhase(
+func (a *Agent) runPhase(
 	ctx context.Context, interactive bool,
 	workspace, resumeID, model, prompt, agentLogPath string,
 ) (int, error) {
@@ -202,11 +202,13 @@ func runPhase(
 		execArgs(model, prompt)...,
 	)
 	// deepseek-tui's TUI prints its full reasoning + tool-call trace
-	// to stdout, so plain run.Spawn captures the agent.log content we
-	// want without any extra flag. claude / cursor go through
-	// `--output-format stream-json` because their headless mode
-	// otherwise collapses the run down to the final assistant text.
-	pid, err := run.Spawn(ctx, agentLogPath, Binary, args...)
+	// to stdout, so the formatter is the identity transform — bytes
+	// pass through unchanged. claude / cursor go through stream-json
+	// + per-event marker rendering because their headless mode emits
+	// JSON envelopes that would otherwise clutter agent.log.
+	pid, err := run.SpawnFormattedIn(
+		ctx, "", agentLogPath, a.FormatLog, Binary, args...,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("deepseek-tui: %w", err)
 	}

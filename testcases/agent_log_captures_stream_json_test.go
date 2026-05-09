@@ -15,17 +15,15 @@ import (
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 )
 
-// TestAgentLog_Claude_StreamJSON_LandsInLog drives the SPA-68
+// TestAgentLog_Claude_FormattedMarkers_LandInLog drives the SPA-73
 // acceptance criterion for the claude backend: a headless Plan run
 // passes `--output-format stream-json --verbose
-// --include-partial-messages`, and the JSON event lines the CLI
-// prints land verbatim in the per-task agent.log (interleaved with
-// the existing lifecycle markers). The test installs a fake `claude`
-// on PATH that prints three canned stream-JSON events and exits;
-// the orchestrator-style assertion grep below the timeout catches
-// the regression where headless mode would otherwise collapse
-// everything down to the final assistant text only.
-func TestAgentLog_Claude_StreamJSON_LandsInLog(t *testing.T) {
+// --dangerously-skip-permissions` (no `--include-partial-messages`),
+// and each stream-json event the CLI prints lands in agent.log as a
+// human-readable agentlog marker line — not as raw JSON. The test
+// installs a fake `claude` on PATH that prints three canned events
+// and asserts the formatter's marker headers reach the log.
+func TestAgentLog_Claude_FormattedMarkers_LandInLog(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "spec.md")
 	if err := os.WriteFile(target, []byte("# task"), 0o600); err != nil {
@@ -55,10 +53,10 @@ func TestAgentLog_Claude_StreamJSON_LandsInLog(t *testing.T) {
 		t.Fatalf("Plan pid = %d, want > 0", pid)
 	}
 	want := []string{
-		`"type":"system"`,
-		`"thinking":"hmm"`,
-		`"text":"hi"`,
-		`"type":"result"`,
+		"agent init",
+		"agent thinking",
+		"agent message",
+		"agent result",
 	}
 	body := waitForAll(t, logPath, want)
 	for _, w := range want {
@@ -66,13 +64,19 @@ func TestAgentLog_Claude_StreamJSON_LandsInLog(t *testing.T) {
 			t.Fatalf("agent.log missing %q: %q", w, body)
 		}
 	}
+	// SPA-73: no raw stream-json envelopes survive in the log.
+	if strings.Contains(body, `"type":"system"`) ||
+		strings.Contains(body, `"type":"assistant"`) ||
+		strings.Contains(body, `"type":"result"`) {
+		t.Fatalf("raw JSON leaked into agent.log: %q", body)
+	}
 }
 
-// TestAgentLog_Cursor_StreamJSON_LandsInLog is the cursor-agent
-// counterpart: headless Plan must pass `--output-format stream-json
-// --stream-partial-output` and the emitted JSON events must reach
-// agent.log unmodified.
-func TestAgentLog_Cursor_StreamJSON_LandsInLog(t *testing.T) {
+// TestAgentLog_Cursor_FormattedMarkers_LandInLog is the cursor-agent
+// counterpart: headless Plan must pass `--output-format stream-json`
+// (no `--stream-partial-output`) and the emitted events must reach
+// agent.log as agentlog marker lines, not raw JSON.
+func TestAgentLog_Cursor_FormattedMarkers_LandInLog(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "spec.md")
 	if err := os.WriteFile(target, []byte("# task"), 0o600); err != nil {
@@ -101,15 +105,20 @@ func TestAgentLog_Cursor_StreamJSON_LandsInLog(t *testing.T) {
 		t.Fatalf("Plan pid = %d, want > 0", pid)
 	}
 	want := []string{
-		`"type":"system"`,
-		`"text":"ok"`,
-		`"type":"result"`,
+		"agent init",
+		"agent message",
+		"agent result",
 	}
 	body := waitForAll(t, logPath, want)
 	for _, w := range want {
 		if !strings.Contains(body, w) {
 			t.Fatalf("agent.log missing %q: %q", w, body)
 		}
+	}
+	if strings.Contains(body, `"type":"system"`) ||
+		strings.Contains(body, `"type":"assistant"`) ||
+		strings.Contains(body, `"type":"result"`) {
+		t.Fatalf("raw JSON leaked into agent.log: %q", body)
 	}
 }
 

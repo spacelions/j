@@ -54,6 +54,8 @@ func (a *freshPlanCaptureAgent) Verify(context.Context, codingagents.VerifyReque
 	return 0, errors.New("Verify should not be called")
 }
 
+func (*freshPlanCaptureAgent) FormatLog(line []byte) []byte { return line }
+
 // TestVerify_PlannerFresh_MintsNewSessionAndUsesFreshPrompt pins the
 // fresh-run contract: a row with an empty PlanResumeSession (the
 // shape `j tasks start` writes) MUST trigger NewResumeID, set

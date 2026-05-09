@@ -61,17 +61,28 @@ func Emit(w io.Writer, event string, fields map[string]any) error {
 	if w == nil {
 		return nil
 	}
+	emitMu.Lock()
+	defer emitMu.Unlock()
+	if _, err := fmt.Fprintln(w, Render(event, fields)); err != nil {
+		return fmt.Errorf("agentlog: write %s: %w", event, err)
+	}
+	return nil
+}
+
+// Render returns the marker line for event/fields without a trailing
+// newline. Callers who need to compose multiple marker lines into a
+// single Write (e.g. the per-backend stream-json formatters that map
+// one source event onto multiple agentlog lines) use this to build
+// the body and append "\n" themselves. The returned string has the
+// same RFC3339Z + double-space + topic+verb [+ " — k=v"] shape Emit
+// writes.
+func Render(event string, fields map[string]any) string {
 	ts := time.Now().UTC().Format(time.RFC3339)
 	line := ts + "  " + Header(event)
 	if pairs := formatFields(fields); pairs != "" {
 		line += " — " + pairs
 	}
-	emitMu.Lock()
-	defer emitMu.Unlock()
-	if _, err := fmt.Fprintln(w, line); err != nil {
-		return fmt.Errorf("agentlog: write %s: %w", event, err)
-	}
-	return nil
+	return line
 }
 
 // formatFields renders fields as a `k=v k=v` string with keys sorted

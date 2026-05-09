@@ -202,3 +202,5 @@ func (a *scriptedWorkAgent) Work(context.Context, codingagents.WorkRequest) (int
 func (a *scriptedWorkAgent) Verify(context.Context, codingagents.VerifyRequest) (int, error) {
 	return 0, errors.New("scriptedWorkAgent.Verify should not be called")
 }
+
+func (*scriptedWorkAgent) FormatLog(line []byte) []byte { return line }
