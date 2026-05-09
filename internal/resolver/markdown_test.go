@@ -25,7 +25,10 @@ func TestStartTargetFiles(t *testing.T) {
 	if filepath.Base(logPath) != tasks.AgentLogFileName {
 		t.Fatalf("log path = %q", logPath)
 	}
-	data, err := os.ReadFile(filepath.Join(filepath.Dir(logPath), tasks.RequirementsFileName))
+	reqPath := filepath.Join(
+		filepath.Dir(logPath), tasks.RequirementsFileName,
+	)
+	data, err := os.ReadFile(reqPath)
 	if err != nil || string(data) != "body" {
 		t.Fatalf("requirements = %q, %v", string(data), err)
 	}
@@ -40,7 +43,8 @@ func TestStartTargetErrors(t *testing.T) {
 	if _, err := NewStartTargetFromMarkdown("missing.md"); err == nil {
 		t.Fatal("NewStartTargetFromMarkdown error = nil")
 	}
-	if _, err := PrepareStartTaskFiles(StartTarget{TaskID: "new", IsNew: true, Body: "body"}); err == nil {
+	st := StartTarget{TaskID: "new", IsNew: true, Body: "body"}
+	if _, err := PrepareStartTaskFiles(st); err == nil {
 		t.Fatal("PrepareStartTaskFiles error = nil")
 	}
 }
