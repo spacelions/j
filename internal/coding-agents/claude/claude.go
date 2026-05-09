@@ -15,6 +15,7 @@ import (
 
 	"github.com/spacelions/j/internal/agents/prompts"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/util/agentlog"
 	"github.com/spacelions/j/internal/util/run"
 )
 
