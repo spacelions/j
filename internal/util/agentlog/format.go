@@ -59,11 +59,9 @@ func ClaudeStream() LineFormatter { return jsonStream{} }
 // get a stable API even if the schemas drift apart later.
 func CursorStream() LineFormatter { return jsonStream{} }
 
-// jsonStream is the shared formatter used by ClaudeStream() and
-// CursorStream(). It reads one stream-JSON event per line and emits
-// a short labelled summary per content block; non-JSON / unknown
-// events round-trip as `unparsed: <raw>` so nothing is silently
-// lost.
+// jsonStream is the shared ClaudeStream / CursorStream formatter.
+// It reads stream-JSON events and emits a labelled summary per
+// content block; unknown events round-trip as `unparsed: <raw>`.
 type jsonStream struct{}
 
 func (jsonStream) Format(line []byte) [][]byte {
