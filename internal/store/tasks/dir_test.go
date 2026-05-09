@@ -133,3 +133,18 @@ func TestEnsureDir_TasksDirIsFile(t *testing.T) {
 		t.Fatal("EnsureDir with tasks-as-file should error")
 	}
 }
+
+func TestClarificationFileExists(t *testing.T) {
+	taskDir := t.TempDir()
+	if ClarificationFileExists(taskDir) {
+		t.Fatal("ClarificationFileExists = true before file exists")
+	}
+
+	path := filepath.Join(taskDir, ClarificationFileName)
+	if err := os.WriteFile(path, []byte("question?"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !ClarificationFileExists(taskDir) {
+		t.Fatal("ClarificationFileExists = false after file exists")
+	}
+}

@@ -157,7 +157,3 @@ func (lc *VerifyLifecycle) Verdict(
 		lc.stderr, lc.task, iteration, lc.maxIterations,
 	)
 }
-
-// IterationEnd closes the iteration_begin/end pairing.
-func (lc *VerifyLifecycle) IterationEnd(iteration int, verdict string) {
-}

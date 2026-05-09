@@ -209,7 +209,6 @@ func runVerifyLoop(
 		}
 		verdict := resolver.ParseVerdict(res.FindingsPath)
 		lc.Verdict(i, verdict, res.FindingsPath)
-		lc.IterationEnd(i, verdict)
 		if verdict == resolver.VerdictPass {
 			return lifecycle.VerifyOutcomeSuccess, nil
 		}
