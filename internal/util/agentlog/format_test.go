@@ -245,7 +245,10 @@ func TestClaudeStream_OversizedThinkingBlock(t *testing.T) {
 	t.Parallel()
 	fmtr := ClaudeStream()
 	const size = 200_000
-	body := strings.Repeat("a", size/2) + "\n" +
+	// JSON-escape the embedded newline so the input parses; the
+	// formatter is what should collapse it back to the literal `\n`
+	// escape on the way out.
+	body := strings.Repeat("a", size/2) + `\n` +
 		strings.Repeat("b", size/2)
 	in := []byte(`{"type":"assistant","message":{"content":[{` +
 		`"type":"thinking","thinking":"`)
