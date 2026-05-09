@@ -50,8 +50,6 @@ coverage:
 		-e 'internal/linear/config\.go:[0-9]+:[[:space:]]+loadKey[[:space:]]' \
 		-e 'internal/linear/config\.go:[0-9]+:[[:space:]]+saveKey[[:space:]]' \
 		-e 'internal/cli/plan/linear\.go:[0-9]+:[[:space:]]+runLinear[[:space:]]' \
-		-e 'internal/resolver/markdown\.go:[0-9]+:[[:space:]]+RunPlanFromBody[[:space:]]' \
-		-e 'internal/resolver/markdown\.go:[0-9]+:[[:space:]]+runPlanInTaskDir[[:space:]]' \
 		-e 'internal/resolver/source\.go:[0-9]+:[[:space:]]+FetchLinearBody[[:space:]]' \
 		-e 'internal/resolver/source\.go:[0-9]+:[[:space:]]+StartTargetFromLinear[[:space:]]' \
 		-e 'internal/util/mdfile/mdfile\.go:[0-9]+:[[:space:]]+Resolve[[:space:]]' \
@@ -152,8 +150,6 @@ coverage:
 		-e 'internal/resolver/agent\.go:[0-9]+:[[:space:]]+agentFromStoreLazy[[:space:]]' \
 		-e 'internal/resolver/agent\.go:[0-9]+:[[:space:]]+persistAgent[[:space:]]' \
 		-e 'internal/resolver/agent\.go:[0-9]+:[[:space:]]+readToolModel[[:space:]]' \
-		-e 'internal/resolver/markdown\.go:[0-9]+:[[:space:]]+ResolvePlanMarkdown[[:space:]]' \
-		-e 'internal/resolver/markdown\.go:[0-9]+:[[:space:]]+RunPlanMarkdown[[:space:]]' \
 		-e 'internal/resolver/markdown\.go:[0-9]+:[[:space:]]+NewStartTargetFromMarkdown[[:space:]]' \
 		-e 'internal/resolver/markdown\.go:[0-9]+:[[:space:]]+PrepareStartTaskFiles[[:space:]]' \
 		-e 'internal/resolver/mustread\.go:[0-9]+:[[:space:]]+MustRead[[:space:]]' \
