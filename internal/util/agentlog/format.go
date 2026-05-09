@@ -103,7 +103,6 @@ type streamEvent struct {
 }
 
 type streamMessage struct {
-	Role    string          `json:"role"`
 	Content []streamContent `json:"content"`
 }
 
@@ -177,10 +176,9 @@ func renderSystem(ev streamEvent) [][]byte {
 	return [][]byte{[]byte(strings.Join(parts, " "))}
 }
 
-// renderMessage walks the message.content array and emits one line
-// per recognised block. Unknown block types are skipped silently —
-// they are usually new schema additions (image blocks, tool_use
-// partials) that a human reader does not need to see in agent.log.
+// renderMessage emits one line per recognised content block.
+// Unknown block types are skipped silently (new schema additions
+// like image / tool_use partials are noise in a human transcript).
 func renderMessage(ev streamEvent) [][]byte {
 	if ev.Message == nil {
 		return nil
