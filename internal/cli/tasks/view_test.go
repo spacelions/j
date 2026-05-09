@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
@@ -93,54 +95,62 @@ func seedTaskWithFile(
 	return taskDir
 }
 
-func TestChooseViewerBinary_BatPreferredOnTTY(t *testing.T) {
+func TestChooseStreamMode_TailAndTspinOnTTY(t *testing.T) {
 	withLookPath(t, func(name string) (string, error) {
 		switch name {
-		case "bat":
-			return "/usr/local/bin/bat", nil
-		case "cat":
-			return "/bin/cat", nil
+		case "tail":
+			return "/usr/bin/tail", nil
+		case "tspin":
+			return "/usr/local/bin/tspin", nil
 		}
 		return "", errors.New("unexpected lookup")
 	})
-	if got := chooseViewerBinary(true); got != "bat" {
-		t.Fatalf("chooseViewerBinary(true) = %q, want bat", got)
+	useTail, useTspin := chooseStreamMode(true)
+	if !useTail || !useTspin {
+		t.Fatalf("got (%v,%v), want (true,true)",
+			useTail, useTspin)
 	}
 }
 
-func TestChooseViewerBinary_CatWhenNotTTY(t *testing.T) {
+func TestChooseStreamMode_TailOnlyWhenNotTTY(t *testing.T) {
 	withLookPath(t, func(name string) (string, error) {
 		switch name {
-		case "bat":
-			return "/usr/local/bin/bat", nil
-		case "cat":
-			return "/bin/cat", nil
+		case "tail":
+			return "/usr/bin/tail", nil
+		case "tspin":
+			return "/usr/local/bin/tspin", nil
 		}
 		return "", errors.New("unexpected lookup")
 	})
-	if got := chooseViewerBinary(false); got != "cat" {
-		t.Fatalf("chooseViewerBinary(false) = %q, want cat", got)
+	useTail, useTspin := chooseStreamMode(false)
+	if !useTail || useTspin {
+		t.Fatalf("got (%v,%v), want (true,false)",
+			useTail, useTspin)
 	}
 }
 
-func TestChooseViewerBinary_CatWhenBatMissing(t *testing.T) {
+func TestChooseStreamMode_TailOnlyWhenTspinMissing(t *testing.T) {
 	withLookPath(t, func(name string) (string, error) {
-		if name == "cat" {
-			return "/bin/cat", nil
+		if name == "tail" {
+			return "/usr/bin/tail", nil
 		}
 		return "", errors.New("not found")
 	})
-	if got := chooseViewerBinary(true); got != "cat" {
-		t.Fatalf("chooseViewerBinary(true) = %q, want cat", got)
+	useTail, useTspin := chooseStreamMode(true)
+	if !useTail || useTspin {
+		t.Fatalf("got (%v,%v), want (true,false)",
+			useTail, useTspin)
 	}
 }
 
-func TestChooseViewerBinary_EmptyWhenAllMissing(t *testing.T) {
+func TestChooseStreamMode_FalseWhenTailMissing(t *testing.T) {
 	withLookPath(t, func(string) (string, error) {
 		return "", errors.New("not found")
 	})
-	if got := chooseViewerBinary(true); got != "" {
-		t.Fatalf("chooseViewerBinary = %q, want empty", got)
+	useTail, useTspin := chooseStreamMode(true)
+	if useTail || useTspin {
+		t.Fatalf("got (%v,%v), want (false,false)",
+			useTail, useTspin)
 	}
 }
 
@@ -234,6 +244,339 @@ func TestDefaultViewer_ExecError(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "cat") {
 		t.Fatalf("err = %v, want wrapped cat error", err)
+	}
+}
+
+func TestChooseViewerBinary_BatPreferredOnTTY(t *testing.T) {
+	withLookPath(t, func(name string) (string, error) {
+		switch name {
+		case "bat":
+			return "/usr/local/bin/bat", nil
+		case "cat":
+			return "/bin/cat", nil
+		}
+		return "", errors.New("unexpected lookup")
+	})
+	if got := chooseViewerBinary(true); got != "bat" {
+		t.Fatalf("chooseViewerBinary(true) = %q, want bat", got)
+	}
+}
+
+func TestChooseViewerBinary_CatWhenNotTTY(t *testing.T) {
+	withLookPath(t, func(name string) (string, error) {
+		switch name {
+		case "bat":
+			return "/usr/local/bin/bat", nil
+		case "cat":
+			return "/bin/cat", nil
+		}
+		return "", errors.New("unexpected lookup")
+	})
+	if got := chooseViewerBinary(false); got != "cat" {
+		t.Fatalf("chooseViewerBinary(false) = %q, want cat", got)
+	}
+}
+
+func TestChooseViewerBinary_CatWhenBatMissing(t *testing.T) {
+	withLookPath(t, func(name string) (string, error) {
+		if name == "cat" {
+			return "/bin/cat", nil
+		}
+		return "", errors.New("not found")
+	})
+	if got := chooseViewerBinary(true); got != "cat" {
+		t.Fatalf("chooseViewerBinary(true) = %q, want cat", got)
+	}
+}
+
+func TestChooseViewerBinary_EmptyWhenAllMissing(t *testing.T) {
+	withLookPath(t, func(string) (string, error) {
+		return "", errors.New("not found")
+	})
+	if got := chooseViewerBinary(true); got != "" {
+		t.Fatalf("chooseViewerBinary = %q, want empty", got)
+	}
+}
+
+func TestStreamViewer_FallbackToIOCopy(t *testing.T) {
+	withLookPath(t, func(string) (string, error) {
+		return "", errors.New("not found")
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(path, []byte("body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := streamViewer(
+		t.Context(), path, nil, &buf, io.Discard,
+	); err != nil {
+		t.Fatalf("streamViewer: %v", err)
+	}
+	if buf.String() != "body" {
+		t.Fatalf("buf = %q, want body", buf.String())
+	}
+}
+
+// safeBuf is a goroutine-safe bytes.Buffer used by streaming tests
+// where one goroutine writes (via the Viewer subprocess) and another
+// polls the contents.
+type safeBuf struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *safeBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *safeBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
+
+// waitForSubstring polls fn until it returns a string containing
+// want or the deadline ctx fires. Returns true on hit, false on
+// timeout. The poll interval is small enough to keep tests under a
+// second on a healthy host.
+func waitForSubstring(
+	ctx context.Context, fn func() string, want string,
+) bool {
+	for {
+		if strings.Contains(fn(), want) {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
+func TestStreamViewer_StreamsTailOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires POSIX tail")
+	}
+	if _, err := exec.LookPath("tail"); err != nil {
+		t.Skip("tail not on PATH")
+	}
+	withLookPath(t, func(name string) (string, error) {
+		if name == "tail" {
+			return exec.LookPath("tail")
+		}
+		return "", errors.New("not found")
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.txt")
+	seed := "via-tail\n"
+	if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deadline, cancelDeadline := context.WithTimeout(
+		t.Context(), 5*time.Second,
+	)
+	defer cancelDeadline()
+	ctx, cancel := context.WithCancel(deadline)
+	defer cancel()
+	out := &safeBuf{}
+	done := make(chan error, 1)
+	go func() {
+		done <- streamViewer(ctx, path, nil, out, io.Discard)
+	}()
+	if !waitForSubstring(deadline, out.String, "via-tail") {
+		cancel()
+		<-done
+		t.Fatalf("timed out; buf = %q", out.String())
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("streamViewer: %v", err)
+	}
+}
+
+func TestRunTailIntoTspin_PipesEndToEnd(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires POSIX tail and cat")
+	}
+	tailPath, err := exec.LookPath("tail")
+	if err != nil {
+		t.Skip("tail not on PATH")
+	}
+	catPath, err := exec.LookPath("cat")
+	if err != nil {
+		t.Skip("cat not on PATH")
+	}
+	// stand `cat` in for `tspin` so the pipeline can be exercised
+	// end-to-end without depending on the real tspin in CI.
+	withLookPath(t, func(name string) (string, error) {
+		switch name {
+		case "tail":
+			return tailPath, nil
+		case "tspin":
+			return catPath, nil
+		}
+		return "", errors.New("not found")
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(
+		path, []byte("via-pipe\n"), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	deadline, cancelDeadline := context.WithTimeout(
+		t.Context(), 5*time.Second,
+	)
+	defer cancelDeadline()
+	ctx, cancel := context.WithCancel(deadline)
+	defer cancel()
+	out := &safeBuf{}
+	done := make(chan error, 1)
+	go func() {
+		done <- runTailIntoTspin(ctx, path, nil, out, io.Discard)
+	}()
+	if !waitForSubstring(deadline, out.String, "via-pipe") {
+		cancel()
+		<-done
+		t.Fatalf("timed out; buf = %q", out.String())
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("runTailIntoTspin: %v", err)
+	}
+}
+
+func TestRunTailIntoTspin_TailLookPathError(t *testing.T) {
+	withLookPath(t, func(string) (string, error) {
+		return "", errors.New("not found")
+	})
+	err := runTailIntoTspin(
+		t.Context(),
+		filepath.Join(t.TempDir(), "x"),
+		nil, io.Discard, io.Discard,
+	)
+	if err == nil ||
+		!strings.Contains(err.Error(), "tail|tspin") {
+		t.Fatalf("err = %v, want wrapped tail|tspin error", err)
+	}
+}
+
+func TestRunTailIntoTspin_TspinLookPathError(t *testing.T) {
+	withLookPath(t, func(name string) (string, error) {
+		if name == "tail" {
+			return "/usr/bin/tail", nil
+		}
+		return "", errors.New("not found")
+	})
+	err := runTailIntoTspin(
+		t.Context(),
+		filepath.Join(t.TempDir(), "x"),
+		nil, io.Discard, io.Discard,
+	)
+	if err == nil ||
+		!strings.Contains(err.Error(), "tail|tspin") {
+		t.Fatalf("err = %v, want wrapped tail|tspin error", err)
+	}
+}
+
+func TestRunTailIntoTspin_TspinStartError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires POSIX tail")
+	}
+	tailPath, err := exec.LookPath("tail")
+	if err != nil {
+		t.Skip("tail not on PATH")
+	}
+	withLookPath(t, func(name string) (string, error) {
+		switch name {
+		case "tail":
+			return tailPath, nil
+		case "tspin":
+			return "/path/that/does/not/exist/tspin", nil
+		}
+		return "", errors.New("not found")
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(
+		path, []byte("seed\n"), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	err = runTailIntoTspin(
+		t.Context(), path, nil, io.Discard, io.Discard,
+	)
+	if err == nil ||
+		!strings.Contains(err.Error(), "tail|tspin") {
+		t.Fatalf("err = %v, want wrapped tail|tspin error", err)
+	}
+}
+
+func TestRunTailIntoTspin_TailStartError(t *testing.T) {
+	withLookPath(t, func(name string) (string, error) {
+		switch name {
+		case "tail":
+			return "/path/that/does/not/exist/tail", nil
+		case "tspin":
+			cat, err := exec.LookPath("cat")
+			if err != nil {
+				return "", errors.New("cat missing")
+			}
+			return cat, nil
+		}
+		return "", errors.New("not found")
+	})
+	err := runTailIntoTspin(
+		t.Context(),
+		filepath.Join(t.TempDir(), "x"),
+		nil, io.Discard, io.Discard,
+	)
+	if err == nil ||
+		!strings.Contains(err.Error(), "tail|tspin") {
+		t.Fatalf("err = %v, want wrapped tail|tspin error", err)
+	}
+}
+
+func TestStreamViewer_TailLookPathError(t *testing.T) {
+	// chooseStreamMode flips useTail true on the first call and
+	// the second lookPath inside streamViewer fails — exercises
+	// the otherwise-unreachable post-init lookup error branch.
+	calls := 0
+	withLookPath(t, func(name string) (string, error) {
+		calls++
+		if name == "tail" && calls == 1 {
+			return "/usr/bin/tail", nil
+		}
+		return "", errors.New("not found")
+	})
+	err := streamViewer(
+		t.Context(),
+		filepath.Join(t.TempDir(), "x"),
+		nil, io.Discard, io.Discard,
+	)
+	if err == nil || !strings.Contains(err.Error(), "tail") {
+		t.Fatalf("err = %v, want wrapped tail error", err)
+	}
+}
+
+func TestStreamViewer_TailExecError(t *testing.T) {
+	withLookPath(t, func(name string) (string, error) {
+		if name == "tail" {
+			return "/path/that/does/not/exist/tail", nil
+		}
+		return "", errors.New("not found")
+	})
+	err := streamViewer(
+		t.Context(),
+		filepath.Join(t.TempDir(), "x"),
+		nil, io.Discard, io.Discard,
+	)
+	if err == nil || !strings.Contains(err.Error(), "tail") {
+		t.Fatalf("err = %v, want wrapped tail error", err)
 	}
 }
 

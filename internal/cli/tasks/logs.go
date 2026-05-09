@@ -13,8 +13,10 @@ import (
 
 // LogsOptions configures `j tasks logs`. Same shape as ShowOptions:
 // Stdin/Stdout/Stderr default to the process streams; UI defaults to
-// the huh-backed picker; Viewer defaults to defaultViewer (bat -> cat
-// -> io.Copy). Tests pass scripted fakes for both UI and Viewer.
+// the huh-backed picker; Viewer defaults to streamViewer (`tail -f`,
+// optionally piped through `tspin` when stdout is a TTY; falls back
+// to a one-shot copy when `tail` is missing). Tests pass scripted
+// fakes for both UI and Viewer.
 type LogsOptions struct {
 	TaskID string
 
@@ -40,16 +42,16 @@ func (o LogsOptions) withDefaults() LogsOptions {
 		o.UI = newHuhUI(o.Stdin, o.Stderr)
 	}
 	if o.Viewer == nil {
-		o.Viewer = defaultViewer
+		o.Viewer = streamViewer
 	}
 	return o
 }
 
 // RunLogs implements `j tasks logs`. Resolves <cwd>/.j/tasks/<id>/
 // agent.log via resolveTaskFile and hands the absolute path to the
-// injected Viewer (bat -> cat -> io.Copy). Missing log -> "J:
-// agent.log not found for task <id>" + exit 0 with no subprocess
-// (matches the show leaves).
+// injected Viewer (streamViewer: `tail -f`, optionally piped through
+// `tspin`). Missing log -> "J: agent.log not found for task <id>"
+// + exit 0 with no subprocess (matches the show leaves).
 func RunLogs(ctx context.Context, opts LogsOptions) error {
 	opts = opts.withDefaults()
 	path, ok, err := resolveTaskFile(ctx, fileResolveOptions{
@@ -70,12 +72,15 @@ func RunLogs(ctx context.Context, opts LogsOptions) error {
 func newLogsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "logs",
-		Short: "Render the resolved task's agent.log",
-		Long: "Renders <cwd>/.j/tasks/<id>/agent.log via bat (when " +
-			"installed and stdout is a TTY) or cat. Resolves the " +
-			"task via --from-task or the shared picker; an unknown " +
-			"id prints `J: no task` and a missing file prints " +
-			"`J: agent.log not found for task <id>`. Both short-" +
+		Short: "Stream the resolved task's agent.log",
+		Long: "Streams <cwd>/.j/tasks/<id>/agent.log via `tail -f`, " +
+			"optionally piped through `tspin` for colorized output " +
+			"when `tspin` is on PATH and stdout is a TTY. When " +
+			"`tail` is missing, falls back to a one-shot copy of " +
+			"the current contents. Resolves the task via " +
+			"--from-task or the shared picker; an unknown id " +
+			"prints `J: no task` and a missing file prints `J: " +
+			"agent.log not found for task <id>`. Both short-" +
 			"circuit exits 0 with no subprocess. Read-only.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return RunLogs(cmd.Context(), LogsOptions{
