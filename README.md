@@ -17,7 +17,9 @@ make          # builds ./bin/j
 ./bin/j --help
 ```
 
-Other useful targets: `make test`, `make race`, `make clean`, `make coverage`, `make install-hooks` (Lefthook pre-commit).
+Other useful targets: `make test`, `make race`, `make clean`,
+`make coverage`, `make line-coverage`, `make branch-coverage`,
+`make install-hooks` (Lefthook pre-commit).
 
 ## Using `j` in any project
 
@@ -127,7 +129,14 @@ make race    # optional race detector
 
 Run **`make install-hooks`** once before committing so Lefthook enforces the same checks locally as in CI (300-line file cap, `make test`).
 
-`make coverage` runs `internal/...` tests with a coverage profile and enforces an allowlist: anything not at 100% must be explicitly listed in the `Makefile` regex allowlist, or the target fails.
+`make coverage` is a compatibility alias for `make line-coverage`.
+It runs `internal/...` tests with a coverage profile and enforces the
+`coverage.allowlist`: anything not at 100% must be explicitly listed
+there, or the target fails.
+
+`make branch-coverage` reports aggregate branch coverage separately.
+It is wired to a standalone GitHub Actions workflow, not the main CI
+workflow.
 
 ### Project conventions
 
@@ -150,4 +159,7 @@ See [`AGENTS.md`](AGENTS.md): high test coverage, no test-only packages (use `in
 
 ### CI
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `make test` on push and pull requests.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs lint,
+tests, e2e, and line coverage on push and pull requests. Branch
+coverage runs in
+[`.github/workflows/branch-coverage.yml`](.github/workflows/branch-coverage.yml).
