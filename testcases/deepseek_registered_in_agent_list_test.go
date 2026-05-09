@@ -6,27 +6,29 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/coding-agents/claude"
+	"github.com/spacelions/j/internal/coding-agents/codex"
 	"github.com/spacelions/j/internal/coding-agents/cursor"
 	"github.com/spacelions/j/internal/coding-agents/deepseek"
 )
 
-// TestDeepseekIsThirdRegisteredAgent pins the picker / settings
-// acceptance criterion: "The tool picker for planner, worker, and
-// verifier offers a third entry, deepseek, in addition to the
-// existing cursor and claude options."
+// TestRegisteredAgentsExposeFourTools pins the picker / settings
+// acceptance criterion: the tool picker for planner, worker, and
+// verifier offers four entries — claude, codex, deepseek, cursor —
+// in that order. claude leads because it is the most commonly used
+// backend; codex sits at slot 1 as the second OpenAI-flavoured
+// option; deepseek and cursor follow.
 //
 // The j cli builds the agents slice the same way at every
 // registration site (start.go, orchestrate.go, resume_*.go,
-// re_*.go, continue.go). This test mirrors that construction and
-// asserts the picker would see all three names — and only those
-// three — so a regression that drops one or accidentally registers
-// a fourth backend fails the build.
-func TestDeepseekIsThirdRegisteredAgent(t *testing.T) {
+// re_*.go, continue.go). This test mirrors that construction so a
+// regression that drops one or accidentally registers a fifth
+// backend fails the build.
+func TestRegisteredAgentsExposeFourTools(t *testing.T) {
 	agents := []codingagents.Agent{
-		cursor.New(), claude.New(), deepseek.New(),
+		claude.New(), codex.New(), deepseek.New(), cursor.New(),
 	}
 
-	want := []string{"cursor", "claude", "deepseek"}
+	want := []string{"claude", "codex", "deepseek", "cursor"}
 	if len(agents) != len(want) {
 		t.Fatalf("len(agents) = %d, want %d", len(agents), len(want))
 	}
@@ -38,14 +40,13 @@ func TestDeepseekIsThirdRegisteredAgent(t *testing.T) {
 	}
 }
 
-// TestDeepseekIsTheOnlyResumeIDCapturer pins the design boundary
-// the plan calls out: cursor and claude mint their session id
-// pre-run and intentionally do NOT implement ResumeIDCapturer; only
-// deepseek does, so the orchestrator's post-run capture step is a
-// no-op for cursor / claude users (acceptance criteria: "Existing
-// users who already pinned cursor or claude see no change in
-// behaviour.").
-func TestDeepseekIsTheOnlyResumeIDCapturer(t *testing.T) {
+// TestResumeIDCapturerImplementations pins the design boundary the
+// plan calls out: cursor and claude mint their session id pre-run
+// and intentionally do NOT implement ResumeIDCapturer; codex and
+// deepseek both rely on post-run capture from their on-disk session
+// store. The orchestrator's post-run capture step is therefore a
+// no-op for cursor / claude users.
+func TestResumeIDCapturerImplementations(t *testing.T) {
 	cases := []struct {
 		name           string
 		agent          codingagents.Agent
@@ -53,6 +54,7 @@ func TestDeepseekIsTheOnlyResumeIDCapturer(t *testing.T) {
 	}{
 		{"cursor", cursor.New(), false},
 		{"claude", claude.New(), false},
+		{"codex", codex.New(), true},
 		{"deepseek", deepseek.New(), true},
 	}
 	for _, tc := range cases {
