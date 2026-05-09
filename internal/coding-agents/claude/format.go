@@ -15,12 +15,9 @@ import (
 const formatTextLimit = 200
 
 // FormatLog turns one stream-json line emitted by claude's headless
-// CLI into one or more agentlog-style marker lines. It parses the
-// envelope's "type" field and routes onto a per-type renderer; if the
-// JSON does not parse or the type is unknown the original line is
-// returned untouched so panics / runtime errors / future event types
-// still survive in agent.log verbatim. The returned bytes always end
-// in '\n' so the run helper can write them straight through.
+// CLI into one or more agentlog-style marker lines. Unparseable input
+// or unknown types fall through verbatim so panics / future event
+// types still survive in agent.log. Returned bytes always end in '\n'.
 func (*Agent) FormatLog(line []byte) []byte {
 	trimmed := bytes.TrimRight(line, "\r\n")
 	if len(trimmed) == 0 {
@@ -45,9 +42,8 @@ func (*Agent) FormatLog(line []byte) []byte {
 }
 
 // envelope captures every field FormatLog needs across the documented
-// claude stream-json shapes. Unknown fields are ignored; missing
-// fields decode to their zero value and the per-type renderer falls
-// through to either a sparse marker or the raw line.
+// claude stream-json shapes. Missing fields decode to zero and the
+// per-type renderer falls through to a sparse marker or the raw line.
 type envelope struct {
 	Type    string   `json:"type"`
 	Subtype string   `json:"subtype"`
@@ -56,15 +52,29 @@ type envelope struct {
 	Message struct {
 		Content []contentBlock `json:"content"`
 	} `json:"message"`
-	StopReason string `json:"stop_reason"`
-	DurationMs int64  `json:"duration_ms"`
+	StopReason   string    `json:"stop_reason"`
+	DurationMs   int64     `json:"duration_ms"`
+	TaskID       string    `json:"task_id"`
+	Description  string    `json:"description"`
+	TaskType     string    `json:"task_type"`
+	Prompt       string    `json:"prompt"`
+	Status       string    `json:"status"`
+	Summary      string    `json:"summary"`
+	LastToolName string    `json:"last_tool_name"`
+	Usage        taskUsage `json:"usage"`
+}
+
+// taskUsage mirrors the `usage` object claude attaches to
+// `task_progress` and `task_notification` system events.
+type taskUsage struct {
+	TotalTokens int64 `json:"total_tokens"`
+	ToolUses    int64 `json:"tool_uses"`
+	DurationMs  int64 `json:"duration_ms"`
 }
 
 // contentBlock is one entry in claude's `message.content` array.
-// Different block types populate different sub-fields; the formatter
-// branches on Type and reads only what the branch needs. Input is
-// kept as json.RawMessage so the formatter does not have to model
-// every possible tool-input schema — it just renders the bytes.
+// Input is kept as json.RawMessage so the formatter does not have to
+// model every possible tool-input schema — it just renders the bytes.
 type contentBlock struct {
 	Type     string          `json:"type"`
 	Text     string          `json:"text"`
@@ -75,18 +85,79 @@ type contentBlock struct {
 	IsError  bool            `json:"is_error"`
 }
 
-// renderSystem handles `{type:"system", subtype:"init", ...}`. Other
-// system subtypes fall through to the raw line so future additions
-// are visible without a code change.
+// renderSystem dispatches on subtype. Known subtypes render as a
+// marker; unknown subtypes fall through to the raw line so future
+// additions stay visible without a code change.
 func renderSystem(env envelope, raw []byte) []byte {
-	if env.Subtype != "init" {
+	switch env.Subtype {
+	case "init":
+		f := map[string]any{"model": env.Model}
+		if len(env.Tools) > 0 {
+			f["tools"] = strings.Join(env.Tools, ",")
+		}
+		return marker("agent_init", f)
+	case "task_started":
+		f := textFields(env.Prompt)
+		renameTextFields(f, "prompt")
+		putString(f, "task_id", env.TaskID)
+		putString(f, "description", env.Description)
+		putString(f, "task_type", env.TaskType)
+		return marker("agent_subtask_start", f)
+	case "task_progress":
+		f := textFields(env.Description)
+		renameTextFields(f, "description")
+		putString(f, "task_id", env.TaskID)
+		putString(f, "last_tool_name", env.LastToolName)
+		putUsage(f, env.Usage)
+		return marker("agent_subtask_progress", f)
+	case "task_notification":
+		f := textFields(env.Summary)
+		renameTextFields(f, "summary")
+		putString(f, "task_id", env.TaskID)
+		putString(f, "status", env.Status)
+		putUsage(f, env.Usage)
+		return marker("agent_subtask_done", f)
+	case "status":
+		f := map[string]any{}
+		putString(f, "status", env.Status)
+		return marker("agent_status", f)
+	default:
 		return raw
 	}
-	fields := map[string]any{"model": env.Model}
-	if len(env.Tools) > 0 {
-		fields["tools"] = strings.Join(env.Tools, ",")
+}
+
+// renameTextFields swaps the "text"/"chars" keys produced by
+// textFields for caller-specific names (prompt/description/summary).
+func renameTextFields(f map[string]any, name string) {
+	if v, ok := f["text"]; ok {
+		f[name] = v
+		delete(f, "text")
 	}
-	return marker("agent_init", fields)
+	if v, ok := f["chars"]; ok {
+		f[name+"_chars"] = v
+		delete(f, "chars")
+	}
+}
+
+// putString / putInt drop empties at the call site so int64(0) does
+// not surface as `key=0` (formatValue does not treat it as empty).
+func putString(f map[string]any, k, v string) {
+	if v != "" {
+		f[k] = v
+	}
+}
+
+func putInt(f map[string]any, k string, v int64) {
+	if v != 0 {
+		f[k] = v
+	}
+}
+
+// putUsage spreads a sub-agent usage block onto f, skipping zeroes.
+func putUsage(f map[string]any, u taskUsage) {
+	putInt(f, "tool_uses", u.ToolUses)
+	putInt(f, "total_tokens", u.TotalTokens)
+	putInt(f, "duration_ms", u.DurationMs)
 }
 
 // renderAssistant emits one marker per content block in the assistant
@@ -119,14 +190,8 @@ func renderBlock(b contentBlock) []byte {
 		return marker("agent_message", textFields(b.Text))
 	case "tool_use":
 		f := textFields(string(b.Input))
+		renameTextFields(f, "input")
 		f["name"] = b.Name
-		// Rename truncated payload so input vs text reads correctly.
-		f["input"] = f["text"]
-		delete(f, "text")
-		if cs, ok := f["chars"]; ok {
-			f["input_chars"] = cs
-			delete(f, "chars")
-		}
 		return marker("agent_tool_use", f)
 	default:
 		return marker("agent_message", textFields(b.Text))
@@ -212,10 +277,8 @@ func textFields(s string) map[string]any {
 	return out
 }
 
-// truncateRunes clips s to at most limit runes and reports the
-// original rune count so the caller can surface "chars=<n>" alongside
-// the truncated body. The clipped form gets a trailing "…" so a
-// reader can tell content was elided.
+// truncateRunes clips s to at most limit runes, returning the
+// original rune count and a "…" suffix when content was elided.
 func truncateRunes(s string, limit int) (string, int, bool) {
 	runes := []rune(s)
 	if len(runes) <= limit {

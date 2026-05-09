@@ -1,0 +1,4 @@
+TS  agent subtask_start — description=Find resume command and PID handling prompt=Explore the repo and report key file paths. task_id=a3d0a8f40841ff26a task_type=local_agent
+TS  agent subtask_progress — description=Running find for resume command duration_ms=2622 last_tool_name=Bash task_id=a3d0a8f40841ff26a tool_uses=1 total_tokens=17483
+TS  agent subtask_progress — description=Reading internal/store/tasks/task.go duration_ms=13754 last_tool_name=Read task_id=a3d0a8f40841ff26a tool_uses=4 total_tokens=23201
+TS  agent subtask_done — duration_ms=70163 status=completed summary=Find resume command and PID handling task_id=a3d0a8f40841ff26a tool_uses=24 total_tokens=54143
