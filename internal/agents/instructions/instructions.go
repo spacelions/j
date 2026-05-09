@@ -104,6 +104,32 @@ var VerifierWorktree string
 //go:embed mustread_header.md
 var MustReadHeader string
 
+// PlannerClarificationResume is the resume-from-clarification planner
+// framing used by BuildPlannerClarificationResume. Carries three %q
+// placeholders for the per-task clarification.md path (twice — once
+// to read, once to delete) and the original user request markdown
+// path.
+//
+//go:embed planner_clarification_resume.md
+var PlannerClarificationResume string
+
+// WorkerClarificationResume is the resume-from-clarification worker
+// framing used by BuildWorkerClarificationResume. Carries three %q
+// placeholders for the per-task clarification.md path (twice — once
+// to read, once to delete) and the plan markdown path.
+//
+//go:embed worker_clarification_resume.md
+var WorkerClarificationResume string
+
+// VerifierClarificationResume is the resume-from-clarification
+// verifier framing used by BuildVerifierClarificationResume. Carries
+// four %q placeholders for the per-task clarification.md path (twice —
+// once to read, once to delete), the requirements path, and the plan
+// path.
+//
+//go:embed verifier_clarification_resume.md
+var VerifierClarificationResume string
+
 // Clarification is the canonical "if you cannot proceed, write your
 // question to <path> and exit" escape hatch every role must honour.
 // The prompts package's appendClarification helper renders it once

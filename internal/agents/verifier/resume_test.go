@@ -309,6 +309,70 @@ func TestRunResume_StatusCompletedIsResumable(t *testing.T) {
 	}
 }
 
+// TestRunResume_ResumeFromClarificationFlag pins that RunResume
+// sets VerifyRequest.ResumeFromClarification=true when a
+// clarification.md exists in the per-task dir, and false otherwise.
+// The verifier deletes the file at the end of the resume turn so
+// the next Finish() routes the task to its natural terminal status.
+func TestRunResume_ResumeFromClarificationFlag(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableVerify(t, func(row *tasks.Task) {
+		row.Status = tasks.StatusNeedsClarification
+	})
+	clar := filepath.Join(
+		mustTasksDir(t), id, tasks.ClarificationFileName,
+	)
+	if err := os.WriteFile(clar, []byte("what?"), 0o600); err != nil {
+		t.Fatalf("write clarification: %v", err)
+	}
+	agent := newScriptedAgent()
+	agent.verifyVerdicts = []string{"PASS"}
+	if err := RunResume(t.Context(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if len(agent.verifiedReqs) != 1 {
+		t.Fatalf("verify calls = %d, want 1", len(agent.verifiedReqs))
+	}
+	if !agent.verifiedReqs[0].ResumeFromClarification {
+		t.Fatal(
+			"VerifyRequest.ResumeFromClarification = false, " +
+				"want true with clarification.md present",
+		)
+	}
+}
+
+// TestRunResume_ResumeWithoutClarificationFile pins the no-file
+// branch.
+func TestRunResume_ResumeWithoutClarificationFile(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableVerify(t, nil)
+	agent := newScriptedAgent()
+	agent.verifyVerdicts = []string{"PASS"}
+	if err := RunResume(t.Context(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	}); err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	if agent.verifiedReqs[0].ResumeFromClarification {
+		t.Fatal(
+			"VerifyRequest.ResumeFromClarification = true, " +
+				"want false without clarification.md",
+		)
+	}
+}
+
 // TestRunResume_AutoPicksSingle exercises the case-1 branch.
 // Deletes findings.md before invoking RunResume to confirm the
 // orchestrator no longer pre-reads the findings body — the agent

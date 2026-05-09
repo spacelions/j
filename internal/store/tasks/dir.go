@@ -37,6 +37,15 @@ const RequirementsFileName = "requirements.md"
 // `internal/agents/instructions/planner.md`.
 const ClarificationFileName = "clarification.md"
 
+// ClarificationFileExists reports whether the previous turn left a
+// clarification.md inside taskDir. A missing file or any other stat
+// error counts as "absent" so callers default to the
+// non-clarification branch.
+func ClarificationFileExists(taskDir string) bool {
+	_, err := os.Stat(filepath.Join(taskDir, ClarificationFileName))
+	return err == nil
+}
+
 // Store is the task-package handle for the per-project tasks tree
 // (`<cwd>/.j/tasks/`). Construct one with Open and call Close when
 // done. Close is a no-op (no file descriptors are held); the field is

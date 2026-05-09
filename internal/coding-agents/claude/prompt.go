@@ -15,7 +15,11 @@ import (
 // either case.
 func buildPlanPrompt(req codingagents.PlanRequest) string {
 	base := prompts.BuildPlanner(req.FromFilePath, req.MustRead)
-	if req.Resume {
+	if req.ResumeFromClarification {
+		base = prompts.BuildPlannerClarificationResume(
+			req.FromFilePath, req.ClarificationPath, req.MustRead,
+		)
+	} else if req.Resume {
 		base = prompts.BuildPlannerResume(req.FromFilePath, req.MustRead)
 	}
 	return prompts.AppendPlannerSaveSuffix(
@@ -39,6 +43,12 @@ func buildWorkPrompt(req codingagents.WorkRequest) string {
 			req.Worktree, req.ClarificationPath,
 		)
 	}
+	if req.ResumeFromClarification {
+		return prompts.BuildWorkerClarificationResume(
+			req.PlanPath, req.Worktree, req.MustRead,
+			req.ClarificationPath,
+		)
+	}
 	if req.Resume {
 		return prompts.BuildWorkerResume(
 			req.PlanPath, req.Worktree, req.MustRead,
@@ -56,6 +66,12 @@ func buildWorkPrompt(req codingagents.WorkRequest) string {
 // Both branches thread req.ClarificationPath so the per-task escape
 // hatch is preserved.
 func buildVerifyPrompt(req codingagents.VerifyRequest) string {
+	if req.ResumeFromClarification {
+		return prompts.BuildVerifierClarificationResume(
+			req.RequirementsPath, req.PlanPath, req.Worktree,
+			req.MustRead, req.ClarificationPath,
+		)
+	}
 	if req.Resume {
 		return prompts.BuildVerifierResume(
 			req.RequirementsPath, req.PlanPath, req.Worktree,

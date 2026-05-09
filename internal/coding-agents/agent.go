@@ -115,6 +115,11 @@ type PlanRequest struct {
 	// work. Independent of ResumeChatID, which still threads the
 	// backend's session id.
 	Resume bool
+	// ResumeFromClarification, when true, swaps the backend's
+	// resume template for one that tells the agent to address the
+	// previous turn's clarification.md and delete it before exiting.
+	// Takes precedence over Resume.
+	ResumeFromClarification bool
 	// AgentLogPath is the absolute path the headless backend MUST
 	// redirect stdout/stderr to when it spawns a fire-and-forget
 	// background child. Empty for interactive runs and for backends
@@ -156,6 +161,9 @@ type WorkRequest struct {
 	// continue only the outstanding work. Independent of
 	// ResumeChatID.
 	Resume bool
+	// ResumeFromClarification — see PlanRequest.ResumeFromClarification.
+	// FixFindings still wins over both Resume and this flag.
+	ResumeFromClarification bool
 	// FixFindings, when true, asks the backend to use a fix-only
 	// worker prompt that points the previous session at the
 	// per-task verifier findings file (read by the agent itself)
@@ -211,7 +219,9 @@ type VerifyRequest struct {
 	Model             string
 	Interactive       bool
 	Resume            bool
-	ResumeChatID      string
+	// ResumeFromClarification — see PlanRequest.ResumeFromClarification.
+	ResumeFromClarification bool
+	ResumeChatID            string
 	// Worktree, when non-empty, is the bare git-worktree name the
 	// verifier should target. The backend threads it into the
 	// verifier prompt so the agent can `git worktree list` the name

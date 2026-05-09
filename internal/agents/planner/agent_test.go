@@ -213,6 +213,104 @@ func TestExecute_ResumeFromStoredSession(t *testing.T) {
 	}
 }
 
+// TestExecute_ResumeFromClarificationFlag pins that Execute sets
+// PlanRequest.ResumeFromClarification to true ONLY when the row is
+// in resume mode AND a clarification.md exists in the per-task dir.
+// The agent deletes that file at the end of its turn so the
+// follow-up resume run (without the file) flips the flag back to
+// false — Finish() then routes to the natural terminal status. This
+// test exercises the with-file branch.
+func TestExecute_ResumeFromClarificationFlag(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := testutil.WriteFile(taskDir+"/requirements.md", "# x\nbody"); err != nil {
+		t.Fatalf("write requirements: %v", err)
+	}
+	if err := testutil.WriteFile(
+		taskDir+"/"+tasks.ClarificationFileName, "what?"); err != nil {
+		t.Fatalf("write clarification: %v", err)
+	}
+	testutil.SeedAgentBucket(t, store.BucketPlanner, "scripted", "m1")
+	testutil.SeedTaskRow(t, tasks.Task{
+		ID:                taskID,
+		Status:            tasks.StatusPlanning,
+		PlanTool:          "scripted",
+		PlanModel:         "m1",
+		PlanResumeSession: "prior-cursor",
+		Summary:           "task",
+	})
+	seedPlanApproval(t, false)
+
+	stub := newScriptedPlanAgent("scripted")
+	if err := Execute(t.Context(), ExecuteOptions{
+		TaskID: taskID,
+		Agent:  stub,
+		Model:  "m1",
+		Stderr: io.Discard,
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !stub.lastReq.ResumeFromClarification {
+		t.Fatal(
+			"PlanRequest.ResumeFromClarification = false, " +
+				"want true with clarification.md present",
+		)
+	}
+	if !stub.lastReq.Resume {
+		t.Fatal("PlanRequest.Resume should still be true")
+	}
+}
+
+// TestExecute_ResumeWithoutClarificationFile pins the no-file
+// branch: a resume run whose per-task dir has no clarification.md
+// must leave ResumeFromClarification=false so the agent uses the
+// regular resume template.
+func TestExecute_ResumeWithoutClarificationFile(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := testutil.WriteFile(taskDir+"/requirements.md", "x"); err != nil {
+		t.Fatalf("write requirements: %v", err)
+	}
+	testutil.SeedAgentBucket(t, store.BucketPlanner, "scripted", "m1")
+	testutil.SeedTaskRow(t, tasks.Task{
+		ID:                taskID,
+		Status:            tasks.StatusPlanning,
+		PlanTool:          "scripted",
+		PlanModel:         "m1",
+		PlanResumeSession: "prior-cursor",
+		Summary:           "task",
+	})
+	seedPlanApproval(t, false)
+
+	stub := newScriptedPlanAgent("scripted")
+	if err := Execute(t.Context(), ExecuteOptions{
+		TaskID: taskID,
+		Agent:  stub,
+		Model:  "m1",
+		Stderr: io.Discard,
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if stub.lastReq.ResumeFromClarification {
+		t.Fatal(
+			"PlanRequest.ResumeFromClarification = true, " +
+				"want false without clarification.md",
+		)
+	}
+}
+
 // TestExecute_FreshFromEmptySession pins the restart contract: an
 // empty PlanResumeSession means "fresh" — Execute mints a new id via
 // NewResumeID, sets PlanRequest.Resume=false, and stamps the new id

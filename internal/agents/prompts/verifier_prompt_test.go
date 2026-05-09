@@ -218,6 +218,51 @@ func TestBuildVerifierResume_NilMustReadByteIdentical(t *testing.T) {
 	}
 }
 
+// TestBuildVerifierClarificationResume pins the
+// resume-from-clarification verifier prompt: the rendered text
+// must be non-empty, embed instructions.Verifier, cite the
+// clarification.md path (at least twice — once to read, once to
+// delete, plus once more from the appendClarification escape hatch
+// tail), mention deleting the file, cite both the requirements and
+// plan paths for context only, NOT inline their bodies, and differ
+// from BuildVerifierResume.
+func TestBuildVerifierClarificationResume(t *testing.T) {
+	const (
+		reqPath  = "/tmp/.j/tasks/abc/requirements.md"
+		planPath = "/tmp/.j/tasks/abc/plan.md"
+		clar     = "/tmp/.j/tasks/abc/clarification.md"
+	)
+	got := BuildVerifierClarificationResume(
+		reqPath, planPath, "", nil, clar,
+	)
+	if got == "" {
+		t.Fatal("BuildVerifierClarificationResume returned empty")
+	}
+	if !strings.Contains(got, strings.TrimSpace(instructions.Verifier)) {
+		t.Fatalf("prompt missing instructions.Verifier: %q", got)
+	}
+	if strings.Count(got, clar) < 2 {
+		t.Fatalf(
+			"clarification path should appear at least twice: %q",
+			got,
+		)
+	}
+	for _, want := range []string{
+		reqPath, planPath,
+		"paused with an open question",
+		"delete",
+		"natural terminal status",
+		"needs-clarification",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("prompt missing %q: %q", want, got)
+		}
+	}
+	if got == BuildVerifierResume(reqPath, planPath, "", nil, clar) {
+		t.Fatal("clarification-resume prompt should differ from resume")
+	}
+}
+
 // TestBuildVerifierFix pins the fix-loop worker prompt: the rendered
 // text must be non-empty, embed the instructions.Worker body (whose
 // opening "You are the worker …" doubles as the role preamble — so

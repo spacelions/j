@@ -70,17 +70,20 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 	lc, resumeID := beginPlanLifecycle(
 		ctx, opts, existing, stderr, agentLogPath, resumeMode,
 	)
+	resumeFromClarification := resumeMode &&
+		tasks.ClarificationFileExists(taskDir)
 	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
-		FromFilePath:           requirementsPath,
-		Model:                  opts.Model,
-		RequirementsOutputPath: requirementsPath,
-		PlanOutputPath:         planPath,
-		ClarificationPath:      clarificationPath,
-		Interactive:            opts.Interactive,
-		ResumeChatID:           resumeID,
-		Resume:                 resumeMode,
-		AgentLogPath:           agentLogPath,
-		MustRead:               mustReadFiles,
+		FromFilePath:            requirementsPath,
+		Model:                   opts.Model,
+		RequirementsOutputPath:  requirementsPath,
+		PlanOutputPath:          planPath,
+		ClarificationPath:       clarificationPath,
+		Interactive:             opts.Interactive,
+		ResumeChatID:            resumeID,
+		Resume:                  resumeMode,
+		ResumeFromClarification: resumeFromClarification,
+		AgentLogPath:            agentLogPath,
+		MustRead:                mustReadFiles,
 	})
 
 	if planErr == nil && pid > 0 && opts.WaitForCompletion {

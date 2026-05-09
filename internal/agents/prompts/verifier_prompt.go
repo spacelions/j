@@ -93,6 +93,41 @@ func BuildVerifierResume(
 	)
 }
 
+// BuildVerifierClarificationResume composes the resume-from-
+// clarification verifier prompt. It replaces BuildVerifier /
+// BuildVerifierResume on a resume run that started from
+// needs-clarification: the agent reads the per-task
+// clarification.md (cited twice — once to read, once to delete),
+// restates the question to the user in this session, captures the
+// reply, addresses it, and deletes the file before exiting so
+// Finish() routes to the natural terminal status. The
+// VERDICT-line save contract is owned by the first-run
+// BuildVerifier path; on resume the agent must not overwrite the
+// findings file unless new information forces a change (mirroring
+// BuildVerifierResume).
+func BuildVerifierClarificationResume(
+	reqPath, planPath, worktree string, mustRead []string,
+	clarificationPath string,
+) string {
+	return appendClarification(
+		appendVerifierWorktreeLine(
+			prependMustRead(
+				fmt.Sprintf(
+					"%s\n\n"+strings.TrimSpace(
+						instructions.VerifierClarificationResume,
+					),
+					strings.TrimSpace(Resolve(store.BucketVerifier)),
+					clarificationPath, clarificationPath,
+					reqPath, planPath,
+				),
+				mustRead,
+			),
+			worktree,
+		),
+		clarificationPath,
+	)
+}
+
 // BuildVerifierFix composes the worker-side fix prompt used when
 // the outer verify loop has observed a `VERDICT: FAIL` from the
 // verifier and wants the previous worker session to address the

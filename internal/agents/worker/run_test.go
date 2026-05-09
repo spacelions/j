@@ -373,6 +373,87 @@ func TestRun_ConfirmStatusOverrideError(t *testing.T) {
 	}
 }
 
+// TestRun_ResumeFromClarificationFlag pins that Execute sets
+// WorkRequest.ResumeFromClarification to true ONLY when the row is
+// in resume mode AND a clarification.md exists in the per-task dir.
+// The worker deletes the file at the end of the resume turn so the
+// next Finish() routes to the natural terminal status.
+func TestRun_ResumeFromClarificationFlag(t *testing.T) {
+	setupRunEnv(t)
+	id := seedPlanDoneTask(t)
+	taskDir, err := tasks.EnsureDir(id)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(taskDir, tasks.ClarificationFileName),
+		[]byte("what?"), 0o600,
+	); err != nil {
+		t.Fatalf("write clarification: %v", err)
+	}
+	row := testutil.ReadTaskRow(t, id)
+	row.Status = tasks.StatusWorking
+	row.WorkResumeSession = "prior-cursor"
+	row.WorkTool = "cursor"
+	row.WorkModel = "m1"
+	testutil.SeedTaskRow(t, row)
+
+	agent := newRunTestAgent("cursor")
+	if err := Execute(t.Context(), ExecuteOptions{
+		TaskID: id,
+		Yes:    true,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &fakeRunUI{},
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !agent.lastWorkReq.Resume {
+		t.Fatal("Resume = false, want true on resume run")
+	}
+	if !agent.lastWorkReq.ResumeFromClarification {
+		t.Fatal(
+			"ResumeFromClarification = false, " +
+				"want true with clarification.md present",
+		)
+	}
+}
+
+// TestRun_ResumeWithoutClarificationFile pins the no-file branch:
+// resume run without a clarification.md leaves
+// ResumeFromClarification=false (regular resume template).
+func TestRun_ResumeWithoutClarificationFile(t *testing.T) {
+	setupRunEnv(t)
+	id := seedPlanDoneTask(t)
+	row := testutil.ReadTaskRow(t, id)
+	row.Status = tasks.StatusWorking
+	row.WorkResumeSession = "prior-cursor"
+	row.WorkTool = "cursor"
+	row.WorkModel = "m1"
+	testutil.SeedTaskRow(t, row)
+
+	agent := newRunTestAgent("cursor")
+	if err := Execute(t.Context(), ExecuteOptions{
+		TaskID: id,
+		Yes:    true,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &fakeRunUI{},
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if agent.lastWorkReq.ResumeFromClarification {
+		t.Fatal(
+			"ResumeFromClarification = true, " +
+				"want false without clarification.md",
+		)
+	}
+}
+
 func TestRun_WaitForCompletion_PIDZero(t *testing.T) {
 	setupRunEnv(t)
 	id := seedPlanDoneTask(t)
