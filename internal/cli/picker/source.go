@@ -19,7 +19,7 @@ type Source string
 const (
 	SourceMarkdown Source = "markdown"
 	SourceLinear   Source = "linear"
-	SourceTask     Source = "existing task"
+	SourceTask     Source = "task"
 )
 
 // SourceResult bundles the typed outcome of PickSource: which source
@@ -136,7 +136,7 @@ func PickSource(
 			}
 			return SourceResult{}, errors.New("picker: no tasks available")
 		}
-		id, ok, err := ui.PickTask(ctx, "Select an existing task", rows)
+		id, ok, err := ui.PickTask(ctx, "Select a task", rows)
 		if err != nil {
 			return SourceResult{}, err
 		}
