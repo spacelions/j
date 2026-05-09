@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/spacelions/j/internal/cli/picker"
-	"github.com/spacelions/j/internal/linear"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/tools/linear"
 )
 
 // orderCapturingUI records the labels passed into SelectSource
