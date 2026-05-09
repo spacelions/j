@@ -4,7 +4,8 @@
 # pre-commit runs:
 #   1. line-cap: fails if any staged non-test file exceeds 300 lines, any
 #      line exceeds 80 chars, or any method exceeds 80 lines.
-#   2. tests:    runs `make test`.
+#   2. lint:     runs `make lint` (golangci-lint over the whole module).
+#   3. tests:    runs `make test`.
 
 pre-commit:
   piped: true
@@ -22,6 +23,9 @@ pre-commit:
         - "go.mod"
         - ".agents/**"
         - "skills-lock.json"
-    tests:
+    lint:
       priority: 2
+      run: make lint
+    tests:
+      priority: 3
       run: make test
