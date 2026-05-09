@@ -5,18 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/tools/linear"
 	"github.com/spacelions/j/internal/util/agentlog"
 )
-
-// linearStateSyncTimeout bounds the total time the hook spends
-// talking to Linear. Mirrors linearPushTimeout so the two hooks
-// share an identical worst-case budget.
-const linearStateSyncTimeout = 30 * time.Second
 
 // stateSyncTarget describes how a destination TaskStatus should be
 // mirrored into Linear: stateName is the human-readable workflow
@@ -78,42 +72,37 @@ func linearStateSyncHook(tr tasks.Transition, task tasks.Task) {
 	if !ok {
 		return
 	}
-	token, ok := loadLinearToken()
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(
-		context.Background(), linearStateSyncTimeout)
-	defer cancel()
-	client := linear.NewClient(token)
-	issue, err := client.GetIssue(ctx, task.LinearIssue)
-	if err != nil {
-		warnLinearSync("resolve %s: %s", task.LinearIssue, err)
-		return
-	}
-	stateID, ok := resolveStateID(ctx, client, issue.ID, target.stateName)
-	if !ok {
-		return
-	}
-	if err := client.UpdateIssueState(
-		ctx, issue.ID, stateID); err != nil {
-		warnLinearSync("issueUpdate: %s", err)
-	}
-	if tr.To == tasks.StatusNeedsClarification &&
-		isNeedsClarificationEvent(tr.Event) {
-		handleNeedsClarification(ctx, client, issue.ID, task)
-		return
-	}
-	if tr.To == tasks.StatusVerifying &&
-		tr.Event == tasks.EventVerifyBegin &&
-		task.PullRequestURL != "" {
-		postPullRequestComment(ctx, client, issue.ID, task.PullRequestURL)
-		postInboxReminder(ctx, client, issue.ID, task.AgentLogPath)
-		return
-	}
-	if target.ping {
-		postInboxReminder(ctx, client, issue.ID, task.AgentLogPath)
-	}
+	runLinearHook(task, warnLinearSync, func(
+		ctx context.Context, run linearHookRun,
+	) {
+		stateID, ok := resolveStateID(
+			ctx, run.client, run.issue.ID, target.stateName)
+		if !ok {
+			return
+		}
+		if err := run.client.UpdateIssueState(
+			ctx, run.issue.ID, stateID); err != nil {
+			warnLinearSync("issueUpdate: %s", err)
+		}
+		if tr.To == tasks.StatusNeedsClarification &&
+			isNeedsClarificationEvent(tr.Event) {
+			handleNeedsClarification(ctx, run.client, run.issue.ID, task)
+			return
+		}
+		if tr.To == tasks.StatusVerifying &&
+			tr.Event == tasks.EventVerifyBegin &&
+			task.PullRequestURL != "" {
+			postPullRequestComment(
+				ctx, run.client, run.issue.ID, task.PullRequestURL)
+			postInboxReminder(ctx, run.client, run.issue.ID,
+				task.AgentLogPath)
+			return
+		}
+		if target.ping {
+			postInboxReminder(ctx, run.client, run.issue.ID,
+				task.AgentLogPath)
+		}
+	})
 }
 
 // isNeedsClarificationEvent narrows the comment+reminder branch to
@@ -177,22 +166,6 @@ func postClarificationComment(
 		ctx, issueID, string(body)); err != nil {
 		warnLinearSync("commentCreate: %s", err)
 	}
-}
-
-// loadLinearToken returns the Linear API key and ok=true on success,
-// or warns and returns ok=false when the key is missing / unreadable
-// — mirroring the linear-push hook's preflight.
-func loadLinearToken() (string, bool) {
-	token, err := linear.LoadAPIKey()
-	if err != nil {
-		warnLinearSync("load api key: %s", err)
-		return "", false
-	}
-	if token == "" {
-		warnLinearSync("no API key set")
-		return "", false
-	}
-	return token, true
 }
 
 // resolveStateID asks Linear for the workflow states attached to the

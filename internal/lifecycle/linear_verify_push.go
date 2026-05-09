@@ -6,17 +6,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/store/tasks"
-	"github.com/spacelions/j/internal/tools/linear"
 )
-
-// linearVerifyPushTimeout bounds the total time the verify-push hook
-// spends talking to Linear. Mirrors linearPushTimeout so the family
-// of hooks shares an identical worst-case budget.
-const linearVerifyPushTimeout = 30 * time.Second
 
 // verifyTerminalHeaders maps each terminal verify event onto the
 // human-readable header that should accompany the verifier_findings.md
@@ -77,25 +70,16 @@ func pushFindings(stderr io.Writer, task tasks.Task, header string) {
 	if !ok {
 		return
 	}
-	token, ok := loadVerifyToken(stderr)
-	if !ok {
-		return
+	warn := func(format string, a ...any) {
+		warnLinearVerify(stderr, format, a...)
 	}
-	ctx, cancel := context.WithTimeout(
-		context.Background(), linearVerifyPushTimeout)
-	defer cancel()
-	client := linear.NewClient(token)
-	issue, err := client.GetIssue(ctx, task.LinearIssue)
-	if err != nil {
-		warnLinearVerify(
-			stderr, "resolve %s: %s", task.LinearIssue, err)
-		return
-	}
-	body := header + "\n\n" + findings
-	if err := client.CreateComment(
-		ctx, issue.ID, body); err != nil {
-		warnLinearVerify(stderr, "commentCreate: %s", err)
-	}
+	runLinearHook(task, warn, func(ctx context.Context, run linearHookRun) {
+		body := header + "\n\n" + findings
+		if err := run.client.CreateComment(
+			ctx, run.issue.ID, body); err != nil {
+			warnLinearVerify(stderr, "commentCreate: %s", err)
+		}
+	})
 }
 
 // readFindings loads `<tasksDir>/<id>/verifier_findings.md`. Either
@@ -114,23 +98,6 @@ func readFindings(stderr io.Writer, id string) (string, bool) {
 		return "", false
 	}
 	return string(data), true
-}
-
-// loadVerifyToken returns the Linear API key and ok=true on success,
-// or warns and returns ok=false when the key is missing / unreadable.
-// Mirrors loadLinearToken from the state-sync hook with this hook's
-// warn prefix.
-func loadVerifyToken(stderr io.Writer) (string, bool) {
-	token, err := linear.LoadAPIKey()
-	if err != nil {
-		warnLinearVerify(stderr, "load api key: %s", err)
-		return "", false
-	}
-	if token == "" {
-		warnLinearVerify(stderr, "no API key set")
-		return "", false
-	}
-	return token, true
 }
 
 // warnLinearVerify emits a single orange dialog box with the

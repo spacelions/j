@@ -12,6 +12,7 @@ import (
 
 	"github.com/spacelions/j/internal/agents/instructions"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // spawnWaitTimeout bounds the polling helpers below. The claude stub
@@ -24,49 +25,16 @@ const spawnWaitTimeout = 5 * time.Second
 
 func waitForCalls(t *testing.T, callsPath string, want int) []string {
 	t.Helper()
-	deadline := time.Now().Add(spawnWaitTimeout)
-	for {
-		argv := readCallsBestEffort(callsPath)
-		if len(argv) >= want {
-			return argv
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timeout waiting for %d argv entries at %s, got %d: %v",
-				want, callsPath, len(argv), argv)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	return testutil.WaitForNullArgs(t, callsPath, want, spawnWaitTimeout)
 }
 
 func readCallsBestEffort(path string) []string {
-	b, err := os.ReadFile(path)
-	if err != nil || len(b) == 0 {
-		return nil
-	}
-	parts := strings.Split(string(b), "\x00")
-	if parts[len(parts)-1] == "" {
-		parts = parts[:len(parts)-1]
-	}
-	if len(parts) == 0 {
-		return nil
-	}
-	return parts
+	return testutil.ReadNullArgsBestEffort(path)
 }
 
 func waitForLog(t *testing.T, logPath, want string) string {
 	t.Helper()
-	deadline := time.Now().Add(spawnWaitTimeout)
-	for {
-		data, err := os.ReadFile(logPath)
-		if err == nil && strings.Contains(string(data), want) {
-			return string(data)
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timeout waiting for %q in %s; last contents %q (err=%v)",
-				want, logPath, data, err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	return testutil.WaitForLog(t, logPath, want, spawnWaitTimeout)
 }
 
 // installStub writes a `claude` shell script into t.TempDir(),
@@ -77,26 +45,16 @@ func waitForLog(t *testing.T, logPath, want string) string {
 // Args are NUL-separated so multi-line prompts round-trip cleanly.
 func installStub(t *testing.T, stdout string, exitCode int) (callsPath, cwdPath string) {
 	t.Helper()
-	dir := t.TempDir()
-	callsPath = filepath.Join(dir, "calls.log")
-	cwdPath = filepath.Join(dir, "cwd.log")
-	stdoutPath := filepath.Join(dir, "stdout.txt")
-	if err := os.WriteFile(stdoutPath, []byte(stdout), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	body := fmt.Sprintf(`#!/bin/sh
-: > %q
-for a in "$@"; do printf '%%s\0' "$a" >> %q; done
-pwd > %q
-cat %q
-exit %d
-`, callsPath, callsPath, cwdPath, stdoutPath, exitCode)
-	bin := filepath.Join(dir, Binary)
-	if err := os.WriteFile(bin, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	return callsPath, cwdPath
+	stub := testutil.InstallExecutableStub(
+		t,
+		testutil.ExecutableStubOptions{
+			Binary:    Binary,
+			Stdout:    stdout,
+			ExitCode:  exitCode,
+			RecordCWD: true,
+		},
+	)
+	return stub.CallsPath, stub.CWDPath
 }
 
 // installHeadlessRegressionStub is a guard against the headless argv
@@ -141,21 +99,7 @@ exit 0
 
 func readCalls(t *testing.T, path string) []string {
 	t.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read calls.log: %v", err)
-	}
-	if len(b) == 0 {
-		return nil
-	}
-	parts := strings.Split(string(b), "\x00")
-	if parts[len(parts)-1] == "" {
-		parts = parts[:len(parts)-1]
-	}
-	if len(parts) == 0 {
-		return nil
-	}
-	return parts
+	return testutil.ReadNullArgs(t, path)
 }
 
 // readCwd reads the working directory the stub script was invoked
@@ -163,28 +107,14 @@ func readCalls(t *testing.T, path string) []string {
 // interactive paths.
 func readCwd(t *testing.T, cwdPath string) string {
 	t.Helper()
-	b, err := os.ReadFile(cwdPath)
-	if err != nil {
-		t.Fatalf("read cwd.log: %v", err)
-	}
-	return strings.TrimSpace(string(b))
+	return testutil.ReadTrimmedFile(t, cwdPath)
 }
 
 // waitForCwd polls cwdPath until it has content or the timeout fires.
 // Used in headless paths where the child writes asynchronously.
 func waitForCwd(t *testing.T, cwdPath string) string {
 	t.Helper()
-	deadline := time.Now().Add(spawnWaitTimeout)
-	for {
-		b, err := os.ReadFile(cwdPath)
-		if err == nil && len(strings.TrimSpace(string(b))) > 0 {
-			return strings.TrimSpace(string(b))
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timeout waiting for cwd at %s (err=%v)", cwdPath, err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	return testutil.WaitForTrimmedFile(t, cwdPath, spawnWaitTimeout)
 }
 
 // assertCwd compares actual against want under filepath.EvalSymlinks

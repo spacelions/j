@@ -2,8 +2,6 @@ package lifecycle
 
 import (
 	"io"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/spacelions/j/internal/store/tasks"
@@ -130,28 +128,13 @@ func (lc *VerifyLifecycle) pickFinishEvent(
 	if runErr != nil {
 		return tasks.EventVerifyError
 	}
-	if lc.clarificationPresent() {
+	if taskClarificationPresent(lc.task.ID) {
 		return tasks.EventVerifyNeedsClarification
 	}
 	if outcome == VerifyOutcomeSuccess {
 		return tasks.EventVerifyPass
 	}
 	return tasks.EventVerifyFail
-}
-
-// clarificationPresent reports whether the verifier left
-// `<tasksDir>/<task.ID>/clarification.md` on disk. A missing tasks
-// dir or any other stat error counts as "absent" so the historical
-// PASS/FAIL matrix stays the default.
-func (lc *VerifyLifecycle) clarificationPresent() bool {
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		return false
-	}
-	path := filepath.Join(
-		tasksDir, lc.task.ID, tasks.ClarificationFileName)
-	_, err = os.Stat(path)
-	return err == nil
 }
 
 // IterationBegin records the iteration cap so a later FAIL Verdict
@@ -173,8 +156,4 @@ func (lc *VerifyLifecycle) Verdict(
 	PushVerifyIterationFinding(
 		lc.stderr, lc.task, iteration, lc.maxIterations,
 	)
-}
-
-// IterationEnd closes the iteration_begin/end pairing.
-func (lc *VerifyLifecycle) IterationEnd(iteration int, verdict string) {
 }

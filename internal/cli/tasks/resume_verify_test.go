@@ -12,11 +12,12 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 func TestRunResumeVerify_NoActiveSession(t *testing.T) {
 	setupContinueEnv(t)
-	seedTaskFull(t, func(task *tasks.Task) {
+	testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.VerifyResumeSession = ""
 	})
 	ui := &fakeUI{}
@@ -58,10 +59,10 @@ func TestRunResumeVerify_NoTasksAtAll(t *testing.T) {
 
 func TestRunResumeVerify_PickerOnlyShowsRowsWithSession(t *testing.T) {
 	setupContinueEnv(t)
-	keep := seedTaskFull(t, func(task *tasks.Task) {
+	keep := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.VerifyResumeSession = "active-cursor"
 	})
-	skip := seedTaskFull(t, func(task *tasks.Task) {
+	skip := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.VerifyResumeSession = ""
 	})
 	ui := &fakeUI{}
@@ -88,7 +89,7 @@ func TestRunResumeVerify_PickerOnlyShowsRowsWithSession(t *testing.T) {
 
 func TestRunResumeVerify_PickerAbort(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.VerifyResumeSession = "active-cursor"
 	})
 	ui := &fakeUI{}
@@ -109,7 +110,7 @@ func TestRunResumeVerify_PickerAbort(t *testing.T) {
 
 func TestRunResumeVerify_HappyPath(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.VerifyResumeSession = "active-cursor"
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
@@ -137,7 +138,7 @@ func TestRunResumeVerify_HappyPath(t *testing.T) {
 
 func TestRunResumeVerify_SpawnFails(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.VerifyResumeSession = "active-cursor"
 	})
 	ui := &fakeUI{pickReturn: id}
@@ -156,7 +157,7 @@ func TestRunResumeVerify_SpawnFails(t *testing.T) {
 
 func TestRunResumeVerify_PickerErrorPropagates(t *testing.T) {
 	setupContinueEnv(t)
-	seedTaskFull(t, func(task *tasks.Task) {
+	testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.VerifyResumeSession = "active-cursor"
 	})
 	boom := errInjected("picker boom")
@@ -260,7 +261,7 @@ func TestNewResumeVerifyCmd_PreRunE_DefaultedAgents(t *testing.T) {
 // FSM edge {completed, EventVerifyResume, verifying} must permit it.
 func TestRunResumeVerify_HappyPath_Completed(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusCompleted
 		task.VerifyResumeSession = "sess-x"
 	})
@@ -290,7 +291,7 @@ func TestRunResumeVerify_HappyPath_Completed(t *testing.T) {
 // for the `failed` source status.
 func TestRunResumeVerify_HappyPath_Failed(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusFailed
 		task.VerifyResumeSession = "sess-x"
 	})

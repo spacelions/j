@@ -12,9 +12,6 @@ import (
 	"github.com/spacelions/j/internal/cli/preflight"
 	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/coding-agents/claude"
-	"github.com/spacelions/j/internal/coding-agents/cursor"
-	"github.com/spacelions/j/internal/coding-agents/deepseek"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/util/run"
 )
@@ -73,7 +70,7 @@ type StartOptions struct {
 type startTarget = resolver.StartTarget
 
 func newStartCmd() *cobra.Command {
-	agents := []codingagents.Agent{cursor.New(), claude.New(), deepseek.New()}
+	agents := defaultAgents()
 	cmd := &cobra.Command{
 		Use: "start",
 		Short: "Start a new task: drive planner, then pause for " +
@@ -103,12 +100,8 @@ func newStartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var interactive *bool
-			if cmd.Flags().Changed(flagKeyInteractive) ||
-				envSet("TASKS_START_INTERACTIVE") {
-				v := viper.GetBool("tasks.start.interactive")
-				interactive = &v
-			}
+			interactive := explicitBoolPtr(cmd, flagKeyInteractive,
+				"tasks.start.interactive", "TASKS_START_INTERACTIVE")
 			return RunStart(cmd.Context(), StartOptions{
 				FromFile:             viper.GetString("tasks.start.from_file"),
 				FromLinear:           viper.GetString("tasks.start.from_linear"),

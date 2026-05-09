@@ -381,3 +381,70 @@ func TestFormatLog_SystemStatus(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatLog_SystemInitOmitsEmptyTools(t *testing.T) {
+	t.Parallel()
+	src := []byte(`{"type":"system","subtype":"init",` +
+		`"model":"sonnet"}` + "\n")
+	got := string(New().FormatLog(src))
+	if !strings.Contains(got, "model=sonnet") {
+		t.Fatalf("missing model: %q", got)
+	}
+	if strings.Contains(got, "tools=") {
+		t.Fatalf("empty tools field leaked: %q", got)
+	}
+}
+
+func TestFormatLog_TaskStartedLongPromptRenamesChars(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("p", 250)
+	src := []byte(`{"type":"system","subtype":"task_started",` +
+		`"task_id":"t1","prompt":"` + long + `"}` + "\n")
+	got := string(New().FormatLog(src))
+	if !strings.Contains(got, "prompt_chars=250") {
+		t.Fatalf("missing prompt_chars=250: %q", got)
+	}
+	if strings.Contains(got, " chars=250") {
+		t.Fatalf("unrenamed chars leaked: %q", got)
+	}
+}
+
+func TestRenameTextFields_AllowsCharsWithoutText(t *testing.T) {
+	f := map[string]any{"chars": 250}
+	renameTextFields(f, "summary")
+	if _, ok := f["text"]; ok {
+		t.Fatalf("text key leaked: %#v", f)
+	}
+	if _, ok := f["chars"]; ok {
+		t.Fatalf("chars key leaked: %#v", f)
+	}
+	if f["summary_chars"] != 250 {
+		t.Fatalf("summary_chars = %#v", f["summary_chars"])
+	}
+}
+
+func TestFormatLog_ToolResultMissingContent(t *testing.T) {
+	t.Parallel()
+	src := []byte(`{"type":"user","message":{"content":` +
+		`[{"type":"tool_result"}]}}` + "\n")
+	got := string(New().FormatLog(src))
+	if !strings.Contains(got, "bytes=0") {
+		t.Fatalf("missing bytes=0: %q", got)
+	}
+}
+
+func TestFormatLog_ResultSparse(t *testing.T) {
+	t.Parallel()
+	src := []byte(`{"type":"result"}` + "\n")
+	got := string(New().FormatLog(src))
+	if !strings.Contains(got, "agent result") {
+		t.Fatalf("missing result marker: %q", got)
+	}
+	for _, leak := range []string{
+		"subtype=", "stop_reason=", "duration_ms=",
+	} {
+		if strings.Contains(got, leak) {
+			t.Fatalf("field %q leaked: %q", leak, got)
+		}
+	}
+}

@@ -3,8 +3,6 @@ package lifecycle
 import (
 	"context"
 	"io"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/spacelions/j/internal/lifecycle/tuiquit"
@@ -152,25 +150,10 @@ func (lc *WorkLifecycle) pickFinishEvent(runErr error) tasks.Event {
 	if runErr != nil {
 		return tasks.EventWorkError
 	}
-	if lc.clarificationPresent() {
+	if taskClarificationPresent(lc.task.ID) {
 		return tasks.EventWorkNeedsClarification
 	}
 	return tasks.EventWorkDone
-}
-
-// clarificationPresent reports whether the worker left
-// `<tasksDir>/<task.ID>/clarification.md` on disk. A missing tasks
-// dir or any other stat error counts as "absent" so the historical
-// work-done default is preserved.
-func (lc *WorkLifecycle) clarificationPresent() bool {
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		return false
-	}
-	path := filepath.Join(
-		tasksDir, lc.task.ID, tasks.ClarificationFileName)
-	_, err = os.Stat(path)
-	return err == nil
 }
 
 func (lc *WorkLifecycle) detectPullRequestURL() {

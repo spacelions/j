@@ -135,39 +135,17 @@ func (a *Agent) Plan(
 	workspace := codingagents.DefaultWorkspace(req.FromFilePath)
 	prompt := prompts.PlanPrompt(req)
 
-	if req.Interactive {
-		var args []string
-		if req.ResumeChatID != "" {
-			args = append(args, argResume, req.ResumeChatID)
-		}
-		args = append(args,
-			"--mode", "plan", argModel, req.Model,
-			argWorkspace, workspace, prompt,
-		)
-		if err := run.Run(ctx, Binary, args...); err != nil {
-			return 0, fmt.Errorf("cursor-agent: %w", err)
-		}
-		return 0, nil
-	}
-
-	var hargs []string
-	if req.ResumeChatID != "" {
-		hargs = append(hargs, argResume, req.ResumeChatID)
-	}
-	hargs = append(hargs,
+	iargs := phaseArgs(req.ResumeChatID,
+		"--mode", "plan", argModel, req.Model,
+		argWorkspace, workspace, prompt,
+	)
+	hargs := phaseArgs(req.ResumeChatID,
 		argPrint,
 		argOutputFormat, argOutputFormatStreamJSON,
 		argForce, argTrust, argModel, req.Model,
 		argWorkspace, workspace, prompt,
 	)
-	pid, err := run.SpawnFormattedIn(
-		ctx, "", req.AgentLogPath,
-		a.FormatLog, Binary, hargs...,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("cursor-agent: %w", err)
-	}
-	return pid, nil
+	return a.runPhase(ctx, req.Interactive, req.AgentLogPath, iargs, hargs)
 }
 
 // Work runs cursor-agent against a previously generated plan markdown.
@@ -192,38 +170,17 @@ func (a *Agent) Work(
 	workspace := codingagents.DefaultWorkspace(req.PlanPath)
 	prompt := prompts.WorkPrompt(req)
 
-	if req.Interactive {
-		var wargs []string
-		if req.ResumeChatID != "" {
-			wargs = append(wargs, argResume, req.ResumeChatID)
-		}
-		wargs = append(wargs,
-			argModel, req.Model,
-			argWorkspace, workspace, prompt,
-		)
-		if err := run.Run(ctx, Binary, wargs...); err != nil {
-			return 0, fmt.Errorf("cursor-agent: %w", err)
-		}
-		return 0, nil
-	}
-
-	pargs := []string{
+	iargs := phaseArgs(req.ResumeChatID,
+		argModel, req.Model,
+		argWorkspace, workspace, prompt,
+	)
+	hargs := phaseArgs(req.ResumeChatID,
 		argPrint,
 		argOutputFormat, argOutputFormatStreamJSON,
 		argForce, argTrust, argModel, req.Model,
 		argWorkspace, workspace, prompt,
-	}
-	if req.ResumeChatID != "" {
-		pargs = append([]string{argResume, req.ResumeChatID}, pargs...)
-	}
-	pid, err := run.SpawnFormattedIn(
-		ctx, "", req.AgentLogPath,
-		a.FormatLog, Binary, pargs...,
 	)
-	if err != nil {
-		return 0, fmt.Errorf("cursor-agent: %w", err)
-	}
-	return pid, nil
+	return a.runPhase(ctx, req.Interactive, req.AgentLogPath, iargs, hargs)
 }
 
 // Verify runs cursor-agent against the requirements + plan pair.
@@ -240,38 +197,44 @@ func (a *Agent) Verify(
 	workspace := codingagents.ProjectRootWorkspace()
 	prompt := prompts.VerifyPrompt(req)
 
-	if req.Interactive {
-		var args []string
-		if req.ResumeChatID != "" {
-			args = append(args, argResume, req.ResumeChatID)
-		}
-		args = append(args,
-			argModel, req.Model,
-			argWorkspace, workspace, prompt,
-		)
-		if err := run.Run(ctx, Binary, args...); err != nil {
-			return 0, fmt.Errorf("cursor-agent: %w", err)
-		}
-		return 0, nil
-	}
-
-	pargs := []string{
+	iargs := phaseArgs(req.ResumeChatID,
+		argModel, req.Model,
+		argWorkspace, workspace, prompt,
+	)
+	hargs := phaseArgs(req.ResumeChatID,
 		argPrint,
 		argOutputFormat, argOutputFormatStreamJSON,
 		argForce, argTrust, argModel, req.Model,
 		argWorkspace, workspace, prompt,
-	}
-	if req.ResumeChatID != "" {
-		pargs = append([]string{argResume, req.ResumeChatID}, pargs...)
+	)
+	return a.runPhase(ctx, req.Interactive, req.AgentLogPath, iargs, hargs)
+}
+
+func (a *Agent) runPhase(
+	ctx context.Context, interactive bool, agentLogPath string,
+	interactiveArgs, headlessArgs []string,
+) (int, error) {
+	if interactive {
+		if err := run.Run(ctx, Binary, interactiveArgs...); err != nil {
+			return 0, fmt.Errorf("cursor-agent: %w", err)
+		}
+		return 0, nil
 	}
 	pid, err := run.SpawnFormattedIn(
-		ctx, "", req.AgentLogPath,
-		a.FormatLog, Binary, pargs...,
+		ctx, "", agentLogPath,
+		a.FormatLog, Binary, headlessArgs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("cursor-agent: %w", err)
 	}
 	return pid, nil
+}
+
+func phaseArgs(resumeID string, args ...string) []string {
+	if resumeID == "" {
+		return args
+	}
+	return append([]string{argResume, resumeID}, args...)
 }
 
 // parseModels extracts cursor-agent model IDs from --list-models output.

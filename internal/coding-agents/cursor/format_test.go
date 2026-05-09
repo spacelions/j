@@ -245,3 +245,76 @@ func TestFormatLog_ToolCallNonObjectInner(t *testing.T) {
 		t.Fatalf("missing name=read: %q", got)
 	}
 }
+
+func TestFormatLog_SystemInitOmitsEmptyFields(t *testing.T) {
+	t.Parallel()
+	src := []byte(`{"type":"system","subtype":"init"}` + "\n")
+	got := string(New().FormatLog(src))
+	if !strings.Contains(got, "agent init") {
+		t.Fatalf("missing init marker: %q", got)
+	}
+	for _, leak := range []string{"model=", "cwd="} {
+		if strings.Contains(got, leak) {
+			t.Fatalf("field %q leaked: %q", leak, got)
+		}
+	}
+}
+
+func TestFormatLog_AssistantEmptyContent(t *testing.T) {
+	t.Parallel()
+	src := []byte(`{"type":"assistant","message":{"content":[]}}` +
+		"\n")
+	got := New().FormatLog(src)
+	if string(got) != string(src) {
+		t.Fatalf("FormatLog = %q, want raw %q", got, src)
+	}
+}
+
+func TestFormatLog_UserNonText(t *testing.T) {
+	t.Parallel()
+	src := []byte(`{"type":"user","message":{"content":` +
+		`[{"type":"image","text":"ignored"}]}}` + "\n")
+	got := New().FormatLog(src)
+	if string(got) != string(src) {
+		t.Fatalf("FormatLog = %q, want raw %q", got, src)
+	}
+}
+
+func TestFormatLog_ToolCallLongArgsRenamesChars(t *testing.T) {
+	t.Parallel()
+	long := strings.Repeat("x", 250)
+	src := []byte(`{"type":"tool_call","subtype":"started",` +
+		`"tool_call":{"readToolCall":{"args":{"q":"` + long +
+		`"}}}}` + "\n")
+	got := string(New().FormatLog(src))
+	if !strings.Contains(got, "input_chars=") {
+		t.Fatalf("missing input_chars: %q", got)
+	}
+}
+
+func TestFormatLog_ToolCallMissingArgs(t *testing.T) {
+	t.Parallel()
+	src := []byte(`{"type":"tool_call","subtype":"started",` +
+		`"tool_call":{"readToolCall":{"result":"ok"}}}` + "\n")
+	got := string(New().FormatLog(src))
+	if !strings.Contains(got, "name=read") {
+		t.Fatalf("missing name=read: %q", got)
+	}
+}
+
+func TestFormatLog_ResultSparse(t *testing.T) {
+	t.Parallel()
+	src := []byte(`{"type":"result"}` + "\n")
+	got := string(New().FormatLog(src))
+	if !strings.Contains(got, "agent result") {
+		t.Fatalf("missing result marker: %q", got)
+	}
+	if !strings.Contains(got, "ok=true") {
+		t.Fatalf("missing ok=true: %q", got)
+	}
+	for _, leak := range []string{"subtype=", "duration_ms="} {
+		if strings.Contains(got, leak) {
+			t.Fatalf("field %q leaked: %q", leak, got)
+		}
+	}
+}

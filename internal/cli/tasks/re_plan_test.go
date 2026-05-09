@@ -13,6 +13,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // TestRunRePlan_NoTasks pins the empty-store branch: no rows, no
@@ -43,7 +44,7 @@ func TestRunRePlan_NoTasks(t *testing.T) {
 // ok=false; RunRePlan exits cleanly with no spawn.
 func TestRunRePlan_PickerAbort(t *testing.T) {
 	setupContinueEnv(t)
-	seedTaskFull(t, nil)
+	testutil.SeedFullTask(t, nil)
 	ui := &fakeUI{} // empty pickReturn -> ok=false
 	if err := RunRePlan(t.Context(), RePlanOptions{
 		Stdin:  strings.NewReader(""),
@@ -84,7 +85,7 @@ func TestRunRePlan_FromTaskNotFound(t *testing.T) {
 // status-override prompt; declining it short-circuits with no spawn.
 func TestRunRePlan_StatusOverrideDeclined(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorking
 	})
 	ui := &fakeUI{statusReturn: false}
@@ -116,7 +117,7 @@ func TestRunRePlan_StatusOverrideDeclined(t *testing.T) {
 // plan-done is a "natural" re-plan target and must skip the prompt.
 func TestRunRePlan_PlanDoneSkipsConfirm(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil) // default Status: plan-done
+	id := testutil.SeedFullTask(t, nil) // default Status: plan-done
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{}
 	var stdout bytes.Buffer
@@ -154,7 +155,7 @@ func TestRunRePlan_PlanDoneSkipsConfirm(t *testing.T) {
 // `help` is also a natural re-plan target and must skip the prompt.
 func TestRunRePlan_HelpSkipsConfirm(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusHelp
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
@@ -183,7 +184,7 @@ func TestRunRePlan_HelpSkipsConfirm(t *testing.T) {
 // --interactive flow into the orchestrate argv as one-off overrides.
 func TestRunRePlan_ForwardsAllOverrides(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil)
+	id := testutil.SeedFullTask(t, nil)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	if err := RunRePlan(t.Context(), RePlanOptions{
 		FromTask:    id,
@@ -217,7 +218,7 @@ func TestRunRePlan_ForwardsAllOverrides(t *testing.T) {
 // Interactive=false (vs. nil/inherit) is forwarded explicitly.
 func TestRunRePlan_InteractiveFalseStillForwards(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil)
+	id := testutil.SeedFullTask(t, nil)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	if err := RunRePlan(t.Context(), RePlanOptions{
 		FromTask:    id,
@@ -241,7 +242,7 @@ func TestRunRePlan_InteractiveFalseStillForwards(t *testing.T) {
 // picks a row and the spawn fires for it.
 func TestRunRePlan_PickerHappy(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil)
+	id := testutil.SeedFullTask(t, nil)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}
 	if err := RunRePlan(t.Context(), RePlanOptions{
@@ -268,7 +269,7 @@ func TestRunRePlan_PickerHappy(t *testing.T) {
 // terminal-attached). No fork dialog fires.
 func TestRunRePlan_InteractiveRunsInline(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil)
+	id := testutil.SeedFullTask(t, nil)
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	var stdout bytes.Buffer
 	if err := RunRePlan(t.Context(), RePlanOptions{
@@ -298,7 +299,7 @@ func TestRunRePlan_InteractiveRunsInline(t *testing.T) {
 // JBinary at a missing path surfaces the spawn error.
 func TestRunRePlan_SpawnFails(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil)
+	id := testutil.SeedFullTask(t, nil)
 	err := RunRePlan(t.Context(), RePlanOptions{
 		FromTask: id,
 		Stdin:    strings.NewReader(""),
@@ -322,7 +323,7 @@ func TestRunRePlan_SpawnFails(t *testing.T) {
 // FromTask and pre-populated agent buckets so the UI is never invoked.
 func TestRunRePlan_AppliesDefaults(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, nil)
+	id := testutil.SeedFullTask(t, nil)
 	if err := RunRePlan(t.Context(), RePlanOptions{
 		FromTask: id,
 		Agents:   []codingagents.Agent{newContinueAgent()},
@@ -419,7 +420,7 @@ func TestNewRePlanCmd_RunE_PropagatesError(t *testing.T) {
 // the caller and leave the row untouched.
 func TestRunRePlan_StatusUIError(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusWorking
 	})
 	boom := errInjected("status boom")
@@ -555,7 +556,7 @@ func TestRunRePlan_SpawnsAfterConfirm(t *testing.T) {
 	} {
 		t.Run(string(status), func(t *testing.T) {
 			setupContinueEnv(t)
-			id := seedTaskFull(t, func(task *tasks.Task) { task.Status = status })
+			id := testutil.SeedFullTask(t, func(task *tasks.Task) { task.Status = status })
 			argvPath := filepath.Join(t.TempDir(), "argv.txt")
 			ui := &fakeUI{statusReturn: true}
 			if err := RunRePlan(t.Context(), RePlanOptions{

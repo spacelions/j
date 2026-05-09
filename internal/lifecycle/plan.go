@@ -10,8 +10,6 @@ package lifecycle
 
 import (
 	"io"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/spacelions/j/internal/store"
@@ -234,7 +232,7 @@ func (lc *PlanLifecycle) pickFinishEvent(
 	if runErr != nil {
 		return tasks.EventPlanError
 	}
-	if lc.clarificationPresent() {
+	if taskClarificationPresent(lc.task.ID) {
 		return tasks.EventPlanNeedsClarification
 	}
 	lc.task.Summary = tasks.Summary(
@@ -244,21 +242,6 @@ func (lc *PlanLifecycle) pickFinishEvent(
 		return tasks.EventPlanAwaitApproval
 	}
 	return tasks.EventPlanDone
-}
-
-// clarificationPresent reports whether the planner left
-// `<tasksDir>/<task.ID>/clarification.md` on disk. A missing tasks
-// dir or any other stat error counts as "absent" so the historical
-// plan-done / plan-await-approval matrix stays the default.
-func (lc *PlanLifecycle) clarificationPresent() bool {
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		return false
-	}
-	path := filepath.Join(
-		tasksDir, lc.task.ID, tasks.ClarificationFileName)
-	_, err = os.Stat(path)
-	return err == nil
 }
 
 // Task returns the in-memory snapshot of the task row.

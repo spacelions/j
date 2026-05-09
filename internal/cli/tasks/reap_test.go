@@ -156,6 +156,31 @@ func TestReap_DeadPlanning_WithArtifacts(t *testing.T) {
 	}
 }
 
+func TestReap_DeadPlanning_WithBlankSummaryKeepsExisting(t *testing.T) {
+	s := openTestStore(t)
+	putProjectPlanRequiresApproval(t, "false")
+	tasksDir, err := tasks.DefaultDir()
+	if err != nil {
+		t.Fatalf("DefaultTasksDir: %v", err)
+	}
+	id := "done-blank-summary"
+	seedTaskDir(t, id, "\n\t\n", "1. step")
+	seedStaleLockFile(t, id)
+	in := []tasks.Task{{
+		ID:      id,
+		Status:  tasks.StatusPlanning,
+		Summary: "existing summary",
+	}}
+	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
+	got := out[0]
+	if got.Status != tasks.StatusPlanDone {
+		t.Fatalf("Status = %q, want plan-done", got.Status)
+	}
+	if got.Summary != "existing summary" {
+		t.Fatalf("Summary = %q, want existing summary", got.Summary)
+	}
+}
+
 // TestReap_DeadPlanning_NoArtifacts pins the help-status branch: the
 // lock is stale but neither requirements nor plan made it to disk
 // (e.g. the spawned child crashed early), so the row flips to help.

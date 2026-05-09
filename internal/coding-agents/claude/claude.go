@@ -136,32 +136,18 @@ func (a *Agent) Plan(
 	workspace := codingagents.DefaultWorkspace(req.FromFilePath)
 	prompt := prompts.PlanPrompt(req)
 
-	if req.Interactive {
-		args := append(
-			sessionArgs(req.ResumeChatID, req.Resume),
-			"--permission-mode", "plan",
-			argModel, req.Model, prompt,
-		)
-		if err := run.RunIn(
-			ctx, workspace, Binary, args...,
-		); err != nil {
-			return 0, fmt.Errorf("claude: %w", err)
-		}
-		return 0, nil
-	}
-
-	hargs := append(
-		sessionArgs(req.ResumeChatID, req.Resume),
-		headlessArgs(req.Model, prompt)...,
+	iargs := phaseArgs(
+		req.ResumeChatID, req.Resume,
+		"--permission-mode", "plan", argModel, req.Model, prompt,
 	)
-	pid, err := run.SpawnFormattedIn(
-		ctx, workspace, req.AgentLogPath,
-		a.FormatLog, Binary, hargs...,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("claude: %w", err)
-	}
-	return pid, nil
+	hargs := headlessPhaseArgs(req.ResumeChatID, req.Resume, req.Model, prompt)
+	return a.runPhase(ctx, phaseRun{
+		interactive:     req.Interactive,
+		workspace:       workspace,
+		agentLogPath:    req.AgentLogPath,
+		interactiveArgs: iargs,
+		headlessArgs:    hargs,
+	})
 }
 
 // headlessArgs returns the argv tail used by Plan / Work / Verify in
@@ -207,31 +193,18 @@ func (a *Agent) Work(
 	workspace := codingagents.DefaultWorkspace(req.PlanPath)
 	prompt := prompts.WorkPrompt(req)
 
-	if req.Interactive {
-		args := append(
-			sessionArgs(req.ResumeChatID, req.Resume),
-			argModel, req.Model, prompt,
-		)
-		if err := run.RunIn(
-			ctx, workspace, Binary, args...,
-		); err != nil {
-			return 0, fmt.Errorf("claude: %w", err)
-		}
-		return 0, nil
-	}
-
-	pargs := append(
-		sessionArgs(req.ResumeChatID, req.Resume),
-		headlessArgs(req.Model, prompt)...,
+	iargs := phaseArgs(
+		req.ResumeChatID, req.Resume,
+		argModel, req.Model, prompt,
 	)
-	pid, err := run.SpawnFormattedIn(
-		ctx, workspace, req.AgentLogPath,
-		a.FormatLog, Binary, pargs...,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("claude: %w", err)
-	}
-	return pid, nil
+	hargs := headlessPhaseArgs(req.ResumeChatID, req.Resume, req.Model, prompt)
+	return a.runPhase(ctx, phaseRun{
+		interactive:     req.Interactive,
+		workspace:       workspace,
+		agentLogPath:    req.AgentLogPath,
+		interactiveArgs: iargs,
+		headlessArgs:    hargs,
+	})
 }
 
 // Verify runs claude against the requirements + plan pair. Mirrors
@@ -246,26 +219,40 @@ func (a *Agent) Verify(
 	workspace := codingagents.ProjectRootWorkspace()
 	prompt := prompts.VerifyPrompt(req)
 
-	if req.Interactive {
-		args := append(
-			sessionArgs(req.ResumeChatID, req.Resume),
-			argModel, req.Model, prompt,
-		)
+	iargs := phaseArgs(
+		req.ResumeChatID, req.Resume,
+		argModel, req.Model, prompt,
+	)
+	hargs := headlessPhaseArgs(req.ResumeChatID, req.Resume, req.Model, prompt)
+	return a.runPhase(ctx, phaseRun{
+		interactive:     req.Interactive,
+		workspace:       workspace,
+		agentLogPath:    req.AgentLogPath,
+		interactiveArgs: iargs,
+		headlessArgs:    hargs,
+	})
+}
+
+type phaseRun struct {
+	interactive     bool
+	workspace       string
+	agentLogPath    string
+	interactiveArgs []string
+	headlessArgs    []string
+}
+
+func (a *Agent) runPhase(ctx context.Context, phase phaseRun) (int, error) {
+	if phase.interactive {
 		if err := run.RunIn(
-			ctx, workspace, Binary, args...,
+			ctx, phase.workspace, Binary, phase.interactiveArgs...,
 		); err != nil {
 			return 0, fmt.Errorf("claude: %w", err)
 		}
 		return 0, nil
 	}
-
-	pargs := append(
-		sessionArgs(req.ResumeChatID, req.Resume),
-		headlessArgs(req.Model, prompt)...,
-	)
 	pid, err := run.SpawnFormattedIn(
-		ctx, workspace, req.AgentLogPath,
-		a.FormatLog, Binary, pargs...,
+		ctx, phase.workspace, phase.agentLogPath,
+		a.FormatLog, Binary, phase.headlessArgs...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("claude: %w", err)
@@ -286,4 +273,12 @@ func sessionArgs(id string, resume bool) []string {
 		return []string{"--resume", id}
 	}
 	return []string{"--session-id", id}
+}
+
+func phaseArgs(id string, resume bool, args ...string) []string {
+	return append(sessionArgs(id, resume), args...)
+}
+
+func headlessPhaseArgs(id string, resume bool, model, prompt string) []string {
+	return append(sessionArgs(id, resume), headlessArgs(model, prompt)...)
 }

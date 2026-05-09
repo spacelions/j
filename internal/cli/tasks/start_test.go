@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -53,11 +52,7 @@ func writeStartFileInCwd(t *testing.T, name, body string) string {
 // test's temp dir and returns its absolute path.
 func noopJBinary(t *testing.T) string {
 	t.Helper()
-	p := filepath.Join(t.TempDir(), "j-stub.sh")
-	if err := os.WriteFile(p, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return p
+	return testutil.NoopJBinary(t)
 }
 
 // argvJBinary writes a tiny shell script that records its argv, one
@@ -69,26 +64,12 @@ func noopJBinary(t *testing.T) string {
 // returns.
 func argvJBinary(t *testing.T, outputPath string) string {
 	t.Helper()
-	p := filepath.Join(t.TempDir(), "j-argv-stub.sh")
-	body := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" > %q.tmp && mv %q.tmp %q\n", outputPath, outputPath, outputPath)
-	if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return p
+	return testutil.ArgvJBinary(t, outputPath)
 }
 
 func readSpawnedArgv(t *testing.T, path string) []string {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		data, err := os.ReadFile(path)
-		if err == nil && len(data) > 0 {
-			return strings.Split(strings.TrimSpace(string(data)), "\n")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("spawned argv was not written to %s", path)
-	return nil
+	return testutil.ReadSpawnedArgv(t, path)
 }
 
 // readTaskFromBolt opens the per-project tasks DB and returns the

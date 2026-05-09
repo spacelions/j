@@ -12,6 +12,7 @@ import (
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/testutil"
 )
 
 // withFakeTerminate overrides the package-level allowlist that
@@ -32,7 +33,7 @@ func withFakeTerminate(
 // printing the takeover note and never invokes the signal helper.
 func TestRunResumePlan_NoContentionStaysSilent(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.PlanResumeSession = "active-cursor"
 	})
 	called := 0
@@ -69,7 +70,7 @@ func TestRunResumePlan_NoContentionStaysSilent(t *testing.T) {
 // the (fake) terminator, waits for the lock to drain, and proceeds.
 func TestRunResumePlan_TakeoverWhenHeld(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.PlanResumeSession = "active-cursor"
 	})
 	holderCtx := tasks.WithPhase(t.Context(), "planning")
@@ -114,7 +115,7 @@ func TestRunResumePlan_TakeoverWhenHeld(t *testing.T) {
 // and never re-execs the orchestrator.
 func TestRunResumePlan_TerminatorErrorBlocksSpawn(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.PlanResumeSession = "active-cursor"
 	})
 	held, err := tasks.AcquireLock(t.Context(), id)
@@ -150,7 +151,7 @@ func TestRunResumePlan_TerminatorErrorBlocksSpawn(t *testing.T) {
 // the grace window and then surfaces the "still alive" error.
 func TestRunResumePlan_TerminatorSuccessButLockStillHeld(t *testing.T) {
 	setupContinueEnv(t)
-	id := seedTaskFull(t, func(task *tasks.Task) {
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.PlanResumeSession = "active-cursor"
 	})
 	held, err := tasks.AcquireLock(t.Context(), id)

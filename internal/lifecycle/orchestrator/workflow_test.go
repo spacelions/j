@@ -23,3 +23,37 @@ func TestRun_SmokeBogusLauncherArgs(t *testing.T) {
 		t.Fatalf("expected wrapped workflow error, got %v", err)
 	}
 }
+
+func TestParseRunPhase(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want RunPhase
+	}{
+		{"empty", "", RunPhaseFull},
+		{"full", "full", RunPhaseFull},
+		{"from work", "from-work", RunPhaseFromWork},
+		{"verify only", "verify-only", RunPhaseVerifyOnly},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseRunPhase(tc.in)
+			if err != nil {
+				t.Fatalf("ParseRunPhase: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("ParseRunPhase = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseRunPhase_RejectsUnknown(t *testing.T) {
+	got, err := ParseRunPhase("worker")
+	if err == nil {
+		t.Fatalf("ParseRunPhase = %q, want error", got)
+	}
+	if !strings.Contains(err.Error(), "want full|from-work|verify-only") {
+		t.Fatalf("error = %q", err)
+	}
+}
