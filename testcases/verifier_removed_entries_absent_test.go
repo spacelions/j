@@ -78,6 +78,8 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 		`internal/util/agentlog/agentlog.go:.*Emit`,
 		`internal/util/agentlog/agentlog.go:.*formatValue`,
 		`internal/util/run/run.go:.*RunIn`,
+		`internal/agents/worker/run.go:.*lookupResumeAgent`,
+		`internal/agents/worker/run.go:.*resolveWorker`,
 	}
 	for _, fragment := range mustBeAbsent {
 		if strings.Contains(body, fragment) {

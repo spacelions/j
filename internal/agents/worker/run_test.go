@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
@@ -478,5 +479,67 @@ func TestRun_WaitForCompletion_PIDZero(t *testing.T) {
 	}
 	if agent.workCalls != 1 {
 		t.Fatalf("workCalls = %d, want 1", agent.workCalls)
+	}
+}
+
+func TestResolveWorker_ResumeUnknownTool(t *testing.T) {
+	agent := newRunTestAgent("cursor")
+	_, _, _, err := resolveWorker(
+		t.Context(),
+		ExecuteOptions{Agents: []codingagents.Agent{agent}},
+		resolverWorkPlan("ghost", "m1", "session-1"),
+		true,
+	)
+	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
+		t.Fatalf("resolveWorker err = %v, want unknown tool", err)
+	}
+}
+
+func TestResolveWorker_SelectWorkerError(t *testing.T) {
+	agent := newRunTestAgent("cursor")
+	_, _, _, err := resolveWorker(
+		t.Context(),
+		ExecuteOptions{
+			Agents: []codingagents.Agent{agent},
+			Tool:   "ghost",
+			Stderr: io.Discard,
+			UI:     &fakeRunUI{},
+		},
+		resolverWorkPlan("", "", ""),
+		false,
+	)
+	if err == nil {
+		t.Fatal("resolveWorker err = nil, want select-worker error")
+	}
+}
+
+func TestLookupResumeAgent(t *testing.T) {
+	agent := newRunTestAgent("cursor")
+	if got, ok := lookupResumeAgent(
+		[]codingagents.Agent{agent}, "cursor",
+	); !ok || got != agent {
+		t.Fatalf("lookupResumeAgent found = (%v, %v), want agent,true", got, ok)
+	}
+	if got, ok := lookupResumeAgent(
+		[]codingagents.Agent{agent}, "",
+	); ok || got != nil {
+		t.Fatalf("lookupResumeAgent empty = (%v, %v), want nil,false", got, ok)
+	}
+	if got, ok := lookupResumeAgent(
+		[]codingagents.Agent{agent}, "ghost",
+	); ok || got != nil {
+		t.Fatalf("lookupResumeAgent miss = (%v, %v), want nil,false", got, ok)
+	}
+}
+
+func resolverWorkPlan(tool, model, session string) resolver.WorkPlan {
+	return resolver.WorkPlan{
+		Task: tasks.Task{
+			ID:                tasks.NewTaskID(),
+			Status:            tasks.StatusWorking,
+			WorkTool:          tool,
+			WorkModel:         model,
+			WorkResumeSession: session,
+		},
 	}
 }
