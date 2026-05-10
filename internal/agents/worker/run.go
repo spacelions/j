@@ -155,17 +155,16 @@ func runWorker(
 		resumeFromClarification, mustReadFiles)
 	pid, workErr := agent.Work(ctx, req)
 	if workErr == nil && pid > 0 {
-		if opts.WaitForCompletion {
-			if err := run.WaitForExit(ctx, pid); err != nil {
-				lc.Finish(err)
-				return err
-			}
-		} else {
-			lc.RecordAgentLog(req.AgentLogPath)
-			uitheme.NormalForkDialog(
-				opts.Stdout, agent.Name(), pid, req.AgentLogPath,
-			)
-			return nil
+		session.ResumeID = captureSpawnedWorkerResume(
+			ctx, agent, lc, codingagents.ResumeCapture{
+				TaskDir: res.TaskDir,
+				Since:   beginAt,
+				Stderr:  opts.Stderr,
+			}, session.ResumeID, pid,
+		)
+		done, err := handleSpawnedWorker(ctx, agent, lc, req, opts, pid)
+		if err != nil || done {
+			return err
 		}
 	}
 	if workErr == nil && session.ResumeID == "" {
@@ -185,6 +184,28 @@ func runWorker(
 		opts.Stdout, "J: working on task %s\n", res.Task.ID,
 	)
 	return nil
+}
+
+func handleSpawnedWorker(
+	ctx context.Context,
+	agent codingagents.Agent,
+	lc *lifecycle.WorkLifecycle,
+	req codingagents.WorkRequest,
+	opts Options,
+	pid int,
+) (bool, error) {
+	if opts.WaitForCompletion {
+		if err := run.WaitForExit(ctx, pid); err != nil {
+			lc.Finish(err)
+			return false, err
+		}
+		return false, nil
+	}
+	lc.RecordAgentLog(req.AgentLogPath)
+	uitheme.NormalForkDialog(
+		opts.Stdout, agent.Name(), pid, req.AgentLogPath,
+	)
+	return true, nil
 }
 
 // lookupResumeAgent finds the agent in agents whose Name matches the

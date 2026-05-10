@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/lifecycle"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
@@ -28,6 +30,7 @@ type runTestAgent struct {
 	lastWorkReq codingagents.WorkRequest
 	resumeID    string
 	resumeIDErr error
+	noResumeID  bool
 }
 
 func newRunTestAgent(name string) *runTestAgent {
@@ -51,6 +54,9 @@ func (a *runTestAgent) NewResumeID(context.Context) (string, error) {
 	if a.resumeIDErr != nil {
 		return "", a.resumeIDErr
 	}
+	if a.noResumeID {
+		return "", nil
+	}
 	if a.resumeID != "" {
 		return a.resumeID, nil
 	}
@@ -61,6 +67,27 @@ func (a *runTestAgent) Work(_ context.Context, req codingagents.WorkRequest) (in
 	a.workCalls++
 	a.lastWorkReq = req
 	return a.workPid, a.workErr
+}
+
+type capturingRunTestAgent struct {
+	*runTestAgent
+	captureID            string
+	captureErr           error
+	captureEmptyBeforeID int
+	captureCalls         int
+}
+
+func (a *capturingRunTestAgent) CaptureResumeID(
+	_ context.Context, _ string, _ time.Time,
+) (string, error) {
+	a.captureCalls++
+	if a.captureErr != nil {
+		return "", a.captureErr
+	}
+	if a.captureCalls <= a.captureEmptyBeforeID {
+		return "", nil
+	}
+	return a.captureID, nil
 }
 
 // fakeRunUI is a scripted UI fake for Execute tests.
@@ -239,11 +266,225 @@ func TestRun_RecordsAgentLog(t *testing.T) {
 	}
 }
 
+func TestRun_RecordsActiveCapturedResumeSession(t *testing.T) {
+	setupRunEnv(t)
+	id := seedPlanDoneTask(t)
+	base := newRunTestAgent("cursor")
+	base.noResumeID = true
+	base.workPid = os.Getpid()
+	agent := &capturingRunTestAgent{
+		runTestAgent:         base,
+		captureID:            "captured-active-work",
+		captureEmptyBeforeID: 1,
+	}
+	var stdout bytes.Buffer
+	err := Execute(t.Context(), Options{
+		TaskID: id,
+		Yes:    true,
+		Stdin:  strings.NewReader(""),
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &fakeRunUI{},
+		Tool:   "cursor",
+		Model:  "m1",
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	row := testutil.ReadTaskRow(t, id)
+	if row.WorkResumeSession != "captured-active-work" {
+		t.Fatalf(
+			"WorkResumeSession = %q, want captured-active-work",
+			row.WorkResumeSession,
+		)
+	}
+	if row.Status != tasks.StatusWorking {
+		t.Fatalf("Status = %q, want working", row.Status)
+	}
+	if !row.WorkEndAt.IsZero() {
+		t.Fatalf("WorkEndAt = %v, want zero", row.WorkEndAt)
+	}
+	if agent.captureCalls < 2 {
+		t.Fatalf("CaptureResumeID calls = %d, want at least 2",
+			agent.captureCalls)
+	}
+}
+
+func TestCaptureWorkerResumeWhileActive_ImmediateSession(t *testing.T) {
+	lc, taskDir, id := setupCaptureLifecycle(t)
+	agent := &capturingRunTestAgent{
+		runTestAgent: newRunTestAgent("cursor"),
+		captureID:    "captured-now",
+	}
+	got := captureWorkerResumeWhileActive(
+		t.Context(),
+		agent,
+		lc,
+		codingagents.ResumeCapture{
+			TaskDir: taskDir,
+			Since:   time.Now().UTC(),
+			Stderr:  io.Discard,
+		},
+		os.Getpid(),
+	)
+	if got != "captured-now" {
+		t.Fatalf("captured id = %q, want captured-now", got)
+	}
+	row := testutil.ReadTaskRow(t, id)
+	if row.WorkResumeSession != "captured-now" {
+		t.Fatalf("WorkResumeSession = %q, want captured-now",
+			row.WorkResumeSession)
+	}
+}
+
+func TestCaptureSpawnedWorkerResume_PreservesExisting(t *testing.T) {
+	lc, taskDir, _ := setupCaptureLifecycle(t)
+	agent := &capturingRunTestAgent{
+		runTestAgent: newRunTestAgent("cursor"),
+		captureID:    "should-not-capture",
+	}
+	got := captureSpawnedWorkerResume(
+		t.Context(),
+		agent,
+		lc,
+		codingagents.ResumeCapture{
+			TaskDir: taskDir,
+			Since:   time.Now().UTC(),
+			Stderr:  io.Discard,
+		},
+		"pre-minted",
+		os.Getpid(),
+	)
+	if got != "pre-minted" {
+		t.Fatalf("captured id = %q, want pre-minted", got)
+	}
+	if agent.captureCalls != 0 {
+		t.Fatalf("CaptureResumeID calls = %d, want 0",
+			agent.captureCalls)
+	}
+}
+
+func TestCaptureWorkerResumeWhileActive_StopsWhenProcessDead(t *testing.T) {
+	lc, taskDir, _ := setupCaptureLifecycle(t)
+	agent := &capturingRunTestAgent{
+		runTestAgent:         newRunTestAgent("cursor"),
+		captureEmptyBeforeID: 100,
+	}
+	got := captureWorkerResumeWhileActive(
+		t.Context(),
+		agent,
+		lc,
+		codingagents.ResumeCapture{
+			TaskDir: taskDir,
+			Since:   time.Now().UTC(),
+			Stderr:  io.Discard,
+		},
+		0x7fffffff,
+	)
+	if got != "" {
+		t.Fatalf("captured id = %q, want empty", got)
+	}
+}
+
+func TestCaptureWorkerResumeWhileActive_ContextDone(t *testing.T) {
+	lc, taskDir, _ := setupCaptureLifecycle(t)
+	agent := &capturingRunTestAgent{
+		runTestAgent:         newRunTestAgent("cursor"),
+		captureEmptyBeforeID: 100,
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	got := captureWorkerResumeWhileActive(
+		ctx,
+		agent,
+		lc,
+		codingagents.ResumeCapture{
+			TaskDir: taskDir,
+			Since:   time.Now().UTC(),
+			Stderr:  io.Discard,
+		},
+		os.Getpid(),
+	)
+	if got != "" {
+		t.Fatalf("captured id = %q, want empty", got)
+	}
+}
+
+func TestCaptureWorkerResumeWhileActive_TimesOut(t *testing.T) {
+	lc, taskDir, _ := setupCaptureLifecycle(t)
+	agent := &capturingRunTestAgent{
+		runTestAgent:         newRunTestAgent("cursor"),
+		captureEmptyBeforeID: 100,
+	}
+	got := captureWorkerResumeWhileActive(
+		t.Context(),
+		agent,
+		lc,
+		codingagents.ResumeCapture{
+			TaskDir: taskDir,
+			Since:   time.Now().UTC(),
+			Stderr:  io.Discard,
+		},
+		os.Getpid(),
+	)
+	if got != "" {
+		t.Fatalf("captured id = %q, want empty", got)
+	}
+}
+
+func TestCaptureWorkerResumeOnce_WarnsOnError(t *testing.T) {
+	lc, taskDir, _ := setupCaptureLifecycle(t)
+	agent := &capturingRunTestAgent{
+		runTestAgent: newRunTestAgent("cursor"),
+		captureErr:   errors.New("scan failed"),
+	}
+	var stderr bytes.Buffer
+	got, done := captureWorkerResumeOnce(
+		t.Context(),
+		agent,
+		lc,
+		codingagents.ResumeCapture{
+			TaskDir: taskDir,
+			Since:   time.Now().UTC(),
+			Stderr:  &stderr,
+		},
+	)
+	if got != "" || !done {
+		t.Fatalf("got (%q, %v), want empty,true", got, done)
+	}
+	if !strings.Contains(stderr.String(), "J: scan failed") {
+		t.Fatalf("stderr = %q, want scan warning", stderr.String())
+	}
+}
+
+func setupCaptureLifecycle(
+	t *testing.T,
+) (*lifecycle.WorkLifecycle, string, string) {
+	t.Helper()
+	setupRunEnv(t)
+	id := seedPlanDoneTask(t)
+	taskDir, err := tasks.EnsureDir(id)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	row := testutil.ReadTaskRow(t, id)
+	session := codingagents.AgentSession{
+		Tool:  "cursor",
+		Model: "m1",
+	}
+	return beginWorkLifecycle(
+		resolver.WorkPlan{Task: row},
+		io.Discard,
+		session,
+	), taskDir, id
+}
+
 func TestRun_WaitForCompletion_Success(t *testing.T) {
 	setupRunEnv(t)
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
-	agent.workPid = 0
+	agent.workPid = 0x7fffffff
 	err := Execute(t.Context(), Options{
 		TaskID:            id,
 		Yes:               true,
