@@ -243,6 +243,17 @@ func TestScanSessions_MissingDir(t *testing.T) {
 	}
 }
 
+func TestScanSessions_ReadDirError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions")
+	if err := os.WriteFile(path, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := scanSessions(path, "/ws/A", time.Now())
+	if err == nil {
+		t.Fatal("scanSessions error = nil")
+	}
+}
+
 // TestCaptureResumeID_NoStore covers the happy path of a fresh
 // machine: DEEPSEEK_HOME points at a tempdir with no `sessions/`
 // child, so CaptureResumeID returns ("", nil) without error.
@@ -303,6 +314,20 @@ func TestCaptureResumeID_NoMatch(t *testing.T) {
 	}
 	if got != "" {
 		t.Fatalf("got %q, want empty", got)
+	}
+}
+
+func TestCaptureResumeID_ScanError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(envHome, home)
+	if err := os.WriteFile(
+		filepath.Join(home, "sessions"), []byte("not a directory"), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	_, err := New().CaptureResumeID(t.Context(), "/ws/A", time.Now())
+	if err == nil {
+		t.Fatal("CaptureResumeID error = nil")
 	}
 }
 
