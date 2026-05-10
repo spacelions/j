@@ -108,7 +108,6 @@ func WriteTaskTable(
 	for i, r := range rows[1:] {
 		b.WriteString(buildBorderLine(cols, "├", "┼", "┤"))
 		b.WriteByte('\n')
-		//nolint:gosec // taskRows and rows[1:] always have equal length
 		b.WriteString(buildContentLine(r, cols, rowStyle(taskRows[i], &activeIdx)))
 		b.WriteByte('\n')
 	}

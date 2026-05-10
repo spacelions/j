@@ -36,3 +36,15 @@ func filterTasksWithVerifySession(rows []tasks.Task) []tasks.Task {
 		func(t tasks.Task) bool { return t.VerifyResumeSession != "" },
 	)
 }
+
+func filterTasksBySession(
+	rows []tasks.Task, hasSession func(tasks.Task) bool,
+) []tasks.Task {
+	out := make([]tasks.Task, 0, len(rows))
+	for _, t := range rows {
+		if hasSession(t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}

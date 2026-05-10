@@ -41,8 +41,6 @@ const (
 // deepseek-tui has no `--list-models` equivalent so we surface a stable
 // canonical default. Users who want a different specific id can pin it
 // via `j settings set <bucket>.model=<id>`.
-//
-//nolint:goconst // "deepseek-v4-pro" count inflated by test fixtures
 var defaultModels = []string{"deepseek-v4-pro"}
 
 // Agent is a deepseek-tui-backed worker. It is stateless: every method

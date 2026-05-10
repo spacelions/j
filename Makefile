@@ -2,6 +2,9 @@ SHELL := /bin/bash
 
 BIN_DIR := bin
 BIN     := $(BIN_DIR)/j
+GIT_BRANCH := $(shell git branch --show-current 2>/dev/null || echo detached)
+LINT_CACHE := $(CURDIR)/.j/cache/golangci-lint/$(subst /,_,$(GIT_BRANCH))
+LINT_ROOTS := ./cmd/... ./internal/... ./testcases/...
 
 .PHONY: build clean coverage line-coverage branch-coverage test e2e race
 .PHONY: lint lint-fix install-hooks lines
@@ -26,7 +29,9 @@ race:
 	go test -race ./...
 
 lint:
-	go tool golangci-lint run ./...
+	@mkdir -p $(LINT_CACHE)
+	GOLANGCI_LINT_CACHE=$(LINT_CACHE) \
+		go tool golangci-lint run $(LINT_ROOTS)
 
 lint-fix:
 	go tool golangci-lint run --fix ./...

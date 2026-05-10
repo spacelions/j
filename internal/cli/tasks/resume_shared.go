@@ -172,18 +172,6 @@ func pickResumeTaskID(
 	return opts.UI.PickTask(ctx, rows)
 }
 
-func filterTasksBySession(
-	rows []tasks.Task, hasSession func(tasks.Task) bool,
-) []tasks.Task {
-	out := make([]tasks.Task, 0, len(rows))
-	for _, t := range rows {
-		if hasSession(t) {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
 func requireRequirementsOrLinear(t tasks.Task) error {
 	taskDir, err := tasks.EnsureDir(t.ID)
 	if err != nil {
