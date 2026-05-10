@@ -112,6 +112,7 @@ func planRequest(
 	dir, target string, interactive bool, resumeID, logPath string,
 ) codingagents.PlanRequest {
 	return codingagents.PlanRequest{
+		TaskDir:                dir,
 		FromFilePath:           target,
 		Model:                  "gpt-5.5",
 		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),
@@ -119,6 +120,29 @@ func planRequest(
 		Interactive:            interactive,
 		ResumeChatID:           resumeID,
 		AgentLogPath:           logPath,
+	}
+}
+
+func TestPlan_SetsScopedHomeEnv(t *testing.T) {
+	dir, target := stagePlanFiles(t)
+	stub := testutil.InstallExecutableStub(
+		t,
+		testutil.ExecutableStubOptions{
+			Binary:    Binary,
+			ExitCode:  0,
+			RecordEnv: true,
+		},
+	)
+
+	if _, err := New().Plan(
+		t.Context(), planRequest(dir, target, true, "", ""),
+	); err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	env := testutil.ReadTrimmedFile(t, stub.EnvPath)
+	want := envHome + "=" + filepath.Join(dir, homeSubdir)
+	if !strings.Contains(env, want) {
+		t.Fatalf("env missing %q: %s", want, env)
 	}
 }
 
@@ -305,10 +329,65 @@ func TestPlan_Headless_SpawnError(t *testing.T) {
 	}
 }
 
+func TestPlan_Work_Verify_ScopedHomeError(t *testing.T) {
+	dir, target := stagePlanFiles(t)
+	taskPath := filepath.Join(t.TempDir(), "task-as-file")
+	if err := os.WriteFile(taskPath, []byte("not a dir"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	planPath := filepath.Join(dir, "plan.md")
+	if err := os.WriteFile(planPath, []byte("1. step"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New()
+	cases := []struct {
+		name string
+		run  func() (int, error)
+	}{
+		{
+			name: "plan",
+			run: func() (int, error) {
+				req := planRequest(dir, target, true, "", "")
+				req.TaskDir = taskPath
+				return a.Plan(t.Context(), req)
+			},
+		},
+		{
+			name: "work",
+			run: func() (int, error) {
+				req := workRequest(planPath, true, "", "")
+				req.TaskDir = taskPath
+				return a.Work(t.Context(), req)
+			},
+		},
+		{
+			name: "verify",
+			run: func() (int, error) {
+				req := verifyRequest(dir, true, "", "")
+				req.TaskDir = taskPath
+				return a.Verify(t.Context(), req)
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pid, err := tc.run()
+			if err == nil || !strings.Contains(err.Error(), "codex") {
+				t.Fatalf("err = %v, want codex scoped-home error", err)
+			}
+			if pid != 0 {
+				t.Fatalf("pid = %d, want 0", pid)
+			}
+		})
+	}
+}
+
 func workRequest(
 	plan string, interactive bool, resumeID, logPath string,
 ) codingagents.WorkRequest {
 	return codingagents.WorkRequest{
+		TaskDir:      filepath.Dir(plan),
 		PlanPath:     plan,
 		Model:        "gpt-5.5",
 		Interactive:  interactive,
@@ -410,6 +489,7 @@ func verifyRequest(
 	dir string, interactive bool, resumeID, logPath string,
 ) codingagents.VerifyRequest {
 	return codingagents.VerifyRequest{
+		TaskDir:                    dir,
 		RequirementsPath:           filepath.Join(dir, "requirements.md"),
 		PlanPath:                   filepath.Join(dir, "plan.md"),
 		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),

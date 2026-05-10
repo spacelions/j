@@ -113,9 +113,9 @@ func TestCaptureAndRecordResume_RecordsCapturedID(t *testing.T) {
 		capturingAgent{id: "captured"},
 		recorder,
 		ResumeCapture{
-			Workspace: "/ws/A",
-			Since:     time.Now(),
-			Stderr:    &bytes.Buffer{},
+			TaskDir: "/ws/A",
+			Since:   time.Now(),
+			Stderr:  &bytes.Buffer{},
 		},
 	)
 	if got != "captured" {
@@ -134,9 +134,9 @@ func TestCaptureAndRecordResume_WarnsOnCaptureError(t *testing.T) {
 		capturingAgent{err: errors.New("scan failed")},
 		recorder,
 		ResumeCapture{
-			Workspace: "/ws/A",
-			Since:     time.Now(),
-			Stderr:    &stderr,
+			TaskDir: "/ws/A",
+			Since:   time.Now(),
+			Stderr:  &stderr,
 		},
 	)
 	if got != "" {

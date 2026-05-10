@@ -171,9 +171,9 @@ func runWorker(
 	if workErr == nil && session.ResumeID == "" {
 		codingagents.CaptureAndRecordResume(
 			ctx, agent, lc, codingagents.ResumeCapture{
-				Workspace: res.TaskDir,
-				Since:     beginAt,
-				Stderr:    opts.Stderr,
+				TaskDir: res.TaskDir,
+				Since:   beginAt,
+				Stderr:  opts.Stderr,
 			},
 		)
 	}
@@ -231,6 +231,7 @@ func buildWorkRequest(
 	resume := session.ResumeID != "" &&
 		session.ResumeID == res.Task.WorkResumeSession
 	return codingagents.WorkRequest{
+		TaskDir:                 res.TaskDir,
 		PlanPath:                res.Paths.Plan,
 		Model:                   session.Model,
 		ClarificationPath:       res.Paths.Clarification,

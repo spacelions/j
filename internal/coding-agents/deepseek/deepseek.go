@@ -7,10 +7,11 @@
 // Unlike cursor (mints an id pre-run via `create-chat`) and claude
 // (binds a locally-minted UUID via `--session-id`), deepseek-tui has
 // no pre-run session-id binding flag. NewResumeID always returns
-// ("", nil); the post-run id is captured by CaptureResumeID (see
-// capture.go) which scans `~/.deepseek/sessions/*.json` for the
-// session whose metadata.workspace matches and metadata.created_at
-// is at or after the phase's begin-at timestamp.
+// ("", nil). Every invocation runs with DEEPSEEK_HOME set to
+// `<taskDir>/.deepseek-home`, and post-run CaptureResumeID scans
+// that task-scoped store. The recorded workspace is not used for
+// identity; the per-task home isolates concurrent runs while the
+// phase begin timestamp filters stale in-task sessions.
 package deepseek
 
 import (
@@ -150,8 +151,12 @@ func (a *Agent) Plan(
 ) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.FromFilePath)
 	prompt := prompts.PlanPrompt(req)
+	env, err := scopedEnv(req.TaskDir)
+	if err != nil {
+		return 0, fmt.Errorf("deepseek-tui: %w", err)
+	}
 	return a.runPhase(
-		ctx, req.Interactive, workspace, req.ResumeChatID,
+		ctx, req.Interactive, workspace, env, req.ResumeChatID,
 		req.Model, prompt, req.AgentLogPath,
 	)
 }
@@ -162,8 +167,12 @@ func (a *Agent) Work(
 ) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.PlanPath)
 	prompt := prompts.WorkPrompt(req)
+	env, err := scopedEnv(req.TaskDir)
+	if err != nil {
+		return 0, fmt.Errorf("deepseek-tui: %w", err)
+	}
 	return a.runPhase(
-		ctx, req.Interactive, workspace, req.ResumeChatID,
+		ctx, req.Interactive, workspace, env, req.ResumeChatID,
 		req.Model, prompt, req.AgentLogPath,
 	)
 }
@@ -176,8 +185,12 @@ func (a *Agent) Verify(
 ) (int, error) {
 	workspace := codingagents.ProjectRootWorkspace()
 	prompt := prompts.VerifyPrompt(req)
+	env, err := scopedEnv(req.TaskDir)
+	if err != nil {
+		return 0, fmt.Errorf("deepseek-tui: %w", err)
+	}
 	return a.runPhase(
-		ctx, req.Interactive, workspace, req.ResumeChatID,
+		ctx, req.Interactive, workspace, env, req.ResumeChatID,
 		req.Model, prompt, req.AgentLogPath,
 	)
 }
@@ -188,11 +201,12 @@ func (a *Agent) Verify(
 // keeps every phase under the 80-line method cap.
 func (a *Agent) runPhase(
 	ctx context.Context, interactive bool,
-	workspace, resumeID, model, prompt, agentLogPath string,
+	workspace string, env []string,
+	resumeID, model, prompt, agentLogPath string,
 ) (int, error) {
 	if interactive {
 		args := topArgs(workspace, resumeID)
-		if err := run.Run(ctx, Binary, args...); err != nil {
+		if err := run.RunInEnv(ctx, "", env, Binary, args...); err != nil {
 			return 0, fmt.Errorf("deepseek-tui: %w", err)
 		}
 		return 0, nil
@@ -206,8 +220,8 @@ func (a *Agent) runPhase(
 	// pass through unchanged. claude / cursor go through stream-json
 	// + per-event marker rendering because their headless mode emits
 	// JSON envelopes that would otherwise clutter agent.log.
-	pid, err := run.SpawnFormattedIn(
-		ctx, "", agentLogPath, a.FormatLog, Binary, args...,
+	pid, err := run.SpawnFormattedInEnv(
+		ctx, "", env, agentLogPath, a.FormatLog, Binary, args...,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("deepseek-tui: %w", err)

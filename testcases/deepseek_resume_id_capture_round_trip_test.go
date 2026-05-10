@@ -13,18 +13,17 @@ import (
 
 // TestDeepseekResumeIDCaptureRoundTrip pins the load-bearing resume
 // continuity contract: after a deepseek run leaves a session file
-// behind in $DEEPSEEK_HOME/sessions/, the orchestrator-facing
+// behind in <taskDir>/.deepseek-home/sessions/, the orchestrator-facing
 // codingagents.CaptureResumeID dispatches into the deepseek backend
 // (which satisfies ResumeIDCapturer) and returns the matching session
 // id so a subsequent resume run can thread it via -r <id>.
 //
 // Black-box: drive the package-level CaptureResumeID free function
 // the same way the planner / worker / verifier wiring does, with a
-// fixture session JSON written to a fake DEEPSEEK_HOME.
+// fixture session JSON written to a fake task-scoped home.
 func TestDeepseekResumeIDCaptureRoundTrip(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("DEEPSEEK_HOME", home)
-	sessionsDir := filepath.Join(home, "sessions")
+	taskDir := t.TempDir()
+	sessionsDir := filepath.Join(taskDir, ".deepseek-home", "sessions")
 	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
 		t.Fatalf("mkdir sessions: %v", err)
 	}
@@ -52,7 +51,7 @@ func TestDeepseekResumeIDCaptureRoundTrip(t *testing.T) {
 
 	agent := deepseek.New()
 	got, err := codingagents.CaptureResumeID(
-		t.Context(), agent, workspace, since,
+		t.Context(), agent, taskDir, since,
 	)
 	if err != nil {
 		t.Fatalf("CaptureResumeID: %v", err)
@@ -71,12 +70,11 @@ func TestDeepseekResumeIDCaptureRoundTrip(t *testing.T) {
 // longer be located ... the resume run starts a fresh session rather
 // than failing the command."
 func TestDeepseekResumeIDCaptureMissingStoreNoError(t *testing.T) {
-	home := t.TempDir() // no sessions/ subdir
-	t.Setenv("DEEPSEEK_HOME", home)
+	taskDir := t.TempDir() // no sessions/ subdir
 
 	agent := deepseek.New()
 	got, err := codingagents.CaptureResumeID(
-		t.Context(), agent, "/some/workspace", time.Now().Add(-time.Hour),
+		t.Context(), agent, taskDir, time.Now().Add(-time.Hour),
 	)
 	if err != nil {
 		t.Fatalf("CaptureResumeID: %v", err)

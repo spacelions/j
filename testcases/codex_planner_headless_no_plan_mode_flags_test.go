@@ -30,6 +30,7 @@ func TestCodexPlannerHeadlessNoPlanModeFlags(t *testing.T) {
 	logPath := filepath.Join(dir, "agent.log")
 
 	req := codingagents.PlanRequest{
+		TaskDir:                dir,
 		FromFilePath:           specPath,
 		Model:                  "gpt-5.5",
 		RequirementsOutputPath: filepath.Join(dir, "requirements.md"),

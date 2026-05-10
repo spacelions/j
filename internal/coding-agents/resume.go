@@ -12,21 +12,21 @@ import (
 // turn writes to disk (deepseek-tui has no `--session-id`-style
 // pre-run binding flag). The orchestrator type-asserts the chosen
 // agent against this interface and, when satisfied, runs
-// CaptureResumeID with the same workspace passed to Plan/Work/Verify
-// and the phase's begin-at timestamp; the returned id is then
+// CaptureResumeID with the per-task directory and the phase's
+// begin-at timestamp; the returned id is then
 // persisted into the task row's *_resume_session field so a later
 // resume run threads `--resume <id>` into the backend. Backends that
 // mint the id pre-run (cursor / claude) intentionally do NOT
 // implement this interface.
 type ResumeIDCapturer interface {
 	// CaptureResumeID resolves the session id minted by the most
-	// recent run for (workspace, since). Implementations scan their
-	// on-disk session store and return the newest entry whose
-	// workspace matches and whose creation timestamp is >= since.
+	// recent run for (taskDir, since). Implementations scan their
+	// task-scoped on-disk session store and return the newest entry
+	// whose creation timestamp is >= since.
 	// ("", nil) means "no matching session found"; ("", err) means
 	// the scan itself failed and the caller should warn-and-continue.
 	CaptureResumeID(
-		ctx context.Context, workspace string, since time.Time,
+		ctx context.Context, taskDir string, since time.Time,
 	) (string, error)
 }
 
@@ -39,13 +39,13 @@ type ResumeIDCapturer interface {
 // silently dropping the failure.
 func CaptureResumeID(
 	ctx context.Context, agent Agent,
-	workspace string, since time.Time,
+	taskDir string, since time.Time,
 ) (string, error) {
 	capturer, ok := agent.(ResumeIDCapturer)
 	if !ok {
 		return "", nil
 	}
-	return capturer.CaptureResumeID(ctx, workspace, since)
+	return capturer.CaptureResumeID(ctx, taskDir, since)
 }
 
 // ResumeRecorder is the narrow lifecycle method
@@ -59,9 +59,9 @@ type ResumeRecorder interface {
 // ResumeCapture groups the filesystem and timing data needed to
 // discover a post-run resume id.
 type ResumeCapture struct {
-	Workspace string
-	Since     time.Time
-	Stderr    io.Writer
+	TaskDir string
+	Since   time.Time
+	Stderr  io.Writer
 }
 
 // CaptureAndRecordResume is the shared post-run capture step for
@@ -75,7 +75,7 @@ func CaptureAndRecordResume(
 	ctx context.Context, agent Agent, recorder ResumeRecorder,
 	capture ResumeCapture,
 ) string {
-	id, err := CaptureResumeID(ctx, agent, capture.Workspace, capture.Since)
+	id, err := CaptureResumeID(ctx, agent, capture.TaskDir, capture.Since)
 	if err != nil {
 		fmt.Fprintf(capture.Stderr, "J: %v\n", err)
 		return ""

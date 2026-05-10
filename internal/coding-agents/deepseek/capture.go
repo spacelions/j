@@ -12,11 +12,6 @@ import (
 	"time"
 )
 
-// envHome is the optional override DeepSeek-TUI honours for its
-// session-store root; the CLI's `deepseek_home_dir()` checks this
-// before falling back to `~/.deepseek`.
-const envHome = "DEEPSEEK_HOME"
-
 // sessionMeta is the subset of `~/.deepseek/sessions/<uuid>.json`
 // CaptureResumeID inspects. The CLI writes a richer payload; this
 // struct only decodes the metadata block so a future schema addition
@@ -28,22 +23,18 @@ type sessionMeta struct {
 }
 
 // CaptureResumeID resolves the session id minted by the most recent
-// deepseek-tui run for (workspace, since). It scans the session store
-// at `$DEEPSEEK_HOME/sessions/*.json` (falling back to `~/.deepseek`)
-// and returns the newest entry whose metadata.workspace matches and
-// whose metadata.created_at is at or after since. A missing store
-// directory yields ("", nil) — expected on a fresh machine — while a
-// directory we cannot read at all surfaces a non-nil error so the
-// caller can warn. Per-file decode failures are treated as misses
-// rather than fatal so one corrupt file does not poison the lookup.
+// deepseek-tui run for (taskDir, since). It scans the task-scoped
+// `<taskDir>/.deepseek-home/sessions/*.json` store and returns the
+// newest entry whose metadata.created_at is at or after since. A
+// missing store directory yields ("", nil) — expected before the CLI
+// writes its first session — while a directory we cannot read at all
+// surfaces a non-nil error so the caller can warn. Per-file decode
+// failures are treated as misses rather than fatal so one corrupt
+// file does not poison the lookup.
 func (*Agent) CaptureResumeID(
-	_ context.Context, workspace string, since time.Time,
+	_ context.Context, taskDir string, since time.Time,
 ) (string, error) {
-	dir, err := sessionsDir()
-	if err != nil {
-		return "", err
-	}
-	metas, err := scanSessions(dir, workspace, since)
+	metas, err := scanSessions(sessionsDir(taskDir), since)
 	if err != nil {
 		return "", err
 	}
@@ -53,37 +44,14 @@ func (*Agent) CaptureResumeID(
 	return metas[0].ID, nil
 }
 
-// sessionsDir resolves the directory deepseek-tui writes session JSON
-// files into. DEEPSEEK_HOME wins when set; otherwise fall back to
-// `~/.deepseek/sessions`. An empty home directory (no $HOME on a
-// stripped environment) is reported as an error so the caller can
-// warn instead of silently scanning the cwd.
-func sessionsDir() (string, error) {
-	if v := strings.TrimSpace(os.Getenv(envHome)); v != "" {
-		return filepath.Join(v, "sessions"), nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	if home == "" {
-		return "", errors.New(
-			"deepseek: empty home directory; set DEEPSEEK_HOME",
-		)
-	}
-	return filepath.Join(home, ".deepseek", "sessions"), nil
-}
-
 // scanSessions walks dir/*.json, decodes the metadata block, applies
-// the (workspace, since) filter, and returns the matches sorted by
+// the since filter, and returns the matches sorted by
 // CreatedAt descending so element 0 is the newest. A non-existent
 // directory yields (nil, nil) so a fresh machine looks like "no
 // match" rather than an error. JSON decode failures on individual
 // files are skipped silently — one corrupt entry should not poison
 // the scan.
-func scanSessions(
-	dir, workspace string, since time.Time,
-) ([]sessionMeta, error) {
+func scanSessions(dir string, since time.Time) ([]sessionMeta, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -101,9 +69,6 @@ func scanSessions(
 		}
 		meta, ok := decodeSession(filepath.Join(dir, entry.Name()))
 		if !ok {
-			continue
-		}
-		if meta.Workspace != workspace {
 			continue
 		}
 		if meta.CreatedAt.Before(since) {
