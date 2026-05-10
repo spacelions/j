@@ -58,6 +58,7 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 		`internal/resolver/mustread.go:.*ParseMustRead`,
 		`internal/resolver/source.go:.*FetchLinearBody`,
 		`internal/resolver/source.go:.*StartTargetFromLinear`,
+		`internal/store/settings.go:.*readSetting`,
 		`internal/store/store.go:.*DefaultDir`,
 		`internal/store/store.go:.*DefaultPath`,
 		`internal/store/store.go:.*DefaultTasksDBPath`,
