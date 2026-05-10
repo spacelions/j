@@ -15,6 +15,7 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 	mustBeAbsent := []string{
 		`internal/cli/preflight/preflight.go:.*PreRunE`,
 		`internal/cli/settings/display.go:.*storageKey`,
+		`internal/cli/tasks/cmd.go:.*writeTasks`,
 		`internal/store/tasks/sort.go`,
 		`internal/store/tasks/task.go:.*GetTask`,
 		`internal/store/tasks/task.go:.*ListTasks`,
