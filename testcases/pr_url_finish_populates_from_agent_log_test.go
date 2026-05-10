@@ -3,10 +3,8 @@ package testcases_test
 import (
 	"io"
 	"os"
-	"path/filepath"
 	"testing"
 
-	"github.com/spacelions/j/internal/lifecycle"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 )
@@ -25,16 +23,14 @@ func TestCase_PRURL_Finish_PopulatesFromAgentLog(t *testing.T) {
 	tasks.ResetHooksForTest()
 	t.Cleanup(tasks.ResetHooksForTest)
 
-	logPath := filepath.Join(t.TempDir(), "agent.log")
 	prURL := "https://github.com/spacelions/j/pull/4242"
-	if err := os.WriteFile(logPath,
+	lc := newWorkLifecycle(io.Discard, "cursor", "sonnet-4",
+		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "",
+		"")
+	if err := os.WriteFile(lc.Task().AgentLogPath,
 		[]byte("opened "+prURL+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	lc := lifecycle.NewWorkTask(io.Discard, "cursor", "sonnet-4",
-		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "",
-		logPath)
 	lc.Finish(nil)
 
 	if got := lc.Task().PullRequestURL; got != prURL {

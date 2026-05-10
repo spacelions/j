@@ -34,8 +34,11 @@ func RunForTask(
 	agents []codingagents.Agent, stderr io.Writer,
 	overrides PhaseOverrides,
 ) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr,
-		RunPhaseFull, false, overrides)
+	return RunForTaskWithGate(
+		ctx,
+		newTaskContext(cfg.MaxIterations, taskID, agents, stderr),
+		PhaseConfig{Phase: RunPhaseFull, Overrides: overrides},
+	)
 }
 
 // RunForTaskWithGate drives an already-seeded task, stopping after the
@@ -43,12 +46,14 @@ func RunForTask(
 // row at plan-done so `j tasks continue --from-task <id>` can pick up
 // the existing dispatch path.
 func RunForTaskWithGate(
-	ctx context.Context, cfg store.TaskConfig, taskID string,
-	agents []codingagents.Agent, stderr io.Writer,
-	planRequiresApproval bool, overrides PhaseOverrides,
+	ctx context.Context,
+	tctx TaskContext,
+	pc PhaseConfig,
 ) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr,
-		RunPhaseFull, planRequiresApproval, overrides)
+	if pc.Phase == "" {
+		pc.Phase = RunPhaseFull
+	}
+	return runForTask(ctx, tctx, pc)
 }
 
 // RunForTaskFromWork drives an already-seeded task that is past the
@@ -62,8 +67,29 @@ func RunForTaskFromWork(
 	agents []codingagents.Agent, stderr io.Writer,
 	overrides PhaseOverrides,
 ) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr,
-		RunPhaseFromWork, false, overrides)
+	return runForTask(
+		ctx,
+		newTaskContext(cfg.MaxIterations, taskID, agents, stderr),
+		PhaseConfig{Phase: RunPhaseFromWork, Overrides: overrides},
+	)
+}
+
+func RunForTaskPlanOnly(
+	ctx context.Context,
+	tctx TaskContext,
+	pc PhaseConfig,
+) error {
+	pc.Phase = RunPhasePlanOnly
+	return runForTask(ctx, tctx, pc)
+}
+
+func RunForTaskWorkOnly(
+	ctx context.Context,
+	tctx TaskContext,
+	pc PhaseConfig,
+) error {
+	pc.Phase = RunPhaseWorkOnly
+	return runForTask(ctx, tctx, pc)
 }
 
 // RunForTaskVerifyOnly drives only the verifier phase on an
@@ -75,8 +101,11 @@ func RunForTaskVerifyOnly(
 	ctx context.Context, cfg store.TaskConfig, taskID string,
 	agents []codingagents.Agent, stderr io.Writer,
 ) error {
-	return runForTask(ctx, cfg, taskID, agents, stderr,
-		RunPhaseVerifyOnly, false, PhaseOverrides{})
+	return runForTask(
+		ctx,
+		newTaskContext(cfg.MaxIterations, taskID, agents, stderr),
+		PhaseConfig{Phase: RunPhaseVerifyOnly},
+	)
 }
 
 // runForTask builds a top-level SequentialAgent over shell-out custom
@@ -105,22 +134,21 @@ func RunForTaskVerifyOnly(
 // fetch a sane default via store.LoadTaskConfig; tests that pass a
 // zero-value Config flow through verifier.New's own fallback.
 func runForTask(
-	ctx context.Context, cfg store.TaskConfig, taskID string,
-	agents []codingagents.Agent, stderr io.Writer, phase RunPhase,
-	planRequiresApproval bool, overrides PhaseOverrides,
+	ctx context.Context,
+	tctx TaskContext,
+	pc PhaseConfig,
 ) error {
-	if taskID == "" {
+	if tctx.TaskID == "" {
 		return errors.New("workflow: task id required")
 	}
-	if len(agents) == 0 {
+	if len(tctx.Agents) == 0 {
 		return errors.New("workflow: no coding agents configured")
 	}
-	if stderr == nil {
-		stderr = io.Discard
+	if tctx.Stderr == nil {
+		tctx.Stderr = io.Discard
 	}
 
-	subAgents, err := taskSubAgents(cfg, taskID, agents, stderr,
-		phase, planRequiresApproval, overrides)
+	subAgents, err := taskSubAgents(tctx, pc)
 	if err != nil {
 		return err
 	}
@@ -140,96 +168,124 @@ func runForTask(
 	if err := driveSequential(ctx, root); err != nil {
 		return err
 	}
-	finaliseVerifyFailIfStuck(stderr, taskID)
+	finaliseVerifyFailIfStuck(tctx.Stderr, tctx.TaskID)
 	return nil
 }
 
 func taskSubAgents(
-	cfg store.TaskConfig, taskID string,
-	agents []codingagents.Agent, stderr io.Writer, phase RunPhase,
-	planRequiresApproval bool, overrides PhaseOverrides,
+	tctx TaskContext,
+	pc PhaseConfig,
 ) ([]agent.Agent, error) {
-	switch phase {
+	switch pc.Phase {
 	case RunPhaseVerifyOnly:
 		// The verifier internally decides between Run / RunResume by
 		// inspecting the task's VerifyResumeSession (see
 		// verifier.New), so the orchestrator does not have to thread
 		// resume / interactive in here.
 		verifierAgent, err := verifier.New(verifier.Config{
-			TaskID:        taskID,
-			Agents:        agents,
-			Stderr:        stderr,
-			MaxIterations: cfg.MaxIterations,
+			TaskID:        tctx.TaskID,
+			Agents:        tctx.Agents,
+			Stderr:        tctx.Stderr,
+			MaxIterations: tctx.MaxIterations,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("workflow: verifier: %w", err)
 		}
-		return []agent.Agent{verifierAgent}, nil
-	case RunPhaseFromWork:
-		workerAgent, guardedVerifier, err := newWorkVerify(
-			cfg, taskID, agents, stderr, overrides.Interactive)
+		return withPhaseTags(pc.Tagger, []phaseAgent{
+			{phase: "verifying", agent: verifierAgent},
+		})
+	case RunPhaseWorkOnly:
+		workerAgent, err := newWorker(tctx, pc.Overrides.Interactive)
 		if err != nil {
 			return nil, err
 		}
-		return []agent.Agent{workerAgent, guardedVerifier}, nil
-	case RunPhaseFull:
+		return withPhaseTags(pc.Tagger, []phaseAgent{
+			{phase: "working", agent: workerAgent},
+		})
+	case RunPhaseFromWork:
+		workerAgent, guardedVerifier, err := newWorkVerify(
+			tctx, pc.Overrides.Interactive, pc.Tagger)
+		if err != nil {
+			return nil, err
+		}
+		return withPhaseTagPrefix(
+			pc.Tagger,
+			[]phaseAgent{{phase: "working", agent: workerAgent}},
+			guardedVerifier,
+		), nil
+	case RunPhasePlanOnly, RunPhaseFull:
 		plannerAgent, err := planner.New(planner.Config{
-			TaskID:      taskID,
-			Agents:      agents,
-			Stderr:      stderr,
-			Tool:        overrides.Tool,
-			Model:       overrides.Model,
-			Interactive: overrides.Interactive,
-			Yes:         overrides.Yes,
+			TaskID:      tctx.TaskID,
+			Agents:      tctx.Agents,
+			Stderr:      tctx.Stderr,
+			Tool:        pc.Overrides.Tool,
+			Model:       pc.Overrides.Model,
+			Interactive: pc.Overrides.Interactive,
+			Yes:         pc.Overrides.Yes,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("workflow: planner: %w", err)
 		}
-		if planRequiresApproval {
-			return []agent.Agent{plannerAgent}, nil
+		if pc.Phase == RunPhasePlanOnly || pc.PlanRequiresApproval {
+			return withPhaseTags(pc.Tagger, []phaseAgent{
+				{phase: "planning", agent: plannerAgent},
+			})
 		}
 		// The planner-then-worker handoff path leaves the worker
 		// non-interactive: the planner's TUI exits cleanly as the
 		// hand-off, and the worker proceeds headless.
 		workerAgent, guardedVerifier, err := newWorkVerify(
-			cfg, taskID, agents, stderr, false)
+			tctx, false, pc.Tagger)
 		if err != nil {
 			return nil, err
 		}
-		return []agent.Agent{
-			plannerAgent, workerAgent, guardedVerifier,
-		}, nil
+		return withPhaseTagPrefix(
+			pc.Tagger,
+			[]phaseAgent{
+				{phase: "planning", agent: plannerAgent},
+				{phase: "working", agent: workerAgent},
+			},
+			guardedVerifier,
+		), nil
 	default:
-		return nil, fmt.Errorf("workflow: unknown phase %q", phase)
+		return nil, fmt.Errorf("workflow: unknown phase %q", pc.Phase)
 	}
 }
 
 func newWorkVerify(
-	cfg store.TaskConfig, taskID string,
-	agents []codingagents.Agent, stderr io.Writer,
+	tctx TaskContext,
 	workerInteractive bool,
+	tagger func(string),
 ) (agent.Agent, agent.Agent, error) {
-	workerAgent, err := worker.New(worker.Config{
-		TaskID:      taskID,
-		Agents:      agents,
-		Stderr:      stderr,
-		Interactive: workerInteractive,
-	})
+	workerAgent, err := newWorker(tctx, workerInteractive)
 	if err != nil {
 		return nil, nil, fmt.Errorf("workflow: worker: %w", err)
 	}
 	verifierAgent, err := verifier.New(verifier.Config{
-		TaskID:        taskID,
-		Agents:        agents,
-		Stderr:        stderr,
-		MaxIterations: cfg.MaxIterations,
+		TaskID:        tctx.TaskID,
+		Agents:        tctx.Agents,
+		Stderr:        tctx.Stderr,
+		MaxIterations: tctx.MaxIterations,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("workflow: verifier: %w", err)
 	}
-	guarded, err := skipVerifyOnClarification(taskID, verifierAgent)
+	guarded, err := skipVerifyOnClarification(
+		tctx.TaskID, tagger, verifierAgent)
 	if err != nil {
 		return nil, nil, fmt.Errorf("workflow: verify guard: %w", err)
 	}
 	return workerAgent, guarded, nil
+}
+
+func newWorker(
+	tctx TaskContext,
+	interactive bool,
+) (agent.Agent, error) {
+	return worker.New(worker.Config{
+		TaskID:      tctx.TaskID,
+		Agents:      tctx.Agents,
+		Stderr:      tctx.Stderr,
+		Interactive: interactive,
+	})
 }

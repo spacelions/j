@@ -3,7 +3,6 @@ package testcases_test
 import (
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,19 +26,17 @@ func TestCase_PRURL_MarkerLineIncludesURL(t *testing.T) {
 	t.Cleanup(tasks.ResetHooksForTest)
 	lifecycle.Init()
 
-	logPath := filepath.Join(t.TempDir(), "agent.log")
 	prURL := "https://github.com/spacelions/j/pull/9001"
-	if err := os.WriteFile(logPath,
+	lc := newWorkLifecycle(io.Discard, "cursor", "sonnet-4",
+		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "",
+		"")
+	if err := os.WriteFile(lc.Task().AgentLogPath,
 		[]byte("opened "+prURL+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	lc := lifecycle.NewWorkTask(io.Discard, "cursor", "sonnet-4",
-		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "",
-		logPath)
 	lc.Finish(nil)
 
-	body := readFileForMarker(t, logPath)
+	body := readFileForMarker(t, lc.Task().AgentLogPath)
 	want := "work done — pull request: " + prURL
 	if !strings.Contains(body, want) {
 		t.Fatalf("agent.log missing marker line.\nwant substring: %q\ngot:\n%s",

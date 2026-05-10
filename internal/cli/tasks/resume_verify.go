@@ -2,20 +2,16 @@ package tasks
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/spacelions/j/internal/cli/preflight"
-	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-const noActiveVerifySessionMessage = "J: no tasks with an active verify session"
+const noActiveVerifySessionMessage = "J: no tasks"
 
 // ResumeVerifyOptions configures RunResumeVerify.
 type ResumeVerifyOptions struct {
@@ -29,89 +25,30 @@ type ResumeVerifyOptions struct {
 	JBinary string
 }
 
-func (o ResumeVerifyOptions) withDefaults() ResumeVerifyOptions {
-	if o.Stdin == nil {
-		o.Stdin = os.Stdin
-	}
-	if o.Stdout == nil {
-		o.Stdout = os.Stdout
-	}
-	if o.Stderr == nil {
-		o.Stderr = os.Stderr
-	}
-	if o.UI == nil {
-		o.UI = newHuhUI(o.Stdin, o.Stderr)
-	}
-	return o
-}
-
-// RunResumeVerify implements `j tasks resume-verify`. It filters tasks
-// with a non-empty VerifyResumeSession and re-execs
-// `j tasks orchestrate --phase=verify-only --interactive=true` inline.
-func RunResumeVerify(
-	ctx context.Context, opts ResumeVerifyOptions,
-) (err error) {
-	defer func() { err = resolver.CleanAbort(err) }()
-	opts = opts.withDefaults()
-
-	taskID, ok, err := resolveResumeVerifyTaskID(ctx, opts)
-	if err != nil || !ok {
-		return err
-	}
-	t, err := resolver.TaskByID(taskID)
-	if err != nil {
-		return err
-	}
-	if !tasks.IsLegal(t.Status, tasks.EventVerifyResume) {
-		return fmt.Errorf("cannot resume-verify task in status %q", t.Status)
-	}
-	if _, err := tasks.EnsureDir(taskID); err != nil {
-		return err
-	}
-	return runInlineOrchestrator(ctx, opts.JBinary, []string{
-		cmdTasks, cmdOrchestrate,
-		flagID, taskID,
-		flagPhaseVerifyOnly,
-		flagInteractiveTrue,
-	})
-}
-
-func resolveResumeVerifyTaskID(
-	ctx context.Context, opts ResumeVerifyOptions,
-) (string, bool, error) {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return "", false, err
-	}
-	id, ok, err := pickResumeVerifyFromStore(ctx, s, opts)
-	_ = s.Close()
-	return id, ok, err
-}
-
-func pickResumeVerifyFromStore(
-	ctx context.Context, s *tasks.Store, opts ResumeVerifyOptions,
-) (string, bool, error) {
-	rows, err := s.ListTasks()
-	if err != nil {
-		return "", false, err
-	}
-	filtered := filterTasksWithVerifySession(rows)
-	if len(filtered) == 0 {
-		uitheme.NormalFprintln(opts.Stdout, noActiveVerifySessionMessage)
-		return "", false, nil
-	}
-	tasks.SortTasks(filtered)
-	return opts.UI.PickTask(ctx, filtered)
-}
-
-func filterTasksWithVerifySession(rows []tasks.Task) []tasks.Task {
-	out := make([]tasks.Task, 0, len(rows))
-	for _, t := range rows {
-		if t.VerifyResumeSession != "" {
-			out = append(out, t)
+var resumeVerifyConfig = resumePhaseConfig{
+	emptyMsg:   noActiveVerifySessionMessage,
+	errorVerb:  "resume-verify",
+	hasSession: func(t tasks.Task) bool { return t.VerifyResumeSession != "" },
+	gate:       requirePlanAndPriorWork,
+	orchestrateArgs: func(taskID string) []string {
+		return []string{
+			cmdTasks, cmdOrchestrate,
+			flagID, taskID,
+			flagPhaseVerifyOnly,
+			flagInteractiveTrue,
 		}
-	}
-	return out
+	},
+}
+
+// RunResumeVerify implements `j tasks resume-verify`.
+func RunResumeVerify(ctx context.Context, opts ResumeVerifyOptions) error {
+	return runResumePhase(ctx, resumeOptions{
+		Stdin:   opts.Stdin,
+		Stdout:  opts.Stdout,
+		Stderr:  opts.Stderr,
+		UI:      opts.UI,
+		JBinary: opts.JBinary,
+	}, resumeVerifyConfig)
 }
 
 // newResumeVerifyCmd builds the `j tasks resume-verify` cobra subcommand.
@@ -119,13 +56,10 @@ func newResumeVerifyCmd() *cobra.Command {
 	agents := defaultAgents()
 	cmd := &cobra.Command{
 		Use:   "resume-verify",
-		Short: "Resume an in-flight verifier session in the foreground",
-		Long: "Filters tasks to rows with a non-empty verify_resume_session and " +
-			"renders the shared task picker. The selected task re-execs " +
+		Short: "Resume verifier for a task in the foreground",
+		Long: "Renders the shared task picker. The selected task re-execs " +
 			"`j tasks orchestrate --phase=verify-only --interactive=true` " +
-			"inline so the verifier resumes its session in the foreground. " +
-			"When no task carries an active verify session, prints " +
-			"`J: no tasks with an active verify session` and exits 0.",
+			"inline so the verifier runs in the foreground.",
 		PersistentPreRunE: preflight.PreRunE,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
 			return preflight.EnsureAgentSelections(

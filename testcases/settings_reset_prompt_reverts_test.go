@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/spacelions/j/internal/agents/instructions"
-	"github.com/spacelions/j/internal/agents/prompts"
 	"github.com/spacelions/j/internal/cli/settings"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -34,7 +33,7 @@ func TestSettingsReset_PromptRevertsToEmbedded(t *testing.T) {
 		t.Fatalf("write override body: %v", err)
 	}
 
-	beforeReset := prompts.BuildPlanner("/tmp/feature.md", nil)
+	beforeReset := buildPlannerPrompt("/tmp/feature.md", nil)
 	if !strings.Contains(beforeReset, customBody) {
 		t.Fatalf("setup: BuildPlanner did not honour override: %q",
 			beforeReset)
@@ -46,7 +45,7 @@ func TestSettingsReset_PromptRevertsToEmbedded(t *testing.T) {
 		t.Fatalf("reset: %v", err)
 	}
 
-	afterReset := prompts.BuildPlanner("/tmp/feature.md", nil)
+	afterReset := buildPlannerPrompt("/tmp/feature.md", nil)
 	if strings.Contains(afterReset, customBody) {
 		t.Fatalf("reset did not revert: %q", afterReset)
 	}

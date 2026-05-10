@@ -4,6 +4,7 @@ import (
 	"io"
 	"time"
 
+	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -26,36 +27,36 @@ type VerifyLifecycle struct {
 	closed        bool
 }
 
-// BeginVerifyRestart flips an existing task row to `verifying` for
-// the re-verify / first-run flow: tool/model/resume cursor are
-// refreshed and stale verify timestamps cleared. Mirrors the
-// BeginPlanRestart / BeginWorkRestart shape so the restart vs resume
-// vocabulary is uniform across the lifecycle helpers.
-func BeginVerifyRestart(t tasks.Task, stderr io.Writer, agentName, model,
-	resumeID, agentLogPath string,
+// BeginVerifyRestart flips an existing task row to `verifying`.
+// Tool/model/resume cursor are refreshed and stale verify timestamps
+// are cleared. Mirrors the BeginPlanRestart / BeginWorkRestart shape
+// so the restart vs resume vocabulary is uniform across the lifecycle
+// helpers.
+func BeginVerifyRestart(
+	t tasks.Task,
+	stderr io.Writer,
+	session codingagents.AgentSession,
 ) *VerifyLifecycle {
 	task := t
-	task.VerifyTool = agentName
-	task.VerifyModel = model
-	task.VerifyResumeSession = resumeID
+	task.VerifyTool = session.Tool
+	task.VerifyModel = session.Model
+	task.VerifyResumeSession = session.ResumeID
 	task.VerifyBeginAt = time.Now().UTC()
 	task.VerifyEndAt = time.Time{}
 	task.DoneAt = time.Time{}
-	return openVerifyLifecycle(stderr, task, agentLogPath,
+	return openVerifyLifecycle(stderr, task, taskAgentLogPath(t.ID),
 		tasks.EventVerifyBegin, "verify begin")
 }
 
 // BeginVerifyResume is the resume-flow companion of BeginVerifyRestart.
-func BeginVerifyResume(t tasks.Task, stderr io.Writer,
-	agentLogPath string,
-) *VerifyLifecycle {
+func BeginVerifyResume(t tasks.Task, stderr io.Writer) *VerifyLifecycle {
 	task := t
 	task.VerifyEndAt = time.Time{}
 	task.DoneAt = time.Time{}
 	if task.VerifyBeginAt.IsZero() {
 		task.VerifyBeginAt = time.Now().UTC()
 	}
-	return openVerifyLifecycle(stderr, task, agentLogPath,
+	return openVerifyLifecycle(stderr, task, taskAgentLogPath(t.ID),
 		tasks.EventVerifyResume, "verify resume")
 }
 

@@ -58,7 +58,8 @@ type WorkPlanOptions struct {
 
 type WorkPlan struct {
 	Task        tasks.Task
-	PlanPath    string
+	TaskDir     string
+	Paths       tasks.TaskPaths
 	Body        string
 	Requirement string
 }
@@ -101,19 +102,19 @@ func resolveWorkByTaskID(id string) (WorkPlan, error) {
 		return WorkPlan{}, err
 	}
 	taskDir := filepath.Join(tasksDir, id)
-	planPath := filepath.Join(taskDir, tasks.PlanFileName)
-	body, err := os.ReadFile(planPath)
+	paths := taskPaths(taskDir)
+	body, err := os.ReadFile(paths.Plan)
 	if err != nil {
 		return WorkPlan{}, fmt.Errorf("work: read plan: %w", err)
 	}
 	var requirement string
-	reqPath := filepath.Join(taskDir, tasks.RequirementsFileName)
-	if data, readErr := os.ReadFile(reqPath); readErr == nil {
+	if data, readErr := os.ReadFile(paths.Requirements); readErr == nil {
 		requirement = string(data)
 	}
 	return WorkPlan{
 		Task:        row,
-		PlanPath:    planPath,
+		TaskDir:     taskDir,
+		Paths:       paths,
 		Body:        string(body),
 		Requirement: requirement,
 	}, nil
@@ -131,12 +132,31 @@ type VerifyTaskOptions struct {
 }
 
 type VerifyTask struct {
-	Task             tasks.Task
-	TaskDir          string
-	RequirementsPath string
-	PlanPath         string
-	VerifierPlanPath string
-	FindingsPath     string
+	Task    tasks.Task
+	TaskDir string
+	Paths   tasks.TaskPaths
+}
+
+type PlanTask struct {
+	Task    tasks.Task
+	TaskDir string
+	Paths   tasks.TaskPaths
+}
+
+func ResolvePlanTask(taskID string) (PlanTask, error) {
+	row, err := TaskByID(taskID)
+	if err != nil {
+		return PlanTask{}, err
+	}
+	taskDir, err := taskDirFor(taskID)
+	if err != nil {
+		return PlanTask{}, err
+	}
+	return PlanTask{
+		Task:    row,
+		TaskDir: taskDir,
+		Paths:   taskPaths(taskDir),
+	}, nil
 }
 
 func ResolveVerifyTask(
@@ -172,22 +192,18 @@ func resolveVerifyByTaskID(id string) (VerifyTask, error) {
 	if err != nil {
 		return VerifyTask{}, err
 	}
-	tasksDir, err := tasks.DefaultDir()
+	taskDir, err := taskDirFor(id)
 	if err != nil {
 		return VerifyTask{}, err
 	}
-	taskDir := filepath.Join(tasksDir, id)
-	planPath := filepath.Join(taskDir, tasks.PlanFileName)
-	if _, err := os.Stat(planPath); err != nil {
+	paths := taskPaths(taskDir)
+	if _, err := os.Stat(paths.Plan); err != nil {
 		return VerifyTask{}, fmt.Errorf("verify: read plan: %w", err)
 	}
 	return VerifyTask{
-		Task:             row,
-		TaskDir:          taskDir,
-		RequirementsPath: filepath.Join(taskDir, tasks.RequirementsFileName),
-		PlanPath:         planPath,
-		VerifierPlanPath: filepath.Join(taskDir, tasks.VerifierPlanFileName),
-		FindingsPath:     filepath.Join(taskDir, tasks.VerifierFindingsFileName),
+		Task:    row,
+		TaskDir: taskDir,
+		Paths:   paths,
 	}, nil
 }
 
@@ -245,4 +261,25 @@ func openTaskStore() (*tasks.Store, error) {
 		return nil, fmt.Errorf("tasks: open store: %w", err)
 	}
 	return s, nil
+}
+
+func taskDirFor(id string) (string, error) {
+	tasksDir, err := tasks.DefaultDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(tasksDir, id), nil
+}
+
+func taskPaths(taskDir string) tasks.TaskPaths {
+	return tasks.TaskPaths{
+		Requirements: filepath.Join(taskDir, tasks.RequirementsFileName),
+		Plan:         filepath.Join(taskDir, tasks.PlanFileName),
+		VerifierPlan: filepath.Join(taskDir, tasks.VerifierPlanFileName),
+		Findings:     filepath.Join(taskDir, tasks.VerifierFindingsFileName),
+		Clarification: filepath.Join(
+			taskDir,
+			tasks.ClarificationFileName,
+		),
+	}
 }

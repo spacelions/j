@@ -35,7 +35,7 @@ type OrchestrateOptions struct {
 	// PlanRequiresApproval. RunPhaseFromWork / RunPhaseVerifyOnly
 	// short-circuit past the planner; the project default for
 	// plan_requires_approval is intentionally ignored on those
-	// paths so re-work / re-verify on opted-in projects do not hit
+	// paths so single-phase runs on opted-in projects do not hit
 	// the conflict guard. The guard still fires on an *explicit*
 	// PlanRequiresApproval=true paired with a non-Full phase.
 	Phase orchestrator.RunPhase
@@ -94,7 +94,7 @@ func RunOrchestrate(ctx context.Context, opts OrchestrateOptions) error {
 	ctx, stop := installOrchestrateSignalHandler(ctx)
 	defer stop()
 	emitSessionStart(opts.Stderr, opts.TaskID, opts.Phase)
-	return dispatchOrchestratePhase(ctx, cfg, opts)
+	return dispatchOrchestratePhase(ctx, cfg, opts, lock)
 }
 
 // acquireOrchestrateLock takes the per-task flock for this orchestrate
@@ -120,7 +120,10 @@ func acquireOrchestrateLock(
 // point based on opts.Phase. Extracted from RunOrchestrate to keep the
 // per-method cyclomatic complexity inside the linter budget.
 func dispatchOrchestratePhase(
-	ctx context.Context, cfg store.TaskConfig, opts OrchestrateOptions,
+	ctx context.Context,
+	cfg store.TaskConfig,
+	opts OrchestrateOptions,
+	lock *tasks.Lock,
 ) error {
 	overrides := orchestrator.PhaseOverrides{
 		Tool:        opts.Tool,
@@ -128,30 +131,68 @@ func dispatchOrchestratePhase(
 		Interactive: opts.Interactive,
 		Yes:         opts.Yes,
 	}
-	switch opts.Phase {
-	case orchestrator.RunPhaseVerifyOnly:
-		if opts.PlanRequiresApproval != nil && *opts.PlanRequiresApproval {
-			return errPhaseConflictsWithApproval
-		}
-		return orchestrator.RunForTaskVerifyOnly(
-			ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr)
-	case orchestrator.RunPhaseFromWork:
-		if opts.PlanRequiresApproval != nil && *opts.PlanRequiresApproval {
-			return errPhaseConflictsWithApproval
-		}
-		return orchestrator.RunForTaskFromWork(
-			ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr, overrides)
-	case orchestrator.RunPhaseFull, "":
-		approval, err := resolvePlanRequiresApproval(
-			opts.PlanRequiresApproval)
-		if err != nil {
-			return err
-		}
-		return orchestrator.RunForTaskWithGate(
-			ctx, cfg, opts.TaskID, opts.Agents, opts.Stderr,
-			approval, overrides)
+	tctx := orchestrator.TaskContext{
+		MaxIterations: cfg.MaxIterations,
+		TaskID:        opts.TaskID,
+		Agents:        opts.Agents,
+		Stderr:        opts.Stderr,
 	}
-	return fmt.Errorf("tasks: unknown phase %q", opts.Phase)
+	pc := orchestrator.PhaseConfig{
+		Phase:     opts.Phase,
+		Overrides: overrides,
+		Tagger: func(phase string) {
+			_ = lock.UpdatePhase(phase)
+		},
+	}
+	if opts.Phase != orchestrator.RunPhaseFull && opts.Phase != "" {
+		if explicitPlanApproval(opts) {
+			return errPhaseConflictsWithApproval
+		}
+		return dispatchNonFullOrchestratePhase(ctx, tctx, pc)
+	}
+	return dispatchFullOrchestratePhase(ctx, opts, tctx, pc)
+}
+
+func explicitPlanApproval(opts OrchestrateOptions) bool {
+	return opts.PlanRequiresApproval != nil && *opts.PlanRequiresApproval
+}
+
+func dispatchNonFullOrchestratePhase(
+	ctx context.Context,
+	tctx orchestrator.TaskContext,
+	pc orchestrator.PhaseConfig,
+) error {
+	switch pc.Phase {
+	case orchestrator.RunPhasePlanOnly:
+		return orchestrator.RunForTaskPlanOnly(ctx, tctx, pc)
+	case orchestrator.RunPhaseWorkOnly:
+		return orchestrator.RunForTaskWorkOnly(ctx, tctx, pc)
+	case orchestrator.RunPhaseVerifyOnly:
+		pc.Phase = orchestrator.RunPhaseVerifyOnly
+		return orchestrator.RunForTaskWithGate(ctx, tctx, pc)
+	case orchestrator.RunPhaseFromWork:
+		pc.Phase = orchestrator.RunPhaseFromWork
+		return orchestrator.RunForTaskWithGate(ctx, tctx, pc)
+	case orchestrator.RunPhaseFull, "":
+		return fmt.Errorf("tasks: unknown phase %q", pc.Phase)
+	}
+	return fmt.Errorf("tasks: unknown phase %q", pc.Phase)
+}
+
+func dispatchFullOrchestratePhase(
+	ctx context.Context,
+	opts OrchestrateOptions,
+	tctx orchestrator.TaskContext,
+	pc orchestrator.PhaseConfig,
+) error {
+	approval, err := resolvePlanRequiresApproval(
+		opts.PlanRequiresApproval)
+	if err != nil {
+		return err
+	}
+	pc.Phase = orchestrator.RunPhaseFull
+	pc.PlanRequiresApproval = approval
+	return orchestrator.RunForTaskWithGate(ctx, tctx, pc)
 }
 
 // errPhaseConflictsWithApproval is returned when a non-Full Phase is
@@ -159,7 +200,8 @@ func dispatchOrchestratePhase(
 // project default is intentionally ignored on non-Full phases, so the
 // error fires only when the caller deliberately set the override.
 var errPhaseConflictsWithApproval = errors.New(
-	"tasks: --phase=from-work / verify-only is incompatible with " +
+	"tasks: non-full --phase (plan-only/from-work/work-only/verify-only) " +
+		"is incompatible with " +
 		flagPlanRequiresApprovalTrue)
 
 // emitSessionStart writes one `session_start` marker into the agent

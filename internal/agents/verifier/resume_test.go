@@ -633,7 +633,7 @@ func TestBeginVerifyTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	preBegin := existing.VerifyBeginAt
 	preCursor := existing.VerifyResumeSession
 
-	lc := lifecycle.BeginVerifyResume(existing, io.Discard, "")
+	lc := lifecycle.BeginVerifyResume(existing, io.Discard)
 	lc.Finish(lifecycle.VerifyOutcomeNoRetries, nil)
 
 	rows := readTasks(t)
@@ -661,7 +661,7 @@ func TestBeginVerifyTaskResume_NilBeginAtStampsFresh(t *testing.T) {
 	}
 	_ = s.Close()
 
-	lc := lifecycle.BeginVerifyResume(existing, io.Discard, "")
+	lc := lifecycle.BeginVerifyResume(existing, io.Discard)
 	lc.Finish(lifecycle.VerifyOutcomeNoRetries, nil)
 
 	rows := readTasks(t)

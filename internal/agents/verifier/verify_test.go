@@ -1582,17 +1582,20 @@ func startLongChild(t *testing.T) int {
 // under taskDir so runVerifyLoop's reads/writes hit a writable
 // location without exercising bbolt. Status is set to WorkDone so
 // lifecycle.BeginVerifyRestart (EventVerifyBegin) does not panic.
-func resolvedForTest(taskDir string) resolved {
-	return resolved{
+func resolvedForTest(taskDir string) resolver.VerifyTask {
+	return resolver.VerifyTask{
 		Task: tasks.Task{
 			ID: "x", Status: tasks.StatusWorkDone,
 			WorkModel: "m", WorkTool: "cursor",
 		},
-		TaskDir:          taskDir,
-		RequirementsPath: filepath.Join(taskDir, "req.md"),
-		PlanPath:         filepath.Join(taskDir, "plan.md"),
-		VerifierPlanPath: filepath.Join(taskDir, "vp.md"),
-		FindingsPath:     filepath.Join(taskDir, "findings.md"),
+		TaskDir: taskDir,
+		Paths: tasks.TaskPaths{
+			Requirements:  filepath.Join(taskDir, "req.md"),
+			Plan:          filepath.Join(taskDir, "plan.md"),
+			VerifierPlan:  filepath.Join(taskDir, "vp.md"),
+			Findings:      filepath.Join(taskDir, "findings.md"),
+			Clarification: filepath.Join(taskDir, "clarification.md"),
+		},
 	}
 }
 
@@ -1610,12 +1613,25 @@ func TestRunVerifyLoop_VerifierWaitCtxCancelled(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
 	}()
-	lc := lifecycle.BeginVerifyRestart(res.Task, io.Discard, "cursor", "m", "id", "")
-	outcome, err := runVerifyLoop(ctx, Options{
-		Interactive:   true,
-		MaxIterations: 3,
-		Stderr:        io.Discard,
-	}, lc, agent, agent, "m", "id", res, "")
+	lc := lifecycle.BeginVerifyRestart(
+		res.Task,
+		io.Discard,
+		codingagents.AgentSession{
+			Tool:     "cursor",
+			Model:    "m",
+			ResumeID: "id",
+		},
+	)
+	outcome, err := runVerifyLoop(ctx, agent, lc, res,
+		codingagents.AgentSession{
+			Tool:     "cursor",
+			Model:    "m",
+			ResumeID: "id",
+		}, Options{
+			Interactive:   true,
+			MaxIterations: 3,
+			Stderr:        io.Discard,
+		})
 	if outcome != lifecycle.VerifyOutcomeNoRetries {
 		t.Fatalf("outcome = %v, want VerifyOutcomeNoRetries", outcome)
 	}
@@ -1641,12 +1657,26 @@ func TestRunVerifyLoop_WorkerWaitCtxCancelled(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		cancel()
 	}()
-	lc := lifecycle.BeginVerifyRestart(res.Task, io.Discard, "cursor", "m", "id", "")
-	outcome, err := runVerifyLoop(ctx, Options{
-		Interactive:   true,
-		MaxIterations: 3,
-		Stderr:        io.Discard,
-	}, lc, verifier, worker, "m", "id", res, "")
+	lc := lifecycle.BeginVerifyRestart(
+		res.Task,
+		io.Discard,
+		codingagents.AgentSession{
+			Tool:     "cursor",
+			Model:    "m",
+			ResumeID: "id",
+		},
+	)
+	outcome, err := runVerifyLoop(ctx, verifier, lc, res,
+		codingagents.AgentSession{
+			Tool:     "cursor",
+			Model:    "m",
+			ResumeID: "id",
+		}, Options{
+			Interactive:   true,
+			MaxIterations: 3,
+			Stderr:        io.Discard,
+			Agents:        []codingagents.Agent{worker},
+		})
 	if outcome != lifecycle.VerifyOutcomeNoRetries {
 		t.Fatalf("outcome = %v, want VerifyOutcomeNoRetries", outcome)
 	}

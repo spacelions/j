@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/spacelions/j/internal/agents/instructions"
-	"github.com/spacelions/j/internal/agents/prompts"
 	"github.com/spacelions/j/internal/cli/settings"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -34,7 +33,7 @@ func TestSettingsSet_PromptMissingFileFallsBack(t *testing.T) {
 		t.Fatalf("remove seeded file: %v", err)
 	}
 
-	got := prompts.BuildPlanner("/tmp/feature.md", nil)
+	got := buildPlannerPrompt("/tmp/feature.md", nil)
 	if !strings.Contains(got, strings.TrimSpace(instructions.Planner)) {
 		t.Fatalf("missing-file fallback: BuildPlanner did not render "+
 			"embedded body: %q", got)

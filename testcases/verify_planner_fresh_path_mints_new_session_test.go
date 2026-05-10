@@ -87,7 +87,7 @@ func TestVerify_PlannerFresh_MintsNewSessionAndUsesFreshPrompt(t *testing.T) {
 
 	stub := &freshPlanCaptureAgent{}
 	if err := planner.Execute(t.Context(),
-		planner.ExecuteOptions{
+		planner.Options{
 			TaskID: id,
 			Agent:  stub,
 			Model:  "m1",

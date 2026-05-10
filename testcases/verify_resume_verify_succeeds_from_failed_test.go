@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	clitasks "github.com/spacelions/j/internal/cli/tasks"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
@@ -21,6 +22,7 @@ func TestVerify_ResumeVerify_SucceedsFromFailed(t *testing.T) {
 	id := recoverySeedTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusFailed
 		task.VerifyResumeSession = "sess-x"
+		task.WorkBeginAt = time.Now().UTC()
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &recoveryFakeUI{pickReturn: id}

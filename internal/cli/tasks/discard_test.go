@@ -68,8 +68,7 @@ func (u *fakeUI) PickTask(_ context.Context, rows []tasks.Task) (string, bool, e
 }
 
 // ConfirmStatusOverride satisfies RePlanUI so the same fake drives
-// `j tasks re-plan` tests when the resolved task is in a status
-// outside the re-plan allowlist.
+// `j tasks start --from-task` tests that need status confirmation.
 func (u *fakeUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, status string) (bool, error) {
 	u.statusCalls++
 	u.statusCmd = cmd

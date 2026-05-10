@@ -6,9 +6,10 @@ import (
 
 	"github.com/spacelions/j/internal/agents/instructions"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// BuildWorker composes the worker's shared instruction with a
+// BuildWorkerPrompt composes the worker's shared instruction with a
 // pointer to the plan markdown the agent must read. The plan body is
 // not embedded inline — the agent is expected to open the file from
 // disk so the prompt stays small and there is no risk of drift
@@ -29,27 +30,22 @@ import (
 // text lives in instructions/clarification.md), keeping it out of
 // the user-overridable worker.md body so a custom worker.md cannot
 // silently drop the escape hatch.
-func BuildWorker(
-	planPath, worktree string, mustRead []string,
-	clarificationPath string,
+func BuildWorkerPrompt(
+	paths tasks.TaskPaths,
+	worktree string,
+	mustRead []string,
 ) string {
-	return appendClarification(
-		appendWorktreeLine(
-			prependMustRead(
-				fmt.Sprintf(
-					"%s\n\n"+strings.TrimSpace(instructions.WorkerPlan),
-					strings.TrimSpace(Resolve(store.BucketWorker)),
-					planPath,
-				),
-				mustRead,
-			),
-			worktree,
-		),
-		clarificationPath,
+	base := fmt.Sprintf(
+		"%s\n\n"+strings.TrimSpace(instructions.WorkerPlan),
+		strings.TrimSpace(Resolve(store.BucketWorker)),
+		paths.Plan,
 	)
+	withMustRead := prependMustRead(base, mustRead)
+	withWorktree := appendWorktreeLine(withMustRead, worktree)
+	return appendClarification(withWorktree, paths.Clarification)
 }
 
-// BuildWorkerResume composes the resume-only worker prompt: the
+// BuildWorkerResumePrompt composes the resume-only worker prompt: the
 // agent inspects the previous session, checks what was already
 // implemented, summarises it for the user, and continues only the
 // outstanding work. The plan path is referenced for context only —
@@ -69,27 +65,22 @@ func BuildWorker(
 // starting, read these project files…" block at the very top of
 // the prompt (mirroring BuildWorker). An empty / nil mustRead
 // leaves the prompt byte-identical to the pre-must-read output.
-func BuildWorkerResume(
-	planPath, worktree string, mustRead []string,
-	clarificationPath string,
+func BuildWorkerResumePrompt(
+	paths tasks.TaskPaths,
+	worktree string,
+	mustRead []string,
 ) string {
-	return appendClarification(
-		appendWorktreeLine(
-			prependMustRead(
-				fmt.Sprintf(
-					"%s\n\n"+strings.TrimSpace(instructions.WorkerResume),
-					strings.TrimSpace(Resolve(store.BucketWorker)),
-					planPath,
-				),
-				mustRead,
-			),
-			worktree,
-		),
-		clarificationPath,
+	base := fmt.Sprintf(
+		"%s\n\n"+strings.TrimSpace(instructions.WorkerResume),
+		strings.TrimSpace(Resolve(store.BucketWorker)),
+		paths.Plan,
 	)
+	withMustRead := prependMustRead(base, mustRead)
+	withWorktree := appendWorktreeLine(withMustRead, worktree)
+	return appendClarification(withWorktree, paths.Clarification)
 }
 
-// BuildWorkerClarificationResume composes the resume-from-
+// BuildWorkerClarificationResumePrompt composes the resume-from-
 // clarification worker prompt. It replaces BuildWorker /
 // BuildWorkerResume on a resume run that started from
 // needs-clarification: the agent reads the per-task
@@ -100,26 +91,23 @@ func BuildWorkerResume(
 // contract is appended by appendClarification at the very end of
 // the prompt so a custom worker.md cannot drop the rewrite-to-
 // reroute branch.
-func BuildWorkerClarificationResume(
-	planPath, worktree string, mustRead []string,
-	clarificationPath string,
+func BuildWorkerClarificationResumePrompt(
+	paths tasks.TaskPaths,
+	worktree string,
+	mustRead []string,
 ) string {
-	return appendClarification(
-		appendWorktreeLine(
-			prependMustRead(
-				fmt.Sprintf(
-					"%s\n\n"+strings.TrimSpace(
-						instructions.WorkerClarificationResume,
-					),
-					strings.TrimSpace(Resolve(store.BucketWorker)),
-					clarificationPath, clarificationPath, planPath,
-				),
-				mustRead,
-			),
-			worktree,
+	base := fmt.Sprintf(
+		"%s\n\n"+strings.TrimSpace(
+			instructions.WorkerClarificationResume,
 		),
-		clarificationPath,
+		strings.TrimSpace(Resolve(store.BucketWorker)),
+		paths.Clarification,
+		paths.Clarification,
+		paths.Plan,
 	)
+	withMustRead := prependMustRead(base, mustRead)
+	withWorktree := appendWorktreeLine(withMustRead, worktree)
+	return appendClarification(withWorktree, paths.Clarification)
 }
 
 // appendWorktreeLine returns prompt unchanged when worktree is empty

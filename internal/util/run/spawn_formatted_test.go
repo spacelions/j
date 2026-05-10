@@ -185,7 +185,10 @@ func TestDrainFormatted_AllowsSuppressedLines(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := make(chan struct{})
-	go drainFormatted(pr, logFile, func([]byte) []byte { return nil }, done)
+	go drainFormatted(&formattedRun{
+		LogFile:   logFile,
+		DrainDone: done,
+	}, pr, func([]byte) []byte { return nil })
 	if _, err := pw.WriteString("hidden\n"); err != nil {
 		t.Fatal(err)
 	}

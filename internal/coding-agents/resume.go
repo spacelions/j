@@ -56,6 +56,14 @@ type ResumeRecorder interface {
 	RecordResumeSession(id string)
 }
 
+// ResumeCapture groups the filesystem and timing data needed to
+// discover a post-run resume id.
+type ResumeCapture struct {
+	Workspace string
+	Since     time.Time
+	Stderr    io.Writer
+}
+
 // CaptureAndRecordResume is the shared post-run capture step for
 // every plan / work / verify call site. It runs CaptureResumeID,
 // stamps the result onto recorder, and surfaces scan failures via
@@ -65,11 +73,11 @@ type ResumeRecorder interface {
 // and is the expected outcome for cursor/claude.
 func CaptureAndRecordResume(
 	ctx context.Context, agent Agent, recorder ResumeRecorder,
-	workspace string, since time.Time, stderr io.Writer,
+	capture ResumeCapture,
 ) string {
-	id, err := CaptureResumeID(ctx, agent, workspace, since)
+	id, err := CaptureResumeID(ctx, agent, capture.Workspace, capture.Since)
 	if err != nil {
-		fmt.Fprintf(stderr, "J: %v\n", err)
+		fmt.Fprintf(capture.Stderr, "J: %v\n", err)
 		return ""
 	}
 	recorder.RecordResumeSession(id)

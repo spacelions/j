@@ -17,7 +17,7 @@ import (
 // a recorded PlanResumeSession must be resumable without hitting the
 // `cannot resume-plan task in status "planning"` guard. The
 // orchestrate argv must include
-// `--plan-requires-approval=true --interactive=true`.
+// `--phase=plan-only --interactive=true`.
 func TestVerify_ResumePlan_SucceedsFromPlanning(t *testing.T) {
 	recoverySetupEnv(t)
 	id := recoverySeedTask(t, func(task *tasks.Task) {
@@ -47,7 +47,7 @@ func TestVerify_ResumePlan_SucceedsFromPlanning(t *testing.T) {
 	got := recoveryReadStubArgv(t, argvPath)
 	want := []string{
 		"tasks", "orchestrate", "--id", id,
-		"--plan-requires-approval=true", "--interactive=true",
+		"--phase=plan-only", "--interactive=true",
 	}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", got, want)

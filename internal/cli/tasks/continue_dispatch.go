@@ -145,8 +145,8 @@ func latestEndAt(t tasks.Task) string {
 }
 
 // runPlanDoneWork dispatches a plan-done task through the orchestrator
-// the same way `re-work` does so the worker → verifier chain runs to a
-// terminal status. Inline when --interactive=true; detached otherwise.
+// so the worker → verifier chain runs to a terminal status. Inline
+// when --interactive=true; detached otherwise.
 // --tool / --model overrides forward into the orchestrate argv; the
 // child resolves the worker bucket itself when the flags are absent.
 func runPlanDoneWork(

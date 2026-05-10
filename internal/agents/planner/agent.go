@@ -115,7 +115,7 @@ func New(cfg Config) (agent.Agent, error) {
 					yield(nil, fmt.Errorf("%s: %w", Name, err))
 					return
 				}
-				if err := Execute(ctx, ExecuteOptions{
+				if err := Execute(ctx, Options{
 					TaskID:            taskID,
 					Agent:             resolvedAgent,
 					Model:             resolvedModel,

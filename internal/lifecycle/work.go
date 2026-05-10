@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/lifecycle/tuiquit"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
@@ -13,6 +14,12 @@ import (
 // prDetectTimeout bounds the work-end PR-URL detection (matches
 // the gh-fallback budget in tuiquit).
 const prDetectTimeout = 5 * time.Second
+
+type WorkSource struct {
+	Requirement string
+	PlanBody    string
+	PlanPath    string
+}
 
 // WorkLifecycle owns the begin/end task-log writes around a single
 // agent.Work invocation. Mirrors PlanLifecycle.
@@ -26,51 +33,54 @@ type WorkLifecycle struct {
 // NewWorkTask records the "working" entry for a newly created work
 // row. The caller has already minted the task id and staged the
 // plan markdown into <cwd>/.j/tasks/<id>/plan.md.
-func NewWorkTask(stderr io.Writer, agentName, model, taskID,
-	planPath, requirement, planBody, resumeID, agentLogPath string,
+func NewWorkTask(
+	stderr io.Writer,
+	taskID string,
+	session codingagents.AgentSession,
+	src WorkSource,
 ) *WorkLifecycle {
 	task := tasks.Task{
 		ID:                taskID,
 		Status:            tasks.StatusPlanDone,
-		WorkTool:          agentName,
-		WorkModel:         model,
-		WorkResumeSession: resumeID,
+		WorkTool:          session.Tool,
+		WorkModel:         session.Model,
+		WorkResumeSession: session.ResumeID,
 		Summary: tasks.FromPlanAndRequirement(
-			requirement, planBody, planPath),
+			src.Requirement, src.PlanBody, src.PlanPath),
 		WorkBeginAt: time.Now().UTC(),
 	}
 	fillWorktree(&task)
-	return openWorkLifecycle(stderr, task, agentLogPath,
+	return openWorkLifecycle(stderr, task, taskAgentLogPath(taskID),
 		tasks.EventWorkBegin, "work begin")
 }
 
 // BeginWorkRestart mutates a copy of t to flip status to `working`.
-func BeginWorkRestart(t tasks.Task, stderr io.Writer, agentName, model,
-	resumeID, agentLogPath string,
+func BeginWorkRestart(
+	t tasks.Task,
+	stderr io.Writer,
+	session codingagents.AgentSession,
 ) *WorkLifecycle {
 	task := t
-	task.WorkTool = agentName
-	task.WorkModel = model
-	task.WorkResumeSession = resumeID
+	task.WorkTool = session.Tool
+	task.WorkModel = session.Model
+	task.WorkResumeSession = session.ResumeID
 	task.WorkBeginAt = time.Now().UTC()
 	task.WorkEndAt = time.Time{}
 	task.DoneAt = time.Time{}
 	fillWorktree(&task)
-	return openWorkLifecycle(stderr, task, agentLogPath,
+	return openWorkLifecycle(stderr, task, taskAgentLogPath(t.ID),
 		tasks.EventWorkRestart, "work restart")
 }
 
 // BeginWorkResume is the resume-flow companion of BeginWorkRestart.
-func BeginWorkResume(t tasks.Task, stderr io.Writer,
-	agentLogPath string,
-) *WorkLifecycle {
+func BeginWorkResume(t tasks.Task, stderr io.Writer) *WorkLifecycle {
 	task := t
 	task.WorkEndAt = time.Time{}
 	task.DoneAt = time.Time{}
 	if task.WorkBeginAt.IsZero() {
 		task.WorkBeginAt = time.Now().UTC()
 	}
-	return openWorkLifecycle(stderr, task, agentLogPath,
+	return openWorkLifecycle(stderr, task, taskAgentLogPath(t.ID),
 		tasks.EventWorkResume, "work resume")
 }
 

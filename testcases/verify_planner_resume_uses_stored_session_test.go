@@ -89,7 +89,7 @@ func TestVerify_PlannerResume_UsesStoredSession(t *testing.T) {
 
 	stub := &resumePlanCaptureAgent{}
 	if err := planner.Execute(t.Context(),
-		planner.ExecuteOptions{
+		planner.Options{
 			TaskID: id,
 			Agent:  stub,
 			Model:  "m1",

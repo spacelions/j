@@ -6,9 +6,10 @@ import (
 
 	"github.com/spacelions/j/internal/agents/instructions"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// BuildVerifier composes the verifier's shared instruction with
+// BuildVerifierPrompt composes the verifier's shared instruction with
 // pointers to the requirement and plan markdown the agent must read,
 // plus the findings output path the agent must write before exiting.
 // The bodies are not embedded inline — the agent opens the files
@@ -32,28 +33,22 @@ import (
 // The `VERDICT: PASS|FAIL` last-line contract that depends on
 // findingsPath also lives in verifier_request.md so a custom
 // verifier.md cannot drop it.
-func BuildVerifier(
-	reqPath, planPath, verifierPlanPath, findingsPath, worktree string,
-	mustRead []string, clarificationPath string,
+func BuildVerifierPrompt(
+	paths tasks.TaskPaths,
+	worktree string,
+	mustRead []string,
 ) string {
-	_ = verifierPlanPath
-	return appendClarification(
-		appendVerifierWorktreeLine(
-			prependMustRead(
-				fmt.Sprintf(
-					"%s\n\n"+strings.TrimSpace(instructions.VerifierRequest),
-					strings.TrimSpace(Resolve(store.BucketVerifier)),
-					reqPath, planPath, findingsPath,
-				),
-				mustRead,
-			),
-			worktree,
-		),
-		clarificationPath,
+	base := fmt.Sprintf(
+		"%s\n\n"+strings.TrimSpace(instructions.VerifierRequest),
+		strings.TrimSpace(Resolve(store.BucketVerifier)),
+		paths.Requirements, paths.Plan, paths.Findings,
 	)
+	withMustRead := prependMustRead(base, mustRead)
+	withWorktree := appendVerifierWorktreeLine(withMustRead, worktree)
+	return appendClarification(withWorktree, paths.Clarification)
 }
 
-// BuildVerifierResume composes the resume-only verifier prompt: it
+// BuildVerifierResumePrompt composes the resume-only verifier prompt: it
 // asks the agent to inspect the previous verification session, check
 // what was already done, summarise the prior progress for the user,
 // and then continue only the outstanding verification work. The
@@ -73,27 +68,22 @@ func BuildVerifier(
 // starting, read these project files…" block at the very top of the
 // prompt (mirroring BuildVerifier). An empty / nil mustRead leaves
 // the prompt byte-identical to the pre-must-read output.
-func BuildVerifierResume(
-	reqPath, planPath, worktree string, mustRead []string,
-	clarificationPath string,
+func BuildVerifierResumePrompt(
+	paths tasks.TaskPaths,
+	worktree string,
+	mustRead []string,
 ) string {
-	return appendClarification(
-		appendVerifierWorktreeLine(
-			prependMustRead(
-				fmt.Sprintf(
-					"%s\n\n"+strings.TrimSpace(instructions.VerifierResume),
-					strings.TrimSpace(Resolve(store.BucketVerifier)),
-					reqPath, planPath,
-				),
-				mustRead,
-			),
-			worktree,
-		),
-		clarificationPath,
+	base := fmt.Sprintf(
+		"%s\n\n"+strings.TrimSpace(instructions.VerifierResume),
+		strings.TrimSpace(Resolve(store.BucketVerifier)),
+		paths.Requirements, paths.Plan,
 	)
+	withMustRead := prependMustRead(base, mustRead)
+	withWorktree := appendVerifierWorktreeLine(withMustRead, worktree)
+	return appendClarification(withWorktree, paths.Clarification)
 }
 
-// BuildVerifierClarificationResume composes the resume-from-
+// BuildVerifierClarificationResumePrompt composes the resume-from-
 // clarification verifier prompt. It replaces BuildVerifier /
 // BuildVerifierResume on a resume run that started from
 // needs-clarification: the agent reads the per-task
@@ -105,30 +95,25 @@ func BuildVerifierResume(
 // BuildVerifier path; on resume the agent must not overwrite the
 // findings file unless new information forces a change (mirroring
 // BuildVerifierResume).
-func BuildVerifierClarificationResume(
-	reqPath, planPath, worktree string, mustRead []string,
-	clarificationPath string,
+func BuildVerifierClarificationResumePrompt(
+	paths tasks.TaskPaths,
+	worktree string,
+	mustRead []string,
 ) string {
-	return appendClarification(
-		appendVerifierWorktreeLine(
-			prependMustRead(
-				fmt.Sprintf(
-					"%s\n\n"+strings.TrimSpace(
-						instructions.VerifierClarificationResume,
-					),
-					strings.TrimSpace(Resolve(store.BucketVerifier)),
-					clarificationPath, clarificationPath,
-					reqPath, planPath,
-				),
-				mustRead,
-			),
-			worktree,
+	base := fmt.Sprintf(
+		"%s\n\n"+strings.TrimSpace(
+			instructions.VerifierClarificationResume,
 		),
-		clarificationPath,
+		strings.TrimSpace(Resolve(store.BucketVerifier)),
+		paths.Clarification, paths.Clarification,
+		paths.Requirements, paths.Plan,
 	)
+	withMustRead := prependMustRead(base, mustRead)
+	withWorktree := appendVerifierWorktreeLine(withMustRead, worktree)
+	return appendClarification(withWorktree, paths.Clarification)
 }
 
-// BuildVerifierFix composes the worker-side fix prompt used when
+// BuildVerifierFixPrompt composes the worker-side fix prompt used when
 // the outer verify loop has observed a `VERDICT: FAIL` from the
 // verifier and wants the previous worker session to address the
 // listed findings without re-planning. The plan path is referenced
@@ -143,20 +128,14 @@ func BuildVerifierClarificationResume(
 // opens with "You are the worker in a planner/worker/verifier
 // workflow.", so this builder relies on that opening as the role
 // preamble rather than emitting a duplicate sentence.
-func BuildVerifierFix(
-	planPath, findingsPath, worktree, clarificationPath string,
-) string {
-	return appendClarification(
-		appendWorktreeLine(
-			fmt.Sprintf(
-				"%s\n\n"+strings.TrimSpace(instructions.VerifierFix),
-				strings.TrimSpace(Resolve(store.BucketWorker)),
-				planPath, findingsPath,
-			),
-			worktree,
-		),
-		clarificationPath,
+func BuildVerifierFixPrompt(paths tasks.TaskPaths, worktree string) string {
+	base := fmt.Sprintf(
+		"%s\n\n"+strings.TrimSpace(instructions.VerifierFix),
+		strings.TrimSpace(Resolve(store.BucketWorker)),
+		paths.Plan, paths.Findings,
 	)
+	withWorktree := appendWorktreeLine(base, worktree)
+	return appendClarification(withWorktree, paths.Clarification)
 }
 
 // appendVerifierWorktreeLine returns prompt unchanged when worktree

@@ -3,7 +3,6 @@ package testcases_test
 import (
 	"io"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/spacelions/j/internal/lifecycle"
@@ -23,12 +22,7 @@ func TestCase_PRURL_VerifyBegin_CarriesThroughFromWorkEnd(t *testing.T) {
 	saveLinearAPIKey(t, "lin_api_TEST")
 	lifecycle.InitLinearStateSync()
 
-	logPath := filepath.Join(t.TempDir(), "agent.log")
 	prURL := "https://github.com/spacelions/j/pull/777"
-	if err := os.WriteFile(logPath,
-		[]byte("opened "+prURL+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 
 	id := tasks.NewTaskID()
 	seed := tasks.Task{
@@ -39,8 +33,12 @@ func TestCase_PRURL_VerifyBegin_CarriesThroughFromWorkEnd(t *testing.T) {
 	}
 	tasks.PersistWarn(io.Discard, seed)
 
-	work := lifecycle.BeginWorkRestart(seed, io.Discard,
-		"cursor", "sonnet-4", "work-cursor", logPath)
+	work := beginWorkRestartLifecycle(seed, io.Discard,
+		"cursor", "sonnet-4", "work-cursor", "")
+	if err := os.WriteFile(work.Task().AgentLogPath,
+		[]byte("opened "+prURL+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	work.Finish(nil)
 
 	finished := work.Task()
@@ -53,8 +51,8 @@ func TestCase_PRURL_VerifyBegin_CarriesThroughFromWorkEnd(t *testing.T) {
 			finished.LinearIssue)
 	}
 
-	_ = lifecycle.BeginVerifyRestart(finished, io.Discard,
-		"cursor", "sonnet-4", "verify-cursor", logPath)
+	_ = beginVerifyRestartLifecycle(finished, io.Discard,
+		"cursor", "sonnet-4", "verify-cursor", "")
 
 	if !verifyBeginPRLinkCalls(t, env.recordedBodies(), prURL) {
 		t.Fatalf("verify-begin PR-link branch did not fire with URL")

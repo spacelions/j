@@ -10,11 +10,19 @@ package lifecycle
 
 import (
 	"io"
+	"path/filepath"
 	"time"
 
+	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 )
+
+type PlanSource struct {
+	Requirement string
+	Target      string
+	LinearIssue string
+}
 
 // PlanLifecycle owns the begin/end task-log writes around a single
 // agent.Plan invocation. The struct holds no bbolt handle — every
@@ -46,17 +54,21 @@ type PlanLifecycle struct {
 //
 // Best effort: failure to open the task log or to write the initial
 // row warns once on stderr and execution continues.
-func NewPlanTask(stderr io.Writer, agentName, model, taskID, target,
-	requirement, resumeID, agentLogPath, linearIssue string,
+func NewPlanTask(
+	stderr io.Writer,
+	taskID string,
+	session codingagents.AgentSession,
+	src PlanSource,
 ) *PlanLifecycle {
+	agentLogPath := taskAgentLogPath(taskID)
 	task := tasks.Task{
 		ID:                taskID,
-		PlanTool:          agentName,
-		PlanModel:         model,
-		PlanResumeSession: resumeID,
-		Summary:           tasks.Summary(requirement, target),
+		PlanTool:          session.Tool,
+		PlanModel:         session.Model,
+		PlanResumeSession: session.ResumeID,
+		Summary:           tasks.Summary(src.Requirement, src.Target),
 		PlanBeginAt:       time.Now().UTC(),
-		LinearIssue:       linearIssue,
+		LinearIssue:       src.LinearIssue,
 		AgentLogPath:      agentLogPath,
 	}
 	if _, err := tasks.ApplyAndPersistWarn(
@@ -70,19 +82,21 @@ func NewPlanTask(stderr io.Writer, agentName, model, taskID, target,
 	}
 }
 
-// BeginPlanRestart mutates a copy of t to flip status to `planning`
-// for the re-plan flow. PlanEndAt and DoneAt are cleared so the
-// finalize step stamps fresh values; the original PlanBeginAt is
-// preserved verbatim when set so the row keeps its first-run
-// lineage. Tool/model and the plan resume session are refreshed so
-// the row reflects the latest re-plan invocation.
-func BeginPlanRestart(t tasks.Task, stderr io.Writer, agentName, model,
-	resumeID, agentLogPath string,
+// BeginPlanRestart mutates a copy of t to flip status to `planning`.
+// PlanEndAt and DoneAt are cleared so the finalize step stamps fresh
+// values; the original PlanBeginAt is preserved verbatim when set so
+// the row keeps its first-run lineage. Tool/model and the plan resume
+// session are refreshed so the row reflects the latest invocation.
+func BeginPlanRestart(
+	t tasks.Task,
+	stderr io.Writer,
+	session codingagents.AgentSession,
 ) *PlanLifecycle {
+	agentLogPath := taskAgentLogPath(t.ID)
 	task := t
-	task.PlanTool = agentName
-	task.PlanModel = model
-	task.PlanResumeSession = resumeID
+	task.PlanTool = session.Tool
+	task.PlanModel = session.Model
+	task.PlanResumeSession = session.ResumeID
 	task.PlanEndAt = time.Time{}
 	task.DoneAt = time.Time{}
 	if task.PlanBeginAt.IsZero() {
@@ -105,13 +119,15 @@ func BeginPlanRestart(t tasks.Task, stderr io.Writer, agentName, model,
 // verbatim (so the backend forwards the original `--resume <id>` to
 // the underlying CLI) and the FSM transition is EventPlanResume so
 // notify hooks see the resume edge instead of a restart. Tool/model
-// are refreshed because a resume can switch backends just like a
-// re-plan can; PlanEndAt / DoneAt are cleared so Finish stamps fresh
-// values, while PlanBeginAt is preserved when set so the row keeps
-// its first-run lineage.
-func BeginPlanResume(t tasks.Task, stderr io.Writer, agentName, model,
-	agentLogPath string,
+// are refreshed because a resume can switch backends; PlanEndAt /
+// DoneAt are cleared so Finish stamps fresh values, while PlanBeginAt
+// is preserved when set so the row keeps its first-run lineage.
+func BeginPlanResume(
+	t tasks.Task,
+	stderr io.Writer,
+	session codingagents.AgentSession,
 ) *PlanLifecycle {
+	agentLogPath := taskAgentLogPath(t.ID)
 	prev := t.Status
 	newStatus, err := tasks.Apply(prev, tasks.EventPlanResume)
 	if err != nil {
@@ -119,8 +135,8 @@ func BeginPlanResume(t tasks.Task, stderr io.Writer, agentName, model,
 	}
 	task := t
 	task.Status = newStatus
-	task.PlanTool = agentName
-	task.PlanModel = model
+	task.PlanTool = session.Tool
+	task.PlanModel = session.Model
 	task.PlanEndAt = time.Time{}
 	task.DoneAt = time.Time{}
 	if task.PlanBeginAt.IsZero() {
@@ -143,13 +159,16 @@ func BeginPlanResume(t tasks.Task, stderr io.Writer, agentName, model,
 // already at `planning` — the seed row was written by persistStartRow
 // and the planner just needs to run the plan phase without a status
 // transition.
-func BeginPlanExisting(t tasks.Task, stderr io.Writer, agentName,
-	model, resumeID, agentLogPath string,
+func BeginPlanExisting(
+	t tasks.Task,
+	stderr io.Writer,
+	session codingagents.AgentSession,
 ) *PlanLifecycle {
+	agentLogPath := taskAgentLogPath(t.ID)
 	task := t
-	task.PlanTool = agentName
-	task.PlanModel = model
-	task.PlanResumeSession = resumeID
+	task.PlanTool = session.Tool
+	task.PlanModel = session.Model
+	task.PlanResumeSession = session.ResumeID
 	task.AgentLogPath = agentLogPath
 	if task.PlanBeginAt.IsZero() {
 		task.PlanBeginAt = time.Now().UTC()
@@ -246,3 +265,11 @@ func (lc *PlanLifecycle) pickFinishEvent(
 
 // Task returns the in-memory snapshot of the task row.
 func (lc *PlanLifecycle) Task() tasks.Task { return lc.task }
+
+func taskAgentLogPath(taskID string) string {
+	taskDir, err := tasks.EnsureDir(taskID)
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(taskDir, tasks.AgentLogFileName)
+}

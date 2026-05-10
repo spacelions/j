@@ -10,6 +10,22 @@ import (
 	"time"
 )
 
+type formattedPipes struct {
+	DevNull   *os.File
+	PipeWrite *os.File
+	PipeRead  *os.File
+	LogFile   *os.File
+}
+
+type formattedRun struct {
+	Cmd       *exec.Cmd
+	Name      string
+	PID       int
+	Started   time.Time
+	LogFile   *os.File
+	DrainDone chan struct{}
+}
+
 // SpawnFormattedIn is SpawnIn with a per-line formatter applied to the
 // child's stdout/stderr stream before the bytes hit logPath. lineFmt
 // is called once per `\n`-terminated line off a single drain goroutine
@@ -52,8 +68,12 @@ func SpawnFormattedIn(
 		_ = logFile.Close()
 		return 0, fmt.Errorf("run: pipe: %w", err)
 	}
-	pid, err := startFormatted(
-		ctx, dir, name, args, devNull, pw, logFile, lineFmt, pr)
+	pid, err := startFormatted(ctx, dir, name, args, formattedPipes{
+		DevNull:   devNull,
+		PipeWrite: pw,
+		PipeRead:  pr,
+		LogFile:   logFile,
+	}, lineFmt)
 	if err != nil {
 		_ = pr.Close()
 		_ = pw.Close()
@@ -69,49 +89,54 @@ func SpawnFormattedIn(
 // SpawnFormattedIn to keep that helper under the 80-line method cap.
 func startFormatted(
 	ctx context.Context, dir, name string, args []string,
-	devNull, pw, logFile *os.File,
-	lineFmt func([]byte) []byte, pr *os.File,
+	pipes formattedPipes, lineFmt func([]byte) []byte,
 ) (int, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	cmd.Stdin = devNull
-	cmd.Stdout = pw
-	cmd.Stderr = pw
+	cmd.Stdin = pipes.DevNull
+	cmd.Stdout = pipes.PipeWrite
+	cmd.Stderr = pipes.PipeWrite
 	applyDetachAttrs(cmd)
 	started := time.Now()
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("%s: %w", name, err)
 	}
 	pid := cmd.Process.Pid
-	_ = pw.Close()
+	_ = pipes.PipeWrite.Close()
 	drainDone := make(chan struct{})
-	go drainFormatted(pr, logFile, lineFmt, drainDone)
-	go reapFormatted(cmd, logFile, name, pid, started, drainDone)
+	run := &formattedRun{
+		Cmd:       cmd,
+		Name:      name,
+		PID:       pid,
+		Started:   started,
+		LogFile:   pipes.LogFile,
+		DrainDone: drainDone,
+	}
+	go drainFormatted(run, pipes.PipeRead, lineFmt)
+	go reapFormatted(run)
 	return pid, nil
 }
 
 // reapFormatted waits for the child, then for the drain goroutine's
 // final flush, and finally appends the child_exit marker so it always
 // lands after the last formatted line of child output.
-func reapFormatted(
-	cmd *exec.Cmd, logFile *os.File,
-	name string, pid int, started time.Time,
-	drainDone <-chan struct{},
-) {
-	_ = cmd.Wait()
-	<-drainDone
-	emitChildExit(logFile, name, pid, cmd.ProcessState, started)
-	_ = logFile.Close()
+func reapFormatted(run *formattedRun) {
+	_ = run.Cmd.Wait()
+	<-run.DrainDone
+	emitChildExit(
+		run.LogFile, run.Name, run.PID,
+		run.Cmd.ProcessState, run.Started,
+	)
+	_ = run.LogFile.Close()
 }
 
 // drainFormatted reads pr line-by-line and writes each formatted line
 // to logFile. A nil lineFmt is treated as identity. Closes pr and
 // signals drainDone when the read end returns EOF.
 func drainFormatted(
-	pr, logFile *os.File,
-	lineFmt func([]byte) []byte, drainDone chan<- struct{},
+	run *formattedRun, pr *os.File, lineFmt func([]byte) []byte,
 ) {
-	defer close(drainDone)
+	defer close(run.DrainDone)
 	defer func() { _ = pr.Close() }()
 	br := bufio.NewReader(pr)
 	for {
@@ -122,7 +147,7 @@ func drainFormatted(
 				out = lineFmt(line)
 			}
 			if len(out) > 0 {
-				_, _ = logFile.Write(out)
+				_, _ = run.LogFile.Write(out)
 			}
 		}
 		if err != nil {

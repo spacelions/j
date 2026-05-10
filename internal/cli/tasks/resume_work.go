@@ -1,4 +1,3 @@
-//nolint:dupl // intentionally parallel to resume_plan.go
 package tasks
 
 import (
@@ -28,15 +27,15 @@ type ResumeWorkOptions struct {
 }
 
 var resumeWorkConfig = resumePhaseConfig{
-	emptyMsg:    noActiveWorkSessionMessage,
-	resumeEvent: tasks.EventWorkResume,
-	errorVerb:   "resume-work",
-	hasSession:  func(t tasks.Task) bool { return t.WorkResumeSession != "" },
+	emptyMsg:   noActiveWorkSessionMessage,
+	errorVerb:  "resume-work",
+	hasSession: func(t tasks.Task) bool { return t.WorkResumeSession != "" },
+	gate:       requirePlan,
 	orchestrateArgs: func(taskID string) []string {
 		return []string{
 			cmdTasks, cmdOrchestrate,
 			flagID, taskID,
-			flagPhaseFromWork,
+			flagPhaseWorkOnly,
 			flagInteractiveTrue,
 		}
 	},
@@ -60,12 +59,10 @@ func newResumeWorkCmd() *cobra.Command {
 		Use: "resume-work",
 		Short: "Resume an in-flight worker session in the foreground " +
 			"with --interactive=true",
-		Long: "Filters tasks to rows with a non-empty work_resume_session and " +
-			"renders the shared task picker. The selected task re-execs " +
-			"`j tasks orchestrate --phase=from-work --interactive=true` " +
+		Long: "Renders the shared task picker. The selected task re-execs " +
+			"`j tasks orchestrate --phase=work-only --interactive=true` " +
 			"inline so the worker resumes its session in the foreground with the " +
-			"parent's terminal attached. When no task carries an active work session, " +
-			"prints `J: no tasks with an active work session` and exits 0.",
+			"parent's terminal attached.",
 		PersistentPreRunE: preflight.PreRunE,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
 			return preflight.EnsureAgentSelections(

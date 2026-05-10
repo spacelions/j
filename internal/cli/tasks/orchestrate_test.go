@@ -518,6 +518,87 @@ func TestRunOrchestrate_FromWorkRunsWorkVerify(t *testing.T) {
 	}
 }
 
+func TestRunOrchestrate_PlanOnlyRunsPlanner(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedOrchestrateTask(t, "scripted")
+	stub := newChainAgent("scripted")
+
+	if err := RunOrchestrate(t.Context(), OrchestrateOptions{
+		TaskID: id,
+		Phase:  orchestrator.RunPhasePlanOnly,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{stub},
+	}); err != nil {
+		t.Fatalf("RunOrchestrate: %v", err)
+	}
+	if stub.planCalls.Load() != 1 ||
+		stub.workCalls.Load() != 0 ||
+		stub.verifyCalls.Load() != 0 {
+		t.Fatalf("call counts: plan=%d work=%d verify=%d",
+			stub.planCalls.Load(),
+			stub.workCalls.Load(),
+			stub.verifyCalls.Load())
+	}
+}
+
+func TestRunOrchestrate_WorkOnlyRunsWorker(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedOrchestrateTask(t, "scripted")
+	stagePlan(t, id)
+	stub := newChainAgent("scripted")
+
+	if err := RunOrchestrate(t.Context(), OrchestrateOptions{
+		TaskID: id,
+		Phase:  orchestrator.RunPhaseWorkOnly,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{stub},
+	}); err != nil {
+		t.Fatalf("RunOrchestrate: %v", err)
+	}
+	if stub.planCalls.Load() != 0 ||
+		stub.workCalls.Load() != 1 ||
+		stub.verifyCalls.Load() != 0 {
+		t.Fatalf("call counts: plan=%d work=%d verify=%d",
+			stub.planCalls.Load(),
+			stub.workCalls.Load(),
+			stub.verifyCalls.Load())
+	}
+}
+
+func TestRunOrchestrate_RejectsUnknownPhase(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedOrchestrateTask(t, "scripted")
+	err := RunOrchestrate(t.Context(), OrchestrateOptions{
+		TaskID: id,
+		Phase:  "bogus",
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{newChainAgent("scripted")},
+	})
+	if err == nil || !strings.Contains(err.Error(), `unknown phase "bogus"`) {
+		t.Fatalf("err = %v, want unknown phase", err)
+	}
+}
+
+func TestDispatchNonFullRejectsFullPhase(t *testing.T) {
+	err := dispatchNonFullOrchestratePhase(
+		t.Context(),
+		orchestrator.TaskContext{},
+		orchestrator.PhaseConfig{Phase: orchestrator.RunPhaseFull},
+	)
+	if err == nil || !strings.Contains(err.Error(), `unknown phase "full"`) {
+		t.Fatalf("err = %v, want full phase rejection", err)
+	}
+}
+
 // TestRunOrchestrate_FromWorkConflictsWithApproval pins the rejected
 // combination: --phase=from-work with --plan-requires-approval=true
 // must error before invoking the orchestrator.

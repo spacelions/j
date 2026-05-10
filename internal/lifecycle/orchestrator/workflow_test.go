@@ -32,7 +32,9 @@ func TestParseRunPhase(t *testing.T) {
 	}{
 		{"empty", "", RunPhaseFull},
 		{"full", "full", RunPhaseFull},
+		{"plan only", "plan-only", RunPhasePlanOnly},
 		{"from work", "from-work", RunPhaseFromWork},
+		{"work only", "work-only", RunPhaseWorkOnly},
 		{"verify only", "verify-only", RunPhaseVerifyOnly},
 	}
 	for _, tc := range tests {
@@ -53,7 +55,7 @@ func TestParseRunPhase_RejectsUnknown(t *testing.T) {
 	if err == nil {
 		t.Fatalf("ParseRunPhase = %q, want error", got)
 	}
-	if !strings.Contains(err.Error(), "want full|from-work|verify-only") {
+	if !strings.Contains(err.Error(), "want full|plan-only|from-work|work-only|verify-only") {
 		t.Fatalf("error = %q", err)
 	}
 }

@@ -66,7 +66,7 @@ func TestClarificationResume_WorkerHappyPath_FinishesWorkDone(
 	})
 
 	stub := &deletingWorkAgent{name: "scripted", clarPath: clar}
-	if err := worker.Execute(t.Context(), worker.ExecuteOptions{
+	if err := worker.Execute(t.Context(), worker.Options{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),

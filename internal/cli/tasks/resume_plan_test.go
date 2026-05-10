@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 
@@ -34,11 +35,11 @@ func TestRunResumePlan_NoActiveSession(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RunResumePlan: %v", err)
 	}
-	if !strings.Contains(stdout.String(), noActivePlanSessionMessage) {
-		t.Fatalf("stdout = %q, want %q", stdout.String(), noActivePlanSessionMessage)
+	if stdout.String() != "" {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
-	if ui.pickCalls != 0 {
-		t.Fatalf("PickTask should not fire when no session-bearing tasks exist: calls=%d", ui.pickCalls)
+	if ui.pickCalls != 1 {
+		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
 	}
 }
 
@@ -85,12 +86,12 @@ func TestRunResumePlan_PickerOnlyShowsRowsWithSession(t *testing.T) {
 	if ui.pickCalls != 1 {
 		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
 	}
-	if len(ui.lastPickedFrom) != 1 {
-		t.Fatalf("picker received %d rows, want 1", len(ui.lastPickedFrom))
+	if len(ui.lastPickedFrom) != 2 {
+		t.Fatalf("picker received %d rows, want 2", len(ui.lastPickedFrom))
 	}
-	if ui.lastPickedFrom[0].ID != keep {
-		t.Fatalf("picker received id %q, want %q (the row with PlanResumeSession set; %q should have been filtered out)",
-			ui.lastPickedFrom[0].ID, keep, skip)
+	ids := []string{ui.lastPickedFrom[0].ID, ui.lastPickedFrom[1].ID}
+	if !containsArg(ids, keep) || !containsArg(ids, skip) {
+		t.Fatalf("picker received ids %v, want %q and %q", ids, keep, skip)
 	}
 }
 
@@ -119,7 +120,7 @@ func TestRunResumePlan_PickerAbort(t *testing.T) {
 
 // TestRunResumePlan_HappyPath pins the inline-exec path: a row with
 // PlanResumeSession set, a stub J binary recording its argv. The
-// argv must be `tasks orchestrate --id <id> --plan-requires-approval=true
+// argv must be `tasks orchestrate --id <id> --phase=plan-only
 // --interactive=true` (resume-plan always runs inline with a TUI),
 // and no fork dialog fires.
 func TestRunResumePlan_HappyPath(t *testing.T) {
@@ -141,7 +142,7 @@ func TestRunResumePlan_HappyPath(t *testing.T) {
 		t.Fatalf("RunResumePlan: %v", err)
 	}
 	args := readSpawnedArgv(t, argvPath)
-	want := []string{"tasks", "orchestrate", "--id", id, "--plan-requires-approval=true", "--interactive=true"}
+	want := []string{"tasks", "orchestrate", "--id", id, "--phase=plan-only", "--interactive=true"}
 	if strings.Join(args, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", args, want)
 	}
@@ -177,7 +178,7 @@ func TestRunResumePlan_HappyPath_PlanPendingApproval(t *testing.T) {
 	args := readSpawnedArgv(t, argvPath)
 	want := []string{
 		"tasks", "orchestrate", "--id", id,
-		"--plan-requires-approval=true", "--interactive=true",
+		"--phase=plan-only", "--interactive=true",
 	}
 	if strings.Join(args, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", args, want)
@@ -189,8 +190,11 @@ func TestRunResumePlan_HappyPath_PlanPendingApproval(t *testing.T) {
 func TestRunResumePlan_SpawnFails(t *testing.T) {
 	setupContinueEnv(t)
 	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusCompleted
 		task.PlanResumeSession = "active-cursor"
+		task.DoneAt = time.Now().UTC()
 	})
+	before := readTaskFromBolt(t, id)
 	ui := &fakeUI{pickReturn: id}
 	err := RunResumePlan(t.Context(), ResumePlanOptions{
 		Stdin:   strings.NewReader(""),
@@ -202,6 +206,11 @@ func TestRunResumePlan_SpawnFails(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected exec failure")
+	}
+	after := readTaskFromBolt(t, id)
+	if after.Status != before.Status || !after.DoneAt.Equal(before.DoneAt) {
+		t.Fatalf("row changed on spawn failure: before=%+v after=%+v",
+			before, after)
 	}
 }
 
@@ -348,7 +357,7 @@ func TestRunResumePlan_HappyPath_Completed(t *testing.T) {
 	args := readSpawnedArgv(t, argvPath)
 	want := []string{
 		"tasks", "orchestrate", "--id", id,
-		"--plan-requires-approval=true", "--interactive=true",
+		"--phase=plan-only", "--interactive=true",
 	}
 	if strings.Join(args, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", args, want)
@@ -378,7 +387,7 @@ func TestRunResumePlan_HappyPath_Failed(t *testing.T) {
 	args := readSpawnedArgv(t, argvPath)
 	want := []string{
 		"tasks", "orchestrate", "--id", id,
-		"--plan-requires-approval=true", "--interactive=true",
+		"--phase=plan-only", "--interactive=true",
 	}
 	if strings.Join(args, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", args, want)

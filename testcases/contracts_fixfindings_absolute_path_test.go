@@ -3,8 +3,6 @@ package testcases_test
 import (
 	"strings"
 	"testing"
-
-	"github.com/spacelions/j/internal/agents/prompts"
 )
 
 // TestContracts_FixFindings_AbsolutePath pins AC#4: when the verify
@@ -21,7 +19,7 @@ func TestContracts_FixFindings_AbsolutePath(t *testing.T) {
 		findings = "/abs/.j/tasks/T1/verifier_findings.md"
 		clarify  = "/abs/.j/tasks/T1/clarification.md"
 	)
-	got := prompts.BuildVerifierFix(plan, findings, "", clarify)
+	got := buildVerifierFixPrompt(plan, findings, "", clarify)
 	if !strings.Contains(got, findings) {
 		t.Fatalf("fix prompt missing absolute findings path %q: %q",
 			findings, got)

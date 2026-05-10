@@ -16,19 +16,23 @@ import (
 // status and either short-circuits to a no-op event stream or forwards
 // the inner verifier's events verbatim.
 func skipVerifyOnClarification(
-	taskID string, inner agent.Agent,
+	taskID string,
+	tagger func(string),
+	inner agent.Agent,
 ) (agent.Agent, error) {
 	return agent.New(agent.Config{
 		Name: "work_verify_guard",
 		Description: "Runs the verifier unless the worker stopped " +
 			"at needs-clarification.",
 		SubAgents: []agent.Agent{inner},
-		Run:       guardRun(taskID, inner),
+		Run:       guardRun(taskID, tagger, inner),
 	})
 }
 
 func guardRun(
-	taskID string, inner agent.Agent,
+	taskID string,
+	tagger func(string),
+	inner agent.Agent,
 ) func(agent.InvocationContext) iter.Seq2[*session.Event, error] {
 	return func(
 		ctx agent.InvocationContext,
@@ -36,6 +40,12 @@ func guardRun(
 		return func(yield func(*session.Event, error) bool) {
 			if rowStoppedAtClarification(taskID) {
 				return
+			}
+			if tagger != nil {
+				tagger("verifying")
+				if !yield(phaseEvent(ctx, "verifying"), nil) {
+					return
+				}
 			}
 			for ev, err := range inner.Run(ctx) {
 				if !yield(ev, err) {

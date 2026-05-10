@@ -10,8 +10,7 @@ import (
 // `j work resume --help` both fail with cobra's
 // `unknown command "work" for "j"`.
 //
-// (`j work` was replaced by `j tasks re-work` / `j tasks resume-work`
-// in commit e3cb8c5.)
+// (`j work` was replaced by task-scoped phase commands.)
 //
 // Replaces testcases/work-command-removed.md.
 func TestWorkCommand_Removed(t *testing.T) {

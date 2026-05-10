@@ -1,6 +1,9 @@
 package prompts
 
-import codingagents "github.com/spacelions/j/internal/coding-agents"
+import (
+	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/store/tasks"
+)
 
 // PlanPrompt picks the right planner template for req and appends the
 // shared save-and-exit suffix. Precedence is
@@ -9,64 +12,59 @@ import codingagents "github.com/spacelions/j/internal/coding-agents"
 // resume runs (a help-status row whose first run skipped the
 // artefacts must still produce them on resume).
 func PlanPrompt(req codingagents.PlanRequest) string {
-	base := BuildPlanner(req.FromFilePath, req.MustRead)
+	paths := tasks.TaskPaths{
+		Requirements:  req.RequirementsOutputPath,
+		Plan:          req.PlanOutputPath,
+		Clarification: req.ClarificationPath,
+	}
+	base := BuildPlannerPrompt(req.FromFilePath, req.MustRead)
 	switch {
 	case req.ResumeFromClarification:
-		base = BuildPlannerClarificationResume(
+		base = BuildPlannerClarificationResumePrompt(
 			req.FromFilePath, req.ClarificationPath, req.MustRead,
 		)
 	case req.Resume:
-		base = BuildPlannerResume(req.FromFilePath, req.MustRead)
+		base = BuildPlannerResumePrompt(req.FromFilePath, req.MustRead)
 	}
-	return AppendPlannerSaveSuffix(
-		base, req.RequirementsOutputPath, req.PlanOutputPath,
-		req.ClarificationPath,
-	)
+	return AppendPlannerSaveSuffix(base, paths)
 }
 
 // WorkPrompt picks the right worker template for req. Precedence:
 // FixFindings > ResumeFromClarification > Resume > fresh.
 func WorkPrompt(req codingagents.WorkRequest) string {
+	paths := tasks.TaskPaths{
+		Plan:          req.PlanPath,
+		Findings:      req.VerifierFindingsOutputPath,
+		Clarification: req.ClarificationPath,
+	}
 	switch {
 	case req.FixFindings:
-		return BuildVerifierFix(
-			req.PlanPath, req.VerifierFindingsOutputPath,
-			req.Worktree, req.ClarificationPath,
-		)
+		return BuildVerifierFixPrompt(paths, req.Worktree)
 	case req.ResumeFromClarification:
-		return BuildWorkerClarificationResume(
-			req.PlanPath, req.Worktree, req.MustRead,
-			req.ClarificationPath,
-		)
+		return BuildWorkerClarificationResumePrompt(
+			paths, req.Worktree, req.MustRead)
 	case req.Resume:
-		return BuildWorkerResume(
-			req.PlanPath, req.Worktree, req.MustRead,
-			req.ClarificationPath,
-		)
+		return BuildWorkerResumePrompt(paths, req.Worktree, req.MustRead)
 	}
-	return BuildWorker(
-		req.PlanPath, req.Worktree, req.MustRead, req.ClarificationPath,
-	)
+	return BuildWorkerPrompt(paths, req.Worktree, req.MustRead)
 }
 
 // VerifyPrompt picks the right verifier template for req. Precedence:
 // ResumeFromClarification > Resume > fresh.
 func VerifyPrompt(req codingagents.VerifyRequest) string {
+	paths := tasks.TaskPaths{
+		Requirements:  req.RequirementsPath,
+		Plan:          req.PlanPath,
+		VerifierPlan:  req.VerifierPlanOutputPath,
+		Findings:      req.VerifierFindingsOutputPath,
+		Clarification: req.ClarificationPath,
+	}
 	switch {
 	case req.ResumeFromClarification:
-		return BuildVerifierClarificationResume(
-			req.RequirementsPath, req.PlanPath, req.Worktree,
-			req.MustRead, req.ClarificationPath,
-		)
+		return BuildVerifierClarificationResumePrompt(
+			paths, req.Worktree, req.MustRead)
 	case req.Resume:
-		return BuildVerifierResume(
-			req.RequirementsPath, req.PlanPath, req.Worktree,
-			req.MustRead, req.ClarificationPath,
-		)
+		return BuildVerifierResumePrompt(paths, req.Worktree, req.MustRead)
 	}
-	return BuildVerifier(
-		req.RequirementsPath, req.PlanPath,
-		req.VerifierPlanOutputPath, req.VerifierFindingsOutputPath,
-		req.Worktree, req.MustRead, req.ClarificationPath,
-	)
+	return BuildVerifierPrompt(paths, req.Worktree, req.MustRead)
 }

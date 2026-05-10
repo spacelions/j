@@ -123,7 +123,7 @@ func seedPlanDoneTask(t *testing.T) string {
 
 func TestRun_NoAgentsError(t *testing.T) {
 	ctx := t.Context()
-	err := Execute(ctx, ExecuteOptions{Stdout: io.Discard, Stderr: io.Discard})
+	err := Execute(ctx, Options{Stdout: io.Discard, Stderr: io.Discard})
 	if err == nil || !strings.Contains(err.Error(), "no coding agents") {
 		t.Fatalf("err = %v, want 'no coding agents' error", err)
 	}
@@ -134,7 +134,7 @@ func TestRun_HappyPath(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
 	var stdout bytes.Buffer
-	err := Execute(t.Context(), ExecuteOptions{
+	err := Execute(t.Context(), Options{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -165,7 +165,7 @@ func TestRun_WorkErrorPromotesToHelp(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
 	agent.workErr = errors.New("worker boom")
-	err := Execute(t.Context(), ExecuteOptions{
+	err := Execute(t.Context(), Options{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -192,7 +192,7 @@ func TestRun_ConfirmStatusOverrideDeclined(t *testing.T) {
 	row.Status = tasks.StatusCompleted
 	testutil.SeedTaskRow(t, row)
 	agent := newRunTestAgent("cursor")
-	err := Execute(t.Context(), ExecuteOptions{
+	err := Execute(t.Context(), Options{
 		TaskID: id,
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -216,7 +216,7 @@ func TestRun_RecordsAgentLog(t *testing.T) {
 	agent := newRunTestAgent("cursor")
 	agent.workPid = 42
 	var stdout bytes.Buffer
-	err := Execute(t.Context(), ExecuteOptions{
+	err := Execute(t.Context(), Options{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -244,7 +244,7 @@ func TestRun_WaitForCompletion_Success(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
 	agent.workPid = 0
-	err := Execute(t.Context(), ExecuteOptions{
+	err := Execute(t.Context(), Options{
 		TaskID:            id,
 		Yes:               true,
 		Stdin:             strings.NewReader(""),
@@ -268,7 +268,7 @@ func TestRun_AppliesDefaults(t *testing.T) {
 	setupRunEnv(t)
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
-	opts := ExecuteOptions{
+	opts := Options{
 		TaskID: id,
 		Agents: []codingagents.Agent{agent},
 		Yes:    true,
@@ -288,7 +288,7 @@ func TestRun_ExplicitToolModelSkipsPersistence(t *testing.T) {
 	setupRunEnv(t)
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
-	err := Execute(t.Context(), ExecuteOptions{
+	err := Execute(t.Context(), Options{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -310,7 +310,7 @@ func TestRun_ExplicitToolModelSkipsPersistence(t *testing.T) {
 func TestRun_NoPlanTasks(t *testing.T) {
 	setupRunEnv(t)
 	agent := newRunTestAgent("cursor")
-	err := Execute(t.Context(), ExecuteOptions{
+	err := Execute(t.Context(), Options{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -332,7 +332,7 @@ func TestRun_NewResumeIDError(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	agent := newRunTestAgent("cursor")
 	agent.resumeIDErr = errors.New("resume id failure")
-	err := Execute(t.Context(), ExecuteOptions{
+	err := Execute(t.Context(), Options{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -372,7 +372,7 @@ func TestRun_MustReadErrorWarnsAndContinues(t *testing.T) {
 
 	agent := newRunTestAgent("cursor")
 	var stderr bytes.Buffer
-	err = Execute(t.Context(), ExecuteOptions{
+	err = Execute(t.Context(), Options{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -403,7 +403,7 @@ func TestRun_WaitForCompletionError(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	err := Execute(ctx, ExecuteOptions{
+	err := Execute(ctx, Options{
 		TaskID:            id,
 		Yes:               true,
 		Stdin:             strings.NewReader(""),
@@ -427,7 +427,7 @@ func TestRun_ConfirmStatusOverrideError(t *testing.T) {
 	row.Status = tasks.StatusCompleted
 	testutil.SeedTaskRow(t, row)
 	agent := newRunTestAgent("cursor")
-	err := Execute(t.Context(), ExecuteOptions{
+	err := Execute(t.Context(), Options{
 		TaskID: id,
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
@@ -456,7 +456,7 @@ func TestRun_ResumeUnknownToolError(t *testing.T) {
 	testutil.SeedTaskRow(t, row)
 
 	agent := newRunTestAgent("cursor")
-	err := Execute(t.Context(), ExecuteOptions{
+	err := Execute(t.Context(), Options{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -499,7 +499,7 @@ func TestRun_ResumeFromClarificationFlag(t *testing.T) {
 	testutil.SeedTaskRow(t, row)
 
 	agent := newRunTestAgent("cursor")
-	if err := Execute(t.Context(), ExecuteOptions{
+	if err := Execute(t.Context(), Options{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -535,7 +535,7 @@ func TestRun_ResumeWithoutClarificationFile(t *testing.T) {
 	testutil.SeedTaskRow(t, row)
 
 	agent := newRunTestAgent("cursor")
-	if err := Execute(t.Context(), ExecuteOptions{
+	if err := Execute(t.Context(), Options{
 		TaskID: id,
 		Yes:    true,
 		Stdin:  strings.NewReader(""),
@@ -556,16 +556,15 @@ func TestRun_ResumeWithoutClarificationFile(t *testing.T) {
 
 func TestResolveWorker_SelectWorkerError(t *testing.T) {
 	agent := newRunTestAgent("cursor")
-	_, _, _, err := resolveWorker(
+	_, _, err := resolveWorker(
 		t.Context(),
-		ExecuteOptions{
+		Options{
 			Agents: []codingagents.Agent{agent},
 			Tool:   "ghost",
 			Stderr: io.Discard,
 			UI:     &fakeRunUI{},
 		},
 		resolverWorkPlan("", "", ""),
-		false,
 	)
 	if err == nil {
 		t.Fatal("resolveWorker err = nil, want select-worker error")

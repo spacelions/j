@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spacelions/j/internal/agents/prompts"
 	"github.com/spacelions/j/internal/cli/settings"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -45,7 +44,7 @@ func TestContracts_VerifierOverride_VerdictContract(t *testing.T) {
 		findings = "/abs/.j/tasks/T1/verifier_findings.md"
 		clarify  = "/abs/.j/tasks/T1/clarification.md"
 	)
-	got := prompts.BuildVerifier(
+	got := buildVerifierPrompt(
 		req, plan, vplan, findings, "", nil, clarify,
 	)
 	for _, want := range []string{
@@ -59,7 +58,7 @@ func TestContracts_VerifierOverride_VerdictContract(t *testing.T) {
 		}
 	}
 
-	resume := prompts.BuildVerifierResume(req, plan, "", nil, clarify)
+	resume := buildVerifierResumePrompt(req, plan, "", nil, clarify)
 	for _, want := range []string{
 		req, plan, clarify, "If you need clarification",
 	} {

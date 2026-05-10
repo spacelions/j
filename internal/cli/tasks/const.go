@@ -12,7 +12,9 @@ const (
 	flagID                       = "--id"
 	flagInteractiveTrue          = "--interactive=true"
 	flagPlanRequiresApprovalTrue = "--plan-requires-approval=true"
+	flagPhasePlanOnly            = "--phase=plan-only"
 	flagPhaseFromWork            = "--phase=from-work"
+	flagPhaseWorkOnly            = "--phase=work-only"
 	flagPhaseVerifyOnly          = "--phase=verify-only"
 )
 

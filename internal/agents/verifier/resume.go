@@ -129,45 +129,31 @@ func runVerifyResume(
 		return err
 	}
 	taskDir := filepath.Join(tasksDir, t.ID)
-	planPath := filepath.Join(taskDir, tasks.PlanFileName)
-	requirementsPath := filepath.Join(
-		taskDir, tasks.RequirementsFileName,
-	)
-	verifierPlanPath := filepath.Join(
-		taskDir, tasks.VerifierPlanFileName,
-	)
-	findingsPath := filepath.Join(
-		taskDir, tasks.VerifierFindingsFileName,
-	)
-	clarificationPath := filepath.Join(
-		taskDir, tasks.ClarificationFileName,
-	)
-	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
+	paths := tasks.TaskPaths{
+		Requirements: filepath.Join(taskDir, tasks.RequirementsFileName),
+		Plan:         filepath.Join(taskDir, tasks.PlanFileName),
+		VerifierPlan: filepath.Join(taskDir, tasks.VerifierPlanFileName),
+		Findings:     filepath.Join(taskDir, tasks.VerifierFindingsFileName),
+		Clarification: filepath.Join(
+			taskDir,
+			tasks.ClarificationFileName,
+		),
+	}
+	res := resolver.VerifyTask{Task: t, TaskDir: taskDir, Paths: paths}
 
-	lc := lifecycle.BeginVerifyResume(t, opts.Stderr, agentLogPath)
+	lc := lifecycle.BeginVerifyResume(t, opts.Stderr)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
-	pid, runErr := agent.Verify(ctx, codingagents.VerifyRequest{
-		RequirementsPath:           requirementsPath,
-		PlanPath:                   planPath,
-		VerifierPlanOutputPath:     verifierPlanPath,
-		VerifierFindingsOutputPath: findingsPath,
-		ClarificationPath:          clarificationPath,
-		Model:                      t.VerifyModel,
-		Interactive:                true,
-		ResumeChatID:               t.VerifyResumeSession,
-		Resume:                     true,
-		ResumeFromClarification:    tasks.ClarificationFileExists(taskDir),
-		MustRead:                   mustReadFiles,
-	})
+	req := buildVerifyResumeRequest(res, true, mustReadFiles)
+	pid, runErr := agent.Verify(ctx, req)
 	if runErr == nil {
 		runErr = run.WaitForExit(ctx, pid)
 	}
 	outcome := lifecycle.VerifyOutcomeNoRetries
 	if runErr == nil &&
-		resolver.ParseVerdict(findingsPath) == resolver.VerdictPass {
+		resolver.ParseVerdict(paths.Findings) == resolver.VerdictPass {
 		outcome = lifecycle.VerifyOutcomeSuccess
 	}
 	lc.Finish(outcome, runErr)
@@ -178,6 +164,28 @@ func runVerifyResume(
 		opts.Stdout, "J: verify resume on task %s\n", t.ID,
 	)
 	return nil
+}
+
+func buildVerifyResumeRequest(
+	res resolver.VerifyTask,
+	interactive bool,
+	mustRead []string,
+) codingagents.VerifyRequest {
+	return codingagents.VerifyRequest{
+		RequirementsPath:           res.Paths.Requirements,
+		PlanPath:                   res.Paths.Plan,
+		VerifierPlanOutputPath:     res.Paths.VerifierPlan,
+		VerifierFindingsOutputPath: res.Paths.Findings,
+		ClarificationPath:          res.Paths.Clarification,
+		Model:                      res.Task.VerifyModel,
+		Interactive:                interactive,
+		ResumeChatID:               res.Task.VerifyResumeSession,
+		Resume:                     true,
+		ResumeFromClarification: tasks.ClarificationFileExists(
+			res.TaskDir,
+		),
+		MustRead: mustRead,
+	}
 }
 
 // resolveResumeTask runs the --from-task / picker / single-task

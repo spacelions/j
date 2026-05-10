@@ -58,7 +58,7 @@ func TestRunResumeWork_HappyPath(t *testing.T) {
 		t.Fatalf("RunResumeWork: %v", err)
 	}
 	args := readSpawnedArgv(t, argvPath)
-	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--phase=from-work", "--interactive=true"}
+	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--phase=work-only", "--interactive=true"}
 	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
 		t.Fatalf("argv = %v, want %v", args, wantArgs)
 	}
@@ -150,7 +150,7 @@ func TestRunResumeWork_HappyPath_Completed(t *testing.T) {
 	args := readSpawnedArgv(t, argvPath)
 	want := []string{
 		"tasks", "orchestrate", "--id", id,
-		"--phase=from-work", "--interactive=true",
+		"--phase=work-only", "--interactive=true",
 	}
 	if strings.Join(args, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", args, want)
@@ -180,7 +180,7 @@ func TestRunResumeWork_HappyPath_Failed(t *testing.T) {
 	args := readSpawnedArgv(t, argvPath)
 	want := []string{
 		"tasks", "orchestrate", "--id", id,
-		"--phase=from-work", "--interactive=true",
+		"--phase=work-only", "--interactive=true",
 	}
 	if strings.Join(args, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", args, want)

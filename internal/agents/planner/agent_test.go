@@ -212,7 +212,7 @@ func TestExecute_ResumeFromStoredSession(t *testing.T) {
 
 	stub := newScriptedPlanAgent("scripted")
 	stub.panicOnNewResumeID = true
-	if err := Execute(t.Context(), ExecuteOptions{
+	if err := Execute(t.Context(), Options{
 		TaskID: taskID,
 		Agent:  stub,
 		Model:  "m1",
@@ -271,7 +271,7 @@ func TestExecute_ResumeFromClarificationFlag(t *testing.T) {
 	seedPlanApproval(t, false)
 
 	stub := newScriptedPlanAgent("scripted")
-	if err := Execute(t.Context(), ExecuteOptions{
+	if err := Execute(t.Context(), Options{
 		TaskID: taskID,
 		Agent:  stub,
 		Model:  "m1",
@@ -318,7 +318,7 @@ func TestExecute_ResumeWithoutClarificationFile(t *testing.T) {
 	seedPlanApproval(t, false)
 
 	stub := newScriptedPlanAgent("scripted")
-	if err := Execute(t.Context(), ExecuteOptions{
+	if err := Execute(t.Context(), Options{
 		TaskID: taskID,
 		Agent:  stub,
 		Model:  "m1",
@@ -361,7 +361,7 @@ func TestExecute_FreshFromEmptySession(t *testing.T) {
 	seedPlanApproval(t, false)
 
 	stub := newScriptedPlanAgent("scripted")
-	if err := Execute(t.Context(), ExecuteOptions{
+	if err := Execute(t.Context(), Options{
 		TaskID: taskID,
 		Agent:  stub,
 		Model:  "m1",

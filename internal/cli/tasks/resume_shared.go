@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
@@ -55,9 +57,9 @@ func (o resumeOptions) withDefaults() resumeOptions {
 // resume-work, and resume-verify.
 type resumePhaseConfig struct {
 	emptyMsg        string
-	resumeEvent     tasks.Event
 	errorVerb       string
 	hasSession      func(tasks.Task) bool
+	gate            func(tasks.Task) error
 	orchestrateArgs func(taskID string) []string
 }
 
@@ -77,11 +79,7 @@ func runResumePhase(
 	if err != nil {
 		return err
 	}
-	if !tasks.IsLegal(t.Status, cfg.resumeEvent) {
-		return fmt.Errorf("cannot %s task in status %q",
-			cfg.errorVerb, t.Status)
-	}
-	if _, err := tasks.EnsureDir(taskID); err != nil {
+	if err := cfg.gate(t); err != nil {
 		return err
 	}
 	if err := takeoverIfHeld(ctx, opts.Stderr, taskID); err != nil {
@@ -166,13 +164,12 @@ func pickResumeTaskID(
 	if err != nil {
 		return "", false, err
 	}
-	filtered := filterTasksBySession(rows, cfg.hasSession)
-	if len(filtered) == 0 {
+	if len(rows) == 0 {
 		uitheme.NormalFprintln(opts.Stdout, cfg.emptyMsg)
 		return "", false, nil
 	}
-	tasks.SortTasks(filtered)
-	return opts.UI.PickTask(ctx, filtered)
+	tasks.SortTasks(rows)
+	return opts.UI.PickTask(ctx, rows)
 }
 
 func filterTasksBySession(
@@ -185,4 +182,82 @@ func filterTasksBySession(
 		}
 	}
 	return out
+}
+
+func requireRequirementsOrLinear(t tasks.Task) error {
+	taskDir, err := tasks.EnsureDir(t.ID)
+	if err != nil {
+		return err
+	}
+	if t.LinearIssue != "" {
+		return nil
+	}
+	reqPath := filepath.Join(taskDir, tasks.RequirementsFileName)
+	if _, err := os.Stat(reqPath); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return fmt.Errorf(
+			"cannot resume-plan task %s: requirements.md missing; "+
+				"run `j tasks start` first", t.ID)
+	}
+	return nil
+}
+
+func requirePlan(t tasks.Task) error {
+	taskDir, err := tasks.EnsureDir(t.ID)
+	if err != nil {
+		return err
+	}
+	planPath := filepath.Join(taskDir, tasks.PlanFileName)
+	if _, err := os.Stat(planPath); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return fmt.Errorf(
+			"cannot resume-work task %s: plan.md missing; "+
+				"run `j tasks resume-plan` first", t.ID)
+	}
+	return nil
+}
+
+func requirePlanAndPriorWork(t tasks.Task) error {
+	taskDir, err := tasks.EnsureDir(t.ID)
+	if err != nil {
+		return err
+	}
+	planPath := filepath.Join(taskDir, tasks.PlanFileName)
+	if _, err := os.Stat(planPath); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return fmt.Errorf(
+			"cannot resume-verify task %s: plan.md missing; "+
+				"run `j tasks resume-plan` first", t.ID)
+	}
+	if !t.WorkBeginAt.IsZero() {
+		return nil
+	}
+	if t.WorkResumeSession != "" {
+		return nil
+	}
+	if statusAllowsVerifyAfterWork(t) {
+		return nil
+	}
+	return fmt.Errorf(
+		"cannot resume-verify task %s: no prior worker run; "+
+			"run `j tasks resume-work` first", t.ID)
+}
+
+func statusAllowsVerifyAfterWork(t tasks.Task) bool {
+	if t.WorkTool == "" {
+		return false
+	}
+	switch t.Status {
+	case tasks.StatusWorking, tasks.StatusWorkDone, tasks.StatusVerifying,
+		tasks.StatusFailed, tasks.StatusCompleted:
+		return true
+	default:
+		return false
+	}
 }

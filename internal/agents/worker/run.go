@@ -31,8 +31,8 @@ type UI interface {
 	) (bool, error)
 }
 
-// ExecuteOptions configures Execute.
-type ExecuteOptions struct {
+// Options configures Execute.
+type Options struct {
 	TaskID      string
 	Yes         bool
 	Interactive bool
@@ -54,7 +54,7 @@ type ExecuteOptions struct {
 }
 
 // Execute resolves a plan, picks a worker agent, and dispatches.
-func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
+func Execute(ctx context.Context, opts Options) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
@@ -69,13 +69,10 @@ func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 	}
 	// A non-empty WorkResumeSession on the task row signals "resume"
 	// — the row was last touched by a worker run that recorded its
-	// session id. resume-work leaves it populated; re-work clears it
-	// before re-execing so this branch picks the fresh path. In
-	// resume mode the agent + model are pinned to the row's
-	// WorkTool / WorkModel so claude is reused with `--resume <id>`
+	// session id. In resume mode the agent + model are pinned to the
+	// row's WorkTool / WorkModel so claude is reused with `--resume <id>`
 	// (resuming a claude session in cursor is impossible).
-	resumeMode := res.Task.WorkResumeSession != ""
-	agent, model, resumeID, err := resolveWorker(ctx, opts, res, resumeMode)
+	agent, session, err := resolveWorker(ctx, opts, res)
 	if err != nil {
 		return err
 	}
@@ -88,16 +85,8 @@ func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 	if !proceed {
 		return nil
 	}
-	agentLogPath := filepath.Join(
-		filepath.Dir(res.PlanPath), tasks.AgentLogFileName,
-	)
-	lc := beginWorkLifecycle(
-		res, opts.Stderr, agent.Name(), model, resumeID,
-		agentLogPath, resumeMode,
-	)
-	return runWorker(
-		ctx, opts, agent, lc, res, model, resumeID, resumeMode, agentLogPath,
-	)
+	lc := beginWorkLifecycle(res, opts.Stderr, session)
+	return runWorker(ctx, agent, lc, res, session, opts)
 }
 
 // resolveWorker picks the agent + model + resume id for this run.
@@ -105,69 +94,66 @@ func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 // reused verbatim; on a fresh run resolver.Agent picks the bucket
 // agent and NewResumeID mints the cursor id.
 func resolveWorker(
-	ctx context.Context, opts ExecuteOptions,
-	res resolver.WorkPlan, resumeMode bool,
-) (codingagents.Agent, string, string, error) {
-	if resumeMode {
+	ctx context.Context,
+	opts Options,
+	res resolver.WorkPlan,
+) (codingagents.Agent, codingagents.AgentSession, error) {
+	if res.Task.WorkResumeSession != "" {
 		a, ok := lookupResumeAgent(opts.Agents, res.Task.WorkTool)
 		if !ok {
-			return nil, "", "", fmt.Errorf(
+			return nil, codingagents.AgentSession{}, fmt.Errorf(
 				"unknown tool %q", res.Task.WorkTool,
 			)
 		}
-		return a, res.Task.WorkModel, res.Task.WorkResumeSession, nil
+		return a, codingagents.AgentSession{
+			Tool:     res.Task.WorkTool,
+			Model:    res.Task.WorkModel,
+			ResumeID: res.Task.WorkResumeSession,
+		}, nil
 	}
 	a, m, err := selectWorker(ctx, opts)
 	if err != nil {
-		return nil, "", "", err
+		return nil, codingagents.AgentSession{}, err
 	}
 	fresh, err := a.NewResumeID(ctx)
 	if err != nil {
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
 	}
-	return a, m, fresh, nil
+	return a, codingagents.AgentSession{
+		Tool:     a.Name(),
+		Model:    m,
+		ResumeID: fresh,
+	}, nil
 }
 
 func beginWorkLifecycle(
 	res resolver.WorkPlan, stderr io.Writer,
-	agentName, model, resumeID, agentLogPath string, resumeMode bool,
+	session codingagents.AgentSession,
 ) *lifecycle.WorkLifecycle {
-	if resumeMode {
-		return lifecycle.BeginWorkResume(res.Task, stderr, agentLogPath)
+	if res.Task.WorkResumeSession != "" {
+		return lifecycle.BeginWorkResume(res.Task, stderr)
 	}
-	return lifecycle.BeginWorkRestart(
-		res.Task, stderr, agentName, model, resumeID, agentLogPath,
-	)
+	return lifecycle.BeginWorkRestart(res.Task, stderr, session)
 }
 
 func runWorker(
-	ctx context.Context, opts ExecuteOptions,
+	ctx context.Context,
 	agent codingagents.Agent, lc *lifecycle.WorkLifecycle,
-	res resolver.WorkPlan, model, resumeID string,
-	resumeMode bool, agentLogPath string,
+	res resolver.WorkPlan,
+	session codingagents.AgentSession,
+	opts Options,
 ) error {
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
-	taskDir := filepath.Dir(res.PlanPath)
-	clarificationPath := filepath.Join(taskDir, tasks.ClarificationFileName)
-	resumeFromClarification := resumeMode &&
-		tasks.ClarificationFileExists(taskDir)
-	workspace := taskDir
+	resume := res.Task.WorkResumeSession != ""
+	resumeFromClarification := resume &&
+		tasks.ClarificationFileExists(res.TaskDir)
 	beginAt := time.Now().UTC()
-	pid, workErr := agent.Work(ctx, codingagents.WorkRequest{
-		PlanPath:                res.PlanPath,
-		Model:                   model,
-		ClarificationPath:       clarificationPath,
-		Interactive:             opts.Interactive,
-		ResumeChatID:            resumeID,
-		Resume:                  resumeMode,
-		ResumeFromClarification: resumeFromClarification,
-		Worktree:                lc.Task().Worktree,
-		AgentLogPath:            agentLogPath,
-		MustRead:                mustReadFiles,
-	})
+	req := buildWorkRequest(res, session, opts.Interactive,
+		resumeFromClarification, mustReadFiles)
+	pid, workErr := agent.Work(ctx, req)
 	if workErr == nil && pid > 0 {
 		if opts.WaitForCompletion {
 			if err := run.WaitForExit(ctx, pid); err != nil {
@@ -175,16 +161,20 @@ func runWorker(
 				return err
 			}
 		} else {
-			lc.RecordAgentLog(agentLogPath)
+			lc.RecordAgentLog(req.AgentLogPath)
 			uitheme.NormalForkDialog(
-				opts.Stdout, agent.Name(), pid, agentLogPath,
+				opts.Stdout, agent.Name(), pid, req.AgentLogPath,
 			)
 			return nil
 		}
 	}
-	if workErr == nil && resumeID == "" {
+	if workErr == nil && session.ResumeID == "" {
 		codingagents.CaptureAndRecordResume(
-			ctx, agent, lc, workspace, beginAt, opts.Stderr,
+			ctx, agent, lc, codingagents.ResumeCapture{
+				Workspace: res.TaskDir,
+				Since:     beginAt,
+				Stderr:    opts.Stderr,
+			},
 		)
 	}
 	lc.Finish(workErr)
@@ -217,7 +207,7 @@ func lookupResumeAgent(
 }
 
 func selectWorker(
-	ctx context.Context, opts ExecuteOptions,
+	ctx context.Context, opts Options,
 ) (codingagents.Agent, string, error) {
 	return resolver.Agent(ctx, resolver.AgentOptions{
 		Bucket:        store.BucketWorker,
@@ -231,7 +221,33 @@ func selectWorker(
 	})
 }
 
-func (o ExecuteOptions) withDefaults() ExecuteOptions {
+func buildWorkRequest(
+	res resolver.WorkPlan,
+	session codingagents.AgentSession,
+	interactive bool,
+	resumeFromClarification bool,
+	mustRead []string,
+) codingagents.WorkRequest {
+	resume := session.ResumeID != "" &&
+		session.ResumeID == res.Task.WorkResumeSession
+	return codingagents.WorkRequest{
+		PlanPath:                res.Paths.Plan,
+		Model:                   session.Model,
+		ClarificationPath:       res.Paths.Clarification,
+		Interactive:             interactive,
+		ResumeChatID:            session.ResumeID,
+		Resume:                  resume,
+		ResumeFromClarification: resumeFromClarification,
+		Worktree:                res.Task.Worktree,
+		AgentLogPath: filepath.Join(
+			res.TaskDir,
+			tasks.AgentLogFileName,
+		),
+		MustRead: mustRead,
+	}
+}
+
+func (o Options) withDefaults() Options {
 	if o.Stdin == nil {
 		o.Stdin = os.Stdin
 	}

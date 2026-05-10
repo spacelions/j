@@ -78,7 +78,7 @@ func verifyReadStubArgv(t *testing.T, outputPath string) []string {
 // PlanResumeSession) must NOT print
 // `J: cannot resume-plan task in status "plan-pending-approval"`;
 // it must re-exec the orchestrator with
-// `tasks orchestrate --id <id> --plan-requires-approval=true
+// `tasks orchestrate --id <id> --phase=plan-only
 // --interactive=true`.
 func TestVerify_ResumePlan_SucceedsFromPlanPendingApproval(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -92,8 +92,16 @@ func TestVerify_ResumePlan_SucceedsFromPlanPendingApproval(t *testing.T) {
 	}
 
 	id := tasks.NewTaskID()
-	if _, err := tasks.EnsureDir(id); err != nil {
+	taskDir, err := tasks.EnsureDir(id)
+	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(taskDir, tasks.RequirementsFileName),
+		[]byte("requirements"),
+		0o644,
+	); err != nil {
+		t.Fatalf("write requirements: %v", err)
 	}
 	s, err := tasks.OpenDefault()
 	if err != nil {
@@ -138,7 +146,7 @@ func TestVerify_ResumePlan_SucceedsFromPlanPendingApproval(t *testing.T) {
 	got := verifyReadStubArgv(t, argvPath)
 	want := []string{
 		"tasks", "orchestrate", "--id", id,
-		"--plan-requires-approval=true", "--interactive=true",
+		"--phase=plan-only", "--interactive=true",
 	}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", got, want)

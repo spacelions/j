@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/spacelions/j/internal/cli/initcmd"
-	"github.com/spacelions/j/internal/lifecycle"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -31,7 +30,7 @@ func TestPlanFinish_ClarificationPresent_LandsNeedsClarification(
 	t.Cleanup(tasks.ResetHooksForTest)
 
 	id := tasks.NewTaskID()
-	lc := lifecycle.NewPlanTask(io.Discard, "cursor", "m", id,
+	lc := newPlanLifecycle(io.Discard, "cursor", "m", id,
 		"/tmp/x.md", "# heading\nbody", "", "", "")
 
 	dir, err := tasks.EnsureDir(id)
@@ -81,7 +80,7 @@ func TestPlanFinish_ClarificationAbsent_LandsPlanDone(t *testing.T) {
 	t.Cleanup(tasks.ResetHooksForTest)
 
 	id := tasks.NewTaskID()
-	lc := lifecycle.NewPlanTask(io.Discard, "cursor", "m", id,
+	lc := newPlanLifecycle(io.Discard, "cursor", "m", id,
 		"/tmp/x.md", "# heading", "", "", "")
 	lc.Finish(nil, "# heading", "## plan", "/tmp/x.md")
 

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spacelions/j/internal/agents/prompts"
 	"github.com/spacelions/j/internal/cli/settings"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -44,31 +43,31 @@ func TestSettingsSet_PromptRuntimeRender(t *testing.T) {
 		}
 	}
 
-	plannerOut := prompts.BuildPlanner("/tmp/feature.md", nil)
+	plannerOut := buildPlannerPrompt("/tmp/feature.md", nil)
 	if !strings.Contains(plannerOut, roles[0].body) {
 		t.Fatalf("BuildPlanner missing override: %q", plannerOut)
 	}
 	const clarify = "/tmp/c.md"
-	plannerResume := prompts.BuildPlannerResume(
+	plannerResume := buildPlannerResumePrompt(
 		"/tmp/feature.md", nil,
 	)
 	if !strings.Contains(plannerResume, roles[0].body) {
 		t.Fatalf("BuildPlannerResume missing override: %q", plannerResume)
 	}
 
-	workerOut := prompts.BuildWorker(
+	workerOut := buildWorkerPrompt(
 		"/tmp/plan.md", "", nil, clarify,
 	)
 	if !strings.Contains(workerOut, roles[1].body) {
 		t.Fatalf("BuildWorker missing override: %q", workerOut)
 	}
-	workerResume := prompts.BuildWorkerResume(
+	workerResume := buildWorkerResumePrompt(
 		"/tmp/plan.md", "", nil, clarify,
 	)
 	if !strings.Contains(workerResume, roles[1].body) {
 		t.Fatalf("BuildWorkerResume missing override: %q", workerResume)
 	}
-	fixOut := prompts.BuildVerifierFix(
+	fixOut := buildVerifierFixPrompt(
 		"/tmp/plan.md", "/tmp/v.md", "", clarify,
 	)
 	if !strings.Contains(fixOut, roles[1].body) {
@@ -76,13 +75,13 @@ func TestSettingsSet_PromptRuntimeRender(t *testing.T) {
 			fixOut)
 	}
 
-	verifierOut := prompts.BuildVerifier(
+	verifierOut := buildVerifierPrompt(
 		"r.md", "p.md", "vp.md", "vf.md", "", nil, clarify,
 	)
 	if !strings.Contains(verifierOut, roles[2].body) {
 		t.Fatalf("BuildVerifier missing override: %q", verifierOut)
 	}
-	verifierResume := prompts.BuildVerifierResume(
+	verifierResume := buildVerifierResumePrompt(
 		"r.md", "p.md", "", nil, clarify,
 	)
 	if !strings.Contains(verifierResume, roles[2].body) {

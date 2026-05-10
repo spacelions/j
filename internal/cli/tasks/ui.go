@@ -78,9 +78,8 @@ func (u *huhUI) PickTask(
 	return picker.New(u.in, u.out).PickTask(ctx, "Select a task", tasks)
 }
 
-// ConfirmStatusOverride delegates to the shared picker prompt so
-// `j tasks re-plan` reuses the same yes/no widget as `j tasks start`
-// when the resolved task is in a status outside the re-plan allowlist.
+// ConfirmStatusOverride delegates to the shared picker prompt used
+// when `j tasks start --from-task` needs status confirmation.
 func (u *huhUI) ConfirmStatusOverride(
 	ctx context.Context, cmd, taskID, status string,
 ) (bool, error) {

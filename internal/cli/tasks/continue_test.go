@@ -122,7 +122,7 @@ func TestRunContinue_PlanningShowsTooltip(t *testing.T) {
 		t.Fatalf("no in-process agent call should fire for planning status: planned=%d worked=%d verified=%d",
 			agent.planned, agent.worked, agent.verified)
 	}
-	want := "use `j tasks re-plan` or `j tasks resume-plan`"
+	want := "use `j tasks resume-plan`"
 	if !strings.Contains(stdout.String(), want) {
 		t.Fatalf("stdout = %q, want substring %q", stdout.String(), want)
 	}
@@ -288,7 +288,7 @@ func TestRunContinue_WorkingShowsTooltip(t *testing.T) {
 		t.Fatalf("no agent call should fire for working status: planned=%d worked=%d verified=%d",
 			agent.planned, agent.worked, agent.verified)
 	}
-	want := "use `j tasks re-work` or `j tasks resume-work`"
+	want := "use `j tasks resume-work`"
 	if !strings.Contains(stdout.String(), want) {
 		t.Fatalf("stdout = %q, want substring %q", stdout.String(), want)
 	}
@@ -835,6 +835,24 @@ func TestRunContinue_GetTaskDecodeError(t *testing.T) {
 	}
 }
 
+func TestResolveContinueTaskFromStore_PickedMissingTask(t *testing.T) {
+	setupContinueEnv(t)
+	testutil.SeedFullTask(t, nil)
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	_, ok, err := resolveContinueTaskFromStore(t.Context(), s, ContinueOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     &fakeUI{pickReturn: "missing"},
+	})
+	if err == nil || ok {
+		t.Fatalf("resolve = ok %v, err %v; want missing task error", ok, err)
+	}
+}
+
 // TestDispatchByStatus_UnknownStatus covers the safety-net branch.
 func TestDispatchByStatus_UnknownStatus(t *testing.T) {
 	err := dispatchByStatus(t.Context(), ContinueOptions{
@@ -866,7 +884,7 @@ func TestRunContinue_PlanningSpawnFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunContinue: %v", err)
 	}
-	want := "use `j tasks re-plan`"
+	want := "use `j tasks resume-plan`"
 	if !strings.Contains(stdout.String(), want) {
 		t.Fatalf("stdout = %q, want substring %q", stdout.String(), want)
 	}

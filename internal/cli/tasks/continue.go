@@ -140,8 +140,8 @@ func dispatchByStatus(
 	switch t.Status {
 	case tasks.StatusPlanning:
 		uitheme.NormalFprintf(opts.Stdout,
-			"J: task %s is planning; use `j tasks re-plan`"+
-				" or `j tasks resume-plan`\n", t.ID)
+			"J: task %s is planning; use `j tasks resume-plan`\n",
+			t.ID)
 		return nil
 	case tasks.StatusPlanPendingApproval:
 		return dispatchPlanApprove(ctx, opts, t)
@@ -149,8 +149,8 @@ func dispatchByStatus(
 		return runPlanDoneWork(ctx, opts, t)
 	case tasks.StatusWorking:
 		uitheme.NormalFprintf(opts.Stdout,
-			"J: task %s is working; use `j tasks re-work`"+
-				" or `j tasks resume-work`\n", t.ID)
+			"J: task %s is working; use `j tasks resume-work`\n",
+			t.ID)
 		return nil
 	case tasks.StatusWorkDone:
 		return reverifyAsDetachedOrchestrator(ctx, opts, t.ID)

@@ -16,9 +16,10 @@ import (
 
 	"github.com/spacelions/j/internal/agents/instructions"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// BuildPlanner composes the planner's shared instruction with a
+// BuildPlannerPrompt composes the planner's shared instruction with a
 // pointer to the user's markdown task. The agent is told to read the
 // file from disk rather than receiving its contents inline so the
 // prompt stays small and there is no chance of drift between the
@@ -29,7 +30,7 @@ import (
 // prompt (above the role body) so the agent loads required context
 // before reading the role rules. An empty / nil mustRead leaves the
 // prompt byte-identical to the pre-must-read output.
-func BuildPlanner(targetPath string, mustRead []string) string {
+func BuildPlannerPrompt(targetPath string, mustRead []string) string {
 	return prependMustRead(
 		fmt.Sprintf(
 			"%s\n\n"+strings.TrimSpace(instructions.PlannerRequest),
@@ -59,18 +60,19 @@ func BuildPlanner(targetPath string, mustRead []string) string {
 // third — without it a custom planner.md could silently drop the
 // "ask, don't guess" escape hatch.
 func AppendPlannerSaveSuffix(
-	base, requirementsPath, planPath, clarificationPath string,
+	base string,
+	paths tasks.TaskPaths,
 ) string {
 	return appendClarification(
 		fmt.Sprintf(
 			"%s\n\n"+strings.TrimSpace(instructions.PlannerSaveSuffix),
-			base, requirementsPath, planPath,
+			base, paths.Requirements, paths.Plan,
 		),
-		clarificationPath,
+		paths.Clarification,
 	)
 }
 
-// BuildPlannerResume composes the resume-only planner prompt: it
+// BuildPlannerResumePrompt composes the resume-only planner prompt: it
 // asks the agent to inspect the previous session, check what was
 // already done, summarise it for the user, and continue only what is
 // still outstanding. The original requirement markdown path is
@@ -94,7 +96,7 @@ func AppendPlannerSaveSuffix(
 // "You are the planner in a planner/worker/verifier workflow.",
 // so this builder relies on that opening as the role preamble
 // rather than emitting a duplicate sentence.
-func BuildPlannerResume(targetPath string, mustRead []string) string {
+func BuildPlannerResumePrompt(targetPath string, mustRead []string) string {
 	return prependMustRead(
 		fmt.Sprintf(
 			"%s\n\n"+strings.TrimSpace(instructions.PlannerResume),
@@ -105,7 +107,7 @@ func BuildPlannerResume(targetPath string, mustRead []string) string {
 	)
 }
 
-// BuildPlannerClarificationResume composes the resume-from-
+// BuildPlannerClarificationResumePrompt composes the resume-from-
 // clarification planner prompt. It replaces BuildPlanner /
 // BuildPlannerResume on a resume run that started from
 // needs-clarification: the agent reads the per-task
@@ -121,7 +123,7 @@ func BuildPlannerResume(targetPath string, mustRead []string) string {
 // requirements.md / plan.md) is appended by the backend in
 // buildPlanPrompt via AppendPlannerSaveSuffix so the reaper sees
 // identical artifacts in either case.
-func BuildPlannerClarificationResume(
+func BuildPlannerClarificationResumePrompt(
 	targetPath, clarificationPath string, mustRead []string,
 ) string {
 	return prependMustRead(

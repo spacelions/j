@@ -2,29 +2,38 @@ package verifier
 
 import (
 	"context"
+	"path/filepath"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/resolver"
+	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/util/run"
 )
 
-// buildVerifyReq composes the per-iteration VerifyRequest.
-func buildVerifyReq(
-	res resolved, model, resumeID string, interactive bool,
-	iter int, clarifyPath, agentLogPath string, mustRead []string,
+// buildVerifyRequest composes the per-iteration VerifyRequest.
+func buildVerifyRequest(
+	res resolver.VerifyTask,
+	session codingagents.AgentSession,
+	iter int,
+	interactive bool,
+	mustRead []string,
 ) codingagents.VerifyRequest {
 	return codingagents.VerifyRequest{
-		RequirementsPath:           res.RequirementsPath,
-		PlanPath:                   res.PlanPath,
-		VerifierPlanOutputPath:     res.VerifierPlanPath,
-		VerifierFindingsOutputPath: res.FindingsPath,
-		ClarificationPath:          clarifyPath,
-		Model:                      model,
+		RequirementsPath:           res.Paths.Requirements,
+		PlanPath:                   res.Paths.Plan,
+		VerifierPlanOutputPath:     res.Paths.VerifierPlan,
+		VerifierFindingsOutputPath: res.Paths.Findings,
+		ClarificationPath:          res.Paths.Clarification,
+		Model:                      session.Model,
 		Interactive:                interactive,
 		Resume:                     iter > 0,
-		ResumeChatID:               resumeID,
+		ResumeChatID:               session.ResumeID,
 		Worktree:                   res.Task.Worktree,
-		AgentLogPath:               agentLogPath,
-		MustRead:                   mustRead,
+		AgentLogPath: filepath.Join(
+			res.TaskDir,
+			tasks.AgentLogFileName,
+		),
+		MustRead: mustRead,
 	}
 }
 
@@ -43,25 +52,34 @@ func runVerifyTurn(
 // runFixTurn drives one worker fix turn (resume + fix-findings) and
 // blocks on its exit.
 func runFixTurn(
-	ctx context.Context, agent codingagents.Agent,
-	interactive bool, res resolved,
-	clarifyPath, agentLogPath string,
+	ctx context.Context,
+	agent codingagents.Agent,
+	req codingagents.WorkRequest,
 ) error {
-	req := codingagents.WorkRequest{
-		PlanPath:                   res.PlanPath,
-		Model:                      res.Task.WorkModel,
-		ClarificationPath:          clarifyPath,
-		Interactive:                interactive,
-		ResumeChatID:               res.Task.WorkResumeSession,
-		Resume:                     true,
-		FixFindings:                true,
-		VerifierFindingsOutputPath: res.FindingsPath,
-		Worktree:                   res.Task.Worktree,
-		AgentLogPath:               agentLogPath,
-	}
 	pid, err := agent.Work(ctx, req)
 	if err != nil {
 		return err
 	}
 	return run.WaitForExit(ctx, pid)
+}
+
+func buildFixRequest(
+	res resolver.VerifyTask,
+	interactive bool,
+) codingagents.WorkRequest {
+	return codingagents.WorkRequest{
+		PlanPath:                   res.Paths.Plan,
+		Model:                      res.Task.WorkModel,
+		ClarificationPath:          res.Paths.Clarification,
+		Interactive:                interactive,
+		ResumeChatID:               res.Task.WorkResumeSession,
+		Resume:                     true,
+		FixFindings:                true,
+		VerifierFindingsOutputPath: res.Paths.Findings,
+		Worktree:                   res.Task.Worktree,
+		AgentLogPath: filepath.Join(
+			res.TaskDir,
+			tasks.AgentLogFileName,
+		),
+	}
 }

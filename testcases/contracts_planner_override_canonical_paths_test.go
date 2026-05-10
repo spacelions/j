@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spacelions/j/internal/agents/prompts"
 	"github.com/spacelions/j/internal/cli/settings"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -43,12 +42,10 @@ func TestContracts_PlannerOverride_CanonicalPaths(t *testing.T) {
 		clarify = "/abs/.j/tasks/T1/clarification.md"
 	)
 	for name, prompt := range map[string]string{
-		"fresh": prompts.AppendPlannerSaveSuffix(
-			prompts.BuildPlanner(req, nil), req, plan, clarify,
-		),
-		"resume": prompts.AppendPlannerSaveSuffix(
-			prompts.BuildPlannerResume(req, nil), req, plan, clarify,
-		),
+		"fresh": plannerSavePrompt(
+			buildPlannerPrompt(req, nil), req, plan, clarify),
+		"resume": plannerSavePrompt(
+			buildPlannerResumePrompt(req, nil), req, plan, clarify),
 	} {
 		for _, want := range []string{
 			req, plan, clarify,
