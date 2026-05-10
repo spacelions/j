@@ -725,6 +725,27 @@ func TestAgent_LazyStorePaths(t *testing.T) {
 	}
 }
 
+func TestAgentFromStoreLazy_OpenSettingsFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cursor := newStubAgent("cursor", "sonnet-4")
+	_, _, err := agentFromStoreLazy(t.Context(), AgentOptions{
+		Bucket: store.BucketPlanner,
+		Agents: []codingagents.Agent{cursor},
+		Stderr: io.Discard,
+	})
+	if !errors.Is(err, ErrNoStoredSelection) {
+		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
+	}
+}
+
+func TestPersistAgent_OpenSettingsFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	persistAgent(AgentOptions{
+		Bucket: store.BucketPlanner,
+		Stderr: io.Discard,
+	}, "cursor", "sonnet-4")
+}
+
 func TestAgent_LazyPromptPersists(t *testing.T) {
 	setupResolverProject(t)
 	cursor := newStubAgent("cursor", "sonnet-4")
