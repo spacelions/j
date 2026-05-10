@@ -42,8 +42,8 @@ func TestPhaseForStatus(t *testing.T) {
 		{storetasks.StatusWorking, "working"},
 		{storetasks.StatusWorkDone, "working"},
 		{storetasks.StatusVerifying, "verifying"},
-		{storetasks.StatusFailed, "verifying"},
-		{storetasks.StatusCompleted, "verifying"},
+		{storetasks.StatusFailed, "fallback"},
+		{storetasks.StatusCompleted, "fallback"},
 		{storetasks.StatusHelp, "fallback"},
 	}
 	for _, tc := range tests {
@@ -52,6 +52,25 @@ func TestPhaseForStatus(t *testing.T) {
 			t.Fatalf("phaseForStatus(%q) = %q, want %q",
 				tc.status, got, tc.want)
 		}
+	}
+}
+
+func TestContentionMessagePreservesTerminalHolderPhase(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := testutil.SeedFullTask(t, func(task *storetasks.Task) {
+		task.Status = storetasks.StatusFailed
+	})
+	holder := storetasks.Holder{
+		PID:       os.Getpid(),
+		Host:      "host",
+		Phase:     "working",
+		StartedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+	}
+	got := contentionMessage(id, holder)
+	if !strings.Contains(got, "phase: working") ||
+		!strings.Contains(got, "resume-work") {
+		t.Fatalf("contentionMessage = %q, want working resume hint", got)
 	}
 }
 

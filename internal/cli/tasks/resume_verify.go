@@ -26,12 +26,10 @@ type ResumeVerifyOptions struct {
 }
 
 var resumeVerifyConfig = resumePhaseConfig{
-	emptyMsg:    noActiveVerifySessionMessage,
-	resumeEvent: tasks.EventVerifyResume,
-	errorVerb:   "resume-verify",
-	hasSession:  func(t tasks.Task) bool { return t.VerifyResumeSession != "" },
-	gate:        requirePlanAndPriorWork,
-	startStatus: tasks.StatusVerifying,
+	emptyMsg:   noActiveVerifySessionMessage,
+	errorVerb:  "resume-verify",
+	hasSession: func(t tasks.Task) bool { return t.VerifyResumeSession != "" },
+	gate:       requirePlanAndPriorWork,
 	orchestrateArgs: func(taskID string) []string {
 		return []string{
 			cmdTasks, cmdOrchestrate,

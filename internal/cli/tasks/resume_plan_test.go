@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 
@@ -189,8 +190,11 @@ func TestRunResumePlan_HappyPath_PlanPendingApproval(t *testing.T) {
 func TestRunResumePlan_SpawnFails(t *testing.T) {
 	setupContinueEnv(t)
 	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusCompleted
 		task.PlanResumeSession = "active-cursor"
+		task.DoneAt = time.Now().UTC()
 	})
+	before := readTaskFromBolt(t, id)
 	ui := &fakeUI{pickReturn: id}
 	err := RunResumePlan(t.Context(), ResumePlanOptions{
 		Stdin:   strings.NewReader(""),
@@ -202,6 +206,11 @@ func TestRunResumePlan_SpawnFails(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected exec failure")
+	}
+	after := readTaskFromBolt(t, id)
+	if after.Status != before.Status || !after.DoneAt.Equal(before.DoneAt) {
+		t.Fatalf("row changed on spawn failure: before=%+v after=%+v",
+			before, after)
 	}
 }
 

@@ -14,10 +14,6 @@ import (
 func TestResumeArtifactGates(t *testing.T) {
 	setupContinueEnv(t)
 	id := testutil.SeedFullTask(t, nil)
-	taskDir, err := storetasks.EnsureDir(id)
-	if err != nil {
-		t.Fatal(err)
-	}
 	row := readTaskFromBolt(t, id)
 	if err := requireRequirementsOrLinear(row); err != nil {
 		t.Fatalf("requirements gate: %v", err)
@@ -30,12 +26,20 @@ func TestResumeArtifactGates(t *testing.T) {
 		t.Fatalf("verify gate with WorkBeginAt: %v", err)
 	}
 	row.WorkBeginAt = time.Time{}
-	logPath := filepath.Join(taskDir, storetasks.AgentLogFileName)
-	if err := os.WriteFile(logPath, []byte("phase=worker"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	row.WorkResumeSession = "work-session"
 	if err := requirePlanAndPriorWork(row); err != nil {
-		t.Fatalf("verify gate with worker marker: %v", err)
+		t.Fatalf("verify gate with WorkResumeSession: %v", err)
+	}
+	row.WorkResumeSession = ""
+	row.Status = storetasks.StatusWorkDone
+	row.WorkTool = "codex"
+	if err := requirePlanAndPriorWork(row); err != nil {
+		t.Fatalf("verify gate with worker metadata: %v", err)
+	}
+	row.WorkTool = ""
+	if err := requirePlanAndPriorWork(row); err == nil ||
+		!strings.Contains(err.Error(), "no prior worker run") {
+		t.Fatalf("verify gate without worker metadata = %v", err)
 	}
 }
 
@@ -78,19 +82,5 @@ func TestResumeArtifactGateFailures(t *testing.T) {
 	if err := requirePlanAndPriorWork(row); err == nil ||
 		!strings.Contains(err.Error(), "no prior worker run") {
 		t.Fatalf("verify worker err = %v", err)
-	}
-}
-
-func TestResetTaskStatus(t *testing.T) {
-	setupContinueEnv(t)
-	id := testutil.SeedFullTask(t, func(task *storetasks.Task) {
-		task.Status = storetasks.StatusCompleted
-	})
-	row := readTaskFromBolt(t, id)
-	if err := resetTaskStatus(row, storetasks.StatusWorking); err != nil {
-		t.Fatalf("resetTaskStatus: %v", err)
-	}
-	if got := readTaskFromBolt(t, id).Status; got != storetasks.StatusWorking {
-		t.Fatalf("status = %q, want working", got)
 	}
 }

@@ -38,20 +38,14 @@ func BuildVerifierPrompt(
 	worktree string,
 	mustRead []string,
 ) string {
-	return appendClarification(
-		appendVerifierWorktreeLine(
-			prependMustRead(
-				fmt.Sprintf(
-					"%s\n\n"+strings.TrimSpace(instructions.VerifierRequest),
-					strings.TrimSpace(Resolve(store.BucketVerifier)),
-					paths.Requirements, paths.Plan, paths.Findings,
-				),
-				mustRead,
-			),
-			worktree,
-		),
-		paths.Clarification,
+	base := fmt.Sprintf(
+		"%s\n\n"+strings.TrimSpace(instructions.VerifierRequest),
+		strings.TrimSpace(Resolve(store.BucketVerifier)),
+		paths.Requirements, paths.Plan, paths.Findings,
 	)
+	withMustRead := prependMustRead(base, mustRead)
+	withWorktree := appendVerifierWorktreeLine(withMustRead, worktree)
+	return appendClarification(withWorktree, paths.Clarification)
 }
 
 // BuildVerifierResumePrompt composes the resume-only verifier prompt: it
@@ -79,20 +73,14 @@ func BuildVerifierResumePrompt(
 	worktree string,
 	mustRead []string,
 ) string {
-	return appendClarification(
-		appendVerifierWorktreeLine(
-			prependMustRead(
-				fmt.Sprintf(
-					"%s\n\n"+strings.TrimSpace(instructions.VerifierResume),
-					strings.TrimSpace(Resolve(store.BucketVerifier)),
-					paths.Requirements, paths.Plan,
-				),
-				mustRead,
-			),
-			worktree,
-		),
-		paths.Clarification,
+	base := fmt.Sprintf(
+		"%s\n\n"+strings.TrimSpace(instructions.VerifierResume),
+		strings.TrimSpace(Resolve(store.BucketVerifier)),
+		paths.Requirements, paths.Plan,
 	)
+	withMustRead := prependMustRead(base, mustRead)
+	withWorktree := appendVerifierWorktreeLine(withMustRead, worktree)
+	return appendClarification(withWorktree, paths.Clarification)
 }
 
 // BuildVerifierClarificationResumePrompt composes the resume-from-
@@ -112,23 +100,17 @@ func BuildVerifierClarificationResumePrompt(
 	worktree string,
 	mustRead []string,
 ) string {
-	return appendClarification(
-		appendVerifierWorktreeLine(
-			prependMustRead(
-				fmt.Sprintf(
-					"%s\n\n"+strings.TrimSpace(
-						instructions.VerifierClarificationResume,
-					),
-					strings.TrimSpace(Resolve(store.BucketVerifier)),
-					paths.Clarification, paths.Clarification,
-					paths.Requirements, paths.Plan,
-				),
-				mustRead,
-			),
-			worktree,
+	base := fmt.Sprintf(
+		"%s\n\n"+strings.TrimSpace(
+			instructions.VerifierClarificationResume,
 		),
-		paths.Clarification,
+		strings.TrimSpace(Resolve(store.BucketVerifier)),
+		paths.Clarification, paths.Clarification,
+		paths.Requirements, paths.Plan,
 	)
+	withMustRead := prependMustRead(base, mustRead)
+	withWorktree := appendVerifierWorktreeLine(withMustRead, worktree)
+	return appendClarification(withWorktree, paths.Clarification)
 }
 
 // BuildVerifierFixPrompt composes the worker-side fix prompt used when
@@ -147,17 +129,13 @@ func BuildVerifierClarificationResumePrompt(
 // workflow.", so this builder relies on that opening as the role
 // preamble rather than emitting a duplicate sentence.
 func BuildVerifierFixPrompt(paths tasks.TaskPaths, worktree string) string {
-	return appendClarification(
-		appendWorktreeLine(
-			fmt.Sprintf(
-				"%s\n\n"+strings.TrimSpace(instructions.VerifierFix),
-				strings.TrimSpace(Resolve(store.BucketWorker)),
-				paths.Plan, paths.Findings,
-			),
-			worktree,
-		),
-		paths.Clarification,
+	base := fmt.Sprintf(
+		"%s\n\n"+strings.TrimSpace(instructions.VerifierFix),
+		strings.TrimSpace(Resolve(store.BucketWorker)),
+		paths.Plan, paths.Findings,
 	)
+	withWorktree := appendWorktreeLine(base, worktree)
+	return appendClarification(withWorktree, paths.Clarification)
 }
 
 // appendVerifierWorktreeLine returns prompt unchanged when worktree

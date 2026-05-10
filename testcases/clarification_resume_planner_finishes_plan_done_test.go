@@ -67,7 +67,7 @@ func TestClarificationResume_PlannerHappyPath_FinishesPlanDone(
 	})
 
 	stub := &deletingPlanAgent{name: "scripted", clarPath: clar}
-	if err := planner.Execute(t.Context(), planner.ExecuteOptions{
+	if err := planner.Execute(t.Context(), planner.Options{
 		TaskID: id,
 		Agent:  stub,
 		Model:  "m1",

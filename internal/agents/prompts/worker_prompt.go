@@ -35,20 +35,14 @@ func BuildWorkerPrompt(
 	worktree string,
 	mustRead []string,
 ) string {
-	return appendClarification(
-		appendWorktreeLine(
-			prependMustRead(
-				fmt.Sprintf(
-					"%s\n\n"+strings.TrimSpace(instructions.WorkerPlan),
-					strings.TrimSpace(Resolve(store.BucketWorker)),
-					paths.Plan,
-				),
-				mustRead,
-			),
-			worktree,
-		),
-		paths.Clarification,
+	base := fmt.Sprintf(
+		"%s\n\n"+strings.TrimSpace(instructions.WorkerPlan),
+		strings.TrimSpace(Resolve(store.BucketWorker)),
+		paths.Plan,
 	)
+	withMustRead := prependMustRead(base, mustRead)
+	withWorktree := appendWorktreeLine(withMustRead, worktree)
+	return appendClarification(withWorktree, paths.Clarification)
 }
 
 // BuildWorkerResumePrompt composes the resume-only worker prompt: the
@@ -76,20 +70,14 @@ func BuildWorkerResumePrompt(
 	worktree string,
 	mustRead []string,
 ) string {
-	return appendClarification(
-		appendWorktreeLine(
-			prependMustRead(
-				fmt.Sprintf(
-					"%s\n\n"+strings.TrimSpace(instructions.WorkerResume),
-					strings.TrimSpace(Resolve(store.BucketWorker)),
-					paths.Plan,
-				),
-				mustRead,
-			),
-			worktree,
-		),
-		paths.Clarification,
+	base := fmt.Sprintf(
+		"%s\n\n"+strings.TrimSpace(instructions.WorkerResume),
+		strings.TrimSpace(Resolve(store.BucketWorker)),
+		paths.Plan,
 	)
+	withMustRead := prependMustRead(base, mustRead)
+	withWorktree := appendWorktreeLine(withMustRead, worktree)
+	return appendClarification(withWorktree, paths.Clarification)
 }
 
 // BuildWorkerClarificationResumePrompt composes the resume-from-
@@ -108,24 +96,18 @@ func BuildWorkerClarificationResumePrompt(
 	worktree string,
 	mustRead []string,
 ) string {
-	return appendClarification(
-		appendWorktreeLine(
-			prependMustRead(
-				fmt.Sprintf(
-					"%s\n\n"+strings.TrimSpace(
-						instructions.WorkerClarificationResume,
-					),
-					strings.TrimSpace(Resolve(store.BucketWorker)),
-					paths.Clarification,
-					paths.Clarification,
-					paths.Plan,
-				),
-				mustRead,
-			),
-			worktree,
+	base := fmt.Sprintf(
+		"%s\n\n"+strings.TrimSpace(
+			instructions.WorkerClarificationResume,
 		),
+		strings.TrimSpace(Resolve(store.BucketWorker)),
 		paths.Clarification,
+		paths.Clarification,
+		paths.Plan,
 	)
+	withMustRead := prependMustRead(base, mustRead)
+	withWorktree := appendWorktreeLine(withMustRead, worktree)
+	return appendClarification(withWorktree, paths.Clarification)
 }
 
 // appendWorktreeLine returns prompt unchanged when worktree is empty

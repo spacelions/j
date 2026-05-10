@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
@@ -57,11 +56,9 @@ func (o resumeOptions) withDefaults() resumeOptions {
 // resume-work, and resume-verify.
 type resumePhaseConfig struct {
 	emptyMsg        string
-	resumeEvent     tasks.Event
 	errorVerb       string
 	hasSession      func(tasks.Task) bool
 	gate            func(tasks.Task) error
-	startStatus     tasks.TaskStatus
 	orchestrateArgs func(taskID string) []string
 }
 
@@ -85,9 +82,6 @@ func runResumePhase(
 		return err
 	}
 	if err := takeoverIfHeld(ctx, opts.Stderr, taskID); err != nil {
-		return err
-	}
-	if err := resetTaskStatus(t, cfg.startStatus); err != nil {
 		return err
 	}
 	return runInlineOrchestrator(ctx, opts.JBinary, cfg.orchestrateArgs(taskID))
@@ -189,16 +183,6 @@ func filterTasksBySession(
 	return out
 }
 
-func resetTaskStatus(t tasks.Task, status tasks.TaskStatus) error {
-	t.Status = status
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = s.Close() }()
-	return s.PutTask(t)
-}
-
 func requireRequirementsOrLinear(t tasks.Task) error {
 	if t.LinearIssue != "" {
 		return nil
@@ -244,12 +228,26 @@ func requirePlanAndPriorWork(t tasks.Task) error {
 	if !t.WorkBeginAt.IsZero() {
 		return nil
 	}
-	logPath := filepath.Join(taskDir, tasks.AgentLogFileName)
-	data, err := os.ReadFile(logPath)
-	if err == nil && strings.Contains(string(data), "worker") {
+	if t.WorkResumeSession != "" {
+		return nil
+	}
+	if statusAllowsVerifyAfterWork(t) {
 		return nil
 	}
 	return fmt.Errorf(
 		"cannot resume-verify task %s: no prior worker run; "+
 			"run `j tasks resume-work` first", t.ID)
+}
+
+func statusAllowsVerifyAfterWork(t tasks.Task) bool {
+	if t.WorkTool == "" {
+		return false
+	}
+	switch t.Status {
+	case tasks.StatusWorking, tasks.StatusWorkDone, tasks.StatusVerifying,
+		tasks.StatusFailed, tasks.StatusCompleted:
+		return true
+	default:
+		return false
+	}
 }

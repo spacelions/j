@@ -53,8 +53,6 @@ type Options struct {
 	Store *store.Store
 }
 
-type ExecuteOptions = Options
-
 // Execute resolves a plan, picks a worker agent, and dispatches.
 func Execute(ctx context.Context, opts Options) (err error) {
 	defer func() { err = resolver.CleanAbort(err) }()

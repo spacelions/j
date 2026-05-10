@@ -58,7 +58,7 @@ func TestClarificationResume_FreshPlannerRun_DoesNotSetFlag(
 	})
 
 	stub := &capturingPlanAgent{name: "scripted"}
-	if err := planner.Execute(t.Context(), planner.ExecuteOptions{
+	if err := planner.Execute(t.Context(), planner.Options{
 		TaskID: id,
 		Agent:  stub,
 		Model:  "m1",

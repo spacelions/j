@@ -27,8 +27,6 @@ type Options struct {
 	Stderr            io.Writer
 }
 
-type ExecuteOptions = Options
-
 // Execute runs the planner phase against an already-seeded task. It
 // loads the task row, drives agent.Plan, and finalises the lifecycle
 // row. WaitForCompletion must be true in the orchestrator chain so
@@ -64,7 +62,7 @@ func Execute(ctx context.Context, opts Options) error {
 		tasks.ClarificationFileExists(res.TaskDir)
 	beginAt := time.Now().UTC()
 	req := buildPlanRequest(res, session, opts.Interactive,
-		resumeFromClarification, mustReadFiles)
+		resume, resumeFromClarification, mustReadFiles)
 	pid, planErr := opts.Agent.Plan(ctx, req)
 
 	if planErr == nil && pid > 0 && opts.WaitForCompletion {
@@ -166,11 +164,10 @@ func buildPlanRequest(
 	res resolver.PlanTask,
 	session codingagents.AgentSession,
 	interactive bool,
+	resume bool,
 	resumeFromClarification bool,
 	mustRead []string,
 ) codingagents.PlanRequest {
-	resume := session.ResumeID != "" &&
-		session.ResumeID == res.Task.PlanResumeSession
 	return codingagents.PlanRequest{
 		FromFilePath:            res.Paths.Requirements,
 		Model:                   session.Model,

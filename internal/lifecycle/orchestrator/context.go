@@ -4,7 +4,6 @@ import (
 	"io"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
-	"github.com/spacelions/j/internal/store"
 )
 
 // TaskContext groups values shared by every phase in one task run.
@@ -24,13 +23,13 @@ type PhaseConfig struct {
 }
 
 func newTaskContext(
-	cfg store.TaskConfig,
+	maxIterations int,
 	taskID string,
 	agents []codingagents.Agent,
 	stderr io.Writer,
 ) TaskContext {
 	return TaskContext{
-		MaxIterations: cfg.MaxIterations,
+		MaxIterations: maxIterations,
 		TaskID:        taskID,
 		Agents:        agents,
 		Stderr:        stderr,

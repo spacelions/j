@@ -63,8 +63,10 @@ func phaseForStatus(status tasks.TaskStatus, fallback string) string {
 		return lockPhasePlanning
 	case tasks.StatusWorking, tasks.StatusWorkDone:
 		return lockPhaseWorking
-	case tasks.StatusVerifying, tasks.StatusFailed, tasks.StatusCompleted:
+	case tasks.StatusVerifying:
 		return lockPhaseVerifying
+	case tasks.StatusFailed, tasks.StatusCompleted:
+		return fallback
 	default:
 		return fallback
 	}

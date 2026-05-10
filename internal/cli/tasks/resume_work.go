@@ -1,4 +1,3 @@
-//nolint:dupl // intentionally parallel to resume_plan.go
 package tasks
 
 import (
@@ -28,12 +27,10 @@ type ResumeWorkOptions struct {
 }
 
 var resumeWorkConfig = resumePhaseConfig{
-	emptyMsg:    noActiveWorkSessionMessage,
-	resumeEvent: tasks.EventWorkResume,
-	errorVerb:   "resume-work",
-	hasSession:  func(t tasks.Task) bool { return t.WorkResumeSession != "" },
-	gate:        requirePlan,
-	startStatus: tasks.StatusWorking,
+	emptyMsg:   noActiveWorkSessionMessage,
+	errorVerb:  "resume-work",
+	hasSession: func(t tasks.Task) bool { return t.WorkResumeSession != "" },
+	gate:       requirePlan,
 	orchestrateArgs: func(taskID string) []string {
 		return []string{
 			cmdTasks, cmdOrchestrate,

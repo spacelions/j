@@ -36,7 +36,7 @@ func RunForTask(
 ) error {
 	return RunForTaskWithGate(
 		ctx,
-		newTaskContext(cfg, taskID, agents, stderr),
+		newTaskContext(cfg.MaxIterations, taskID, agents, stderr),
 		PhaseConfig{Phase: RunPhaseFull, Overrides: overrides},
 	)
 }
@@ -69,7 +69,7 @@ func RunForTaskFromWork(
 ) error {
 	return runForTask(
 		ctx,
-		newTaskContext(cfg, taskID, agents, stderr),
+		newTaskContext(cfg.MaxIterations, taskID, agents, stderr),
 		PhaseConfig{Phase: RunPhaseFromWork, Overrides: overrides},
 	)
 }
@@ -103,7 +103,7 @@ func RunForTaskVerifyOnly(
 ) error {
 	return runForTask(
 		ctx,
-		newTaskContext(cfg, taskID, agents, stderr),
+		newTaskContext(cfg.MaxIterations, taskID, agents, stderr),
 		PhaseConfig{Phase: RunPhaseVerifyOnly},
 	)
 }

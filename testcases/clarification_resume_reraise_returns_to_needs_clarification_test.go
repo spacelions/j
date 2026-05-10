@@ -73,7 +73,7 @@ func TestClarificationResume_ReRaise_RoutesBackToNeedsClarification(
 			newBody:  "still need more detail",
 		}
 		if err := planner.Execute(
-			t.Context(), planner.ExecuteOptions{
+			t.Context(), planner.Options{
 				TaskID: id,
 				Agent:  stub,
 				Model:  "m1",
@@ -132,7 +132,7 @@ func TestClarificationResume_ReRaise_RoutesBackToNeedsClarification(
 			newBody:  "need more from you",
 		}
 		if err := worker.Execute(
-			t.Context(), worker.ExecuteOptions{
+			t.Context(), worker.Options{
 				TaskID: id,
 				Yes:    true,
 				Stdin:  strings.NewReader(""),
