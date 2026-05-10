@@ -25,6 +25,7 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 		`internal/coding-agents/deepseek/capture.go:.*CaptureResumeID`,
 		`internal/coding-agents/deepseek/capture.go:.*scanSessions`,
 		`internal/lifecycle/markers.go:.*Init`,
+		`internal/lifecycle/markers.go:.*markersHook`,
 		`internal/lifecycle/verify.go:.*BeginVerifyResume`,
 		`internal/lifecycle/markers.go:.*eventToPhaseVerb`,
 		`internal/resolver/agent.go:.*Agent`,

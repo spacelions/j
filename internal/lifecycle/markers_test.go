@@ -27,6 +27,39 @@ func TestInitRegistersMarkersHook(t *testing.T) {
 	}
 }
 
+func TestMarkersHookSkipsMissingLogPath(t *testing.T) {
+	markersHook(
+		tasks.Transition{Event: tasks.EventPlanBegin},
+		tasks.Task{ID: "x"},
+	)
+}
+
+func TestMarkersHookSkipsOpenError(t *testing.T) {
+	markersHook(
+		tasks.Transition{Event: tasks.EventPlanBegin},
+		tasks.Task{ID: "x", AgentLogPath: t.TempDir()},
+	)
+}
+
+func TestMarkersHookWorkDoneIncludesPullRequest(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "agent.log")
+	markersHook(
+		tasks.Transition{Event: tasks.EventWorkDone},
+		tasks.Task{
+			ID:             "x",
+			AgentLogPath:   logPath,
+			PullRequestURL: "https://github.com/spacelions/j/pull/1",
+		},
+	)
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if !strings.Contains(string(data), "pull request: ") {
+		t.Fatalf("missing pull request detail in %q", data)
+	}
+}
+
 // TestMarkers_ReaperAndStuckEvents pins one marker line per reaper
 // event plus EventVerifyStuck. The hook is exercised directly so the
 // table is the single source of truth — adding a new reaper event
