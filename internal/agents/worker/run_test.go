@@ -351,6 +351,75 @@ func TestRun_NewResumeIDError(t *testing.T) {
 	}
 }
 
+func TestRun_MustReadErrorWarnsAndContinues(t *testing.T) {
+	setupRunEnv(t)
+	id := seedPlanDoneTask(t)
+	selectionStore, err := store.Open(filepath.Join(t.TempDir(), "settings"))
+	if err != nil {
+		t.Fatalf("Open selection store: %v", err)
+	}
+	t.Cleanup(func() { _ = selectionStore.Close() })
+	settingsPath, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	if err := os.Remove(settingsPath); err != nil {
+		t.Fatalf("Remove settings: %v", err)
+	}
+	if err := os.Mkdir(settingsPath, 0o755); err != nil {
+		t.Fatalf("Mkdir settings: %v", err)
+	}
+
+	agent := newRunTestAgent("cursor")
+	var stderr bytes.Buffer
+	err = Execute(t.Context(), ExecuteOptions{
+		TaskID: id,
+		Yes:    true,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: &stderr,
+		Agents: []codingagents.Agent{agent},
+		UI:     &fakeRunUI{},
+		Store:  selectionStore,
+		Tool:   "cursor",
+		Model:  "m1",
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if agent.workCalls != 1 {
+		t.Fatalf("workCalls = %d, want 1", agent.workCalls)
+	}
+	if !strings.Contains(stderr.String(), "resolver: open store") {
+		t.Fatalf("stderr = %q, want must-read warning", stderr.String())
+	}
+}
+
+func TestRun_WaitForCompletionError(t *testing.T) {
+	setupRunEnv(t)
+	id := seedPlanDoneTask(t)
+	agent := newRunTestAgent("cursor")
+	agent.workPid = os.Getpid()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := Execute(ctx, ExecuteOptions{
+		TaskID:            id,
+		Yes:               true,
+		Stdin:             strings.NewReader(""),
+		Stdout:            io.Discard,
+		Stderr:            io.Discard,
+		Agents:            []codingagents.Agent{agent},
+		UI:                &fakeRunUI{},
+		Tool:              "cursor",
+		Model:             "m1",
+		WaitForCompletion: true,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
 func TestRun_ConfirmStatusOverrideError(t *testing.T) {
 	setupRunEnv(t)
 	id := seedPlanDoneTask(t)
