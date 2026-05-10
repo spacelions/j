@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -64,6 +65,340 @@ func assertNoPlannerModeArgs(t *testing.T, argv []string) {
 				t.Fatalf("argv includes planner-only arg %q: %v", arg, argv)
 			}
 		}
+	}
+}
+
+func useFakeDefaultHome(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv(envHome, "")
+	t.Setenv("HOME", root)
+	return filepath.Join(root, ".codex")
+}
+
+func writeLegacyRollout(t *testing.T, root, rel, id string) string {
+	t.Helper()
+	path := filepath.Join(root, "sessions", rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	envelope := map[string]any{
+		"type": "session_meta",
+		"payload": map[string]any{
+			"id":        id,
+			"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+		},
+	}
+	data, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("marshal rollout: %v", err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func assertSymlinkTarget(t *testing.T, link, want string) {
+	t.Helper()
+	got, err := os.Readlink(link)
+	if err != nil {
+		t.Fatalf("readlink %s: %v", link, err)
+	}
+	if got != want {
+		t.Fatalf("readlink %s = %q, want %q", link, got, want)
+	}
+}
+
+func TestDefaultHomeEnvOverride(t *testing.T) {
+	t.Setenv(envHome, "/tmp/codex-home")
+	if got := defaultHome(); got != "/tmp/codex-home" {
+		t.Fatalf("defaultHome = %q", got)
+	}
+}
+
+func TestPopulateScopedHomeShadowsDefaultHome(t *testing.T) {
+	realHome := useFakeDefaultHome(t)
+	if err := os.MkdirAll(filepath.Join(realHome, "sessions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	authPath := filepath.Join(realHome, "auth.json")
+	configPath := filepath.Join(realHome, "config.toml")
+	if err := os.WriteFile(authPath, []byte(`{"token":"t"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		configPath, []byte("model = 'x'\n"), 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	taskDir := t.TempDir()
+	got, err := populateScopedHome(taskDir)
+	if err != nil {
+		t.Fatalf("populateScopedHome: %v", err)
+	}
+	want := filepath.Join(taskDir, homeSubdir)
+	if got != want {
+		t.Fatalf("scoped home = %q, want %q", got, want)
+	}
+	assertSymlinkTarget(t, filepath.Join(got, "auth.json"), authPath)
+	assertSymlinkTarget(t, filepath.Join(got, "config.toml"), configPath)
+	if info, err := os.Lstat(filepath.Join(got, "sessions")); err != nil {
+		t.Fatalf("stat sessions: %v", err)
+	} else if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("scoped sessions must be a private directory")
+	}
+	if _, err := populateScopedHome(taskDir); err != nil {
+		t.Fatalf("populateScopedHome second call: %v", err)
+	}
+}
+
+func TestPopulateScopedHomeMissingDefaultHome(t *testing.T) {
+	useFakeDefaultHome(t)
+	taskDir := t.TempDir()
+	got, err := populateScopedHome(taskDir)
+	if err != nil {
+		t.Fatalf("populateScopedHome: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(got, "sessions")); err != nil {
+		t.Fatalf("stat sessions: %v", err)
+	}
+}
+
+func TestPopulateScopedHomeReadDirError(t *testing.T) {
+	homeFile := filepath.Join(t.TempDir(), "home-file")
+	if err := os.WriteFile(homeFile, []byte("not a dir"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envHome, homeFile)
+
+	_, err := populateScopedHome(t.TempDir())
+	if err == nil {
+		t.Fatal("populateScopedHome error = nil")
+	}
+}
+
+func TestPopulateScopedHomeMkdirErrors(t *testing.T) {
+	taskFile := filepath.Join(t.TempDir(), "task-file")
+	if err := os.WriteFile(taskFile, []byte("not a dir"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := populateScopedHome(taskFile); err == nil {
+		t.Fatal("populateScopedHome home mkdir error = nil")
+	}
+
+	taskDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(taskDir, homeSubdir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sessionsDir(taskDir), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := populateScopedHome(taskDir); err == nil {
+		t.Fatal("populateScopedHome sessions mkdir error = nil")
+	}
+}
+
+func TestPopulateScopedHomeSymlinkError(t *testing.T) {
+	realHome := useFakeDefaultHome(t)
+	if err := os.MkdirAll(realHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(realHome, "auth.json"), []byte("{}"), 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	taskDir := t.TempDir()
+	scoped := filepath.Join(taskDir, homeSubdir)
+	if err := os.MkdirAll(sessionsDir(taskDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(scoped, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(scoped, 0o700) })
+
+	if _, err := populateScopedHome(taskDir); err == nil {
+		t.Fatal("populateScopedHome symlink error = nil")
+	}
+}
+
+func TestMigrateLegacyRollout(t *testing.T) {
+	realHome := useFakeDefaultHome(t)
+	src := writeLegacyRollout(
+		t, realHome,
+		"2026/05/10/rollout-2026-05-10T15-00-45-id.jsonl",
+		"legacy-id",
+	)
+	writeLegacyRollout(
+		t, realHome,
+		"2026/05/10/rollout-2026-05-10T15-00-45-other.jsonl",
+		"other-id",
+	)
+	taskDir := t.TempDir()
+	if _, err := populateScopedHome(taskDir); err != nil {
+		t.Fatalf("populateScopedHome: %v", err)
+	}
+
+	if err := migrateLegacyRollout(taskDir, "legacy-id"); err != nil {
+		t.Fatalf("migrateLegacyRollout: %v", err)
+	}
+	target := filepath.Join(
+		sessionsDir(taskDir),
+		"2026/05/10/rollout-2026-05-10T15-00-45-id.jsonl",
+	)
+	assertSymlinkTarget(t, target, src)
+	if err := migrateLegacyRollout(taskDir, "legacy-id"); err != nil {
+		t.Fatalf("migrateLegacyRollout second call: %v", err)
+	}
+}
+
+func TestMigrateLegacyRolloutWalkError(t *testing.T) {
+	realHome := useFakeDefaultHome(t)
+	blocked := filepath.Join(realHome, "sessions", "blocked")
+	if err := os.MkdirAll(blocked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(blocked, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blocked, 0o700) })
+	if err := migrateLegacyRollout(t.TempDir(), "legacy-id"); err == nil {
+		t.Fatal("migrateLegacyRollout walk error = nil")
+	}
+}
+
+func TestMigrateLegacyRolloutSymlinkError(t *testing.T) {
+	realHome := useFakeDefaultHome(t)
+	writeLegacyRollout(t, realHome, "rollout-id.jsonl", "legacy-id")
+	taskDir := t.TempDir()
+	scopedSessions := sessionsDir(taskDir)
+	if err := os.MkdirAll(scopedSessions, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(scopedSessions, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(scopedSessions, 0o700) })
+	if err := migrateLegacyRollout(taskDir, "legacy-id"); err == nil {
+		t.Fatal("migrateLegacyRollout symlink error = nil")
+	}
+}
+
+func TestMigrateLegacyRolloutTargetMkdirError(t *testing.T) {
+	realHome := useFakeDefaultHome(t)
+	writeLegacyRollout(
+		t, realHome,
+		"2026/rollout-2026-05-10T15-00-45-id.jsonl",
+		"legacy-id",
+	)
+	taskDir := t.TempDir()
+	if err := os.MkdirAll(sessionsDir(taskDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(sessionsDir(taskDir), "2026"),
+		[]byte("not a dir"), 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateLegacyRollout(taskDir, "legacy-id"); err == nil {
+		t.Fatal("migrateLegacyRollout target mkdir error = nil")
+	}
+}
+
+func TestMigrateLegacyRolloutNoops(t *testing.T) {
+	if err := migrateLegacyRollout(t.TempDir(), ""); err != nil {
+		t.Fatalf("migrateLegacyRollout empty: %v", err)
+	}
+	realHome := useFakeDefaultHome(t)
+	if err := migrateLegacyRollout(t.TempDir(), "missing"); err != nil {
+		t.Fatalf("migrateLegacyRollout missing store: %v", err)
+	}
+	corrupt := filepath.Join(realHome, "sessions", "rollout-corrupt.jsonl")
+	if err := os.MkdirAll(filepath.Dir(corrupt), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(corrupt, []byte("not json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeLegacyRollout(t, realHome, "rollout-other.jsonl", "other-id")
+	if err := migrateLegacyRollout(t.TempDir(), "absent"); err != nil {
+		t.Fatalf("migrateLegacyRollout absent: %v", err)
+	}
+}
+
+func TestMigrateLegacyRolloutStatError(t *testing.T) {
+	realHome := useFakeDefaultHome(t)
+	if err := os.MkdirAll(realHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err := os.Symlink("sessions", filepath.Join(realHome, "sessions"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = migrateLegacyRollout(t.TempDir(), "resume-id")
+	if err == nil {
+		t.Fatal("migrateLegacyRollout error = nil")
+	}
+}
+
+func TestPrepareScopedEnvErrors(t *testing.T) {
+	taskPath := filepath.Join(t.TempDir(), "task-file")
+	if err := os.WriteFile(taskPath, []byte("not a dir"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareScopedEnv(taskPath, ""); err == nil {
+		t.Fatal("prepareScopedEnv populate error = nil")
+	}
+
+	realHome := useFakeDefaultHome(t)
+	if err := os.MkdirAll(realHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err := os.Symlink("sessions", filepath.Join(realHome, "sessions"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareScopedEnv(t.TempDir(), "resume-id"); err == nil {
+		t.Fatal("prepareScopedEnv migrate error = nil")
+	}
+}
+
+func TestPrepareScopedEnvMigratesLegacyRollout(t *testing.T) {
+	realHome := useFakeDefaultHome(t)
+	src := writeLegacyRollout(
+		t, realHome,
+		"2026/05/10/rollout-2026-05-10T15-00-45-id.jsonl",
+		"resume-id",
+	)
+	taskDir := t.TempDir()
+
+	env, err := prepareScopedEnv(taskDir, "resume-id")
+	if err != nil {
+		t.Fatalf("prepareScopedEnv: %v", err)
+	}
+	wantHome := filepath.Join(taskDir, homeSubdir)
+	if !reflect.DeepEqual(env, []string{envHome + "=" + wantHome}) {
+		t.Fatalf("env = %v, want scoped home", env)
+	}
+	target := filepath.Join(
+		sessionsDir(taskDir),
+		"2026/05/10/rollout-2026-05-10T15-00-45-id.jsonl",
+	)
+	assertSymlinkTarget(t, target, src)
+}
+
+func TestSymlinkIfMissingError(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "src")
+	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(t.TempDir(), "missing", "dst")
+	if err := symlinkIfMissing(src, dst); err == nil {
+		t.Fatal("symlinkIfMissing error = nil")
 	}
 }
 

@@ -142,7 +142,7 @@ func (a *Agent) Plan(
 ) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.FromFilePath)
 	prompt := prompts.PlanPrompt(req)
-	env, err := scopedEnv(req.TaskDir)
+	env, err := prepareScopedEnv(req.TaskDir, req.ResumeChatID)
 	if err != nil {
 		return 0, fmt.Errorf("codex: %w", err)
 	}
@@ -164,7 +164,7 @@ func (a *Agent) Work(
 ) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.PlanPath)
 	prompt := prompts.WorkPrompt(req)
-	env, err := scopedEnv(req.TaskDir)
+	env, err := prepareScopedEnv(req.TaskDir, req.ResumeChatID)
 	if err != nil {
 		return 0, fmt.Errorf("codex: %w", err)
 	}
@@ -186,7 +186,7 @@ func (a *Agent) Verify(
 ) (int, error) {
 	workspace := codingagents.ProjectRootWorkspace()
 	prompt := prompts.VerifyPrompt(req)
-	env, err := scopedEnv(req.TaskDir)
+	env, err := prepareScopedEnv(req.TaskDir, req.ResumeChatID)
 	if err != nil {
 		return 0, fmt.Errorf("codex: %w", err)
 	}

@@ -317,14 +317,14 @@ func TestCaptureResumeID_NoMatch(t *testing.T) {
 }
 
 func TestCaptureResumeID_ScanError(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv(envHome, home)
+	taskDir := t.TempDir()
 	if err := os.WriteFile(
-		filepath.Join(home, "sessions"), []byte("not a directory"), 0o644,
+		filepath.Join(taskDir, homeSubdir), []byte("not a directory"),
+		0o644,
 	); err != nil {
 		t.Fatal(err)
 	}
-	_, err := New().CaptureResumeID(t.Context(), "/ws/A", time.Now())
+	_, err := New().CaptureResumeID(t.Context(), taskDir, time.Now())
 	if err == nil {
 		t.Fatal("CaptureResumeID error = nil")
 	}
@@ -393,11 +393,13 @@ func TestFormatLog_Identity(t *testing.T) {
 	}
 }
 
-func TestScopedHomeCreatesPrivateDirectory(t *testing.T) {
+func TestPopulateScopedHomeCreatesPrivateDirectory(t *testing.T) {
+	t.Setenv(envHome, "")
+	t.Setenv("HOME", t.TempDir())
 	taskDir := t.TempDir()
-	got, err := scopedHome(taskDir)
+	got, err := populateScopedHome(taskDir)
 	if err != nil {
-		t.Fatalf("scopedHome: %v", err)
+		t.Fatalf("populateScopedHome: %v", err)
 	}
 	want := filepath.Join(taskDir, homeSubdir)
 	if got != want {

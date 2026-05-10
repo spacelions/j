@@ -269,11 +269,13 @@ func TestSessionsDir_UsesTaskScopedHome(t *testing.T) {
 	}
 }
 
-func TestScopedHomeCreatesPrivateDirectory(t *testing.T) {
+func TestPopulateScopedHomeCreatesPrivateDirectory(t *testing.T) {
+	t.Setenv(envHome, "")
+	t.Setenv("HOME", t.TempDir())
 	taskDir := t.TempDir()
-	got, err := scopedHome(taskDir)
+	got, err := populateScopedHome(taskDir)
 	if err != nil {
-		t.Fatalf("scopedHome: %v", err)
+		t.Fatalf("populateScopedHome: %v", err)
 	}
 	want := filepath.Join(taskDir, homeSubdir)
 	if got != want {
