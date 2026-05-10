@@ -4,7 +4,7 @@ BIN_DIR := bin
 BIN     := $(BIN_DIR)/j
 
 .PHONY: build clean coverage line-coverage branch-coverage test e2e race
-.PHONY: lint lint-fix install-hooks
+.PHONY: lint lint-fix install-hooks lines
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-X github.com/spacelions/j/internal/cli/version.Version=$(VERSION)"
@@ -52,6 +52,48 @@ line-coverage:
 		echo "$$below" >&2; \
 		exit 1; \
 	fi
+
+LINES_ROOTS := ./cmd/... ./internal/...
+LINES_SKIP  := /internal/testutil(/|$$)
+LINES_FMT  := %-30s %6s %7s %10s %8s\n
+LINES_RULE := ------------------------------
+
+lines:
+	@set -euo pipefail; \
+	lines_dirs=$$(go list -f '{{.ImportPath}}' $(LINES_ROOTS) \
+		| rg -v '$(LINES_SKIP)' \
+		| awk -F/ '{ \
+			for (i = 1; i < NF; i++) { \
+				if ($$i == "cmd") { print "cmd"; next } \
+				if ($$i == "internal") { \
+					print $$i "/" $$(i + 1); next \
+				} \
+			} \
+		}' \
+		| sort -u); \
+	printf '$(LINES_FMT)' Package Files Code Comments Blanks; \
+	printf '$(LINES_FMT)' '$(LINES_RULE)' \
+		'------' '-------' '----------' '--------'; \
+	total_files=0; total_code=0; total_comments=0; total_blanks=0; \
+	for dir in $$lines_dirs; do \
+		row=$$(tokei $$dir -e "*_test.go" --types Go \
+			| awk '/^ Go/{print $$2,$$3,$$4,$$5,$$6}' \
+			| tr -d ',_'); \
+		if [ -z "$$row" ]; then \
+			echo "error: tokei returned no metrics for $$dir" >&2; \
+			exit 1; \
+		fi; \
+		read -r files _ code comments blanks <<< "$$row"; \
+		printf '$(LINES_FMT)' $$dir $$files $$code $$comments $$blanks; \
+		total_files=$$((total_files + files)); \
+		total_code=$$((total_code + code)); \
+		total_comments=$$((total_comments + comments)); \
+		total_blanks=$$((total_blanks + blanks)); \
+	done; \
+	printf '$(LINES_FMT)' '$(LINES_RULE)' \
+		'------' '-------' '----------' '--------'; \
+	printf '$(LINES_FMT)' TOTAL $$total_files $$total_code \
+		$$total_comments $$total_blanks
 
 branch-coverage:
 	@set -euo pipefail; \
