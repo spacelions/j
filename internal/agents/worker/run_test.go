@@ -376,6 +376,34 @@ func TestRun_ConfirmStatusOverrideError(t *testing.T) {
 	}
 }
 
+func TestRun_ResumeUnknownToolError(t *testing.T) {
+	setupRunEnv(t)
+	id := seedPlanDoneTask(t)
+	row := testutil.ReadTaskRow(t, id)
+	row.Status = tasks.StatusWorking
+	row.WorkResumeSession = "prior-cursor"
+	row.WorkTool = "ghost"
+	row.WorkModel = "m1"
+	testutil.SeedTaskRow(t, row)
+
+	agent := newRunTestAgent("cursor")
+	err := Execute(t.Context(), ExecuteOptions{
+		TaskID: id,
+		Yes:    true,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &fakeRunUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
+		t.Fatalf("err = %v, want unknown tool", err)
+	}
+	if agent.workCalls != 0 {
+		t.Fatalf("workCalls = %d, want 0", agent.workCalls)
+	}
+}
+
 // TestRun_ResumeFromClarificationFlag pins that Execute sets
 // WorkRequest.ResumeFromClarification to true ONLY when the row is
 // in resume mode AND a clarification.md exists in the per-task dir.
