@@ -1188,3 +1188,16 @@ func TestParseWorktreeListPorcelain(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoveTaskWorktree_EmptyFallbackNameIsNoop(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "!!!")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	var stderr bytes.Buffer
+	removeTaskWorktree(t.Context(), &stderr, tasks.Task{})
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}

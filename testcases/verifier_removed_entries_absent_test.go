@@ -23,6 +23,7 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 		`internal/cli/settings/set.go:.*parseBucketKey`,
 		`internal/cli/tasks/show.go:.*RunShowClarification`,
 		`internal/cli/tasks/show.go:.*newShowClarificationCmd`,
+		`internal/cli/tasks/worktree.go:.*removeTaskWorktree`,
 		`internal/agents/worker/run.go:.*Run`,
 		`internal/agents/worker/run.go:.*RunResume`,
 		`internal/agents/worker/run.go:.*listResumableTasks`,
