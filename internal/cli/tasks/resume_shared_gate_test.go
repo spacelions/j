@@ -43,6 +43,49 @@ func TestResumeArtifactGates(t *testing.T) {
 	}
 }
 
+func TestResumePlanLinearGateCreatesTaskDir(t *testing.T) {
+	setupContinueEnv(t)
+	id := testutil.SeedFullTask(t, func(task *storetasks.Task) {
+		task.LinearIssue = "SPA-92"
+	})
+	taskDir, err := storetasks.EnsureDir(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := readTaskFromBolt(t, id)
+	if err := os.RemoveAll(taskDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := requireRequirementsOrLinear(row); err != nil {
+		t.Fatalf("linear requirements gate: %v", err)
+	}
+	if _, err := os.Stat(taskDir); err != nil {
+		t.Fatalf("task dir was not recreated: %v", err)
+	}
+}
+
+func TestResumeArtifactGatesPropagateStatErrors(t *testing.T) {
+	setupContinueEnv(t)
+	id := testutil.SeedFullTask(t, nil)
+	taskDir, err := storetasks.EnsureDir(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := readTaskFromBolt(t, id)
+	if err := os.Chmod(taskDir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(taskDir, 0o755) })
+
+	err = requirePlan(row)
+	if err == nil {
+		t.Fatal("requirePlan succeeded, want stat error")
+	}
+	if strings.Contains(err.Error(), "plan.md missing") {
+		t.Fatalf("requirePlan err = %v, want raw stat error", err)
+	}
+}
+
 func TestResumeArtifactGateFailures(t *testing.T) {
 	setupContinueEnv(t)
 	id := testutil.SeedFullTask(t, nil)

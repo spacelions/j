@@ -31,30 +31,6 @@ func TestPhaseTagFor(t *testing.T) {
 	}
 }
 
-func TestPhaseForStatus(t *testing.T) {
-	tests := []struct {
-		status storetasks.TaskStatus
-		want   string
-	}{
-		{storetasks.StatusPlanning, "planning"},
-		{storetasks.StatusPlanPendingApproval, "planning"},
-		{storetasks.StatusPlanDone, "planning"},
-		{storetasks.StatusWorking, "working"},
-		{storetasks.StatusWorkDone, "working"},
-		{storetasks.StatusVerifying, "verifying"},
-		{storetasks.StatusFailed, "fallback"},
-		{storetasks.StatusCompleted, "fallback"},
-		{storetasks.StatusHelp, "fallback"},
-	}
-	for _, tc := range tests {
-		got := phaseForStatus(tc.status, "fallback")
-		if got != tc.want {
-			t.Fatalf("phaseForStatus(%q) = %q, want %q",
-				tc.status, got, tc.want)
-		}
-	}
-}
-
 func TestContentionMessagePreservesTerminalHolderPhase(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
@@ -98,7 +74,7 @@ func TestContentionMessageNamesTakeoverCommand(t *testing.T) {
 	}
 }
 
-func TestContentionMessageUsesCurrentTaskStatus(t *testing.T) {
+func TestContentionMessageUsesHolderPhaseOverTaskStatus(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 	id := testutil.SeedFullTask(t, func(task *storetasks.Task) {
@@ -111,8 +87,8 @@ func TestContentionMessageUsesCurrentTaskStatus(t *testing.T) {
 		StartedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
 	}
 	got := contentionMessage(id, holder)
-	if !strings.Contains(got, "phase: verifying") ||
-		!strings.Contains(got, "resume-verify") {
-		t.Fatalf("contentionMessage = %q, want current verifying row", got)
+	if !strings.Contains(got, "phase: working") ||
+		!strings.Contains(got, "resume-work") {
+		t.Fatalf("contentionMessage = %q, want holder working row", got)
 	}
 }

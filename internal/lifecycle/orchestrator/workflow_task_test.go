@@ -156,6 +156,38 @@ func TestRunForTaskFromWork_ClarificationStopsBeforeVerify(
 	}
 }
 
+func TestRunForTaskFromWork_ClarificationDoesNotTagVerify(
+	t *testing.T,
+) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := seedChainTask(t, "scripted")
+	if err := flipToPlanDone(t, id); err != nil {
+		t.Fatal(err)
+	}
+	stub := stubChain("scripted")
+	stub.workClarification = "halt at work\n"
+
+	var phases []string
+	err := runForTask(
+		t.Context(),
+		testTaskContext(id, []codingagents.Agent{stub}),
+		PhaseConfig{
+			Phase:  RunPhaseFromWork,
+			Tagger: func(phase string) { phases = append(phases, phase) },
+		},
+	)
+	if err != nil {
+		t.Fatalf("runForTask: %v", err)
+	}
+	if strings.Join(phases, ",") != "working" {
+		t.Fatalf("phases = %v, want only working", phases)
+	}
+	if stub.verifyCalls.Load() != 0 {
+		t.Fatalf("verify calls = %d, want 0", stub.verifyCalls.Load())
+	}
+}
+
 // TestTaskSubAgents_FromWork pins the worker→verifier shape used by
 // `j tasks continue` on a `plan-done` row, plus re-work / resume-work.
 func TestTaskSubAgents_FromWork(t *testing.T) {
@@ -234,6 +266,33 @@ func TestRunForTaskFromWork_RunsWorkerVerifier(t *testing.T) {
 	row := readChainTaskRow(t, id)
 	if row.Status != tasks.StatusCompleted {
 		t.Fatalf("Status = %q, want completed", row.Status)
+	}
+}
+
+func TestRunForTaskFromWork_TagsVerifyWhenItRuns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := seedChainTask(t, "scripted")
+	if err := flipToPlanDone(t, id); err != nil {
+		t.Fatal(err)
+	}
+	stub := stubChain("scripted")
+	stub.verdict = "VERDICT: PASS"
+
+	var phases []string
+	err := runForTask(
+		t.Context(),
+		testTaskContext(id, []codingagents.Agent{stub}),
+		PhaseConfig{
+			Phase:  RunPhaseFromWork,
+			Tagger: func(phase string) { phases = append(phases, phase) },
+		},
+	)
+	if err != nil {
+		t.Fatalf("runForTask: %v", err)
+	}
+	if strings.Join(phases, ",") != "working,verifying" {
+		t.Fatalf("phases = %v, want working then verifying", phases)
 	}
 }
 

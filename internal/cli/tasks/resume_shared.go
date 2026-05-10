@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -184,15 +185,18 @@ func filterTasksBySession(
 }
 
 func requireRequirementsOrLinear(t tasks.Task) error {
-	if t.LinearIssue != "" {
-		return nil
-	}
 	taskDir, err := tasks.EnsureDir(t.ID)
 	if err != nil {
 		return err
 	}
+	if t.LinearIssue != "" {
+		return nil
+	}
 	reqPath := filepath.Join(taskDir, tasks.RequirementsFileName)
 	if _, err := os.Stat(reqPath); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
 		return fmt.Errorf(
 			"cannot resume-plan task %s: requirements.md missing; "+
 				"run `j tasks start` first", t.ID)
@@ -207,6 +211,9 @@ func requirePlan(t tasks.Task) error {
 	}
 	planPath := filepath.Join(taskDir, tasks.PlanFileName)
 	if _, err := os.Stat(planPath); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
 		return fmt.Errorf(
 			"cannot resume-work task %s: plan.md missing; "+
 				"run `j tasks resume-plan` first", t.ID)
@@ -221,6 +228,9 @@ func requirePlanAndPriorWork(t tasks.Task) error {
 	}
 	planPath := filepath.Join(taskDir, tasks.PlanFileName)
 	if _, err := os.Stat(planPath); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
 		return fmt.Errorf(
 			"cannot resume-verify task %s: plan.md missing; "+
 				"run `j tasks resume-plan` first", t.ID)

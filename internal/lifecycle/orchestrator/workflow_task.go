@@ -204,14 +204,15 @@ func taskSubAgents(
 		})
 	case RunPhaseFromWork:
 		workerAgent, guardedVerifier, err := newWorkVerify(
-			tctx, pc.Overrides.Interactive)
+			tctx, pc.Overrides.Interactive, pc.Tagger)
 		if err != nil {
 			return nil, err
 		}
-		return withPhaseTags(pc.Tagger, []phaseAgent{
-			{phase: "working", agent: workerAgent},
-			{phase: "verifying", agent: guardedVerifier},
-		})
+		return withPhaseTagPrefix(
+			pc.Tagger,
+			[]phaseAgent{{phase: "working", agent: workerAgent}},
+			guardedVerifier,
+		), nil
 	case RunPhasePlanOnly, RunPhaseFull:
 		plannerAgent, err := planner.New(planner.Config{
 			TaskID:      tctx.TaskID,
@@ -234,15 +235,18 @@ func taskSubAgents(
 		// non-interactive: the planner's TUI exits cleanly as the
 		// hand-off, and the worker proceeds headless.
 		workerAgent, guardedVerifier, err := newWorkVerify(
-			tctx, false)
+			tctx, false, pc.Tagger)
 		if err != nil {
 			return nil, err
 		}
-		return withPhaseTags(pc.Tagger, []phaseAgent{
-			{phase: "planning", agent: plannerAgent},
-			{phase: "working", agent: workerAgent},
-			{phase: "verifying", agent: guardedVerifier},
-		})
+		return withPhaseTagPrefix(
+			pc.Tagger,
+			[]phaseAgent{
+				{phase: "planning", agent: plannerAgent},
+				{phase: "working", agent: workerAgent},
+			},
+			guardedVerifier,
+		), nil
 	default:
 		return nil, fmt.Errorf("workflow: unknown phase %q", pc.Phase)
 	}
@@ -251,6 +255,7 @@ func taskSubAgents(
 func newWorkVerify(
 	tctx TaskContext,
 	workerInteractive bool,
+	tagger func(string),
 ) (agent.Agent, agent.Agent, error) {
 	workerAgent, err := newWorker(tctx, workerInteractive)
 	if err != nil {
@@ -265,7 +270,8 @@ func newWorkVerify(
 	if err != nil {
 		return nil, nil, fmt.Errorf("workflow: verifier: %w", err)
 	}
-	guarded, err := skipVerifyOnClarification(tctx.TaskID, verifierAgent)
+	guarded, err := skipVerifyOnClarification(
+		tctx.TaskID, tagger, verifierAgent)
 	if err != nil {
 		return nil, nil, fmt.Errorf("workflow: verify guard: %w", err)
 	}

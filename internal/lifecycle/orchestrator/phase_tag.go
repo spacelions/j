@@ -33,6 +33,15 @@ func withPhaseTags(
 	return out, nil
 }
 
+func withPhaseTagPrefix(
+	tagger func(string),
+	items []phaseAgent,
+	tail agent.Agent,
+) []agent.Agent {
+	out, _ := withPhaseTags(tagger, items)
+	return append(out, tail)
+}
+
 func newPhaseTagAgent(
 	phase string,
 	tagger func(string),

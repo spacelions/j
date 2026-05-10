@@ -8,7 +8,6 @@ import (
 	"syscall"
 
 	"github.com/spacelions/j/internal/lifecycle/orchestrator"
-	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -45,31 +44,12 @@ func phaseTagFor(phase orchestrator.RunPhase) string {
 // which `j tasks resume-*` to invoke for a takeover.
 func contentionMessage(taskID string, h tasks.Holder) string {
 	phase := h.Phase
-	if row, err := resolver.TaskByID(taskID); err == nil {
-		phase = phaseForStatus(row.Status, h.Phase)
-	}
 	return fmt.Sprintf(
 		"task %s is already in use by pid %d on %s "+
 			"(phase: %s, started %s). Use j tasks resume-%s to take over.",
 		taskID, h.PID, h.Host, phase,
 		h.StartedAt.Format("15:04:05"), takeoverSubcommand(phase),
 	)
-}
-
-func phaseForStatus(status tasks.TaskStatus, fallback string) string {
-	switch status {
-	case tasks.StatusPlanning, tasks.StatusPlanPendingApproval,
-		tasks.StatusPlanDone:
-		return lockPhasePlanning
-	case tasks.StatusWorking, tasks.StatusWorkDone:
-		return lockPhaseWorking
-	case tasks.StatusVerifying:
-		return lockPhaseVerifying
-	case tasks.StatusFailed, tasks.StatusCompleted:
-		return fallback
-	default:
-		return fallback
-	}
 }
 
 func takeoverSubcommand(phase string) string {
