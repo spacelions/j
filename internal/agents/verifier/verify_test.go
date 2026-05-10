@@ -1155,7 +1155,7 @@ func TestRun_UnknownTool_OnTaskRow(t *testing.T) {
 
 // TestRun_PersistsVerifierSelection drives a successful verify run
 // with a real *store.Store and asserts the verifier bucket holds
-// tool/model/interactive only.
+// durable tool/model settings only.
 func TestRun_PersistsVerifierSelection(t *testing.T) {
 	s := openTestStore(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
@@ -1175,15 +1175,18 @@ func TestRun_PersistsVerifierSelection(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	want := map[string]string{
-		"tool":        "cursor",
-		"model":       "sonnet-4",
-		"interactive": "true",
+		"tool":  "cursor",
+		"model": "sonnet-4",
 	}
 	for k, v := range want {
 		got, ok := mustGet(t, s, k)
 		if !ok || got != v {
 			t.Fatalf("verifier.%s = %q (ok=%v), want %q", k, got, ok, v)
 		}
+	}
+	got, ok := mustGet(t, s, "interactive")
+	if ok || got != "" {
+		t.Fatalf("verifier.interactive = %q (ok=%v), want missing", got, ok)
 	}
 }
 

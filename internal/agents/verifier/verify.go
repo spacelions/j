@@ -46,8 +46,7 @@ type Options struct {
 	Yes bool
 
 	// Interactive is the resolved interactive flag. cobra cmd.go
-	// computes it via resolver.Interactive (explicit > stored > true)
-	// before constructing Options.
+	// computes it via resolver.Interactive before constructing Options.
 	Interactive bool
 
 	// Tool and Model are one-off overrides for the verifier
@@ -71,13 +70,12 @@ type Options struct {
 	UI     UI
 
 	// Store, when non-nil, receives best-effort writes recording the
-	// tool/model/interactive flag last used. The orchestrator does
-	// not own the lifecycle when the caller supplies a Store. When
-	// nil, the helpers below open `<cwd>/.j/settings` only for the
-	// duration of each individual read/write so the bbolt file lock
-	// is never held across the long-running agent.Verify
-	// invocation. Tests that supply a Store directly skip the
-	// open/close cycle entirely.
+	// durable tool/model selection. The orchestrator does not own the
+	// lifecycle when the caller supplies a Store. When nil, the helpers
+	// below open `<cwd>/.j/settings` only for the duration of each
+	// individual read/write so the bbolt file lock is never held across
+	// the long-running agent.Verify invocation. Tests that supply a
+	// Store directly skip the open/close cycle entirely.
 	Store *store.Store
 }
 
@@ -248,7 +246,6 @@ func selectVerifier(
 		UI:            opts.UI,
 		Store:         opts.Store,
 		Stderr:        opts.Stderr,
-		Interactive:   opts.Interactive,
 	})
 }
 

@@ -222,15 +222,14 @@ func LoadPlanRequiresApproval() (bool, error) {
 	return v, nil
 }
 
-// PersistAgentSelection writes tool/model/interactive into bucket as
-// a best-effort operation: any error is logged to stderr as a single
-// "warning: persist <key>: ..." line and the function returns. A nil
-// store is a silent no-op so callers can pipe the value straight from
+// PersistAgentSelection writes tool/model into bucket as a best-effort
+// operation: any error is logged to stderr as a single "warning:
+// persist <key>: ..." line and the function returns. A nil store is a
+// silent no-op so callers can pipe the value straight from
 // Options.Store without nil-checks. Plan / work / verify all use this
-// so the on-disk schema is identical.
+// so the durable role-bucket schema is identical.
 func PersistAgentSelection(
 	s *Store, stderr io.Writer, bucket, tool, model string,
-	interactive bool,
 ) {
 	if s == nil {
 		return
@@ -238,7 +237,6 @@ func PersistAgentSelection(
 	entries := [][2]string{
 		{"tool", tool},
 		{"model", model},
-		{"interactive", strconv.FormatBool(interactive)},
 	}
 	for _, kv := range entries {
 		if err := s.Put(bucket, kv[0], kv[1]); err != nil {

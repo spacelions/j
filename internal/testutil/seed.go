@@ -10,12 +10,8 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// SeedAgentBucket pre-populates a bbolt bucket with tool / model /
-// interactive=false so plan / work / verify treat the bucket as
-// already-configured and stay on the headless code path. interactive
-// is pinned to "false" because every consumer of this helper drives
-// the shell-out (`j tasks orchestrate`) flow which forces interactive
-// off internally — pinning it here keeps the seed legible.
+// SeedAgentBucket pre-populates a bbolt bucket with tool / model so
+// plan / work / verify treat the bucket as already configured.
 func SeedAgentBucket(t *testing.T, bucket, tool, model string) {
 	t.Helper()
 	path, err := store.DefaultPath()
@@ -33,7 +29,6 @@ func SeedAgentBucket(t *testing.T, bucket, tool, model string) {
 	for _, kv := range [][2]string{
 		{"tool", tool},
 		{"model", model},
-		{"interactive", "false"},
 	} {
 		if err := s.Put(bucket, kv[0], kv[1]); err != nil {
 			t.Fatalf("testutil: Put %s: %v", kv[0], err)
@@ -84,9 +79,9 @@ func SeedFullTask(t *testing.T, mutate func(*tasks.Task)) string {
 	return id
 }
 
-// SeedAgentBucketToolModel writes only tool and model (no interactive
-// key). Used when tests assert an absent interactive entry, e.g.
-// preflight EnsureAgentSelections coverage.
+// SeedAgentBucketToolModel writes only tool and model. Used by tests
+// that want to make the role-bucket contract explicit at the call
+// site.
 func SeedAgentBucketToolModel(t *testing.T, bucket, tool, model string) {
 	t.Helper()
 	path, err := store.DefaultPath()

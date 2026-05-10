@@ -11,23 +11,22 @@ import (
 	"github.com/spacelions/j/internal/store"
 )
 
-// This file holds the verify orchestrator's settings-bucket
-// wiring tests: lazy-open of `.j/settings`, the
-// resolver.Interactive precedence (explicit > stored > cobra
-// default), and the fallback-to-prompt path when the settings DB
-// is missing or corrupt. The pure resolver.AgentFromStore semantics
-// live in internal/cli/picker/agent_test.go and are
-// intentionally not re-asserted here.
+// This file holds the verify orchestrator's settings-bucket wiring
+// tests: lazy-open of `.j/settings`, stale interactive rows being
+// ignored, and the fallback-to-prompt path when the settings DB is
+// missing or corrupt. The pure resolver.AgentFromStore semantics live
+// in internal/cli/picker/agent_test.go and are intentionally not
+// re-asserted here.
 
-// Interactive-flag precedence (explicit > stored > default true) is
-// pinned in internal/resolver/interactive_test.go. Run consumes the
-// resolved bool directly.
+// Interactive-flag precedence is pinned in
+// internal/resolver/interactive_test.go. Run consumes the resolved
+// bool directly.
 
 // TestRun_FromStore_NilStore_LazyOpenSucceeds drives the
 // nil-Store + populated-settings branch of resolver.Agent:
 // the helper opens `<cwd>/.j/settings`, reads the bucket, and
-// surfaces the recorded tool/model so the UI prompts are skipped
-// and resolver.Interactive returns the stored false.
+// surfaces the recorded tool/model so the UI prompts are skipped.
+// The stale interactive row must not override Options.Interactive.
 func TestRun_FromStore_NilStore_LazyOpenSucceeds(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -57,11 +56,12 @@ func TestRun_FromStore_NilStore_LazyOpenSucceeds(t *testing.T) {
 	ui := &scriptedUI{}
 	var stderr bytes.Buffer
 	err = Run(t.Context(), Options{
-		TaskID: id,
-		Stdout: io.Discard,
-		Stderr: &stderr,
-		Agents: []codingagents.Agent{agent},
-		UI:     ui,
+		TaskID:      id,
+		Interactive: true,
+		Stdout:      io.Discard,
+		Stderr:      &stderr,
+		Agents:      []codingagents.Agent{agent},
+		UI:          ui,
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -72,8 +72,8 @@ func TestRun_FromStore_NilStore_LazyOpenSucceeds(t *testing.T) {
 	if agent.verifiedReqs[0].Model != "gpt-5" {
 		t.Fatalf("model = %q, want gpt-5", agent.verifiedReqs[0].Model)
 	}
-	if agent.verifiedReqs[0].Interactive {
-		t.Fatalf("Interactive = true, want false (stored)")
+	if !agent.verifiedReqs[0].Interactive {
+		t.Fatal("Interactive = false, want true from Options")
 	}
 }
 

@@ -48,8 +48,8 @@ type Options struct {
 	Agents []codingagents.Agent
 	UI     UI
 
-	// Store, when non-nil, receives writes recording tool/model/interactive.
-	// When nil, each read/write opens <cwd>/.j/settings for its own duration.
+	// Store, when non-nil, receives durable tool/model writes. When nil,
+	// each read/write opens <cwd>/.j/settings for its own duration.
 	Store *store.Store
 }
 
@@ -217,7 +217,6 @@ func selectWorker(
 		UI:            opts.UI,
 		Store:         opts.Store,
 		Stderr:        opts.Stderr,
-		Interactive:   opts.Interactive,
 	})
 }
 

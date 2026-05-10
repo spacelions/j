@@ -321,22 +321,6 @@ func TestFromStore_DoesNotPersist(t *testing.T) {
 	}
 }
 
-// TestStoredInteractive_NilStore documents that the read-only helper
-// returns (false, false) when no store is configured, so callers
-// can pipe Options.Store straight in without a nil check.
-// TestStoredInteractive_Missing covers the bucket-exists-but-no-key
-// branch: ok must be false and v must be the zero value.
-// TestStoredInteractive_Empty asserts that an empty stored value is
-// treated as "not set" so callers fall back to the cobra default.
-// TestStoredInteractive_Unparseable asserts that a non-bool string
-// (e.g. corruption) collapses to the not-set sentinel so we never
-// surface a parse error to the caller.
-// TestStoredInteractive_True round-trips strconv.FormatBool(true).
-// TestStoredInteractive_False round-trips strconv.FormatBool(false).
-// TestStoredInteractive_GetError covers the `err != nil` branch in
-// the helper: a closed bbolt DB rejects every View call so Get
-// surfaces the failure and StoredInteractive returns the
-// not-set sentinel rather than propagating the error.
 // TestResolve_BothExplicit short-circuits the store entirely:
 // neither key is read, the agent runs CheckLogin, and the bucket is
 // not consulted. A nil store is fine.
@@ -560,20 +544,19 @@ func TestAgent_StoredHits(t *testing.T) {
 	}
 }
 
-// TestAgent_PromptsAndPersists pins the empty-bucket cold path: PickAgent
-// fires + persistAgent writes tool/model/interactive.
+// TestAgent_PromptsAndPersists pins the empty-bucket cold path:
+// PickAgent fires + persistAgent writes durable tool/model settings.
 func TestAgent_PromptsAndPersists(t *testing.T) {
 	s := openTestStore(t, store.BucketPlanner)
 	cursor := newStubAgent("cursor", "sonnet-4")
 	ui := &scriptedUI{tool: "cursor", model: "sonnet-4"}
 	var stderr bytes.Buffer
 	agent, model, err := Agent(t.Context(), AgentOptions{
-		Bucket:      store.BucketPlanner,
-		Agents:      []codingagents.Agent{cursor},
-		UI:          ui,
-		Store:       s,
-		Stderr:      &stderr,
-		Interactive: false,
+		Bucket: store.BucketPlanner,
+		Agents: []codingagents.Agent{cursor},
+		UI:     ui,
+		Store:  s,
+		Stderr: &stderr,
 	})
 	if err != nil {
 		t.Fatalf("Agent: %v", err)
@@ -587,7 +570,10 @@ func TestAgent_PromptsAndPersists(t *testing.T) {
 	if !strings.Contains(stderr.String(), "Choose your favourite") {
 		t.Fatalf("stderr = %q, want prompt label", stderr.String())
 	}
-	for _, want := range []struct{ k, v string }{{"tool", "cursor"}, {"model", "sonnet-4"}, {"interactive", "false"}} {
+	for _, want := range []struct{ k, v string }{
+		{"tool", "cursor"},
+		{"model", "sonnet-4"},
+	} {
 		v, ok, err := s.Get(store.BucketPlanner, want.k)
 		if err != nil {
 			t.Fatalf("Get %s: %v", want.k, err)
@@ -595,6 +581,10 @@ func TestAgent_PromptsAndPersists(t *testing.T) {
 		if !ok || v != want.v {
 			t.Fatalf("planner.%s = %q (ok=%v), want %q", want.k, v, ok, want.v)
 		}
+	}
+	v, ok, err := s.Get(store.BucketPlanner, "interactive")
+	if err != nil || ok || v != "" {
+		t.Fatalf("planner.interactive = %q (ok=%v, err=%v), want missing", v, ok, err)
 	}
 }
 
@@ -751,11 +741,10 @@ func TestAgent_LazyPromptPersists(t *testing.T) {
 	cursor := newStubAgent("cursor", "sonnet-4")
 	ui := &scriptedUI{tool: "cursor", model: "sonnet-4"}
 	agent, model, err := Agent(t.Context(), AgentOptions{
-		Bucket:      store.BucketPlanner,
-		Agents:      []codingagents.Agent{cursor},
-		UI:          ui,
-		Stderr:      io.Discard,
-		Interactive: true,
+		Bucket: store.BucketPlanner,
+		Agents: []codingagents.Agent{cursor},
+		UI:     ui,
+		Stderr: io.Discard,
 	})
 	if err != nil || agent != cursor || model != "sonnet-4" {
 		t.Fatalf("prompt lazy = %v %q %v", agent, model, err)
@@ -769,9 +758,18 @@ func TestAgent_LazyPromptPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
+	for _, want := range []struct{ k, v string }{
+		{"tool", "cursor"},
+		{"model", "sonnet-4"},
+	} {
+		got, ok, err := s.Get(store.BucketPlanner, want.k)
+		if err != nil || !ok || got != want.v {
+			t.Fatalf("%s = %q %v %v", want.k, got, ok, err)
+		}
+	}
 	got, ok, err := s.Get(store.BucketPlanner, "interactive")
-	if err != nil || !ok || got != "true" {
-		t.Fatalf("interactive = %q %v %v", got, ok, err)
+	if err != nil || ok || got != "" {
+		t.Fatalf("interactive = %q %v %v, want missing", got, ok, err)
 	}
 }
 

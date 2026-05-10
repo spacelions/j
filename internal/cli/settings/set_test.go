@@ -25,8 +25,8 @@ func TestSet_Table(t *testing.T) {
 		},
 		{
 			name:      "key_with_dots",
-			arg:       "planner.key.with.suffix=v",
-			wantOut:   "set planner.key.with.suffix = v",
+			arg:       "foo.key.with.suffix=v",
+			wantOut:   "set foo.key.with.suffix = v",
 			wantStore: "v",
 		},
 		{
@@ -108,6 +108,39 @@ func TestSet_Table(t *testing.T) {
 				t.Fatalf("stored value = %q, want %q", got, tc.wantStore)
 			}
 		})
+	}
+}
+
+func TestSet_RoleBucketPrompt(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, arg := range []string{
+		"planner.tool=cursor",
+		"planner.model=sonnet-4",
+		"planner.prompt=prompts/planner.md",
+	} {
+		if _, err := runSetArgs(t, "set", arg); err != nil {
+			t.Fatalf("Execute %q: %v", arg, err)
+		}
+	}
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	for _, want := range []struct{ key, value string }{
+		{"tool", "cursor"},
+		{"model", "sonnet-4"},
+		{"prompt", "prompts/planner.md"},
+	} {
+		got, ok, err := s.Get(store.BucketPlanner, want.key)
+		if err != nil || !ok || got != want.value {
+			t.Fatalf("%s = %q, ok=%v, err=%v", want.key, got, ok, err)
+		}
 	}
 }
 

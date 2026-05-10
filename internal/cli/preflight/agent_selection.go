@@ -33,7 +33,7 @@ type AgentSelector = picker.Selector
 // EnsureAgentSelections walks the planner / worker / verifier buckets
 // in order. For each bucket it calls resolver.AgentFromStore; on
 // resolver.ErrNoStoredSelection it prompts via picker.PickAgent and
-// persists the result with interactive=true.
+// persists the durable tool/model result.
 //
 // The bbolt file lock is released between buckets so concurrent
 // `j tasks` / `j settings` calls in another shell never block.
@@ -97,7 +97,7 @@ func persistBucketSelection(
 		return
 	}
 	defer func() { _ = s.Close() }()
-	store.PersistAgentSelection(s, opts.Stderr, bucket, tool, model, true)
+	store.PersistAgentSelection(s, opts.Stderr, bucket, tool, model)
 }
 
 func (o AgentCheckOptions) withDefaults() AgentCheckOptions {

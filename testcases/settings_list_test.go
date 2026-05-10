@@ -69,7 +69,8 @@ func TestSettingsList_KeysSortedWithinSection(t *testing.T) {
 	freshInit(t)
 
 	if _, _, err := testutil.RunCobra(t, settings.New(),
-		"set", "worker.tool=cursor", "worker.model=gpt-5", "worker.interactive=false",
+		"set", "worker.tool=cursor", "worker.model=gpt-5",
+		"worker.interactive=false",
 	); err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -101,7 +102,8 @@ func TestSettingsList_MatchesTOMLExample(t *testing.T) {
 		t.Fatalf("set must_read: %v", err)
 	}
 	if _, _, err := testutil.RunCobra(t, settings.New(),
-		"set", "planner.tool=cursor", "planner.model=opus", "planner.interactive=false",
+		"set", "planner.tool=cursor", "planner.model=opus",
+		"planner.interactive=false",
 	); err != nil {
 		t.Fatalf("set planner: %v", err)
 	}

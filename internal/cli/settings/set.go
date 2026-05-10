@@ -21,7 +21,7 @@ func newSetCmd() *cobra.Command {
 }
 
 type setEntry struct {
-	bucket, key, value string
+	bucket, key, storedKey, value string
 }
 
 func runSet(cmd *cobra.Command, args []string) error {
@@ -31,7 +31,13 @@ func runSet(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		entries = append(entries, setEntry{bucket: bucket, key: key, value: value})
+		storedKey := storageKey(bucket, key)
+		entries = append(entries, setEntry{
+			bucket:    bucket,
+			key:       key,
+			storedKey: storedKey,
+			value:     value,
+		})
 	}
 	return withOpenStore(func(_ string, s *store.Store) error {
 		out := cmd.OutOrStdout()
@@ -42,7 +48,7 @@ func runSet(cmd *cobra.Command, args []string) error {
 			if err := s.EnsureBucket(e.bucket); err != nil {
 				return err
 			}
-			if err := s.Put(e.bucket, storageKey(e.bucket, e.key), e.value); err != nil {
+			if err := s.Put(e.bucket, e.storedKey, e.value); err != nil {
 				return err
 			}
 			uitheme.NormalFprintf(out, "J: set %s.%s = %s\n", e.bucket, e.key, e.value)
