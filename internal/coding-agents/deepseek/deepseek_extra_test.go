@@ -1,7 +1,6 @@
 package deepseek
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -60,28 +59,6 @@ func useFakeDefaultHome(t *testing.T) string {
 	return filepath.Join(root, ".deepseek")
 }
 
-func writeLegacySession(t *testing.T, root, name, id string) string {
-	t.Helper()
-	path := filepath.Join(root, "sessions", name+".json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	envelope := map[string]any{
-		"metadata": map[string]any{
-			"id":         id,
-			"created_at": time.Now().UTC().Format(time.RFC3339Nano),
-		},
-	}
-	data, err := json.Marshal(envelope)
-	if err != nil {
-		t.Fatalf("marshal session: %v", err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func assertSymlinkTarget(t *testing.T, link, want string) {
 	t.Helper()
 	got, err := os.Readlink(link)
@@ -97,6 +74,21 @@ func TestDefaultHomeEnvOverride(t *testing.T) {
 	t.Setenv(envHome, "/tmp/deepseek-home")
 	if got := defaultHome(); got != "/tmp/deepseek-home" {
 		t.Fatalf("defaultHome = %q", got)
+	}
+}
+
+func TestDefaultHomeEnvOverrideRelative(t *testing.T) {
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(envHome, "deepseek-home")
+
+	want := filepath.Join(cwd, "deepseek-home")
+	if got := defaultHome(); got != want {
+		t.Fatalf("defaultHome = %q, want %q", got, want)
 	}
 }
 
@@ -208,59 +200,36 @@ func TestPopulateScopedHomeSymlinkError(t *testing.T) {
 	}
 }
 
-func TestMigrateLegacySession(t *testing.T) {
-	realHome := useFakeDefaultHome(t)
-	src := writeLegacySession(t, realHome, "match", "legacy-id")
-	writeLegacySession(t, realHome, "other", "other-id")
-	taskDir := t.TempDir()
-	if _, err := populateScopedHome(taskDir); err != nil {
-		t.Fatalf("populateScopedHome: %v", err)
-	}
-
-	if err := migrateLegacySession(taskDir, "legacy-id"); err != nil {
-		t.Fatalf("migrateLegacySession: %v", err)
-	}
-	target := filepath.Join(sessionsDir(taskDir), "match.json")
-	assertSymlinkTarget(t, target, src)
-	if err := migrateLegacySession(taskDir, "legacy-id"); err != nil {
-		t.Fatalf("migrateLegacySession second call: %v", err)
-	}
-}
-
-func TestMigrateLegacySessionNoops(t *testing.T) {
-	if err := migrateLegacySession(t.TempDir(), ""); err != nil {
-		t.Fatalf("migrateLegacySession empty: %v", err)
-	}
-	realHome := useFakeDefaultHome(t)
-	if err := migrateLegacySession(t.TempDir(), "missing"); err != nil {
-		t.Fatalf("migrateLegacySession missing store: %v", err)
-	}
-	corrupt := filepath.Join(realHome, "sessions", "corrupt.json")
-	if err := os.MkdirAll(filepath.Dir(corrupt), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(corrupt, []byte("not json"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	writeLegacySession(t, realHome, "other", "other-id")
-	if err := migrateLegacySession(t.TempDir(), "absent"); err != nil {
-		t.Fatalf("migrateLegacySession absent: %v", err)
-	}
-}
-
-func TestMigrateLegacySessionReadDirError(t *testing.T) {
+func TestPopulateScopedHomeRefreshesStaleSymlink(t *testing.T) {
 	realHome := useFakeDefaultHome(t)
 	if err := os.MkdirAll(realHome, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	err := os.Symlink("sessions", filepath.Join(realHome, "sessions"))
-	if err != nil {
+	staleHome := filepath.Join(t.TempDir(), ".deepseek")
+	if err := os.MkdirAll(staleHome, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	err = migrateLegacySession(t.TempDir(), "resume-id")
-	if err == nil {
-		t.Fatal("migrateLegacySession error = nil")
+	authPath := filepath.Join(realHome, "auth.json")
+	staleAuth := filepath.Join(staleHome, "auth.json")
+	if err := os.WriteFile(authPath, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
 	}
+	if err := os.WriteFile(staleAuth, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	taskDir := t.TempDir()
+	if err := os.MkdirAll(sessionsDir(taskDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(taskDir, homeSubdir, "auth.json")
+	if err := os.Symlink(staleAuth, link); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := populateScopedHome(taskDir); err != nil {
+		t.Fatalf("populateScopedHome: %v", err)
+	}
+	assertSymlinkTarget(t, link, authPath)
 }
 
 func TestPrepareScopedEnvErrors(t *testing.T) {
@@ -268,29 +237,16 @@ func TestPrepareScopedEnvErrors(t *testing.T) {
 	if err := os.WriteFile(taskPath, []byte("not a dir"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := prepareScopedEnv(taskPath, ""); err == nil {
+	if _, err := prepareScopedEnv(taskPath); err == nil {
 		t.Fatal("prepareScopedEnv populate error = nil")
-	}
-
-	realHome := useFakeDefaultHome(t)
-	if err := os.MkdirAll(realHome, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	err := os.Symlink("sessions", filepath.Join(realHome, "sessions"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := prepareScopedEnv(t.TempDir(), "resume-id"); err == nil {
-		t.Fatal("prepareScopedEnv migrate error = nil")
 	}
 }
 
-func TestPrepareScopedEnvMigratesLegacySession(t *testing.T) {
-	realHome := useFakeDefaultHome(t)
-	src := writeLegacySession(t, realHome, "match", "resume-id")
+func TestPrepareScopedEnv(t *testing.T) {
+	useFakeDefaultHome(t)
 	taskDir := t.TempDir()
 
-	env, err := prepareScopedEnv(taskDir, "resume-id")
+	env, err := prepareScopedEnv(taskDir)
 	if err != nil {
 		t.Fatalf("prepareScopedEnv: %v", err)
 	}
@@ -298,19 +254,96 @@ func TestPrepareScopedEnvMigratesLegacySession(t *testing.T) {
 	if !reflect.DeepEqual(env, []string{envHome + "=" + wantHome}) {
 		t.Fatalf("env = %v, want scoped home", env)
 	}
-	target := filepath.Join(sessionsDir(taskDir), "match.json")
-	assertSymlinkTarget(t, target, src)
 }
 
-func TestSymlinkIfMissingError(t *testing.T) {
+func TestSymlinkToTargetError(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "src")
 	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	dst := filepath.Join(t.TempDir(), "missing", "dst")
-	if err := symlinkIfMissing(src, dst); err == nil {
-		t.Fatal("symlinkIfMissing error = nil")
+	if err := symlinkToTarget(src, dst); err == nil {
+		t.Fatal("symlinkToTarget error = nil")
 	}
+}
+
+func TestSymlinkToTargetReadlinkError(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "src")
+	parentFile := filepath.Join(t.TempDir(), "parent")
+	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(parentFile, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(parentFile, "dst")
+
+	if err := symlinkToTarget(src, dst); err == nil {
+		t.Fatal("symlinkToTarget readlink error = nil")
+	}
+}
+
+func TestSymlinkToTargetRemoveError(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "src")
+	stale := filepath.Join(t.TempDir(), "stale")
+	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dstDir := t.TempDir()
+	dst := filepath.Join(dstDir, "dst")
+	if err := os.Symlink(stale, dst); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dstDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dstDir, 0o700) })
+
+	if err := symlinkToTarget(src, dst); err == nil {
+		t.Fatal("symlinkToTarget remove error = nil")
+	}
+}
+
+func TestSymlinkToTargetLeavesRegularFile(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "src")
+	dst := filepath.Join(t.TempDir(), "dst")
+	if err := os.WriteFile(src, []byte("src"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("dst"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := symlinkToTarget(src, dst); err != nil {
+		t.Fatalf("symlinkToTarget: %v", err)
+	}
+	if got := testutil.ReadTrimmedFile(t, dst); got != "dst" {
+		t.Fatalf("dst = %q, want existing file", got)
+	}
+}
+
+func TestSymlinkToTargetKeepsRelativeTarget(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "src")
+	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dstDir := t.TempDir()
+	dst := filepath.Join(dstDir, "dst")
+	rel, err := filepath.Rel(dstDir, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(rel, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := symlinkToTarget(src, dst); err != nil {
+		t.Fatalf("symlinkToTarget: %v", err)
+	}
+	assertSymlinkTarget(t, dst, rel)
 }
 
 // TestCheckLogin_LoggedIn pins the happy path: doctor --json returns

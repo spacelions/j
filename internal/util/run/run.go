@@ -69,7 +69,8 @@ func RunIn(ctx context.Context, dir, name string, args ...string) error {
 	return RunInEnv(ctx, dir, nil, name, args...)
 }
 
-// RunInEnv is RunIn with caller-supplied environment overrides.
+// RunInEnv is RunIn with caller-supplied environment overrides. Codex
+// and deepseek use it to point each child at a task-scoped agent home.
 // The supplied env entries are appended after os.Environ(), so later
 // duplicate keys win under os/exec's environment handling.
 func RunInEnv(

@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 const (
@@ -13,20 +12,9 @@ const (
 	homeSubdir = ".deepseek-home"
 )
 
-func defaultHome() string {
-	if home := os.Getenv(envHome); home != "" {
-		return home
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".deepseek")
-}
-
-func prepareScopedEnv(taskDir, resumeID string) ([]string, error) {
+func prepareScopedEnv(taskDir string) ([]string, error) {
 	home, err := populateScopedHome(taskDir)
 	if err != nil {
-		return nil, err
-	}
-	if err := migrateLegacySession(taskDir, resumeID); err != nil {
 		return nil, err
 	}
 	return []string{envHome + "=" + home}, nil
@@ -54,53 +42,54 @@ func populateScopedHome(taskDir string) (string, error) {
 		}
 		src := filepath.Join(realHome, entry.Name())
 		dst := filepath.Join(home, entry.Name())
-		if err := symlinkIfMissing(src, dst); err != nil {
+		if err := symlinkToTarget(src, dst); err != nil {
 			return "", err
 		}
 	}
 	return home, nil
 }
 
-func migrateLegacySession(taskDir, sessionID string) error {
-	if sessionID == "" {
-		return nil
+func defaultHome() string {
+	if home := os.Getenv(envHome); home != "" {
+		abs, _ := filepath.Abs(home)
+		return abs
 	}
-	legacySessions := filepath.Join(defaultHome(), "sessions")
-	entries, err := os.ReadDir(legacySessions)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		src := filepath.Join(legacySessions, entry.Name())
-		meta, ok := decodeSession(src)
-		if !ok || meta.ID != sessionID {
-			continue
-		}
-		dst := filepath.Join(sessionsDir(taskDir), entry.Name())
-		return symlinkIfMissing(src, dst)
-	}
-	return nil
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".deepseek")
 }
 
-func symlinkIfMissing(src, dst string) error {
-	if _, err := os.Lstat(dst); err == nil {
-		return nil
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	if err := os.Symlink(src, dst); err != nil {
-		if errors.Is(err, fs.ErrExist) {
+func symlinkToTarget(src, dst string) error {
+	src, _ = filepath.Abs(src)
+	current, err := os.Readlink(dst)
+	if err == nil {
+		if sameSymlinkTarget(current, src, dst) {
 			return nil
 		}
-		return err
+		if err := os.Remove(dst); err != nil {
+			return err
+		}
+		return createSymlink(src, dst)
 	}
-	return nil
+	if errors.Is(err, fs.ErrNotExist) {
+		return createSymlink(src, dst)
+	}
+	if info, statErr := os.Lstat(dst); statErr == nil &&
+		info.Mode()&os.ModeSymlink == 0 {
+		return nil
+	}
+	return err
+}
+
+func createSymlink(src, dst string) error {
+	return os.Symlink(src, dst)
+}
+
+func sameSymlinkTarget(target, src, link string) bool {
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(link), target)
+	}
+	target, _ = filepath.Abs(target)
+	return filepath.Clean(target) == filepath.Clean(src)
 }
 
 func sessionsDir(taskDir string) string {
