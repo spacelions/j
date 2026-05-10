@@ -4,7 +4,7 @@ BIN_DIR := bin
 BIN     := $(BIN_DIR)/j
 
 .PHONY: build clean coverage line-coverage branch-coverage test e2e race
-.PHONY: lint lint-fix install-hooks
+.PHONY: lint lint-fix install-hooks lines
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-X github.com/spacelions/j/internal/cli/version.Version=$(VERSION)"
@@ -52,6 +52,32 @@ line-coverage:
 		echo "$$below" >&2; \
 		exit 1; \
 	fi
+
+LINES_DIRS := cmd \
+	internal/cli \
+	internal/agents \
+	internal/coding-agents \
+	internal/store \
+	internal/lifecycle \
+	internal/resolver \
+	internal/tools \
+	internal/util
+
+lines:
+	@printf '%-30s %6s %7s %10s %8s\n' Package Files Code Comments Blanks
+	@printf '%-30s %6s %7s %10s %8s\n' '------------------------------' '------' '-------' '----------' '--------'
+	@total_files=0; total_code=0; total_comments=0; total_blanks=0; \
+	for dir in $(LINES_DIRS); do \
+		read -r files _ code comments blanks <<< $$(tokei $$dir -e "*_test.go" --types Go 2>/dev/null | awk '/^ Go/{print $$2,$$3,$$4,$$5,$$6}'); \
+		files=$${files:-0}; code=$${code:-0}; comments=$${comments:-0}; blanks=$${blanks:-0}; \
+		printf '%-30s %6s %7s %10s %8s\n' $$dir $$files $$code $$comments $$blanks; \
+		total_files=$$((total_files + files)); \
+		total_code=$$((total_code + code)); \
+		total_comments=$$((total_comments + comments)); \
+		total_blanks=$$((total_blanks + blanks)); \
+	done; \
+	printf '%-30s %6s %7s %10s %8s\n' '------------------------------' '------' '-------' '----------' '--------'; \
+	printf '%-30s %6s %7s %10s %8s\n' TOTAL $$total_files $$total_code $$total_comments $$total_blanks
 
 branch-coverage:
 	@set -euo pipefail; \
