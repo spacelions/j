@@ -269,6 +269,21 @@ func TestRunIn_EmptyDir_InheritsParentCwd(t *testing.T) {
 	}
 }
 
+func TestRunIn_CancelSendsSignal(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		done <- RunIn(ctx, "", "sleep", "5")
+	}()
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	err := <-done
+	if err == nil {
+		t.Fatal("RunIn error = nil")
+	}
+}
+
 // TestSpawnIn_PlumbsCwd asserts SpawnIn sets cmd.Dir on the spawned
 // child. The child writes pwd to the log path, which the parent
 // polls for the expected directory.
