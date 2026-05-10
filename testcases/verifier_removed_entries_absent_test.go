@@ -15,6 +15,7 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 	mustBeAbsent := []string{
 		`internal/store/tasks/sort.go`,
 		`internal/store/tasks/task.go:.*GetTask`,
+		`internal/store/tasks/task.go:.*ListTasks`,
 		`internal/util/agentlog/agentlog.go:.*Emit`,
 		`internal/util/agentlog/agentlog.go:.*formatValue`,
 	}
