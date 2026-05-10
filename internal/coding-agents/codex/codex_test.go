@@ -2,6 +2,7 @@ package codex
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -150,9 +151,9 @@ func TestInteractivePlannerArgs(t *testing.T) {
 }
 
 // TestHeadlessArgs pins the argv built for the `exec` entrypoint:
-// the bypass + skip-git-repo-check flags always land, the prompt sits
-// behind a literal `--`, and resume runs splice `resume <id>` after
-// `exec`.
+// the bypass + skip-git-repo-check + JSON flags always land, the
+// prompt sits behind a literal `--`, and resume runs splice
+// `resume <id>` after `exec`.
 func TestHeadlessArgs(t *testing.T) {
 	cases := []struct {
 		name, resume, model, prompt string
@@ -164,6 +165,7 @@ func TestHeadlessArgs(t *testing.T) {
 				"exec", "-m", "gpt-5.5",
 				"--skip-git-repo-check",
 				"--dangerously-bypass-approvals-and-sandbox",
+				"--json",
 				"--", "do work",
 			},
 		},
@@ -173,6 +175,7 @@ func TestHeadlessArgs(t *testing.T) {
 				"exec",
 				"--skip-git-repo-check",
 				"--dangerously-bypass-approvals-and-sandbox",
+				"--json",
 				"--", "do work",
 			},
 		},
@@ -182,6 +185,7 @@ func TestHeadlessArgs(t *testing.T) {
 				"exec", "resume", "abc", "-m", "gpt-5.5",
 				"--skip-git-repo-check",
 				"--dangerously-bypass-approvals-and-sandbox",
+				"--json",
 				"--", "do work",
 			},
 		},
@@ -209,23 +213,271 @@ func TestAppendModel(t *testing.T) {
 	}
 }
 
-// TestFormatLog_Identity pins the formatter contract: every input
-// line passes through unchanged. codex's `exec` entrypoint emits
-// human text rather than stream-json so there is nothing to render.
-func TestFormatLog_Identity(t *testing.T) {
-	a := New()
+func TestFormatLog_Passthrough(t *testing.T) {
 	cases := [][]byte{
 		nil,
 		{},
 		[]byte("\n"),
 		[]byte("plain log line\n"),
-		[]byte(`{"type":"thread.started"}` + "\n"),
+		[]byte(`{"type":"future.event","value":1}` + "\n"),
+		[]byte(`{"type":"item.completed"}` + "\n"),
+		[]byte(
+			`{"type":"item.completed","item":{"type":"future"}}` +
+				"\n",
+		),
+		[]byte(
+			`{"type":"item.completed","item":{` +
+				`"type":"file_change","changes":"bad"}}` + "\n",
+		),
 		[]byte("\xff\xfe binary bytes \x00 mid line"),
 	}
 	for _, in := range cases {
-		got := a.FormatLog(in)
+		got := New().FormatLog(in)
 		if string(got) != string(in) {
 			t.Fatalf("FormatLog(%q) = %q, want passthrough", in, got)
+		}
+	}
+}
+
+func TestFormatLog_TopLevelEvents(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []byte
+		want []string
+	}{
+		{
+			name: "thread",
+			in:   []byte(`{"type":"thread.started","thread_id":"t1"}`),
+			want: []string{"agent thread", "thread_id=t1"},
+		},
+		{
+			name: "turn-started",
+			in:   []byte(`{"type":"turn.started"}`),
+			want: []string{"agent status", "status=turn_started"},
+		},
+		{
+			name: "turn-completed",
+			in: []byte(`{"type":"turn.completed","usage":{` +
+				`"input_tokens":1,"cached_input_tokens":2,` +
+				`"output_tokens":3,"reasoning_output_tokens":4}}`),
+			want: []string{
+				"agent result",
+				"input_tokens=1",
+				"cached_input_tokens=2",
+				"output_tokens=3",
+				"reasoning_output_tokens=4",
+			},
+		},
+		{
+			name: "turn-failed",
+			in: []byte(`{"type":"turn.failed",` +
+				`"error":{"message":"nope"}}`),
+			want: []string{"agent error", "message=nope"},
+		},
+		{
+			name: "error",
+			in:   []byte(`{"type":"error","message":"broken"}`),
+			want: []string{"agent error", "message=broken"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertContainsAll(t, string(New().FormatLog(tc.in)), tc.want)
+		})
+	}
+}
+
+func TestFormatLog_ItemEvents(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []byte
+		want []string
+	}{
+		{
+			name: "message",
+			in: []byte(`{"type":"item.completed","item":{` +
+				`"id":"i1","type":"agent_message","text":"done"}}`),
+			want: []string{"agent message", "text=done"},
+		},
+		{
+			name: "reasoning",
+			in: []byte(`{"type":"item.completed","item":{` +
+				`"id":"i1","type":"reasoning","text":"thinking"}}`),
+			want: []string{"agent thinking", "text=thinking"},
+		},
+		{
+			name: "command-started",
+			in: []byte(`{"type":"item.started","item":{` +
+				`"id":"i1","type":"command_execution",` +
+				`"command":"go test ./...","status":"in_progress"}}`),
+			want: []string{
+				"agent command",
+				"command=go test ./...",
+				"phase=started",
+				"status=in_progress",
+			},
+		},
+		{
+			name: "file-change",
+			in: []byte(`{"type":"item.completed","item":{` +
+				`"id":"i1","type":"file_change",` +
+				`"status":"completed","changes":[` +
+				`{"path":"a.go","kind":"update"},` +
+				`{"path":"b.go","kind":"add"}]}}`),
+			want: []string{
+				"agent file_change",
+				"changes=2",
+				"files=update:a.go,add:b.go",
+				"status=completed",
+			},
+		},
+		{
+			name: "file-change-many",
+			in: []byte(`{"type":"item.completed","item":{` +
+				`"type":"file_change","status":"completed",` +
+				`"changes":[` +
+				`{"path":"a.go","kind":"update"},` +
+				`{"path":"b.go","kind":"update"},` +
+				`{"path":"c.go","kind":"update"},` +
+				`{"path":"d.go","kind":"update"},` +
+				`{"path":"e.go","kind":"update"},` +
+				`{"path":"f.go","kind":"update"}]}}`),
+			want: []string{
+				"agent file_change",
+				"changes=6",
+				"files=update:a.go,update:b.go,update:c.go,",
+				"+1",
+			},
+		},
+		{
+			name: "mcp",
+			in: []byte(`{"type":"item.completed","item":{` +
+				`"id":"i1","type":"mcp_tool_call","server":"s",` +
+				`"tool":"fetch","status":"failed",` +
+				`"error":{"message":"bad"}}}`),
+			want: []string{
+				"agent mcp_tool_call",
+				"server=s",
+				"tool=fetch",
+				"status=failed",
+				"message=bad",
+			},
+		},
+		{
+			name: "web-search",
+			in: []byte(`{"type":"item.completed","item":{` +
+				`"id":"i1","type":"web_search","query":"golang",` +
+				`"action":{"type":"search"}}}`),
+			want: []string{
+				"agent web_search",
+				"query=golang",
+				"action=search",
+			},
+		},
+		{
+			name: "web-search-string-action",
+			in: []byte(`{"type":"item.completed","item":{` +
+				`"type":"web_search","query":"golang",` +
+				`"action":"open_page"}}`),
+			want: []string{"agent web_search", "action=open_page"},
+		},
+		{
+			name: "web-search-empty-action",
+			in: []byte(`{"type":"item.completed","item":{` +
+				`"type":"web_search","query":"golang"}}`),
+			want: []string{"agent web_search", "query=golang"},
+		},
+		{
+			name: "web-search-invalid-action",
+			in: []byte(`{"type":"item.completed","item":{` +
+				`"type":"web_search","query":"golang","action":7}}`),
+			want: []string{"agent web_search", "query=golang"},
+		},
+		{
+			name: "todo",
+			in: []byte(`{"type":"item.updated","item":{` +
+				`"id":"i1","type":"todo_list","items":[` +
+				`{"text":"done","completed":true},` +
+				`{"text":"next","completed":false}]}}`),
+			want: []string{
+				"agent todo_list",
+				"items=2",
+				"completed=1",
+				"pending=1",
+				"current=next",
+			},
+		},
+		{
+			name: "error",
+			in: []byte(`{"type":"item.completed","item":{` +
+				`"id":"i1","type":"error","message":"warn"}}`),
+			want: []string{"agent error", "message=warn"},
+		},
+		{
+			name: "error-object",
+			in: []byte(`{"type":"item.completed","item":{` +
+				`"type":"error","error":{"message":"nested"}}}`),
+			want: []string{"agent error", "message=nested"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertContainsAll(t, string(New().FormatLog(tc.in)), tc.want)
+		})
+	}
+}
+
+func TestFormatLog_CommandOutputOmitted(t *testing.T) {
+	src := []byte(`{"type":"item.completed","item":{` +
+		`"id":"i1","type":"command_execution","command":"go test",` +
+		`"aggregated_output":"very noisy command output",` +
+		`"exit_code":0,"status":"completed"}}`)
+
+	got := string(New().FormatLog(src))
+	assertContainsAll(t, got, []string{
+		"agent command",
+		"command=go test",
+		"exit_code=0",
+		"output_bytes=25",
+		"status=completed",
+	})
+	if strings.Contains(got, "very noisy command output") {
+		t.Fatalf("aggregated output leaked: %q", got)
+	}
+}
+
+func TestFormatLog_TextTruncation(t *testing.T) {
+	long := strings.Repeat("x", 250)
+	src := []byte(`{"type":"item.completed","item":{` +
+		`"id":"i1","type":"agent_message","text":"` + long + `"}}`)
+
+	got := string(New().FormatLog(src))
+	assertContainsAll(t, got, []string{"agent message", "chars=250"})
+	if strings.Contains(got, long) {
+		t.Fatalf("untruncated body leaked: %q", got)
+	}
+}
+
+func TestFormatLog_RenamedTextTruncation(t *testing.T) {
+	long := strings.Repeat("q", 250)
+	src := []byte(`{"type":"item.completed","item":{` +
+		`"type":"web_search","query":"` + long + `"}}`)
+
+	got := string(New().FormatLog(src))
+	assertContainsAll(t, got, []string{
+		"agent web_search",
+		"query_chars=250",
+	})
+	if strings.Contains(got, " chars=250") {
+		t.Fatalf("unrenamed chars field leaked: %q", got)
+	}
+}
+
+func assertContainsAll(t *testing.T, got string, want []string) {
+	t.Helper()
+	for _, s := range want {
+		if !strings.Contains(got, s) {
+			t.Fatalf("missing %q in %q", s, got)
 		}
 	}
 }
