@@ -331,6 +331,13 @@ func TestScanSessions_SkipsCorruptAndEmpty(t *testing.T) {
 	}
 }
 
+func TestDecodeSession_ReadError(t *testing.T) {
+	_, ok := decodeSession(filepath.Join(t.TempDir(), "missing.json"))
+	if ok {
+		t.Fatal("decodeSession ok = true, want false")
+	}
+}
+
 // TestCaptureResumeID_HomeError pins the sessionsDir error branch:
 // when neither DEEPSEEK_HOME nor a usable $HOME is available,
 // CaptureResumeID surfaces the error so the caller can warn.
