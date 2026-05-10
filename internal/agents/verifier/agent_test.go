@@ -184,6 +184,31 @@ func TestNew_ShellOutVerifyFails(t *testing.T) {
 	}
 }
 
+func TestNew_ShellOutResumeSessionDispatchesResume(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+
+	taskID, _ := seedResumableVerify(t, nil)
+	stub := newScriptedAgent()
+	stub.verifyVerdicts = []string{"PASS"}
+	a, err := New(Config{
+		TaskID: taskID,
+		Agents: []codingagents.Agent{stub},
+		Stderr: io.Discard,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	testutil.DrainAgent(t, a)
+	if len(stub.verifiedReqs) != 1 {
+		t.Fatalf("verify calls = %d, want 1", len(stub.verifiedReqs))
+	}
+	req := stub.verifiedReqs[0]
+	if !req.Resume || req.ResumeChatID != "verify-cursor" {
+		t.Fatalf("resume request = %+v", req)
+	}
+}
+
 // TestNew_ShellOutDefaultsMaxIterations exercises the
 // MaxIterations<=0 → defaultMaxIterations branch.
 func TestNew_ShellOutDefaultsMaxIterations(t *testing.T) {
