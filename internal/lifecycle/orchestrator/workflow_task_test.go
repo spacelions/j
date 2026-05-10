@@ -152,6 +152,79 @@ func TestRunForTaskFromWork_ClarificationStopsBeforeVerify(
 	}
 }
 
+// TestRunForTaskFromWork_InteractiveExitStopsBeforeVerify pins the
+// resume-work takeover flow: an interactive resumed worker can exit
+// cleanly without producing a PR/completion signal, and the verifier
+// does not start.
+func TestRunForTaskFromWork_InteractiveExitStopsBeforeVerify(
+	t *testing.T,
+) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := seedChainTask(t, "scripted")
+	flipToActiveWork(t, id)
+	stub := stubChain("scripted")
+	stub.verdict = "VERDICT: PASS"
+
+	err := RunForTaskFromWork(
+		t.Context(),
+		store.TaskConfig{MaxIterations: 1},
+		id,
+		[]codingagents.Agent{stub},
+		io.Discard,
+		PhaseOverrides{Interactive: true},
+	)
+	if err != nil {
+		t.Fatalf("RunForTaskFromWork: %v", err)
+	}
+	if stub.verifyCalls.Load() != 0 {
+		t.Fatalf("verify calls = %d, want 0", stub.verifyCalls.Load())
+	}
+	if !stub.workInteractive.Load() {
+		t.Fatalf("work request was not interactive")
+	}
+	row := readChainTaskRow(t, id)
+	if row.Status != tasks.StatusHelp {
+		t.Fatalf("Status = %q, want help", row.Status)
+	}
+}
+
+// TestRunForTaskFromWork_InteractivePRRunsVerifier pins the positive
+// resumed-worker path: if the interactive worker emits a PR URL, the
+// worker-to-verifier handoff still happens exactly once.
+func TestRunForTaskFromWork_InteractivePRRunsVerifier(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := seedChainTask(t, "scripted")
+	flipToActiveWork(t, id)
+	stub := stubChain("scripted")
+	stub.workPRURL = "https://github.com/owner/repo/pull/9"
+	stub.verdict = "VERDICT: PASS"
+
+	err := RunForTaskFromWork(
+		t.Context(),
+		store.TaskConfig{MaxIterations: 1},
+		id,
+		[]codingagents.Agent{stub},
+		io.Discard,
+		PhaseOverrides{Interactive: true},
+	)
+	if err != nil {
+		t.Fatalf("RunForTaskFromWork: %v", err)
+	}
+	if stub.verifyCalls.Load() != 1 {
+		t.Fatalf("verify calls = %d, want 1", stub.verifyCalls.Load())
+	}
+	row := readChainTaskRow(t, id)
+	if row.Status != tasks.StatusCompleted {
+		t.Fatalf("Status = %q, want completed", row.Status)
+	}
+	if row.PullRequestURL != stub.workPRURL {
+		t.Fatalf("PullRequestURL = %q, want %q",
+			row.PullRequestURL, stub.workPRURL)
+	}
+}
+
 // TestTaskSubAgents_FromWork pins the worker→verifier shape used by
 // `j tasks continue` on a `plan-done` row, plus re-work / resume-work.
 func TestTaskSubAgents_FromWork(t *testing.T) {
@@ -458,6 +531,27 @@ func flipToPlanDone(t *testing.T, id string) error {
 	return s.PutTask(task)
 }
 
+func flipToActiveWork(t *testing.T, id string) {
+	t.Helper()
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		t.Fatalf("OpenDefault: %v", err)
+	}
+	defer s.Close()
+	task, err := s.GetTask(id)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	task.Status = tasks.StatusWorking
+	task.WorkTool = "scripted"
+	task.WorkModel = "m1"
+	task.WorkResumeSession = "prior-work-session"
+	task.Worktree = ""
+	if err := s.PutTask(task); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+}
+
 func seedAgentBucketWithInteractive(t *testing.T, bucket, tool, model, interactive string) {
 	t.Helper()
 	path, err := store.DefaultPath()
@@ -524,6 +618,8 @@ type stubChainAgent struct {
 	workErr           error
 	verifyErr         error
 	workClarification string
+	workPRURL         string
+	workInteractive   atomic.Bool
 }
 
 func stubChain(name string) *stubChainAgent {
@@ -551,6 +647,14 @@ func (a *stubChainAgent) Plan(_ context.Context, req codingagents.PlanRequest) (
 
 func (a *stubChainAgent) Work(_ context.Context, req codingagents.WorkRequest) (int, error) {
 	a.workCalls.Add(1)
+	a.workInteractive.Store(req.Interactive)
+	if a.workPRURL != "" {
+		if err := os.WriteFile(req.AgentLogPath,
+			[]byte("Created pull request "+a.workPRURL+"\n"),
+			0o644); err != nil {
+			return 0, err
+		}
+	}
 	if a.workClarification != "" && req.ClarificationPath != "" {
 		if err := os.WriteFile(req.ClarificationPath,
 			[]byte(a.workClarification), 0o644); err != nil {

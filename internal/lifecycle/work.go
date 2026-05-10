@@ -19,6 +19,7 @@ const prDetectTimeout = 5 * time.Second
 type WorkLifecycle struct {
 	stderr       io.Writer
 	agentLogPath string
+	interactive  bool
 	task         tasks.Task
 	closed       bool
 }
@@ -28,6 +29,7 @@ type WorkLifecycle struct {
 // plan markdown into <cwd>/.j/tasks/<id>/plan.md.
 func NewWorkTask(stderr io.Writer, agentName, model, taskID,
 	planPath, requirement, planBody, resumeID, agentLogPath string,
+	interactive bool,
 ) *WorkLifecycle {
 	task := tasks.Task{
 		ID:                taskID,
@@ -40,13 +42,13 @@ func NewWorkTask(stderr io.Writer, agentName, model, taskID,
 		WorkBeginAt: time.Now().UTC(),
 	}
 	fillWorktree(&task)
-	return openWorkLifecycle(stderr, task, agentLogPath,
+	return openWorkLifecycle(stderr, task, agentLogPath, interactive,
 		tasks.EventWorkBegin, "work begin")
 }
 
 // BeginWorkRestart mutates a copy of t to flip status to `working`.
 func BeginWorkRestart(t tasks.Task, stderr io.Writer, agentName, model,
-	resumeID, agentLogPath string,
+	resumeID, agentLogPath string, interactive bool,
 ) *WorkLifecycle {
 	task := t
 	task.WorkTool = agentName
@@ -56,13 +58,13 @@ func BeginWorkRestart(t tasks.Task, stderr io.Writer, agentName, model,
 	task.WorkEndAt = time.Time{}
 	task.DoneAt = time.Time{}
 	fillWorktree(&task)
-	return openWorkLifecycle(stderr, task, agentLogPath,
+	return openWorkLifecycle(stderr, task, agentLogPath, interactive,
 		tasks.EventWorkRestart, "work restart")
 }
 
 // BeginWorkResume is the resume-flow companion of BeginWorkRestart.
 func BeginWorkResume(t tasks.Task, stderr io.Writer,
-	agentLogPath string,
+	agentLogPath string, interactive bool,
 ) *WorkLifecycle {
 	task := t
 	task.WorkEndAt = time.Time{}
@@ -70,12 +72,12 @@ func BeginWorkResume(t tasks.Task, stderr io.Writer,
 	if task.WorkBeginAt.IsZero() {
 		task.WorkBeginAt = time.Now().UTC()
 	}
-	return openWorkLifecycle(stderr, task, agentLogPath,
+	return openWorkLifecycle(stderr, task, agentLogPath, interactive,
 		tasks.EventWorkResume, "work resume")
 }
 
 func openWorkLifecycle(stderr io.Writer, task tasks.Task,
-	agentLogPath string, ev tasks.Event, panicTag string,
+	agentLogPath string, interactive bool, ev tasks.Event, panicTag string,
 ) *WorkLifecycle {
 	task.AgentLogPath = agentLogPath
 	if _, err := tasks.ApplyAndPersistWarn(
@@ -85,6 +87,7 @@ func openWorkLifecycle(stderr io.Writer, task tasks.Task,
 	return &WorkLifecycle{
 		stderr:       stderr,
 		agentLogPath: agentLogPath,
+		interactive:  interactive,
 		task:         task,
 	}
 }
@@ -145,13 +148,18 @@ func (lc *WorkLifecycle) Finish(runErr error) {
 
 // pickFinishEvent decides which event drives the work-finish
 // transition. Error path takes precedence over the clarification
-// check, matching PlanLifecycle.pickFinishEvent's contract.
+// check, matching PlanLifecycle.pickFinishEvent's contract. A clean
+// interactive exit without a detected PR is a user quit, not a
+// completed worker handoff.
 func (lc *WorkLifecycle) pickFinishEvent(runErr error) tasks.Event {
 	if runErr != nil {
 		return tasks.EventWorkError
 	}
 	if taskClarificationPresent(lc.task.ID) {
 		return tasks.EventWorkNeedsClarification
+	}
+	if lc.interactive && lc.task.PullRequestURL == "" {
+		return tasks.EventWorkQuit
 	}
 	return tasks.EventWorkDone
 }

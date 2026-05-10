@@ -34,7 +34,7 @@ func TestCase_PRURL_Finish_NoPRLeavesFieldEmpty(t *testing.T) {
 
 	lc := lifecycle.NewWorkTask(io.Discard, "cursor", "sonnet-4",
 		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "",
-		logPath)
+		logPath, false)
 	pre := lc.Task()
 	if pre.PullRequestURL != "" {
 		t.Fatalf("pre PullRequestURL = %q, want empty",

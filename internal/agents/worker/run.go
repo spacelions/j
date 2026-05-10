@@ -93,7 +93,7 @@ func Execute(ctx context.Context, opts ExecuteOptions) (err error) {
 	)
 	lc := beginWorkLifecycle(
 		res, opts.Stderr, agent.Name(), model, resumeID,
-		agentLogPath, resumeMode,
+		agentLogPath, resumeMode, opts.Interactive,
 	)
 	return runWorker(
 		ctx, opts, agent, lc, res, model, resumeID, resumeMode, agentLogPath,
@@ -130,13 +130,17 @@ func resolveWorker(
 
 func beginWorkLifecycle(
 	res resolver.WorkPlan, stderr io.Writer,
-	agentName, model, resumeID, agentLogPath string, resumeMode bool,
+	agentName, model, resumeID, agentLogPath string,
+	resumeMode, interactive bool,
 ) *lifecycle.WorkLifecycle {
 	if resumeMode {
-		return lifecycle.BeginWorkResume(res.Task, stderr, agentLogPath)
+		return lifecycle.BeginWorkResume(
+			res.Task, stderr, agentLogPath, interactive,
+		)
 	}
 	return lifecycle.BeginWorkRestart(
 		res.Task, stderr, agentName, model, resumeID, agentLogPath,
+		interactive,
 	)
 }
 

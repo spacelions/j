@@ -9,21 +9,18 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// skipVerifyOnClarification wraps the verifier sub-agent so that when
-// the worker just halted at `needs-clarification` (foreground or
-// reaper path), the verifier does NOT run on the same orchestrator
-// invocation. The wrapper is a tiny custom agent that reads the row
-// status and either short-circuits to a no-op event stream or forwards
-// the inner verifier's events verbatim.
-func skipVerifyOnClarification(
+// skipVerifyUnlessWorkDone wraps the verifier sub-agent so that the
+// verifier only runs after the worker persisted `work-done`. A worker
+// that stops at `needs-clarification`, `help`, or any other non-done
+// state does not continue the same orchestrator invocation.
+func skipVerifyUnlessWorkDone(
 	taskID string, inner agent.Agent,
 ) (agent.Agent, error) {
 	return agent.New(agent.Config{
-		Name: "work_verify_guard",
-		Description: "Runs the verifier unless the worker stopped " +
-			"at needs-clarification.",
-		SubAgents: []agent.Agent{inner},
-		Run:       guardRun(taskID, inner),
+		Name:        "work_verify_guard",
+		Description: "Runs the verifier only after work-done.",
+		SubAgents:   []agent.Agent{inner},
+		Run:         guardRun(taskID, inner),
 	})
 }
 
@@ -34,7 +31,7 @@ func guardRun(
 		ctx agent.InvocationContext,
 	) iter.Seq2[*session.Event, error] {
 		return func(yield func(*session.Event, error) bool) {
-			if rowStoppedAtClarification(taskID) {
+			if rowIsNotWorkDone(taskID) {
 				return
 			}
 			for ev, err := range inner.Run(ctx) {
@@ -46,11 +43,11 @@ func guardRun(
 	}
 }
 
-// rowStoppedAtClarification reads the persisted row and reports
-// whether it sits at `needs-clarification`. Read errors count as
-// "no" so the verifier runs on best-effort — matching the
-// historical default when the row cannot be loaded.
-func rowStoppedAtClarification(taskID string) bool {
+// rowIsNotWorkDone reads the persisted row and reports whether it is
+// anything other than `work-done`. Read errors count as "no" so the
+// verifier runs on best-effort, matching the historical default when
+// the row cannot be loaded.
+func rowIsNotWorkDone(taskID string) bool {
 	s, err := tasks.OpenDefault()
 	if err != nil {
 		return false
@@ -60,5 +57,5 @@ func rowStoppedAtClarification(taskID string) bool {
 	if err != nil {
 		return false
 	}
-	return t.Status == tasks.StatusNeedsClarification
+	return t.Status != tasks.StatusWorkDone
 }

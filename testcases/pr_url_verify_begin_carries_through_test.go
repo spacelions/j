@@ -40,7 +40,7 @@ func TestCase_PRURL_VerifyBegin_CarriesThroughFromWorkEnd(t *testing.T) {
 	tasks.PersistWarn(io.Discard, seed)
 
 	work := lifecycle.BeginWorkRestart(seed, io.Discard,
-		"cursor", "sonnet-4", "work-cursor", logPath)
+		"cursor", "sonnet-4", "work-cursor", logPath, false)
 	work.Finish(nil)
 
 	finished := work.Task()

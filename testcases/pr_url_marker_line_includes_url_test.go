@@ -36,7 +36,7 @@ func TestCase_PRURL_MarkerLineIncludesURL(t *testing.T) {
 
 	lc := lifecycle.NewWorkTask(io.Discard, "cursor", "sonnet-4",
 		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "",
-		logPath)
+		logPath, false)
 	lc.Finish(nil)
 
 	body := readFileForMarker(t, logPath)

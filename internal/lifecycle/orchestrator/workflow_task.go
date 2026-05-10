@@ -227,7 +227,7 @@ func newWorkVerify(
 	if err != nil {
 		return nil, nil, fmt.Errorf("workflow: verifier: %w", err)
 	}
-	guarded, err := skipVerifyOnClarification(taskID, verifierAgent)
+	guarded, err := skipVerifyUnlessWorkDone(taskID, verifierAgent)
 	if err != nil {
 		return nil, nil, fmt.Errorf("workflow: verify guard: %w", err)
 	}
