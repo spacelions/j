@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/huh"
+
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/lifecycle"
 	"github.com/spacelions/j/internal/resolver"
@@ -433,6 +435,27 @@ func TestRunResume_PickerError(t *testing.T) {
 	}
 }
 
+func TestRunResume_PickerUserAborted(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	seedResumableVerify(t, nil)
+	seedResumableVerify(t, nil)
+	agent := newScriptedAgent()
+	ui := &scriptedUI{resumeErr: huh.ErrUserAborted}
+	err := RunResume(t.Context(), ResumeOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("err = %v, want nil after user abort", err)
+	}
+	if len(agent.verifiedReqs) != 0 {
+		t.Fatal("agent should not run after picker abort")
+	}
+}
+
 // TestRunResume_PickerCancelled covers the cancel signal from
 // the unified picker contract: a user-abort (or empty
 // resumePicked) surfaced from PickVerifyTask returns ok=false
@@ -455,6 +478,24 @@ func TestRunResume_PickerCancelled(t *testing.T) {
 	}
 	if len(agent.verifiedReqs) != 0 {
 		t.Fatal("agent should not be touched after cancel")
+	}
+}
+
+func TestRunResume_IllegalStatus(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableVerify(t, func(row *tasks.Task) {
+		row.Status = tasks.StatusPlanning
+	})
+	err := RunResume(t.Context(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{newScriptedAgent()},
+		UI:     &scriptedUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot resume verify") {
+		t.Fatalf("err = %v, want illegal status error", err)
 	}
 }
 
