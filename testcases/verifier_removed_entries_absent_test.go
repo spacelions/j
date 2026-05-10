@@ -13,6 +13,7 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 	t.Parallel()
 	body := readRepoFile(t, "coverage.allowlist")
 	mustBeAbsent := []string{
+		`internal/cli/preflight/preflight.go:.*PreRunE`,
 		`internal/store/tasks/sort.go`,
 		`internal/store/tasks/task.go:.*GetTask`,
 		`internal/store/tasks/task.go:.*ListTasks`,
