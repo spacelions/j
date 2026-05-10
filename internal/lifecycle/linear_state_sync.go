@@ -210,7 +210,6 @@ func postInboxReminder(
 			agentLogPath,
 			"linear_reminder_failed",
 			map[string]any{
-				//nolint:goconst // "issue" count inflated by test files
 				"issue": issueID,
 				"error": err.Error(),
 			},

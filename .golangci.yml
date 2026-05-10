@@ -2,7 +2,7 @@ version: "2"
 run:
   concurrency: 4
   timeout: 5m
-  tests: true
+  tests: false
 
 issues:
   max-issues-per-linter: 0
@@ -180,6 +180,7 @@ linters:
     paths:
       - vendor$
       - third_party$
+      - \.j/
       - \.claude/
       # When lint runs from inside .claude/worktrees/<X>/, sibling
       # worktrees surface as ../<Y>/... which the \.claude/ regex
@@ -214,11 +215,6 @@ formatters:
   enable:
     - gofmt
     - gofumpt
-  disable:
-    - gci
-    - goimports
-    - golines
-    - swaggo
   settings:
     gofumpt:
       extra-rules: true

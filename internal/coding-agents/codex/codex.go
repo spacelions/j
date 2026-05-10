@@ -66,8 +66,6 @@ const (
 // alias the CLI accepts via `-m`. Users who want a different specific
 // id can pin it via `j settings set <bucket>.model=<id>` (mirrors the
 // claude / deepseek precedent).
-//
-//nolint:goconst // "gpt-5.5" count inflated by test fixtures
 var defaultModels = []string{"gpt-5.5"}
 
 // Agent is a codex-backed worker. It is stateless: every method shells
