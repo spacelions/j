@@ -336,13 +336,13 @@ func TestResumeVerify_RegisteredAsChild(t *testing.T) {
 	t.Fatal("`j tasks resume-verify` should be registered as a child of `j tasks`")
 }
 
-func TestFilterTasksWithVerifySession(t *testing.T) {
+func TestFilterTasksByVerifySession(t *testing.T) {
 	rows := []tasks.Task{
 		{ID: "a", VerifyResumeSession: "x"},
 		{ID: "b", VerifyResumeSession: ""},
 		{ID: "c", VerifyResumeSession: "y"},
 	}
-	got := filterTasksWithVerifySession(rows)
+	got := filterTasksBySession(rows, resumeVerifyConfig.hasSession)
 	if len(got) != 2 || got[0].ID != "a" || got[1].ID != "c" {
 		t.Fatalf("filtered = %+v, want [a c]", got)
 	}

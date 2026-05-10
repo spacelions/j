@@ -957,52 +957,6 @@ func TestStampSpawnOnRow_UnknownID(t *testing.T) {
 	}
 }
 
-func TestPickReVerifyFromStore_EmptyBucket(t *testing.T) {
-	setupContinueEnv(t)
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-	var stdout bytes.Buffer
-	_, ok, err := pickReVerifyFromStore(
-		t.Context(), s,
-		ReVerifyOptions{Stdout: &stdout, UI: &fakeUI{}},
-	)
-	if err != nil || ok {
-		t.Fatalf("pickReVerifyFromStore: ok=%v, err=%v, want (false, nil)",
-			ok, err)
-	}
-	if !strings.Contains(stdout.String(), emptyMessage) {
-		t.Fatalf("stdout = %q, want %q", stdout.String(), emptyMessage)
-	}
-}
-
-func TestPickReVerifyFromStore_PickerHappy(t *testing.T) {
-	setupContinueEnv(t)
-	id := testutil.SeedFullTask(t, nil)
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-	ui := &fakeUI{pickReturn: id}
-	got, ok, err := pickReVerifyFromStore(
-		t.Context(), s,
-		ReVerifyOptions{Stdout: io.Discard, UI: ui},
-	)
-	if err != nil || !ok {
-		t.Fatalf("pickReVerifyFromStore = (%q, %v, %v)",
-			got, ok, err)
-	}
-	if got != id {
-		t.Fatalf("id = %q, want %q", got, id)
-	}
-	if ui.pickCalls != 1 {
-		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
-	}
-}
-
 func TestNewContinueCmd_RunE_InteractiveFlag(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
