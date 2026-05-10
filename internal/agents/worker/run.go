@@ -154,9 +154,9 @@ func runWorker(
 	clarificationPath := filepath.Join(taskDir, tasks.ClarificationFileName)
 	resumeFromClarification := resumeMode &&
 		tasks.ClarificationFileExists(taskDir)
-	workspace := taskDir
 	beginAt := time.Now().UTC()
 	pid, workErr := agent.Work(ctx, codingagents.WorkRequest{
+		TaskDir:                 taskDir,
 		PlanPath:                res.PlanPath,
 		Model:                   model,
 		ClarificationPath:       clarificationPath,
@@ -184,7 +184,7 @@ func runWorker(
 	}
 	if workErr == nil && resumeID == "" {
 		codingagents.CaptureAndRecordResume(
-			ctx, agent, lc, workspace, beginAt, opts.Stderr,
+			ctx, agent, lc, taskDir, beginAt, opts.Stderr,
 		)
 	}
 	lc.Finish(workErr)

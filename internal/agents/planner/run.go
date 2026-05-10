@@ -75,6 +75,7 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 		tasks.ClarificationFileExists(taskDir)
 	beginAt := time.Now().UTC()
 	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
+		TaskDir:                 taskDir,
 		FromFilePath:            requirementsPath,
 		Model:                   opts.Model,
 		RequirementsOutputPath:  requirementsPath,
@@ -95,7 +96,7 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 		}
 	}
 
-	if planErr == nil && resumeID == "" {
+	if planErr == nil && resumeID == "" && opts.WaitForCompletion {
 		codingagents.CaptureAndRecordResume(
 			ctx, opts.Agent, lc, taskDir, beginAt, stderr,
 		)

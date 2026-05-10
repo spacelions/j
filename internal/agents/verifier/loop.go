@@ -13,6 +13,7 @@ func buildVerifyReq(
 	iter int, clarifyPath, agentLogPath string, mustRead []string,
 ) codingagents.VerifyRequest {
 	return codingagents.VerifyRequest{
+		TaskDir:                    res.TaskDir,
 		RequirementsPath:           res.RequirementsPath,
 		PlanPath:                   res.PlanPath,
 		VerifierPlanOutputPath:     res.VerifierPlanPath,
@@ -48,6 +49,7 @@ func runFixTurn(
 	clarifyPath, agentLogPath string,
 ) error {
 	req := codingagents.WorkRequest{
+		TaskDir:                    res.TaskDir,
 		PlanPath:                   res.PlanPath,
 		Model:                      res.Task.WorkModel,
 		ClarificationPath:          clarifyPath,

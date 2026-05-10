@@ -45,19 +45,21 @@ func writeRollout(
 	return path
 }
 
-// TestScanSessions pins the cwd + since filter and the newest-first
+// TestScanSessions pins the since filter and the newest-first
 // ordering. We populate four rollouts: one outside the since window,
-// one with the wrong cwd, and two valid ones. The scan must drop the
-// first two and return the valid pair newest first.
+// and three newer ones. The scan must ignore cwd and return the newer
+// entries newest first.
 func TestScanSessions(t *testing.T) {
 	dir := t.TempDir()
 	since := time.Now().Add(-1 * time.Hour)
 	older := since.Add(-30 * time.Minute)
+	wrongCWD := since.Add(20 * time.Minute)
 	mid := since.Add(10 * time.Minute)
 	newer := since.Add(45 * time.Minute)
 
 	writeRollout(t, dir, "2026/04/09", "stale", "stale-id", "/ws/A", older, "")
-	writeRollout(t, dir, "2026/04/09", "wrong-ws", "wrong-id", "/ws/B", newer, "")
+	writeRollout(t, dir, "2026/04/09", "wrong-ws", "wrong-id", "/ws/B",
+		wrongCWD, "")
 	writeRollout(t, dir, "2026/05/09", "match-mid", "mid-id", "/ws/A", mid, "")
 	writeRollout(
 		t, dir, "2026/05/10", "match-new", "new-id", "/ws/A", newer,
@@ -78,16 +80,17 @@ func TestScanSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := scanSessions(dir, "/ws/A", since)
+	got, err := scanSessions(dir, since)
 	if err != nil {
 		t.Fatalf("scanSessions: %v", err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("len = %d, want 2: %+v", len(got), got)
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3: %+v", len(got), got)
 	}
-	if got[0].ID != "new-id" || got[1].ID != "mid-id" {
-		t.Fatalf("ordering wrong, got %q then %q",
-			got[0].ID, got[1].ID)
+	if got[0].ID != "new-id" ||
+		got[1].ID != "wrong-id" ||
+		got[2].ID != "mid-id" {
+		t.Fatalf("ordering wrong, got %+v", got)
 	}
 }
 
@@ -97,7 +100,7 @@ func TestScanSessions(t *testing.T) {
 func TestScanSessions_MissingDir(t *testing.T) {
 	got, err := scanSessions(
 		filepath.Join(t.TempDir(), "does-not-exist"),
-		"/ws/A", time.Now(),
+		time.Now(),
 	)
 	if err != nil {
 		t.Fatalf("scanSessions: %v", err)
@@ -108,12 +111,12 @@ func TestScanSessions_MissingDir(t *testing.T) {
 }
 
 // TestCaptureResumeID_NoStore covers the happy path of a fresh
-// machine: CODEX_HOME points at a tempdir with no `sessions/` child,
-// so CaptureResumeID returns ("", nil) without error.
+// task-scoped home with no `sessions/` child, so CaptureResumeID
+// returns ("", nil) without error.
 func TestCaptureResumeID_NoStore(t *testing.T) {
-	t.Setenv(envHome, t.TempDir())
+	taskDir := t.TempDir()
 	got, err := New().CaptureResumeID(
-		t.Context(), "/ws/A", time.Now().Add(-time.Hour),
+		t.Context(), taskDir, time.Now().Add(-time.Hour),
 	)
 	if err != nil {
 		t.Fatalf("CaptureResumeID: %v", err)
@@ -127,16 +130,15 @@ func TestCaptureResumeID_NoStore(t *testing.T) {
 // matching entries on different dated subdirectories and confirms
 // CaptureResumeID returns the newer id.
 func TestCaptureResumeID_PicksNewest(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv(envHome, home)
-	dir := filepath.Join(home, "sessions")
+	taskDir := t.TempDir()
+	dir := sessionsDir(taskDir)
 	since := time.Now().Add(-time.Hour)
 	writeRollout(t, dir, "2026/05/09", "old", "old-id", "/ws/A",
 		since.Add(5*time.Minute), "")
 	writeRollout(t, dir, "2026/05/10", "new", "newest-id", "/ws/A",
 		since.Add(20*time.Minute), "")
 
-	got, err := New().CaptureResumeID(t.Context(), "/ws/A", since)
+	got, err := New().CaptureResumeID(t.Context(), taskDir, since)
 	if err != nil {
 		t.Fatalf("CaptureResumeID: %v", err)
 	}
@@ -146,16 +148,15 @@ func TestCaptureResumeID_PicksNewest(t *testing.T) {
 }
 
 // TestCaptureResumeID_NoMatch pins the empty-but-exists branch: the
-// store has rollouts but none for our cwd+since. Must return ("", nil).
+// store has rollouts but none inside the since window.
 func TestCaptureResumeID_NoMatch(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv(envHome, home)
-	dir := filepath.Join(home, "sessions")
+	taskDir := t.TempDir()
+	dir := sessionsDir(taskDir)
 	writeRollout(t, dir, "2026/05/10", "other", "other-id", "/ws/B",
-		time.Now(), "")
+		time.Now().Add(-2*time.Hour), "")
 
 	got, err := New().CaptureResumeID(
-		t.Context(), "/ws/A", time.Now().Add(-time.Hour),
+		t.Context(), taskDir, time.Now().Add(-time.Hour),
 	)
 	if err != nil {
 		t.Fatalf("CaptureResumeID: %v", err)
@@ -208,7 +209,7 @@ func TestScanSessions_SkipsCorrupt(t *testing.T) {
 	}
 	writeRollout(t, dir, "2026/05/10", "good", "good-id", "/ws/A",
 		time.Now(), "")
-	got, err := scanSessions(dir, "/ws/A", since)
+	got, err := scanSessions(dir, since)
 	if err != nil {
 		t.Fatalf("scanSessions: %v", err)
 	}
@@ -217,31 +218,15 @@ func TestScanSessions_SkipsCorrupt(t *testing.T) {
 	}
 }
 
-// TestCaptureResumeID_HomeError pins the sessionsDir error branch:
-// when neither CODEX_HOME nor a usable $HOME is available,
-// CaptureResumeID surfaces the error so the caller can warn.
-func TestCaptureResumeID_HomeError(t *testing.T) {
-	t.Setenv(envHome, "")
-	t.Setenv("HOME", "")
-	_, err := New().CaptureResumeID(t.Context(), "/ws/A", time.Now())
-	if err == nil {
-		t.Skip("os.UserHomeDir tolerated empty HOME on this platform")
-	}
-}
-
 // TestCaptureResumeID_ScanError pins the second error branch of
 // CaptureResumeID: when the sessions directory exists but cannot be
 // statted (e.g. a parent directory is unreadable), the wrapped error
-// from scanSessions reaches the caller. The test triggers this by
-// pointing CODEX_HOME at a path under an unreadable parent.
+// from scanSessions reaches the caller.
 func TestCaptureResumeID_ScanError(t *testing.T) {
 	parent := t.TempDir()
-	home := filepath.Join(parent, "codex-home")
-	if err := os.Mkdir(home, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	taskDir := filepath.Join(parent, "task")
 	if err := os.MkdirAll(
-		filepath.Join(home, "sessions"), 0o755,
+		filepath.Join(taskDir, homeSubdir, "sessions"), 0o755,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -250,9 +235,8 @@ func TestCaptureResumeID_ScanError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
 
-	t.Setenv(envHome, home)
 	_, err := New().CaptureResumeID(
-		t.Context(), "/ws/A", time.Now().Add(-time.Hour),
+		t.Context(), taskDir, time.Now().Add(-time.Hour),
 	)
 	if err == nil {
 		t.Skip("stat tolerated unreadable parent on this platform")
@@ -276,36 +260,53 @@ func TestDecodeMeta_OpenError(t *testing.T) {
 	}
 }
 
-// TestSessionsDir_HomeOverride pins CODEX_HOME wins over the default
-// $HOME-based path.
-func TestSessionsDir_HomeOverride(t *testing.T) {
-	t.Setenv(envHome, "/tmp/custom-home")
-	got, err := sessionsDir()
-	if err != nil {
-		t.Fatalf("sessionsDir: %v", err)
-	}
-	want := filepath.Join("/tmp/custom-home", "sessions")
+func TestSessionsDir_UsesTaskScopedHome(t *testing.T) {
+	taskDir := t.TempDir()
+	got := sessionsDir(taskDir)
+	want := filepath.Join(taskDir, homeSubdir, "sessions")
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
 
-// TestSessionsDir_FallsBackToUserHome pins the no-override branch:
-// when CODEX_HOME is unset, sessionsDir derives the path from
-// os.UserHomeDir().
-func TestSessionsDir_FallsBackToUserHome(t *testing.T) {
-	t.Setenv(envHome, "")
-	home, err := os.UserHomeDir()
+func TestScopedHomeCreatesPrivateDirectory(t *testing.T) {
+	taskDir := t.TempDir()
+	got, err := scopedHome(taskDir)
 	if err != nil {
-		t.Skipf("UserHomeDir: %v (env strips $HOME)", err)
+		t.Fatalf("scopedHome: %v", err)
 	}
-	got, err := sessionsDir()
-	if err != nil {
-		t.Fatalf("sessionsDir: %v", err)
-	}
-	want := filepath.Join(home, ".codex", "sessions")
+	want := filepath.Join(taskDir, homeSubdir)
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+	info, err := os.Stat(got)
+	if err != nil {
+		t.Fatalf("stat scoped home: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%s is not a directory", got)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Fatalf("mode = %v, want 0700", info.Mode().Perm())
+	}
+}
+
+func TestCaptureResumeID_IsolatedByTaskDir(t *testing.T) {
+	taskA := t.TempDir()
+	taskB := t.TempDir()
+	since := time.Now().Add(-time.Hour)
+	createdAt := since.Add(10 * time.Minute)
+	writeRollout(t, sessionsDir(taskA), "2026/05/10", "a", "id-a",
+		"/same/ws", createdAt, "")
+	writeRollout(t, sessionsDir(taskB), "2026/05/10", "b", "id-b",
+		"/same/ws", createdAt.Add(time.Minute), "")
+
+	got, err := New().CaptureResumeID(t.Context(), taskA, since)
+	if err != nil {
+		t.Fatalf("CaptureResumeID: %v", err)
+	}
+	if got != "id-a" {
+		t.Fatalf("got %q, want id-a", got)
 	}
 }
 
@@ -348,7 +349,7 @@ func TestScanSessions_WalkError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(sub, 0o755) })
 
-	_, err := scanSessions(dir, "/ws/A", time.Now().Add(-time.Hour))
+	_, err := scanSessions(dir, time.Now().Add(-time.Hour))
 	if err == nil {
 		t.Skip("walk tolerated unreadable subdir on this platform")
 	}

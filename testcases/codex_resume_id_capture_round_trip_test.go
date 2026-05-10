@@ -13,7 +13,7 @@ import (
 
 // TestCodexResumeIDCaptureRoundTrip pins the load-bearing resume
 // continuity contract: after a codex run leaves a rollout file
-// behind in $CODEX_HOME/sessions/YYYY/MM/DD/, the
+// behind in <taskDir>/.codex-home/sessions/YYYY/MM/DD/, the
 // orchestrator-facing codingagents.CaptureResumeID dispatches into
 // the codex backend (which satisfies ResumeIDCapturer) and returns
 // the matching thread id so a subsequent resume run can thread it
@@ -21,11 +21,12 @@ import (
 //
 // Black-box: drive the package-level CaptureResumeID free function
 // the same way the planner / worker / verifier wiring does, with a
-// fixture rollout JSONL written to a fake CODEX_HOME.
+// fixture rollout JSONL written to a fake task-scoped home.
 func TestCodexResumeIDCaptureRoundTrip(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("CODEX_HOME", home)
-	rolloutDir := filepath.Join(home, "sessions", "2026", "05", "10")
+	taskDir := t.TempDir()
+	rolloutDir := filepath.Join(
+		taskDir, ".codex-home", "sessions", "2026", "05", "10",
+	)
 	if err := os.MkdirAll(rolloutDir, 0o755); err != nil {
 		t.Fatalf("mkdir sessions: %v", err)
 	}
@@ -60,7 +61,7 @@ func TestCodexResumeIDCaptureRoundTrip(t *testing.T) {
 
 	agent := codex.New()
 	got, err := codingagents.CaptureResumeID(
-		t.Context(), agent, workspace, since,
+		t.Context(), agent, taskDir, since,
 	)
 	if err != nil {
 		t.Fatalf("CaptureResumeID: %v", err)
@@ -76,13 +77,11 @@ func TestCodexResumeIDCaptureRoundTrip(t *testing.T) {
 // CaptureResumeID returns ("", nil) so the orchestrator starts a
 // fresh session rather than failing the command.
 func TestCodexResumeIDCaptureMissingStoreNoError(t *testing.T) {
-	home := t.TempDir() // no sessions/ subdir
-	t.Setenv("CODEX_HOME", home)
+	taskDir := t.TempDir() // no sessions/ subdir
 
 	agent := codex.New()
 	got, err := codingagents.CaptureResumeID(
-		t.Context(), agent, "/some/workspace",
-		time.Now().Add(-time.Hour),
+		t.Context(), agent, taskDir, time.Now().Add(-time.Hour),
 	)
 	if err != nil {
 		t.Fatalf("CaptureResumeID: %v", err)

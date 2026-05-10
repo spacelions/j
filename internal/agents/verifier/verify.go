@@ -188,7 +188,6 @@ func runVerifyLoop(
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	clarifyPath := filepath.Join(res.TaskDir, tasks.ClarificationFileName)
-	verifyWorkspace := codingagents.ProjectRootWorkspace()
 	beginAt := time.Now().UTC()
 	for i := range opts.MaxIterations {
 		lc.IterationBegin(i, opts.MaxIterations)
@@ -203,7 +202,7 @@ func runVerifyLoop(
 		}
 		if i == 0 && resumeID == "" {
 			resumeID = codingagents.CaptureAndRecordResume(
-				ctx, verifierAgent, lc, verifyWorkspace,
+				ctx, verifierAgent, lc, res.TaskDir,
 				beginAt, opts.Stderr,
 			)
 		}

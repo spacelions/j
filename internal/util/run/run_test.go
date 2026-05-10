@@ -269,6 +269,39 @@ func TestRunIn_EmptyDir_InheritsParentCwd(t *testing.T) {
 	}
 }
 
+func TestRunInEnv_OverridesParentEnv(t *testing.T) {
+	t.Setenv("J_RUN_ENV_TEST", "parent")
+	dir := t.TempDir()
+	out := filepath.Join(dir, "env.txt")
+	err := RunInEnv(
+		t.Context(), "", []string{"J_RUN_ENV_TEST=child"},
+		"sh", "-c", `printf %s "$J_RUN_ENV_TEST" > "$1"`,
+		"sh", out,
+	)
+	if err != nil {
+		t.Fatalf("RunInEnv: %v", err)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != "child" {
+		t.Fatalf("env = %q, want child", data)
+	}
+}
+
+func TestRunInEnv_CancelSignalsChild(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	err := RunInEnv(ctx, "", []string{"J_RUN_ENV_TEST=child"}, "sleep", "5")
+	if err == nil {
+		t.Fatal("RunInEnv must fail when context is cancelled")
+	}
+}
+
 // TestSpawnIn_PlumbsCwd asserts SpawnIn sets cmd.Dir on the spawned
 // child. The child writes pwd to the log path, which the parent
 // polls for the expected directory.

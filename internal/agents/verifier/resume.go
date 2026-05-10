@@ -150,6 +150,7 @@ func runVerifyResume(
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
 	pid, runErr := agent.Verify(ctx, codingagents.VerifyRequest{
+		TaskDir:                    taskDir,
 		RequirementsPath:           requirementsPath,
 		PlanPath:                   planPath,
 		VerifierPlanOutputPath:     verifierPlanPath,

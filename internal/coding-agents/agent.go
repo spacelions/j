@@ -104,6 +104,10 @@ type Agent interface {
 // continues that server-side thread. Agents that have no notion of
 // resume ignore it.
 type PlanRequest struct {
+	// TaskDir is the per-task `.j/tasks/<id>/` directory. It is the
+	// authoritative anchor for backend scratch data that must be
+	// colocated with the task, including scoped session stores.
+	TaskDir                string
 	FromFilePath           string
 	Model                  string
 	RequirementsOutputPath string
@@ -158,6 +162,10 @@ type PlanRequest struct {
 // ResumeChatID, when set, is the value previously returned by
 // Agent.NewResumeID. Agents that have no notion of resume ignore it.
 type WorkRequest struct {
+	// TaskDir is the per-task `.j/tasks/<id>/` directory. It is the
+	// authoritative anchor for backend scratch data that must be
+	// colocated with the task, including scoped session stores.
+	TaskDir  string
 	PlanPath string
 	Model    string
 	// ClarificationPath is the per-task absolute path the agent
@@ -219,6 +227,10 @@ type WorkRequest struct {
 // Agent.NewResumeID; backends that have no notion of resume
 // ignore it.
 type VerifyRequest struct {
+	// TaskDir is the per-task `.j/tasks/<id>/` directory. It is the
+	// authoritative anchor for backend scratch data that must be
+	// colocated with the task, including scoped session stores.
+	TaskDir                    string
 	RequirementsPath           string
 	PlanPath                   string
 	VerifierPlanOutputPath     string
