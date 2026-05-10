@@ -62,26 +62,33 @@ LINES_DIRS := cmd \
 	internal/resolver \
 	internal/tools \
 	internal/util
+LINES_FMT  := %-30s %6s %7s %10s %8s\n
+LINES_RULE := ------------------------------
 
 lines:
-	@printf '%-30s %6s %7s %10s %8s\n' Package Files Code Comments Blanks
-	@printf '%-30s %6s %7s %10s %8s\n' '------------------------------' '------' '-------' '----------' '--------'
+	@printf '$(LINES_FMT)' Package Files Code Comments Blanks
+	@printf '$(LINES_FMT)' '$(LINES_RULE)' \
+		'------' '-------' '----------' '--------'
 	@total_files=0; total_code=0; total_comments=0; total_blanks=0; \
 	for dir in $(LINES_DIRS); do \
-		row=$$(tokei $$dir -e "*_test.go" --types Go | awk '/^ Go/{print $$2,$$3,$$4,$$5,$$6}' | tr -d ',_'); \
+		row=$$(tokei $$dir -e "*_test.go" --types Go \
+			| awk '/^ Go/{print $$2,$$3,$$4,$$5,$$6}' \
+			| tr -d ',_'); \
 		if [ -z "$$row" ]; then \
 			echo "error: tokei returned no metrics for $$dir" >&2; \
 			exit 1; \
 		fi; \
 		read -r files _ code comments blanks <<< "$$row"; \
-		printf '%-30s %6s %7s %10s %8s\n' $$dir $$files $$code $$comments $$blanks; \
+		printf '$(LINES_FMT)' $$dir $$files $$code $$comments $$blanks; \
 		total_files=$$((total_files + files)); \
 		total_code=$$((total_code + code)); \
 		total_comments=$$((total_comments + comments)); \
 		total_blanks=$$((total_blanks + blanks)); \
 	done; \
-	printf '%-30s %6s %7s %10s %8s\n' '------------------------------' '------' '-------' '----------' '--------'; \
-	printf '%-30s %6s %7s %10s %8s\n' TOTAL $$total_files $$total_code $$total_comments $$total_blanks
+	printf '$(LINES_FMT)' '$(LINES_RULE)' \
+		'------' '-------' '----------' '--------'; \
+	printf '$(LINES_FMT)' TOTAL $$total_files $$total_code \
+		$$total_comments $$total_blanks
 
 branch-coverage:
 	@set -euo pipefail; \
