@@ -80,6 +80,7 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 		`internal/util/run/run.go:.*RunIn`,
 		`internal/agents/worker/run.go:.*lookupResumeAgent`,
 		`internal/agents/worker/run.go:.*resolveWorker`,
+		`internal/agents/planner/agent.go:.*New`,
 		`internal/lifecycle/tuiquit/tuiquit.go:.*DecidePlan`,
 		`internal/store/tasks/task.go:.*DeleteTask`,
 	}

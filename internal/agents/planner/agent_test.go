@@ -131,6 +131,29 @@ func TestNew_ShellOutPlanFails(t *testing.T) {
 	}
 }
 
+func TestNew_ShellOutResolverError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+
+	testutil.SeedAgentBucket(t, store.BucketPlanner, "ghost", "m1")
+	stub := newScriptedPlanAgent("scripted")
+	a, err := New(Config{
+		TaskID: "task",
+		Agents: []codingagents.Agent{stub},
+		Stderr: io.Discard,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	err = testutil.DrainAgentForError(t, a)
+	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
+		t.Fatalf("err = %v, want unknown-tool resolver error", err)
+	}
+	if stub.planCalls != 0 {
+		t.Fatalf("Plan calls = %d, want 0", stub.planCalls)
+	}
+}
+
 func TestNew_ShellOutDefaultsStderr(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
