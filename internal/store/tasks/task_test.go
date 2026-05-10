@@ -722,6 +722,7 @@ func TestDisplayToolModel(t *testing.T) {
 		wantModel string
 	}{
 		{StatusPlanning, "ptool", "pmodel"},
+		{StatusPlanPendingApproval, "ptool", "pmodel"},
 		{StatusPlanDone, "ptool", "pmodel"},
 		{StatusWorking, "wtool", "wmodel"},
 		{StatusWorkDone, "wtool", "wmodel"},
@@ -729,6 +730,8 @@ func TestDisplayToolModel(t *testing.T) {
 		{StatusFailed, "vtool", "vmodel"},
 		{StatusCompleted, "vtool", "vmodel"},
 		{StatusHelp, "vtool", "vmodel"},
+		{StatusNeedsClarification, "vtool", "vmodel"},
+		{"unknown", "ptool", "pmodel"},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.status), func(t *testing.T) {
