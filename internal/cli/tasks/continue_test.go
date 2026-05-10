@@ -219,6 +219,18 @@ func TestRunContinue_PlanDoneSpawnFails(t *testing.T) {
 	}
 }
 
+func TestRunPlanDoneWork_EnsureDirError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	err := runPlanDoneWork(
+		t.Context(),
+		ContinueOptions{Stdout: io.Discard, Stderr: io.Discard},
+		tasks.Task{ID: "missing-layout"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "ensure task dir") {
+		t.Fatalf("err = %v, want ensure task dir", err)
+	}
+}
+
 // TestRunContinue_PlanDoneInlineWhenInteractive pins that
 // --interactive=true selects the inline orchestrator path (the parent
 // blocks on the child instead of forking).
