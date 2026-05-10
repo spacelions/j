@@ -22,7 +22,7 @@ func TestNewWorkTask_RecordsRow(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := tasks.NewTaskID()
-	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", id, "/tmp/spec.plan.md", "# req", "plan body", "work-cursor", "")
+	lc := newWorkTaskTest(io.Discard, "cursor", "sonnet-4", id, "/tmp/spec.plan.md", "# req", "plan body", "work-cursor", "")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
 	if got.ID != id || got.Status != tasks.StatusWorkDone {
@@ -64,7 +64,7 @@ func TestTask_BeginWorkRestart_PreservesPlanPhase(t *testing.T) {
 	prePlanEnd := existing.PlanEndAt
 	preCursor := existing.PlanResumeSession
 
-	lc := BeginWorkRestart(existing, io.Discard, "cursor", "gpt-5", "fresh-work-cursor", "")
+	lc := beginWorkRestartTest(existing, io.Discard, "cursor", "gpt-5", "fresh-work-cursor", "")
 	lc.Finish(nil)
 
 	got := listAllTasks(t)[0]
@@ -94,7 +94,7 @@ func TestWorkLifecycle_FinishErrorPath(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "m", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
+	lc := newWorkTaskTest(io.Discard, "cursor", "m", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
 	lc.Finish(errors.New("boom"))
 	got := listAllTasks(t)[0]
 	if got.Status != tasks.StatusHelp {
@@ -112,7 +112,7 @@ func TestWorkLifecycle_RecordAgentLog_StampsPath(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
+	lc := newWorkTaskTest(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
 	lc.RecordAgentLog("/tmp/agent.log")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
@@ -132,7 +132,7 @@ func TestWorkLifecycle_RecordResumeSession(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewWorkTask(io.Discard, "deepseek", "deepseek-v4-pro",
+	lc := newWorkTaskTest(io.Discard, "deepseek", "deepseek-v4-pro",
 		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
 	lc.RecordResumeSession("")
 	if got := lc.Task().WorkResumeSession; got != "" {
@@ -154,7 +154,7 @@ func TestWorkLifecycle_RecordAgentLog_ClosedShortCircuit(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
+	lc := newWorkTaskTest(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
 	lc.Finish(nil)
 	lc.RecordAgentLog("/tmp/should-not-stick.log")
 	got := listAllTasks(t)[0]
@@ -172,7 +172,7 @@ func TestWorkLifecycle_FinishIdempotent(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
+	lc := newWorkTaskTest(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
 	lc.Finish(nil)
 	lc.Finish(errors.New("ignored"))
 	rows := listAllTasks(t)
@@ -200,7 +200,7 @@ func TestNewWorkTask_OpenFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	lc := NewWorkTask(&stderr, "cursor", "m", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
+	lc := newWorkTaskTest(&stderr, "cursor", "m", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", "")
 	if lc == nil {
 		t.Fatal("NewWorkTask returned nil")
 	}
@@ -236,7 +236,7 @@ func TestNewWorkTask_MintsWorktreeName(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "m", tasks.NewTaskID(), "/tmp/x.plan.md", "# do the thing", "body", "", "")
+	lc := newWorkTaskTest(io.Discard, "cursor", "m", tasks.NewTaskID(), "/tmp/x.plan.md", "# do the thing", "body", "", "")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
 	if got.Worktree != "myproj-do-the-thing" {
@@ -269,7 +269,7 @@ func TestTask_BeginWorkRestart_MintsWorktreeWhenEmpty(t *testing.T) {
 	if existing.Worktree != "" {
 		t.Fatalf("seed already has worktree %q", existing.Worktree)
 	}
-	lc := BeginWorkRestart(existing, io.Discard, "cursor", "m", "cursor", "")
+	lc := beginWorkRestartTest(existing, io.Discard, "cursor", "m", "cursor", "")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
 	if got.Worktree != "myproj-hello-world" {
@@ -296,7 +296,7 @@ func TestTask_BeginWorkRestart_PreservesPreExistingWorktree(t *testing.T) {
 	}
 	_ = s.Close()
 	existing.Worktree = "manual-override"
-	lc := BeginWorkRestart(existing, io.Discard, "cursor", "m", "cursor", "")
+	lc := beginWorkRestartTest(existing, io.Discard, "cursor", "m", "cursor", "")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
 	if got.Worktree != "manual-override" {
@@ -324,7 +324,7 @@ func TestTask_BeginWorkResume_LeavesWorktreeAlone(t *testing.T) {
 	if existing.Worktree != "" {
 		t.Fatalf("created task already has worktree %q", existing.Worktree)
 	}
-	lc := BeginWorkResume(existing, io.Discard, "")
+	lc := beginWorkResumeTest(existing, io.Discard, "")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
 	if got.Worktree != "" {
@@ -344,7 +344,7 @@ func TestWorkLifecycle_Task(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "m", tasks.NewTaskID(), "/tmp/x.plan.md", "# do the thing", "body", "", "")
+	lc := newWorkTaskTest(io.Discard, "cursor", "m", tasks.NewTaskID(), "/tmp/x.plan.md", "# do the thing", "body", "", "")
 	if got := lc.Task(); got.Worktree != "myproj-do-the-thing" {
 		t.Fatalf("Task().Worktree = %q", got.Worktree)
 	}
@@ -364,7 +364,7 @@ func TestWorkLifecycle_Finish_PopulatesPullRequestURLFromAgentLog(t *testing.T) 
 		[]byte("Created pull request "+prURL+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "m",
+	lc := newWorkTaskTest(io.Discard, "cursor", "m",
 		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", logPath)
 	lc.Finish(nil)
 
@@ -394,7 +394,7 @@ func TestWorkLifecycle_Finish_NoPRURL_LeavesFieldEmpty(t *testing.T) {
 		0o644); err != nil {
 		t.Fatal(err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "m",
+	lc := newWorkTaskTest(io.Discard, "cursor", "m",
 		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", logPath)
 	lc.task.Worktree = ""
 	lc.Finish(nil)
@@ -422,7 +422,7 @@ func TestWorkLifecycle_Finish_PreservesExistingPullRequestURL(t *testing.T) {
 		0o644); err != nil {
 		t.Fatal(err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "m",
+	lc := newWorkTaskTest(io.Discard, "cursor", "m",
 		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", logPath)
 	lc.task.PullRequestURL = "https://github.com/owner/repo/pull/1"
 	lc.Finish(nil)
@@ -449,7 +449,7 @@ func TestWorkLifecycle_Finish_ErrorPath_StillDetectsURL(t *testing.T) {
 		[]byte("see "+prURL+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "m",
+	lc := newWorkTaskTest(io.Discard, "cursor", "m",
 		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", logPath)
 	lc.Finish(errors.New("boom"))
 
@@ -488,7 +488,7 @@ func TestWorkLifecycle_Finish_ClarificationPresent(t *testing.T) {
 		t.Fatalf("EnsureProject: %v", err)
 	}
 	id := tasks.NewTaskID()
-	lc := NewWorkTask(io.Discard, "cursor", "m", id,
+	lc := newWorkTaskTest(io.Discard, "cursor", "m", id,
 		"/tmp/x.plan.md", "", "body", "", "")
 	writeWorkClarification(t, id, "need answer X\n")
 	lc.Finish(nil)
@@ -512,7 +512,7 @@ func TestWorkLifecycle_Finish_ErrorTrumpsClarification(t *testing.T) {
 		t.Fatalf("EnsureProject: %v", err)
 	}
 	id := tasks.NewTaskID()
-	lc := NewWorkTask(io.Discard, "cursor", "m", id,
+	lc := newWorkTaskTest(io.Discard, "cursor", "m", id,
 		"/tmp/x.plan.md", "", "body", "", "")
 	writeWorkClarification(t, id, "stale\n")
 	lc.Finish(errors.New("boom"))
@@ -533,7 +533,7 @@ func TestWorkLifecycle_Finish_ClarificationAbsent_KeepsWorkDone(
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	lc := NewWorkTask(io.Discard, "cursor", "m", tasks.NewTaskID(),
+	lc := newWorkTaskTest(io.Discard, "cursor", "m", tasks.NewTaskID(),
 		"/tmp/x.plan.md", "", "body", "", "")
 	lc.Finish(nil)
 	got := listAllTasks(t)[0]
@@ -553,7 +553,7 @@ func TestWorkLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 	var stderr bytes.Buffer
 	t.Cleanup(tasks.ResetHooksForTest)
 	tasks.Register(markersHook)
-	lc := NewWorkTask(&stderr, "cursor", "m", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", logPath)
+	lc := newWorkTaskTest(&stderr, "cursor", "m", tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "", logPath)
 	lc.Finish(nil)
 
 	data, err := os.ReadFile(logPath)

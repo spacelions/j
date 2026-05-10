@@ -556,7 +556,7 @@ func TestRun_ResumeWithoutClarificationFile(t *testing.T) {
 
 func TestResolveWorker_SelectWorkerError(t *testing.T) {
 	agent := newRunTestAgent("cursor")
-	_, _, _, err := resolveWorker(
+	_, _, err := resolveWorker(
 		t.Context(),
 		ExecuteOptions{
 			Agents: []codingagents.Agent{agent},
@@ -565,7 +565,6 @@ func TestResolveWorker_SelectWorkerError(t *testing.T) {
 			UI:     &fakeRunUI{},
 		},
 		resolverWorkPlan("", "", ""),
-		false,
 	)
 	if err == nil {
 		t.Fatal("resolveWorker err = nil, want select-worker error")

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 func TestPlanPromptDispatch(t *testing.T) {
@@ -23,7 +24,11 @@ func TestPlanPromptDispatch(t *testing.T) {
 			name: "fresh",
 			want: AppendPlannerSaveSuffix(
 				BuildPlanner("req.md", []string{"AGENTS.md"}),
-				"requirements.md", "plan.md", "clarification.md",
+				tasks.TaskPaths{
+					Requirements:  "requirements.md",
+					Plan:          "plan.md",
+					Clarification: "clarification.md",
+				},
 			),
 		},
 		{
@@ -31,7 +36,11 @@ func TestPlanPromptDispatch(t *testing.T) {
 			mutate: func(req *codingagents.PlanRequest) { req.Resume = true },
 			want: AppendPlannerSaveSuffix(
 				BuildPlannerResume("req.md", []string{"AGENTS.md"}),
-				"requirements.md", "plan.md", "clarification.md",
+				tasks.TaskPaths{
+					Requirements:  "requirements.md",
+					Plan:          "plan.md",
+					Clarification: "clarification.md",
+				},
 			),
 		},
 		{
@@ -44,7 +53,11 @@ func TestPlanPromptDispatch(t *testing.T) {
 				BuildPlannerClarificationResume(
 					"req.md", "clarification.md", []string{"AGENTS.md"},
 				),
-				"requirements.md", "plan.md", "clarification.md",
+				tasks.TaskPaths{
+					Requirements:  "requirements.md",
+					Plan:          "plan.md",
+					Clarification: "clarification.md",
+				},
 			),
 		},
 	}

@@ -19,9 +19,9 @@ func newContinueCmd() *cobra.Command {
 			" based on status",
 		Long: "Resolves a task (via --from-task or the shared picker) " +
 			"and dispatches to the right phase based on its status: " +
-			"planning -> detached re-plan, plan-done -> direct worker " +
-			"run, working -> work resume, work-done -> `j verify`, " +
-			"verifying -> `j verify resume`. Already-finished tasks " +
+			"planning -> resume-plan hint, plan-done -> direct worker " +
+			"run, working -> resume-work hint, work-done -> verifier, " +
+			"verifying -> inline resume-verify. Already-finished tasks " +
 			"(failed, completed) print `J: task <id> already finished` " +
 			"and exit 0; a `help` row resumes whichever phase produced " +
 			"the failure.",

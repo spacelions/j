@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/spacelions/j/internal/agents/instructions"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 func TestBuildPlanner(t *testing.T) {
@@ -115,8 +116,12 @@ func TestBuildPlannerResume(t *testing.T) {
 // the "Then exit." terminator.
 func TestAppendPlannerSaveSuffix(t *testing.T) {
 	got := AppendPlannerSaveSuffix(
-		"BASE", "/tmp/req.md", "/tmp/plan.md",
-		"/tmp/clarification.md",
+		"BASE",
+		tasks.TaskPaths{
+			Requirements:  "/tmp/req.md",
+			Plan:          "/tmp/plan.md",
+			Clarification: "/tmp/clarification.md",
+		},
 	)
 	if !strings.HasPrefix(got, "BASE\n\n") {
 		t.Fatalf("suffix should follow base verbatim with two newlines: %q", got)
@@ -149,7 +154,12 @@ func TestAppendPlannerSaveSuffix(t *testing.T) {
 // it guarantees requirements.md is product-shaped.
 func TestAppendPlannerSaveSuffix_PMToneNoImplDetail(t *testing.T) {
 	got := AppendPlannerSaveSuffix(
-		"BASE", "/tmp/req.md", "/tmp/plan.md", "/tmp/c.md",
+		"BASE",
+		tasks.TaskPaths{
+			Requirements:  "/tmp/req.md",
+			Plan:          "/tmp/plan.md",
+			Clarification: "/tmp/c.md",
+		},
 	)
 	for _, want := range []string{
 		"behavioral",

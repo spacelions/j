@@ -15,10 +15,10 @@ import (
 	"github.com/spacelions/j/internal/util/run"
 )
 
-// ExecuteOptions configures Execute. Agent and Model must already be
+// Options configures Execute. Agent and Model must already be
 // resolved by the caller (the shell-out branch of New does this via
 // resolver.Agent before calling Execute).
-type ExecuteOptions struct {
+type Options struct {
 	TaskID            string
 	Agent             codingagents.Agent
 	Model             string
@@ -26,6 +26,8 @@ type ExecuteOptions struct {
 	WaitForCompletion bool
 	Stderr            io.Writer
 }
+
+type ExecuteOptions = Options
 
 // Execute runs the planner phase against an already-seeded task. It
 // loads the task row, drives agent.Plan, and finalises the lifecycle
@@ -35,29 +37,16 @@ type ExecuteOptions struct {
 // Resume vs fresh is inferred from the row's PlanResumeSession: a
 // non-empty value means `j tasks resume-plan` (or any wrapper that
 // preserved the session) — reuse the existing session and pick the
-// resume-framing prompt. An empty value means a fresh / restart run
-// (`j tasks start` or `j tasks re-plan`, the latter clears the
-// session beforehand) — mint a new id via NewResumeID. Worker /
-// verifier follow the same shape.
-func Execute(ctx context.Context, opts ExecuteOptions) error {
+// resume-framing prompt. An empty value means a fresh / restart run;
+// mint a new id via NewResumeID. Worker / verifier follow the same
+// shape.
+func Execute(ctx context.Context, opts Options) error {
 	stderr := opts.Stderr
 	if stderr == nil {
 		stderr = io.Discard
 	}
 
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		return err
-	}
-	taskDir := filepath.Join(tasksDir, opts.TaskID)
-	requirementsPath := filepath.Join(taskDir, tasks.RequirementsFileName)
-	planPath := filepath.Join(taskDir, tasks.PlanFileName)
-	clarificationPath := filepath.Join(
-		taskDir, tasks.ClarificationFileName,
-	)
-	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
-
-	existing, err := resolver.TaskByID(opts.TaskID)
+	res, err := resolver.ResolvePlanTask(opts.TaskID)
 	if err != nil {
 		return err
 	}
@@ -67,44 +56,38 @@ func Execute(ctx context.Context, opts ExecuteOptions) error {
 		uitheme.DangerousDialogBox(stderr, "J: %v", mustReadErr)
 	}
 
-	resumeMode := existing.PlanResumeSession != ""
-	lc, resumeID := beginPlanLifecycle(
-		ctx, opts, existing, stderr, agentLogPath, resumeMode,
-	)
-	resumeFromClarification := resumeMode &&
-		tasks.ClarificationFileExists(taskDir)
+	session := beginPlanSession(ctx, opts, stderr, res.Task)
+	lc := beginPlanLifecycle(res.Task, stderr, session)
+	resume := session.ResumeID == res.Task.PlanResumeSession &&
+		session.ResumeID != ""
+	resumeFromClarification := resume &&
+		tasks.ClarificationFileExists(res.TaskDir)
 	beginAt := time.Now().UTC()
-	pid, planErr := opts.Agent.Plan(ctx, codingagents.PlanRequest{
-		FromFilePath:            requirementsPath,
-		Model:                   opts.Model,
-		RequirementsOutputPath:  requirementsPath,
-		PlanOutputPath:          planPath,
-		ClarificationPath:       clarificationPath,
-		Interactive:             opts.Interactive,
-		ResumeChatID:            resumeID,
-		Resume:                  resumeMode,
-		ResumeFromClarification: resumeFromClarification,
-		AgentLogPath:            agentLogPath,
-		MustRead:                mustReadFiles,
-	})
+	req := buildPlanRequest(res, session, opts.Interactive,
+		resumeFromClarification, mustReadFiles)
+	pid, planErr := opts.Agent.Plan(ctx, req)
 
 	if planErr == nil && pid > 0 && opts.WaitForCompletion {
 		if err := run.WaitForExit(ctx, pid); err != nil {
-			lc.Finish(err, "", "", requirementsPath)
+			lc.Finish(err, "", "", res.Paths.Requirements)
 			return err
 		}
 	}
 
-	if planErr == nil && resumeID == "" {
+	if planErr == nil && session.ResumeID == "" {
 		codingagents.CaptureAndRecordResume(
-			ctx, opts.Agent, lc, taskDir, beginAt, stderr,
+			ctx, opts.Agent, lc, codingagents.ResumeCapture{
+				Workspace: res.TaskDir,
+				Since:     beginAt,
+				Stderr:    stderr,
+			},
 		)
 	}
 
 	refinedReq, planMD := readPlanArtifacts(
-		stderr, planErr, requirementsPath, planPath,
+		stderr, planErr, res.Paths.Requirements, res.Paths.Plan,
 	)
-	lc.Finish(planErr, refinedReq, planMD, requirementsPath)
+	lc.Finish(planErr, refinedReq, planMD, res.Paths.Requirements)
 	return planErr
 }
 
@@ -141,25 +124,67 @@ func readPlanArtifacts(
 // is what gets forwarded to the agent's PlanRequest.ResumeChatID:
 // the row's stored value on resume, a freshly-minted one on fresh
 // runs.
-func beginPlanLifecycle(ctx context.Context, opts ExecuteOptions,
-	existing tasks.Task, stderr io.Writer, agentLogPath string,
-	resumeMode bool,
-) (*lifecycle.PlanLifecycle, string) {
-	if resumeMode {
-		lc := lifecycle.BeginPlanResume(existing, stderr,
-			opts.Agent.Name(), opts.Model, agentLogPath)
-		return lc, existing.PlanResumeSession
+func beginPlanSession(
+	ctx context.Context,
+	opts Options,
+	stderr io.Writer,
+	existing tasks.Task,
+) codingagents.AgentSession {
+	if existing.PlanResumeSession != "" {
+		return codingagents.AgentSession{
+			Tool:     opts.Agent.Name(),
+			Model:    opts.Model,
+			ResumeID: existing.PlanResumeSession,
+		}
 	}
 	resumeID, resumeErr := opts.Agent.NewResumeID(ctx)
 	if resumeErr != nil {
 		uitheme.DangerousDialogBox(stderr, "J: %v", resumeErr)
 	}
-	if existing.Status == tasks.StatusPlanning {
-		lc := lifecycle.BeginPlanExisting(existing, stderr,
-			opts.Agent.Name(), opts.Model, resumeID, agentLogPath)
-		return lc, resumeID
+	return codingagents.AgentSession{
+		Tool:     opts.Agent.Name(),
+		Model:    opts.Model,
+		ResumeID: resumeID,
 	}
-	lc := lifecycle.BeginPlanRestart(existing, stderr,
-		opts.Agent.Name(), opts.Model, resumeID, agentLogPath)
-	return lc, resumeID
+}
+
+func beginPlanLifecycle(
+	existing tasks.Task,
+	stderr io.Writer,
+	session codingagents.AgentSession,
+) *lifecycle.PlanLifecycle {
+	if existing.PlanResumeSession != "" {
+		return lifecycle.BeginPlanResume(existing, stderr, session)
+	}
+	if existing.Status == tasks.StatusPlanning {
+		return lifecycle.BeginPlanExisting(existing, stderr, session)
+	}
+	return lifecycle.BeginPlanRestart(existing, stderr, session)
+}
+
+func buildPlanRequest(
+	res resolver.PlanTask,
+	session codingagents.AgentSession,
+	interactive bool,
+	resumeFromClarification bool,
+	mustRead []string,
+) codingagents.PlanRequest {
+	resume := session.ResumeID != "" &&
+		session.ResumeID == res.Task.PlanResumeSession
+	return codingagents.PlanRequest{
+		FromFilePath:            res.Paths.Requirements,
+		Model:                   session.Model,
+		RequirementsOutputPath:  res.Paths.Requirements,
+		PlanOutputPath:          res.Paths.Plan,
+		ClarificationPath:       res.Paths.Clarification,
+		Interactive:             interactive,
+		ResumeChatID:            session.ResumeID,
+		Resume:                  resume,
+		ResumeFromClarification: resumeFromClarification,
+		AgentLogPath: filepath.Join(
+			res.TaskDir,
+			tasks.AgentLogFileName,
+		),
+		MustRead: mustRead,
+	}
 }

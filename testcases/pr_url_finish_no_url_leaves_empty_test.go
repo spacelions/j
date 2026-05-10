@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/spacelions/j/internal/lifecycle"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 )
@@ -32,7 +31,7 @@ func TestCase_PRURL_Finish_NoPRLeavesFieldEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	lc := lifecycle.NewWorkTask(io.Discard, "cursor", "sonnet-4",
+	lc := newWorkLifecycle(io.Discard, "cursor", "sonnet-4",
 		tasks.NewTaskID(), "/tmp/x.plan.md", "", "body", "",
 		logPath)
 	pre := lc.Task()

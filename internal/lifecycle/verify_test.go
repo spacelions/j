@@ -39,7 +39,7 @@ func TestTask_BeginVerifyRestart_FlipsStatusAndStampsResume(t *testing.T) {
 	preWorkEnd := existing.WorkEndAt
 	preWorkCursor := existing.WorkResumeSession
 
-	lc := BeginVerifyRestart(existing, io.Discard, "cursor", "gpt-5", "fresh-verify-cursor", "")
+	lc := beginVerifyRestartTest(existing, io.Discard, "cursor", "gpt-5", "fresh-verify-cursor", "")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 
 	got := listAllTasks(t)[0]
@@ -86,7 +86,7 @@ func TestVerifyLifecycle_FinishFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := BeginVerifyRestart(existing, io.Discard, "cursor", "m", "v-cursor", "")
+	lc := beginVerifyRestartTest(existing, io.Discard, "cursor", "m", "v-cursor", "")
 	lc.Finish(VerifyOutcomeNoRetries, nil)
 	got := listAllTasks(t)[0]
 	if got.Status != tasks.StatusFailed {
@@ -114,7 +114,7 @@ func TestVerifyLifecycle_FinishErrorPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := BeginVerifyRestart(existing, io.Discard, "cursor", "m", "v-cursor", "")
+	lc := beginVerifyRestartTest(existing, io.Discard, "cursor", "m", "v-cursor", "")
 	lc.Finish(VerifyOutcomeNoRetries, errors.New("boom"))
 	got := listAllTasks(t)[0]
 	if got.Status != tasks.StatusHelp {
@@ -140,7 +140,7 @@ func TestVerifyLifecycle_RecordAgentLog_StampsPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := BeginVerifyRestart(existing, io.Discard, "cursor", "m", "v-cursor", "")
+	lc := beginVerifyRestartTest(existing, io.Discard, "cursor", "m", "v-cursor", "")
 	lc.RecordAgentLog("/tmp/agent.log")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 	got := listAllTasks(t)[0]
@@ -171,7 +171,7 @@ func TestVerifyLifecycle_RecordResumeSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := BeginVerifyRestart(existing, io.Discard,
+	lc := beginVerifyRestartTest(existing, io.Discard,
 		"deepseek", "deepseek-v4-pro", "", "")
 	lc.RecordResumeSession("")
 	lc.RecordResumeSession("captured-id-3")
@@ -201,7 +201,7 @@ func TestVerifyLifecycle_RecordAgentLog_ClosedShortCircuit(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := BeginVerifyRestart(existing, io.Discard, "cursor", "m", "v-cursor", "")
+	lc := beginVerifyRestartTest(existing, io.Discard, "cursor", "m", "v-cursor", "")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 	lc.RecordAgentLog("/tmp/should-not-stick.log")
 	got := listAllTasks(t)[0]
@@ -230,7 +230,7 @@ func TestVerifyLifecycle_FinishIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = s.Close()
-	lc := BeginVerifyRestart(existing, io.Discard, "cursor", "m", "v-cursor", "")
+	lc := beginVerifyRestartTest(existing, io.Discard, "cursor", "m", "v-cursor", "")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 	lc.Finish(VerifyOutcomeNoRetries, errors.New("ignored"))
 	got := listAllTasks(t)[0]
@@ -258,7 +258,7 @@ func TestBeginVerifyRestart_OpenFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	lc := BeginVerifyRestart(tasks.Task{ID: tasks.NewTaskID(), Status: tasks.StatusWorkDone}, &stderr, "cursor", "m", "", "")
+	lc := beginVerifyRestartTest(tasks.Task{ID: tasks.NewTaskID(), Status: tasks.StatusWorkDone}, &stderr, "cursor", "m", "", "")
 	if lc == nil {
 		t.Fatal("BeginVerifyRestart returned nil")
 	}
@@ -276,7 +276,7 @@ func TestBeginVerifyRestart_PutTaskErrorWarns(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
-	lc := BeginVerifyRestart(tasks.Task{Status: tasks.StatusWorkDone}, &stderr, "cursor", "m", "", "")
+	lc := beginVerifyRestartTest(tasks.Task{Status: tasks.StatusWorkDone}, &stderr, "cursor", "m", "", "")
 	if lc == nil {
 		t.Fatal("BeginVerifyRestart returned nil")
 	}
@@ -322,7 +322,7 @@ func TestTask_BeginVerifyResume_PreservesLineage(t *testing.T) {
 		t.Fatal(err)
 	}
 	tasks.PersistWarn(io.Discard, existing)
-	lc := BeginVerifyResume(existing, io.Discard, "")
+	lc := beginVerifyResumeTest(existing, io.Discard, "")
 	lc.Finish(VerifyOutcomeSuccess, nil)
 	got := listAllTasks(t)[0]
 	if got.Status != tasks.StatusCompleted {
@@ -371,7 +371,7 @@ func TestVerifyLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 			var stderr bytes.Buffer
 			t.Cleanup(tasks.ResetHooksForTest)
 			tasks.Register(markersHook)
-			lc := BeginVerifyRestart(
+			lc := beginVerifyRestartTest(
 				existing, &stderr, "cursor", "m", "v-cursor", logPath)
 			lc.Finish(tc.outcome, nil)
 
@@ -480,7 +480,7 @@ func TestBeginVerifyResume_SetsBeginAtWhenZero(t *testing.T) {
 		VerifyResumeSession: "v-cursor",
 	}
 	tasks.PersistWarn(io.Discard, task)
-	lc := BeginVerifyResume(task, io.Discard, "")
+	lc := beginVerifyResumeTest(task, io.Discard, "")
 	if lc.task.VerifyBeginAt.IsZero() {
 		t.Fatal("VerifyBeginAt should be stamped when zero at BeginVerifyResume time")
 	}

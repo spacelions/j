@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 
@@ -31,11 +32,11 @@ func TestRunResumeVerify_NoActiveSession(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RunResumeVerify: %v", err)
 	}
-	if !strings.Contains(stdout.String(), noActiveVerifySessionMessage) {
-		t.Fatalf("stdout = %q, want %q", stdout.String(), noActiveVerifySessionMessage)
+	if stdout.String() != "" {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
-	if ui.pickCalls != 0 {
-		t.Fatalf("PickTask should not fire: calls=%d", ui.pickCalls)
+	if ui.pickCalls != 1 {
+		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
 	}
 }
 
@@ -78,12 +79,12 @@ func TestRunResumeVerify_PickerOnlyShowsRowsWithSession(t *testing.T) {
 	if ui.pickCalls != 1 {
 		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
 	}
-	if len(ui.lastPickedFrom) != 1 {
-		t.Fatalf("picker received %d rows, want 1", len(ui.lastPickedFrom))
+	if len(ui.lastPickedFrom) != 2 {
+		t.Fatalf("picker received %d rows, want 2", len(ui.lastPickedFrom))
 	}
-	if ui.lastPickedFrom[0].ID != keep {
-		t.Fatalf("picker received id %q, want %q (the row with VerifyResumeSession set; %q should have been filtered out)",
-			ui.lastPickedFrom[0].ID, keep, skip)
+	ids := []string{ui.lastPickedFrom[0].ID, ui.lastPickedFrom[1].ID}
+	if !containsArg(ids, keep) || !containsArg(ids, skip) {
+		t.Fatalf("picker received ids %v, want %q and %q", ids, keep, skip)
 	}
 }
 
@@ -91,6 +92,7 @@ func TestRunResumeVerify_PickerAbort(t *testing.T) {
 	setupContinueEnv(t)
 	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.VerifyResumeSession = "active-cursor"
+		task.WorkBeginAt = time.Now().UTC()
 	})
 	ui := &fakeUI{}
 	if err := RunResumeVerify(t.Context(), ResumeVerifyOptions{
@@ -112,6 +114,7 @@ func TestRunResumeVerify_HappyPath(t *testing.T) {
 	setupContinueEnv(t)
 	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.VerifyResumeSession = "active-cursor"
+		task.WorkBeginAt = time.Now().UTC()
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}
@@ -264,6 +267,7 @@ func TestRunResumeVerify_HappyPath_Completed(t *testing.T) {
 	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusCompleted
 		task.VerifyResumeSession = "sess-x"
+		task.WorkBeginAt = time.Now().UTC()
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}
@@ -294,6 +298,7 @@ func TestRunResumeVerify_HappyPath_Failed(t *testing.T) {
 	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusFailed
 		task.VerifyResumeSession = "sess-x"
+		task.WorkBeginAt = time.Now().UTC()
 	})
 	argvPath := filepath.Join(t.TempDir(), "argv.txt")
 	ui := &fakeUI{pickReturn: id}

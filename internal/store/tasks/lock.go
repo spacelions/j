@@ -62,6 +62,7 @@ func (e *LockedError) Unwrap() error { return e.cause }
 type Lock struct {
 	fd       *os.File
 	metaPath string
+	holder   Holder
 }
 
 type phaseCtxKey struct{}
@@ -128,7 +129,17 @@ func acquireLockAt(ctx context.Context, path string) (*Lock, error) {
 		_ = fd.Close()
 		return nil, err
 	}
-	return &Lock{fd: fd, metaPath: path}, nil
+	return &Lock{fd: fd, metaPath: path, holder: holder}, nil
+}
+
+// UpdatePhase rewrites the informational holder phase while keeping
+// the kernel-level flock held.
+func (l *Lock) UpdatePhase(phase string) error {
+	if l == nil || l.fd == nil {
+		return nil
+	}
+	l.holder.Phase = phase
+	return writeHolder(l.metaPath, l.holder)
 }
 
 // Release drops the kernel flock and closes the fd. Idempotent and
@@ -180,7 +191,7 @@ func tryAcquireForReapAt(path string) (*Lock, error) {
 		}
 		return nil, fmt.Errorf("tasks: flock %q: %w", path, err)
 	}
-	return &Lock{fd: fd, metaPath: path}, nil
+	return &Lock{fd: fd, metaPath: path, holder: readHolder(path)}, nil
 }
 
 func writeHolder(path string, h Holder) error {

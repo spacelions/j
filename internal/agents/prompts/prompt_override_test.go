@@ -8,6 +8,7 @@ import (
 
 	"github.com/spacelions/j/internal/agents/instructions"
 	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/tasks"
 )
 
 func TestResolve_UnsetReturnsEmbedded(t *testing.T) {
@@ -255,10 +256,20 @@ func TestPlannerOverride_StubBodyStillCarriesContracts(t *testing.T) {
 	)
 	for _, base := range []string{
 		AppendPlannerSaveSuffix(
-			BuildPlanner(req, nil), req, plan, clarify,
+			BuildPlanner(req, nil),
+			tasks.TaskPaths{
+				Requirements:  req,
+				Plan:          plan,
+				Clarification: clarify,
+			},
 		),
 		AppendPlannerSaveSuffix(
-			BuildPlannerResume(req, nil), req, plan, clarify,
+			BuildPlannerResume(req, nil),
+			tasks.TaskPaths{
+				Requirements:  req,
+				Plan:          plan,
+				Clarification: clarify,
+			},
 		),
 	} {
 		for _, want := range []string{

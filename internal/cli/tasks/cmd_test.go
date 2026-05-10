@@ -91,16 +91,18 @@ func TestNew_HasDiscardSubcommand(t *testing.T) {
 	t.Fatal("expected `discard` subcommand to be registered on `j tasks`")
 }
 
-// TestNew_HasReVerifySubcommand pins the registration of the
-// re-verify child.
-func TestNew_HasReVerifySubcommand(t *testing.T) {
+func TestNew_RemovesReSubcommands(t *testing.T) {
 	cmd := New()
+	removed := map[string]bool{
+		"re-plan":   true,
+		"re-work":   true,
+		"re-verify": true,
+	}
 	for _, child := range cmd.Commands() {
-		if child.Name() == "re-verify" {
-			return
+		if removed[child.Name()] {
+			t.Fatalf("`%s` should not be registered", child.Name())
 		}
 	}
-	t.Fatal("expected `re-verify` subcommand to be registered on `j tasks`")
 }
 
 // TestNew_HasResumeVerifySubcommand pins the registration of the

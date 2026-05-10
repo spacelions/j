@@ -98,6 +98,26 @@ func TestAcquireLock_ReleaseAllowsReacquire(t *testing.T) {
 	}
 }
 
+func TestLockUpdatePhase(t *testing.T) {
+	setupLockProject(t)
+	ctx := WithPhase(context.Background(), "planning")
+	l, err := AcquireLock(ctx, "T1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Release() }()
+	if err := l.UpdatePhase("verifying"); err != nil {
+		t.Fatalf("UpdatePhase: %v", err)
+	}
+	if h := readHolder(l.metaPath); h.Phase != "verifying" {
+		t.Fatalf("phase = %q, want verifying", h.Phase)
+	}
+	var nilLock *Lock
+	if err := nilLock.UpdatePhase("working"); err != nil {
+		t.Fatalf("nil UpdatePhase: %v", err)
+	}
+}
+
 // TestAcquireLock_AfterHolderKilled exercises the crash-recovery path.
 // It spawns a child process via go-test's own binary (with a sentinel
 // env var) that acquires the lock then sleeps; the parent SIGKILLs it

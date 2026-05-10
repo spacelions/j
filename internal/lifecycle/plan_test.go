@@ -27,7 +27,7 @@ func TestNewPlanTask_RecordsAndFinish(t *testing.T) {
 	}
 	seedPlanApprovalDisabled(t)
 	id := tasks.NewTaskID()
-	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", id, "/tmp/x.md", "# heading\nbody", "plan-cursor", "", "")
+	lc := newPlanTaskTest(io.Discard, "cursor", "sonnet-4", id, "/tmp/x.md", "# heading\nbody", "plan-cursor", "", "")
 	lc.Finish(nil, "# heading\nbody", "## plan", "/tmp/x.md")
 	rows := listAllTasks(t)
 	if len(rows) != 1 || rows[0].ID != id {
@@ -61,7 +61,7 @@ func TestPlanLifecycle_Finish_ErrorPath(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewPlanTask(io.Discard, "cursor", "m", tasks.NewTaskID(), "/tmp/x.md", "x", "", "", "")
+	lc := newPlanTaskTest(io.Discard, "cursor", "m", tasks.NewTaskID(), "/tmp/x.md", "x", "", "", "")
 	lc.Finish(errors.New("boom"), "", "", "/tmp/x.md")
 	rows := listAllTasks(t)
 	if len(rows) != 1 || rows[0].Status != tasks.StatusHelp {
@@ -78,7 +78,7 @@ func TestPlanLifecycle_RecordAgentLog_StampsPath(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
+	lc := newPlanTaskTest(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
 	lc.RecordAgentLog("/tmp/agent.log")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 	got := listAllTasks(t)[0]
@@ -101,7 +101,7 @@ func TestPlanLifecycle_RecordResumeSession(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	seedPlanApprovalDisabled(t)
-	lc := NewPlanTask(io.Discard, "deepseek", "deepseek-v4-pro",
+	lc := newPlanTaskTest(io.Discard, "deepseek", "deepseek-v4-pro",
 		tasks.NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
 	lc.RecordResumeSession("")
 	if got := lc.Task().PlanResumeSession; got != "" {
@@ -125,7 +125,7 @@ func TestPlanLifecycle_RecordAgentLog_ClosedShortCircuit(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	seedPlanApprovalDisabled(t)
-	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
+	lc := newPlanTaskTest(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 	lc.RecordAgentLog("/tmp/should-not-stick.log")
 	got := listAllTasks(t)[0]
@@ -145,7 +145,7 @@ func TestPlanLifecycle_FinishIdempotent(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	seedPlanApprovalDisabled(t)
-	lc := NewPlanTask(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
+	lc := newPlanTaskTest(io.Discard, "cursor", "sonnet-4", tasks.NewTaskID(), "/tmp/x.md", "# heading", "", "", "")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 	lc.Finish(errors.New("boom"), "should not", "change", "anything")
 	rows := listAllTasks(t)
@@ -181,7 +181,7 @@ func TestNewPlanTask_PutErrorAtBegin(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	var stderr bytes.Buffer
-	lc := NewPlanTask(&stderr, "cursor", "m", "", "", "", "", "", "")
+	lc := newPlanTaskTest(&stderr, "cursor", "m", "", "", "", "", "", "")
 	if lc == nil {
 		t.Fatal("NewPlanTask returned nil")
 	}
@@ -210,7 +210,7 @@ func TestNewPlanTask_OpenFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	lc := NewPlanTask(&stderr, "cursor", "m", tasks.NewTaskID(), "", "", "", "", "")
+	lc := newPlanTaskTest(&stderr, "cursor", "m", tasks.NewTaskID(), "", "", "", "", "")
 	if lc == nil {
 		t.Fatal("NewPlanTask returned nil")
 	}
@@ -228,7 +228,7 @@ func TestPlanLifecycle_Task(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := tasks.NewTaskID()
-	lc := NewPlanTask(io.Discard, "cursor", "m", id, "", "", "", "", "")
+	lc := newPlanTaskTest(io.Discard, "cursor", "m", id, "", "", "", "", "")
 	if got := lc.Task(); got.ID != id {
 		t.Fatalf("Task().ID = %q, want %q", got.ID, id)
 	}
@@ -256,7 +256,7 @@ func TestTask_BeginPlanRestart_PreservesLineage(t *testing.T) {
 	_ = s.Close()
 	prePlanBegin := existing.PlanBeginAt
 
-	lc := BeginPlanRestart(existing, io.Discard, "cursor", "gpt-5", "fresh-plan-cursor", "")
+	lc := beginPlanRestartTest(existing, io.Discard, "cursor", "gpt-5", "fresh-plan-cursor", "")
 	lc.Finish(nil, "# refined", "## plan", "/tmp/x.md")
 	got := listAllTasks(t)[0]
 	if got.Status != tasks.StatusPlanDone {
@@ -290,7 +290,7 @@ func TestPlanLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 	var stderr bytes.Buffer
 	t.Cleanup(tasks.ResetHooksForTest)
 	tasks.Register(markersHook)
-	lc := NewPlanTask(&stderr, "cursor", "m", tasks.NewTaskID(), "/tmp/x.md", "# heading", "", logPath, "")
+	lc := newPlanTaskTest(&stderr, "cursor", "m", tasks.NewTaskID(), "/tmp/x.md", "# heading", "", logPath, "")
 	lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 
 	data, err := os.ReadFile(logPath)
@@ -327,7 +327,7 @@ func TestBeginPlanRestart_PreservesLinearIssue(t *testing.T) {
 		PlanTool:    "cursor",
 		PlanModel:   "sonnet-4",
 	}
-	lc := BeginPlanRestart(original, io.Discard, "claude", "opus-4", "resume-id", "")
+	lc := beginPlanRestartTest(original, io.Discard, "claude", "opus-4", "resume-id", "")
 	got := lc.Task()
 	if got.LinearIssue != "ENG-9" {
 		t.Fatalf("LinearIssue lost across BeginPlanRestart: got %q", got.LinearIssue)
@@ -345,7 +345,7 @@ func TestBeginPlanExisting_RefreshesPlannerFields(t *testing.T) {
 		PlanResumeSession: "old-resume",
 	}
 	tasks.PersistWarn(io.Discard, task)
-	lc := BeginPlanExisting(
+	lc := beginPlanExistingTest(
 		task, io.Discard, "claude", "opus", "new-resume",
 		"/tmp/agent.log",
 	)
@@ -385,7 +385,7 @@ func TestBeginPlanResume_PreservesSessionAndLineage(t *testing.T) {
 		PlanEndAt:         time.Now().UTC(),
 	}
 	tasks.PersistWarn(io.Discard, original)
-	lc := BeginPlanResume(original, io.Discard, "cursor", "sonnet-4", "")
+	lc := beginPlanResumeTest(original, io.Discard, "cursor", "sonnet-4", "")
 	got := lc.Task()
 	if got.PlanResumeSession != "prior-cursor" {
 		t.Fatalf("PlanResumeSession = %q, want prior-cursor (resume must not mint)",
@@ -418,7 +418,7 @@ func TestBeginPlanResume_SetsBeginAtWhenZero(t *testing.T) {
 		PlanResumeSession: "prior",
 	}
 	tasks.PersistWarn(io.Discard, task)
-	lc := BeginPlanResume(task, io.Discard, "cursor", "m", "")
+	lc := beginPlanResumeTest(task, io.Discard, "cursor", "m", "")
 	got := lc.Task()
 	if got.PlanBeginAt.IsZero() {
 		t.Fatal("PlanBeginAt should be stamped when zero at BeginPlanResume time")
@@ -438,7 +438,7 @@ func TestBeginPlanResume_IllegalTransitionPanics(t *testing.T) {
 			t.Fatal("expected panic for illegal resume transition")
 		}
 	}()
-	BeginPlanResume(tasks.Task{
+	beginPlanResumeTest(tasks.Task{
 		ID:                "id-bad",
 		Status:            tasks.StatusWorking,
 		PlanResumeSession: "prior",
@@ -474,7 +474,7 @@ func TestPlanLifecycle_Finish_ClarificationPresent_NoApproval(
 	}
 	seedPlanApprovalDisabled(t)
 	id := tasks.NewTaskID()
-	lc := NewPlanTask(io.Discard, "cursor", "m", id, "/tmp/x.md",
+	lc := newPlanTaskTest(io.Discard, "cursor", "m", id, "/tmp/x.md",
 		"# heading\nbody", "", "", "")
 	wantSummary := lc.Task().Summary
 	writePlanClarification(t, id, "what next?\n")
@@ -509,7 +509,7 @@ func TestPlanLifecycle_Finish_ClarificationPresent_ApprovalGate(
 	}
 	seedPlanApprovalEnabled(t)
 	id := tasks.NewTaskID()
-	lc := NewPlanTask(io.Discard, "cursor", "m", id, "/tmp/x.md",
+	lc := newPlanTaskTest(io.Discard, "cursor", "m", id, "/tmp/x.md",
 		"# heading\nbody", "", "", "")
 	writePlanClarification(t, id, "still ambiguous\n")
 	lc.Finish(nil, "", "", "/tmp/x.md")
@@ -546,7 +546,7 @@ func TestPlanLifecycle_Finish_ClarificationAbsent_KeepsPlanDoneMatrix(
 				seedPlanApprovalDisabled(t)
 			}
 			id := tasks.NewTaskID()
-			lc := NewPlanTask(io.Discard, "cursor", "m", id,
+			lc := newPlanTaskTest(io.Discard, "cursor", "m", id,
 				"/tmp/x.md", "# heading", "", "", "")
 			lc.Finish(nil, "# heading", "plan", "/tmp/x.md")
 			got := listAllTasks(t)[0]
@@ -566,7 +566,7 @@ func TestPlanLifecycle_Finish_ErrorTrumpsClarification(t *testing.T) {
 		t.Fatalf("EnsureProject: %v", err)
 	}
 	id := tasks.NewTaskID()
-	lc := NewPlanTask(io.Discard, "cursor", "m", id, "/tmp/x.md",
+	lc := newPlanTaskTest(io.Discard, "cursor", "m", id, "/tmp/x.md",
 		"# heading", "", "", "")
 	writePlanClarification(t, id, "what next?\n")
 	lc.Finish(errors.New("boom"), "", "", "/tmp/x.md")
@@ -592,7 +592,7 @@ func TestBeginPlanRestart_SetsBeginAtWhenZero(t *testing.T) {
 		PlanModel: "m",
 	}
 	tasks.PersistWarn(io.Discard, task)
-	lc := BeginPlanRestart(task, io.Discard, "cursor", "m", "", "")
+	lc := beginPlanRestartTest(task, io.Discard, "cursor", "m", "", "")
 	got := lc.Task()
 	if got.PlanBeginAt.IsZero() {
 		t.Fatal("PlanBeginAt should be stamped when zero at BeginPlanRestart time")

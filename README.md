@@ -63,17 +63,14 @@ Commands are scoped to the **current working directory**: each project gets its 
 
 ### Manual phase control
 
-Use these when you want to re-run or resume individual phases instead of the automated orchestrator.
+Use these when you want to run one individual phase instead of the automated orchestrator. Each command resumes the prior agent session when one exists, otherwise it starts that phase fresh.
 
 ```bash
-j tasks re-plan --help       # re-run the planner on an existing task
-j tasks resume-plan --help   # resume an in-flight planner session
+j tasks resume-plan --help   # run the planner phase
 
-j tasks re-work --help       # re-run the worker on an existing task
-j tasks resume-work --help   # resume an in-flight worker session
+j tasks resume-work --help   # run the worker phase
 
-j tasks re-verify --help     # re-run the verifier on an existing task
-j tasks resume-verify --help # resume an in-flight verifier session
+j tasks resume-verify --help # run the verifier phase
 ```
 
 The verifier expects a final line of exactly `VERDICT: PASS` or `VERDICT: FAIL` in its findings.
@@ -90,9 +87,9 @@ Artifacts land under `.j/tasks/<id>/`: `requirements.md`, `plan.md`, `agent.log`
 | `discard` | Discard a task, its linked git worktree, and its on-disk directory |
 | `logs` | Print or tail `agent.log` |
 | `show` | Render task files (`requirements`, `plan`, `clarification`, …) |
-| `re-plan` / `resume-plan` | Replan or resume an interrupted planning phase |
-| `re-work` / `resume-work` | Rework or resume an interrupted work phase |
-| `re-verify` / `resume-verify` | Reverify or resume an interrupted verification phase |
+| `resume-plan` | Run the planning phase |
+| `resume-work` | Run the work phase |
+| `resume-verify` | Run the verification phase |
 | `orchestrate` | Run plan/work/verify sequentially (used internally by `start`) |
 
 ### Other commands

@@ -77,14 +77,18 @@ func TestRunForTask_FailFlow(t *testing.T) {
 
 func TestTaskSubAgents_PlanApprovalGate(t *testing.T) {
 	agents := []codingagents.Agent{stubChain("scripted")}
-	gated, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, RunPhaseFull, true, PhaseOverrides{})
+	tctx := testTaskContext("task-id", agents)
+	gated, err := taskSubAgents(tctx, PhaseConfig{
+		Phase:                RunPhaseFull,
+		PlanRequiresApproval: true,
+	})
 	if err != nil {
 		t.Fatalf("taskSubAgents gated: %v", err)
 	}
 	if len(gated) != 1 {
 		t.Fatalf("gated SubAgents length = %d, want 1", len(gated))
 	}
-	full, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, RunPhaseFull, false, PhaseOverrides{})
+	full, err := taskSubAgents(tctx, PhaseConfig{Phase: RunPhaseFull})
 	if err != nil {
 		t.Fatalf("taskSubAgents full: %v", err)
 	}
@@ -156,7 +160,10 @@ func TestRunForTaskFromWork_ClarificationStopsBeforeVerify(
 // `j tasks continue` on a `plan-done` row, plus re-work / resume-work.
 func TestTaskSubAgents_FromWork(t *testing.T) {
 	agents := []codingagents.Agent{stubChain("scripted")}
-	subs, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, RunPhaseFromWork, false, PhaseOverrides{})
+	subs, err := taskSubAgents(
+		testTaskContext("task-id", agents),
+		PhaseConfig{Phase: RunPhaseFromWork},
+	)
 	if err != nil {
 		t.Fatalf("taskSubAgents from-work: %v", err)
 	}
@@ -169,7 +176,10 @@ func TestTaskSubAgents_FromWork(t *testing.T) {
 // re-verify / resume-verify.
 func TestTaskSubAgents_VerifyOnly(t *testing.T) {
 	agents := []codingagents.Agent{stubChain("scripted")}
-	subs, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, RunPhaseVerifyOnly, false, PhaseOverrides{})
+	subs, err := taskSubAgents(
+		testTaskContext("task-id", agents),
+		PhaseConfig{Phase: RunPhaseVerifyOnly},
+	)
 	if err != nil {
 		t.Fatalf("taskSubAgents verify-only: %v", err)
 	}
@@ -185,7 +195,13 @@ func TestTaskSubAgents_VerifyOnly(t *testing.T) {
 // this to invoke the orchestrator without knowing the stored value.
 func TestTaskSubAgents_FromWorkIgnoresGate(t *testing.T) {
 	agents := []codingagents.Agent{stubChain("scripted")}
-	subs, err := taskSubAgents(store.TaskConfig{MaxIterations: 1}, "task-id", agents, io.Discard, RunPhaseFromWork, true, PhaseOverrides{})
+	subs, err := taskSubAgents(
+		testTaskContext("task-id", agents),
+		PhaseConfig{
+			Phase:                RunPhaseFromWork,
+			PlanRequiresApproval: true,
+		},
+	)
 	if err != nil {
 		t.Fatalf("taskSubAgents: %v", err)
 	}
@@ -259,7 +275,14 @@ func TestRunForTaskWithGate_PlanOnly(t *testing.T) {
 	id := seedChainTask(t, "scripted")
 	stub := stubChain("scripted")
 
-	if err := RunForTaskWithGate(t.Context(), store.TaskConfig{MaxIterations: 1}, id, []codingagents.Agent{stub}, io.Discard, true, PhaseOverrides{}); err != nil {
+	if err := RunForTaskWithGate(
+		t.Context(),
+		testTaskContext(id, []codingagents.Agent{stub}),
+		PhaseConfig{
+			Phase:                RunPhaseFull,
+			PlanRequiresApproval: true,
+		},
+	); err != nil {
 		t.Fatalf("RunForTaskWithGate: %v", err)
 	}
 	row := readChainTaskRow(t, id)
@@ -630,6 +653,15 @@ func (a *stubChainAgent) Verify(_ context.Context, req codingagents.VerifyReques
 }
 
 func (*stubChainAgent) FormatLog(line []byte) []byte { return line }
+
+func testTaskContext(id string, agents []codingagents.Agent) TaskContext {
+	return TaskContext{
+		MaxIterations: 1,
+		TaskID:        id,
+		Agents:        agents,
+		Stderr:        io.Discard,
+	}
+}
 
 // seedPlanApprovalDisabled writes plan_requires_approval=false.
 func seedPlanApprovalDisabled(t *testing.T) {

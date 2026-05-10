@@ -8,23 +8,34 @@ import (
 	"syscall"
 
 	"github.com/spacelions/j/internal/lifecycle/orchestrator"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
+)
+
+const (
+	lockPhasePlanning  = "planning"
+	lockPhaseWorking   = "working"
+	lockPhaseVerifying = "verifying"
 )
 
 // phaseTagFor maps the RunPhase enum to the human-readable phase
 // string written into the per-task lock file's holder metadata. The
-// resume-* / re-* CLI wrappers thread their phase through this same
+// resume-* CLI wrappers thread their phase through this same
 // enum so the contention message can name "planning" / "working" /
 // "verifying" without the holder having to remember which command it
 // came from.
 func phaseTagFor(phase orchestrator.RunPhase) string {
 	switch phase {
+	case orchestrator.RunPhasePlanOnly:
+		return lockPhasePlanning
+	case orchestrator.RunPhaseWorkOnly:
+		return lockPhaseWorking
 	case orchestrator.RunPhaseFromWork:
-		return "working"
+		return lockPhaseWorking
 	case orchestrator.RunPhaseVerifyOnly:
-		return "verifying"
+		return lockPhaseVerifying
 	default:
-		return "planning"
+		return lockPhasePlanning
 	}
 }
 
@@ -33,19 +44,37 @@ func phaseTagFor(phase orchestrator.RunPhase) string {
 // the holder pid, host, phase, and start timestamp so the user knows
 // which `j tasks resume-*` to invoke for a takeover.
 func contentionMessage(taskID string, h tasks.Holder) string {
+	phase := h.Phase
+	if row, err := resolver.TaskByID(taskID); err == nil {
+		phase = phaseForStatus(row.Status, h.Phase)
+	}
 	return fmt.Sprintf(
 		"task %s is already in use by pid %d on %s "+
 			"(phase: %s, started %s). Use j tasks resume-%s to take over.",
-		taskID, h.PID, h.Host, h.Phase,
-		h.StartedAt.Format("15:04:05"), takeoverSubcommand(h.Phase),
+		taskID, h.PID, h.Host, phase,
+		h.StartedAt.Format("15:04:05"), takeoverSubcommand(phase),
 	)
+}
+
+func phaseForStatus(status tasks.TaskStatus, fallback string) string {
+	switch status {
+	case tasks.StatusPlanning, tasks.StatusPlanPendingApproval,
+		tasks.StatusPlanDone:
+		return lockPhasePlanning
+	case tasks.StatusWorking, tasks.StatusWorkDone:
+		return lockPhaseWorking
+	case tasks.StatusVerifying, tasks.StatusFailed, tasks.StatusCompleted:
+		return lockPhaseVerifying
+	default:
+		return fallback
+	}
 }
 
 func takeoverSubcommand(phase string) string {
 	switch phase {
-	case "working":
+	case lockPhaseWorking:
 		return "work"
-	case "verifying":
+	case lockPhaseVerifying:
 		return "verify"
 	default:
 		return cmdPlan

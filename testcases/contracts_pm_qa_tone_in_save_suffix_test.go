@@ -3,8 +3,6 @@ package testcases_test
 import (
 	"strings"
 	"testing"
-
-	"github.com/spacelions/j/internal/agents/prompts"
 )
 
 // TestContracts_PMQAToneInSaveSuffix pins AC#3: the planner save
@@ -16,7 +14,7 @@ import (
 // plan.md. The first-line "concise one-line summary" rule must also
 // remain (so `j tasks` summary derivation still works).
 func TestContracts_PMQAToneInSaveSuffix(t *testing.T) {
-	got := prompts.AppendPlannerSaveSuffix(
+	got := plannerSavePrompt(
 		"BASE", "/abs/.j/tasks/T1/requirements.md",
 		"/abs/.j/tasks/T1/plan.md",
 		"/abs/.j/tasks/T1/clarification.md",

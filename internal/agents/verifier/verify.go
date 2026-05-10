@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/spacelions/j/internal/cli/picker"
@@ -82,8 +81,6 @@ type Options struct {
 	Store *store.Store
 }
 
-type resolved = resolver.VerifyTask
-
 // Run executes `j verify`. Resolves the task, selects a
 // verifier tool/model, then drives the bounded fix-loop until the
 // verifier writes `VERDICT: PASS` or MaxIterations is exhausted.
@@ -106,21 +103,18 @@ func Run(ctx context.Context, opts Options) (err error) {
 	if err != nil || !proceed {
 		return err
 	}
-	verifierAgent, workerAgent, model, resumeID, err := resolveVerifyAgents(
+	verifierAgent, session, err := resolveVerifyAgents(
 		ctx, opts, res,
 	)
 	if err != nil {
 		return err
 	}
 
-	agentLogPath := filepath.Join(res.TaskDir, tasks.AgentLogFileName)
 	lc := lifecycle.BeginVerifyRestart(
-		res.Task, opts.Stderr, verifierAgent.Name(),
-		model, resumeID, agentLogPath,
+		res.Task, opts.Stderr, session,
 	)
 	outcome, runErr := runVerifyLoop(
-		ctx, opts, lc, verifierAgent, workerAgent,
-		model, resumeID, res, agentLogPath,
+		ctx, verifierAgent, lc, res, session, opts,
 	)
 	lc.Finish(outcome, runErr)
 	if runErr != nil {
@@ -136,24 +130,26 @@ func Run(ctx context.Context, opts Options) (err error) {
 // warns to stderr but is non-fatal — the verifier still runs without
 // a resume cursor on the first turn, matching prior behaviour.
 func resolveVerifyAgents(
-	ctx context.Context, opts Options, res resolved,
-) (codingagents.Agent, codingagents.Agent, string, string, error) {
+	ctx context.Context,
+	opts Options,
+	res resolver.VerifyTask,
+) (codingagents.Agent, codingagents.AgentSession, error) {
 	verifierAgent, model, err := selectVerifier(ctx, opts)
 	if err != nil {
-		return nil, nil, "", "", err
+		return nil, codingagents.AgentSession{}, err
 	}
 	resumeID, err := verifierAgent.NewResumeID(ctx)
 	if err != nil {
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
 	}
-	workerAgent, ok := lookupResumeAgent(opts.Agents, res.Task.WorkTool)
-	if !ok {
-		return nil, nil, "", "", fmt.Errorf(
-			"unknown tool %q (recorded on task %s)",
-			res.Task.WorkTool, res.Task.ID,
-		)
+	if _, err := resolveFixAgent(opts.Agents, res.Task); err != nil {
+		return nil, codingagents.AgentSession{}, err
 	}
-	return verifierAgent, workerAgent, model, resumeID, nil
+	return verifierAgent, codingagents.AgentSession{
+		Tool:     verifierAgent.Name(),
+		Model:    model,
+		ResumeID: resumeID,
+	}, nil
 }
 
 func reportOutcome(
@@ -178,37 +174,38 @@ func reportOutcome(
 // run.WaitForExit blocks on every spawned child so a headless
 // backend's deferred write doesn't race the verdict parse.
 func runVerifyLoop(
-	ctx context.Context, opts Options,
+	ctx context.Context,
+	agent codingagents.Agent,
 	lc *lifecycle.VerifyLifecycle,
-	verifierAgent, workerAgent codingagents.Agent,
-	model, resumeID string, res resolved, agentLogPath string,
+	res resolver.VerifyTask,
+	session codingagents.AgentSession,
+	opts Options,
 ) (lifecycle.VerifyOutcome, error) {
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
-	clarifyPath := filepath.Join(res.TaskDir, tasks.ClarificationFileName)
 	verifyWorkspace := codingagents.ProjectRootWorkspace()
 	beginAt := time.Now().UTC()
 	for i := range opts.MaxIterations {
 		lc.IterationBegin(i, opts.MaxIterations)
-		req := buildVerifyReq(
-			res, model, resumeID, opts.Interactive, i,
-			clarifyPath, agentLogPath, mustReadFiles,
+		req := buildVerifyRequest(
+			res, session, i, opts.Interactive, mustReadFiles,
 		)
-		if err := runVerifyTurn(
-			ctx, verifierAgent, req,
-		); err != nil {
+		if err := runVerifyTurn(ctx, agent, req); err != nil {
 			return lifecycle.VerifyOutcomeNoRetries, err
 		}
-		if i == 0 && resumeID == "" {
-			resumeID = codingagents.CaptureAndRecordResume(
-				ctx, verifierAgent, lc, verifyWorkspace,
-				beginAt, opts.Stderr,
+		if i == 0 && session.ResumeID == "" {
+			session.ResumeID = codingagents.CaptureAndRecordResume(
+				ctx, agent, lc, codingagents.ResumeCapture{
+					Workspace: verifyWorkspace,
+					Since:     beginAt,
+					Stderr:    opts.Stderr,
+				},
 			)
 		}
-		verdict := resolver.ParseVerdict(res.FindingsPath)
-		lc.Verdict(i, verdict, res.FindingsPath)
+		verdict := resolver.ParseVerdict(res.Paths.Findings)
+		lc.Verdict(i, verdict, res.Paths.Findings)
 		if verdict == resolver.VerdictPass {
 			return lifecycle.VerifyOutcomeSuccess, nil
 		}
@@ -219,17 +216,22 @@ func runVerifyLoop(
 		if i+1 >= opts.MaxIterations {
 			break
 		}
-		if err := runFixTurn(
-			ctx, workerAgent, opts.Interactive, res,
-			clarifyPath, agentLogPath,
-		); err != nil {
+		workerAgent, err := resolveFixAgent(opts.Agents, res.Task)
+		if err != nil {
+			return lifecycle.VerifyOutcomeNoRetries, err
+		}
+		if err := runFixTurn(ctx, workerAgent,
+			buildFixRequest(res, opts.Interactive)); err != nil {
 			return lifecycle.VerifyOutcomeNoRetries, err
 		}
 	}
 	return lifecycle.VerifyOutcomeNoRetries, nil
 }
 
-func resolveTask(ctx context.Context, opts Options) (resolved, bool, error) {
+func resolveTask(
+	ctx context.Context,
+	opts Options,
+) (resolver.VerifyTask, bool, error) {
 	return resolver.ResolveVerifyTask(ctx, resolver.VerifyTaskOptions{
 		TaskID: opts.TaskID,
 		UI:     opts.UI,
@@ -260,6 +262,20 @@ func lookupResumeAgent(
 		}
 	}
 	return nil, false
+}
+
+func resolveFixAgent(
+	agents []codingagents.Agent,
+	task tasks.Task,
+) (codingagents.Agent, error) {
+	workerAgent, ok := lookupResumeAgent(agents, task.WorkTool)
+	if !ok {
+		return nil, fmt.Errorf(
+			"unknown tool %q (recorded on task %s)",
+			task.WorkTool, task.ID,
+		)
+	}
+	return workerAgent, nil
 }
 
 func (o Options) withDefaults() Options {

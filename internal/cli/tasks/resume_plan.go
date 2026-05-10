@@ -34,11 +34,13 @@ var resumePlanConfig = resumePhaseConfig{
 	resumeEvent: tasks.EventPlanResume,
 	errorVerb:   "resume-plan",
 	hasSession:  func(t tasks.Task) bool { return t.PlanResumeSession != "" },
+	gate:        requireRequirementsOrLinear,
+	startStatus: tasks.StatusPlanning,
 	orchestrateArgs: func(taskID string) []string {
 		return []string{
 			cmdTasks, cmdOrchestrate,
 			flagID, taskID,
-			flagPlanRequiresApprovalTrue,
+			flagPhasePlanOnly,
 			flagInteractiveTrue,
 		}
 	},
@@ -62,12 +64,10 @@ func newResumePlanCmd() *cobra.Command {
 		Use: "resume-plan",
 		Short: "Resume an in-flight planner session in the foreground " +
 			"with --interactive=true",
-		Long: "Filters tasks to rows with a non-empty plan_resume_session and " +
-			"renders the shared task picker. The selected task re-execs " +
-			"`j tasks orchestrate --plan-requires-approval=true --interactive=true` " +
+		Long: "Renders the shared task picker. The selected task re-execs " +
+			"`j tasks orchestrate --phase=plan-only --interactive=true` " +
 			"inline so the planner resumes its session in the foreground with the " +
-			"parent's terminal attached. When no task carries an active plan session, " +
-			"prints `J: no tasks with an active plan session` and exits 0.",
+			"parent's terminal attached.",
 		PersistentPreRunE: preflight.PreRunE,
 		PreRunE: func(cmd *cobra.Command, _ []string) error {
 			return preflight.EnsureAgentSelections(

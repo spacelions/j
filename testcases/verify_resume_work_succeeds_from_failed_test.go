@@ -45,7 +45,7 @@ func TestVerify_ResumeWork_SucceedsFromFailed(t *testing.T) {
 	got := recoveryReadStubArgv(t, argvPath)
 	want := []string{
 		"tasks", "orchestrate", "--id", id,
-		"--phase=from-work", "--interactive=true",
+		"--phase=work-only", "--interactive=true",
 	}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", got, want)

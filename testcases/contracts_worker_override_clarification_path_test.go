@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spacelions/j/internal/agents/prompts"
 	"github.com/spacelions/j/internal/cli/settings"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -43,9 +42,9 @@ func TestContracts_WorkerOverride_ClarificationPath(t *testing.T) {
 		clarify  = "/abs/.j/tasks/T1/clarification.md"
 	)
 	cases := map[string]string{
-		"fresh":  prompts.BuildWorker(plan, "", nil, clarify),
-		"resume": prompts.BuildWorkerResume(plan, "", nil, clarify),
-		"fix":    prompts.BuildVerifierFix(plan, findings, "", clarify),
+		"fresh":  buildWorkerPrompt(plan, "", nil, clarify),
+		"resume": buildWorkerResumePrompt(plan, "", nil, clarify),
+		"fix":    buildVerifierFixPrompt(plan, findings, "", clarify),
 	}
 	for name, p := range cases {
 		if !strings.Contains(p, clarify) {

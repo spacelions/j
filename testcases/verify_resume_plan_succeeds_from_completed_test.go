@@ -16,7 +16,7 @@ import (
 // criterion 4 (completed half): resume-plan must succeed for a
 // completed row carrying a plan resume session. Backed by the new
 // `{completed, EventPlanResume, planning}` FSM edge. The orchestrate
-// argv must include `--plan-requires-approval=true --interactive=true`.
+// argv must include `--phase=plan-only --interactive=true`.
 func TestVerify_ResumePlan_SucceedsFromCompleted(t *testing.T) {
 	recoverySetupEnv(t)
 	id := recoverySeedTask(t, func(task *tasks.Task) {
@@ -46,7 +46,7 @@ func TestVerify_ResumePlan_SucceedsFromCompleted(t *testing.T) {
 	got := recoveryReadStubArgv(t, argvPath)
 	want := []string{
 		"tasks", "orchestrate", "--id", id,
-		"--plan-requires-approval=true", "--interactive=true",
+		"--phase=plan-only", "--interactive=true",
 	}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("argv = %v, want %v", got, want)

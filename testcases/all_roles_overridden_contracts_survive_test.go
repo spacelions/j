@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spacelions/j/internal/agents/prompts"
 	"github.com/spacelions/j/internal/cli/settings"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -66,21 +65,19 @@ func TestAllRolesOverridden_ContractsSurvive(t *testing.T) {
 		vplan    = "/abs/.j/tasks/x/verifier_plan.md"
 		clarify  = "/abs/.j/tasks/x/clarification.md"
 	)
-	plannerOut := prompts.AppendPlannerSaveSuffix(
-		prompts.BuildPlanner(req, nil), req, plan, clarify,
-	)
-	plannerResume := prompts.AppendPlannerSaveSuffix(
-		prompts.BuildPlannerResume(req, nil), req, plan, clarify,
-	)
-	workerOut := prompts.BuildWorker(plan, "", nil, clarify)
-	workerResume := prompts.BuildWorkerResume(plan, "", nil, clarify)
-	verifierOut := prompts.BuildVerifier(
+	plannerOut := plannerSavePrompt(
+		buildPlannerPrompt(req, nil), req, plan, clarify)
+	plannerResume := plannerSavePrompt(
+		buildPlannerResumePrompt(req, nil), req, plan, clarify)
+	workerOut := buildWorkerPrompt(plan, "", nil, clarify)
+	workerResume := buildWorkerResumePrompt(plan, "", nil, clarify)
+	verifierOut := buildVerifierPrompt(
 		req, plan, vplan, findings, "", nil, clarify,
 	)
-	verifierResume := prompts.BuildVerifierResume(
+	verifierResume := buildVerifierResumePrompt(
 		req, plan, "", nil, clarify,
 	)
-	fixOut := prompts.BuildVerifierFix(plan, findings, "", clarify)
+	fixOut := buildVerifierFixPrompt(plan, findings, "", clarify)
 
 	// Per-prompt expectations keyed to the contracts each prompt
 	// MUST carry even when the role body is a stub.

@@ -119,6 +119,23 @@ func TestResolveWorkPlan(t *testing.T) {
 	}
 }
 
+func TestResolvePlanTask(t *testing.T) {
+	setupResolverProject(t)
+	seedResolverTask(t, tasks.Task{ID: "p1", Status: tasks.StatusPlanning}, "", "req")
+	res, err := ResolvePlanTask("p1")
+	if err != nil {
+		t.Fatalf("ResolvePlanTask: %v", err)
+	}
+	if res.Task.ID != "p1" ||
+		filepath.Base(res.Paths.Requirements) != tasks.RequirementsFileName {
+		t.Fatalf("resolved plan task = %+v", res)
+	}
+	_, err = ResolvePlanTask("missing")
+	if err == nil || !strings.Contains(err.Error(), `task "missing" not found`) {
+		t.Fatalf("missing err = %v", err)
+	}
+}
+
 func TestResolveWorkPlanAutoPicksSingleAllowedTask(t *testing.T) {
 	setupResolverProject(t)
 	seedResolverTask(t, tasks.Task{ID: "a", Status: tasks.StatusPlanning}, "a plan", "")
@@ -175,7 +192,8 @@ func TestResolveVerifyTask(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("ResolveVerifyTask by id = %+v, %v, %v", res, ok, err)
 	}
-	if res.Task.ID != "v1" || filepath.Base(res.FindingsPath) != tasks.VerifierFindingsFileName {
+	if res.Task.ID != "v1" ||
+		filepath.Base(res.Paths.Findings) != tasks.VerifierFindingsFileName {
 		t.Fatalf("resolved verify task = %+v", res)
 	}
 }

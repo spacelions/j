@@ -59,7 +59,8 @@ func bindOrchestrateFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("plan-requires-approval", false,
 		"Resolved project.plan_requires_approval value")
 	cmd.Flags().String("phase", string(orchestrator.RunPhaseFull),
-		"Which slice of the chain to run: full | from-work | verify-only")
+		"Which slice of the chain to run: full | plan-only | "+
+			"from-work | work-only | verify-only")
 	cmd.Flags().String(flagKeyTool, "", "Planner tool override (cursor|claude)")
 	cmd.Flags().String(flagKeyModel, "", "Planner model override")
 	cmd.Flags().Bool(flagKeyInteractive, false,

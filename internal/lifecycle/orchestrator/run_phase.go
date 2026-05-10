@@ -10,8 +10,8 @@ import "fmt"
 // active phase (planner when not skipped, otherwise worker). Resume
 // state is intentionally not part of this struct: the worker / verifier
 // infer it from the task row's WorkResumeSession / VerifyResumeSession
-// fields (re-work / re-verify clear them; resume-work / resume-verify
-// leave them populated).
+// fields. Single-phase resume commands preserve them so a phase can
+// reuse its prior agent session when one exists.
 type PhaseOverrides struct {
 	Tool        string
 	Model       string
@@ -30,12 +30,14 @@ const (
 	// RunPhaseFull runs planner → worker → verifier. Used by
 	// `j tasks start` and `j tasks continue` on a fresh row.
 	RunPhaseFull RunPhase = "full"
+	// RunPhasePlanOnly runs only the planner.
+	RunPhasePlanOnly RunPhase = "plan-only"
 	// RunPhaseFromWork skips the planner and runs worker → verifier.
-	// Used by `j tasks continue` on a plan-done row plus the re-work
-	// / resume-work CLI wrappers.
+	// Used by `j tasks continue` on a plan-done row.
 	RunPhaseFromWork RunPhase = "from-work"
-	// RunPhaseVerifyOnly runs only the verifier. Used by re-verify
-	// / resume-verify.
+	// RunPhaseWorkOnly runs only the worker.
+	RunPhaseWorkOnly RunPhase = "work-only"
+	// RunPhaseVerifyOnly runs only the verifier.
 	RunPhaseVerifyOnly RunPhase = "verify-only"
 )
 
@@ -47,12 +49,16 @@ func ParseRunPhase(s string) (RunPhase, error) {
 	switch s {
 	case "", string(RunPhaseFull):
 		return RunPhaseFull, nil
+	case string(RunPhasePlanOnly):
+		return RunPhasePlanOnly, nil
 	case string(RunPhaseFromWork):
 		return RunPhaseFromWork, nil
+	case string(RunPhaseWorkOnly):
+		return RunPhaseWorkOnly, nil
 	case string(RunPhaseVerifyOnly):
 		return RunPhaseVerifyOnly, nil
 	}
 	return "", fmt.Errorf(
 		"workflow: unknown run phase %q "+
-			"(want full|from-work|verify-only)", s)
+			"(want full|plan-only|from-work|work-only|verify-only)", s)
 }

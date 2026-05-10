@@ -3,6 +3,7 @@ package testcases_test
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,18 +16,25 @@ import (
 // error constructed with `errors.New("J: ...")` /
 // `fmt.Errorf("J: ...")` reached the cli.Execute print boundary
 // at root.go:54 (which already prepends `"J: %v\n"`). It drives a
-// real failure path through cli.Execute — `j tasks re-plan
-// --from-task <id>` against a row in StatusVerifying, which the
-// FSM rejects for EventPlanRestart — and asserts that the
+// real failure path through cli.Execute — `j tasks resume-work`
+// against a row without a saved plan, which the artifact gate
+// rejects before launching an agent — and asserts that the
 // stderr output contains exactly one `J: ` prefix.
 func TestCLI_NoDoubleJPrefix(t *testing.T) {
 	recoverySetupEnv(t)
 	id := recoverySeedTask(t, func(task *tasks.Task) {
 		task.Status = tasks.StatusVerifying
 	})
+	taskDir, err := tasks.EnsureDir(id)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := os.Remove(filepath.Join(taskDir, tasks.PlanFileName)); err != nil {
+		t.Fatalf("remove plan: %v", err)
+	}
 
 	stderr := captureExecuteStderr(t, []string{
-		"j", "tasks", "re-plan", "--from-task", id,
+		"j", "tasks", "resume-work",
 	})
 
 	if !strings.Contains(stderr, "J: ") {
