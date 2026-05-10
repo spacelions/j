@@ -7,3 +7,4 @@ cover.out
 .agents/
 .claude/
 .worktrees/
+.cursor/
