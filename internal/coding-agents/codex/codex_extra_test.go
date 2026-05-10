@@ -540,6 +540,7 @@ func TestPlan_Headless(t *testing.T) {
 		"exec", "-m", "gpt-5.5",
 		"--skip-git-repo-check",
 		"--dangerously-bypass-approvals-and-sandbox",
+		"--json",
 		"--",
 	}
 	argv := waitForCalls(t, calls, len(want)+1)
@@ -557,7 +558,7 @@ func TestPlan_Headless(t *testing.T) {
 
 // TestPlan_Headless_Resume covers the headless resume argv shape:
 // `exec resume <id> -m <m> --skip-git-repo-check
-// --dangerously-bypass-approvals-and-sandbox -- <prompt>`.
+// --dangerously-bypass-approvals-and-sandbox --json -- <prompt>`.
 func TestPlan_Headless_Resume(t *testing.T) {
 	dir, target := stagePlanFiles(t)
 	logPath := filepath.Join(dir, "agent.log")
@@ -574,6 +575,7 @@ func TestPlan_Headless_Resume(t *testing.T) {
 		"exec", "resume", rid, "-m", "gpt-5.5",
 		"--skip-git-repo-check",
 		"--dangerously-bypass-approvals-and-sandbox",
+		"--json",
 		"--",
 	}
 	argv := waitForCalls(t, calls, len(want)+1)
@@ -774,7 +776,8 @@ func buildWantArgs(interactive bool, resume string) []string {
 	if !interactive {
 		want = append(want,
 			"--skip-git-repo-check",
-			"--dangerously-bypass-approvals-and-sandbox")
+			"--dangerously-bypass-approvals-and-sandbox",
+			"--json")
 	}
 	want = append(want, "--")
 	return want

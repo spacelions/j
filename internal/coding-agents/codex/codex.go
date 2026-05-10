@@ -28,12 +28,10 @@
 //     scans that task-scoped store. The rollout cwd is not used for
 //     identity; the per-task home isolates concurrent runs while the
 //     phase begin timestamp filters stale in-task rollouts.
-//   - Codex's default `exec` output is multi-line human text rather
-//     than stream-json, so FormatLog is the identity transform — the
-//     bytes the child wrote already read like the rest of agent.log.
-//     `--json` is intentionally not requested: an identity formatter
-//     over JSONL would dump raw envelopes that need their own renderer
-//     (claude precedent) and the human text trace is already readable.
+//   - Headless runs request `--json` so codex emits JSONL thread
+//     events. FormatLog renders the known envelopes as concise
+//     agentlog markers and passes unknown or malformed lines through
+//     verbatim.
 package codex
 
 import (
@@ -52,6 +50,7 @@ const (
 	argExec    = "exec"
 	argResume  = "resume"
 	argModel   = "-m"
+	argJSON    = "--json"
 	argSkipGit = "--skip-git-repo-check"
 	argBypass  = "--dangerously-bypass-approvals-and-sandbox"
 
@@ -258,15 +257,15 @@ func interactivePlannerArgs(resumeID, model, prompt string) []string {
 
 // headlessArgs returns the argv tail used by Plan / Work / Verify in
 // headless mode: `exec [resume <id>] [-m <m>] --skip-git-repo-check
-// --dangerously-bypass-approvals-and-sandbox -- <prompt>`. The bypass
-// flag is required for non-interactive runs so codex auto-approves
-// shell / write tool calls instead of stalling on a permission
-// prompt; --skip-git-repo-check lets the per-task workspace (a plain
-// directory under .j/tasks/<id>/) host the run.
+// --dangerously-bypass-approvals-and-sandbox --json -- <prompt>`.
+// The bypass flag is required for non-interactive runs so codex
+// auto-approves shell / write tool calls instead of stalling on a
+// permission prompt; --skip-git-repo-check lets the per-task workspace
+// (a plain directory under .j/tasks/<id>/) host the run.
 func headlessArgs(resumeID, model, prompt string) []string {
 	args := leadArgs(argExec, resumeID)
 	args = appendModel(args, model)
-	return append(args, argSkipGit, argBypass, "--", prompt)
+	return append(args, argSkipGit, argBypass, argJSON, "--", prompt)
 }
 
 // leadArgs returns the leading argv shared by the interactive
