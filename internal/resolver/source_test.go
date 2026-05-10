@@ -144,6 +144,17 @@ func TestFetchLinearBody_Errors(t *testing.T) {
 		t.Fatalf("no key err = %v", err)
 	}
 
+	t.Run("settings_open_error", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		if err := os.MkdirAll(filepath.Join(".j", "settings"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err := FetchLinearBody(t.Context(), "ENG-1")
+		if err == nil || !strings.Contains(err.Error(), "linear: open settings") {
+			t.Fatalf("settings open err = %v", err)
+		}
+	})
+
 	// Valid identifier + token + 401 server: ErrUnauthorized.
 	if err := linear.SaveAPIKey("lin_api_test"); err != nil {
 		t.Fatal(err)

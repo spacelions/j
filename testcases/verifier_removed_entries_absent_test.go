@@ -34,6 +34,7 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 		`internal/resolver/agent.go:.*persistAgent`,
 		`internal/resolver/agent.go:.*readToolModel`,
 		`internal/resolver/mustread.go:.*ParseMustRead`,
+		`internal/resolver/source.go:.*FetchLinearBody`,
 		`internal/resolver/source.go:.*StartTargetFromLinear`,
 		`internal/store/tasks/sort.go`,
 		`internal/store/tasks/task.go:.*DisplayToolModel`,
