@@ -16,12 +16,14 @@ type ExecutableStubOptions struct {
 	Stdout    string
 	ExitCode  int
 	RecordCWD bool
+	RecordEnv bool
 }
 
 // ExecutableStub is the set of files written by InstallExecutableStub.
 type ExecutableStub struct {
 	CallsPath string
 	CWDPath   string
+	EnvPath   string
 }
 
 func InstallExecutableStub(
@@ -41,12 +43,19 @@ func InstallExecutableStub(
 		stub.CWDPath = filepath.Join(dir, "cwd.log")
 		cwdLine = fmt.Sprintf("pwd > %q\n", stub.CWDPath)
 	}
+	envLine := ""
+	if opts.RecordEnv {
+		stub.EnvPath = filepath.Join(dir, "env.log")
+		envLine = fmt.Sprintf("env > %q\n", stub.EnvPath)
+	}
 	body := fmt.Sprintf(`#!/bin/sh
 : > %q
 for a in "$@"; do printf '%%s\0' "$a" >> %q; done
 %scat %q
+%s
 exit %d
-`, stub.CallsPath, stub.CallsPath, cwdLine, stdoutPath, opts.ExitCode)
+`, stub.CallsPath, stub.CallsPath, cwdLine, stdoutPath, envLine,
+		opts.ExitCode)
 	bin := filepath.Join(dir, opts.Binary)
 	if err := os.WriteFile(bin, []byte(body), 0o755); err != nil {
 		t.Fatal(err)

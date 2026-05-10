@@ -185,7 +185,6 @@ func runVerifyLoop(
 	if mustReadErr != nil {
 		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
 	}
-	verifyWorkspace := codingagents.ProjectRootWorkspace()
 	beginAt := time.Now().UTC()
 	for i := range opts.MaxIterations {
 		lc.IterationBegin(i, opts.MaxIterations)
@@ -198,9 +197,9 @@ func runVerifyLoop(
 		if i == 0 && session.ResumeID == "" {
 			session.ResumeID = codingagents.CaptureAndRecordResume(
 				ctx, agent, lc, codingagents.ResumeCapture{
-					Workspace: verifyWorkspace,
-					Since:     beginAt,
-					Stderr:    opts.Stderr,
+					TaskDir: res.TaskDir,
+					Since:   beginAt,
+					Stderr:  opts.Stderr,
 				},
 			)
 		}

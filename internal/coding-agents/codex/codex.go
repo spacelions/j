@@ -23,10 +23,11 @@
 //   - There is no pre-run `--session-id <uuid>` binding flag (codex
 //     mints the thread id server-side and writes it to the rollout
 //     file as the first session_meta event). NewResumeID therefore
-//     always returns ("", nil) and the post-run id is recovered by
-//     CaptureResumeID (capture.go) which scans
-//     `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` (falling back
-//     to `~/.codex/sessions`) — same pattern as deepseek.
+//     always returns ("", nil). Every invocation runs with CODEX_HOME
+//     set to `<taskDir>/.codex-home`, and post-run CaptureResumeID
+//     scans that task-scoped store. The rollout cwd is not used for
+//     identity; the per-task home isolates concurrent runs while the
+//     phase begin timestamp filters stale in-task rollouts.
 //   - Codex's default `exec` output is multi-line human text rather
 //     than stream-json, so FormatLog is the identity transform — the
 //     bytes the child wrote already read like the rest of agent.log.
@@ -141,9 +142,14 @@ func (a *Agent) Plan(
 ) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.FromFilePath)
 	prompt := prompts.PlanPrompt(req)
+	env, err := prepareScopedEnv(req.TaskDir)
+	if err != nil {
+		return 0, fmt.Errorf("codex: %w", err)
+	}
 	return a.runPhase(ctx, phaseRun{
 		interactive:  req.Interactive,
 		workspace:    workspace,
+		env:          env,
 		agentLogPath: req.AgentLogPath,
 		interactiveArgs: interactivePlannerArgs(
 			req.ResumeChatID, req.Model, prompt,
@@ -158,9 +164,14 @@ func (a *Agent) Work(
 ) (int, error) {
 	workspace := codingagents.DefaultWorkspace(req.PlanPath)
 	prompt := prompts.WorkPrompt(req)
+	env, err := prepareScopedEnv(req.TaskDir)
+	if err != nil {
+		return 0, fmt.Errorf("codex: %w", err)
+	}
 	return a.runPhase(ctx, phaseRun{
 		interactive:     req.Interactive,
 		workspace:       workspace,
+		env:             env,
 		agentLogPath:    req.AgentLogPath,
 		interactiveArgs: interactiveArgs(req.ResumeChatID, req.Model, prompt),
 		headlessArgs:    headlessArgs(req.ResumeChatID, req.Model, prompt),
@@ -175,9 +186,14 @@ func (a *Agent) Verify(
 ) (int, error) {
 	workspace := codingagents.ProjectRootWorkspace()
 	prompt := prompts.VerifyPrompt(req)
+	env, err := prepareScopedEnv(req.TaskDir)
+	if err != nil {
+		return 0, fmt.Errorf("codex: %w", err)
+	}
 	return a.runPhase(ctx, phaseRun{
 		interactive:     req.Interactive,
 		workspace:       workspace,
+		env:             env,
 		agentLogPath:    req.AgentLogPath,
 		interactiveArgs: interactiveArgs(req.ResumeChatID, req.Model, prompt),
 		headlessArgs:    headlessArgs(req.ResumeChatID, req.Model, prompt),
@@ -187,6 +203,7 @@ func (a *Agent) Verify(
 type phaseRun struct {
 	interactive     bool
 	workspace       string
+	env             []string
 	agentLogPath    string
 	interactiveArgs []string
 	headlessArgs    []string
@@ -195,16 +212,18 @@ type phaseRun struct {
 // runPhase is the shared dispatcher for Plan / Work / Verify.
 func (a *Agent) runPhase(ctx context.Context, phase phaseRun) (int, error) {
 	if phase.interactive {
-		if err := run.RunIn(
-			ctx, phase.workspace, Binary, phase.interactiveArgs...,
+		if err := run.RunInEnv(
+			ctx, phase.workspace, phase.env,
+			Binary, phase.interactiveArgs...,
 		); err != nil {
 			return 0, fmt.Errorf("codex: %w", err)
 		}
 		return 0, nil
 	}
-	pid, err := run.SpawnFormattedIn(
+	pid, err := run.SpawnFormattedInEnv(
 		ctx,
 		phase.workspace,
+		phase.env,
 		phase.agentLogPath,
 		a.FormatLog,
 		Binary,

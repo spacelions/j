@@ -19,6 +19,7 @@ func buildVerifyRequest(
 	mustRead []string,
 ) codingagents.VerifyRequest {
 	return codingagents.VerifyRequest{
+		TaskDir:                    res.TaskDir,
 		RequirementsPath:           res.Paths.Requirements,
 		PlanPath:                   res.Paths.Plan,
 		VerifierPlanOutputPath:     res.Paths.VerifierPlan,
@@ -68,6 +69,7 @@ func buildFixRequest(
 	interactive bool,
 ) codingagents.WorkRequest {
 	return codingagents.WorkRequest{
+		TaskDir:                    res.TaskDir,
 		PlanPath:                   res.Paths.Plan,
 		Model:                      res.Task.WorkModel,
 		ClarificationPath:          res.Paths.Clarification,

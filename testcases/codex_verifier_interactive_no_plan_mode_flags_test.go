@@ -23,6 +23,7 @@ func TestCodexVerifierInteractiveNoPlanModeFlags(t *testing.T) {
 	t.Chdir(dir)
 
 	req := codingagents.VerifyRequest{
+		TaskDir:                    dir,
 		RequirementsPath:           filepath.Join(dir, "requirements.md"),
 		PlanPath:                   filepath.Join(dir, "plan.md"),
 		VerifierPlanOutputPath:     filepath.Join(dir, "verifier_plan.md"),

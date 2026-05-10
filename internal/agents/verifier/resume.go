@@ -172,6 +172,7 @@ func buildVerifyResumeRequest(
 	mustRead []string,
 ) codingagents.VerifyRequest {
 	return codingagents.VerifyRequest{
+		TaskDir:                    res.TaskDir,
 		RequirementsPath:           res.Paths.Requirements,
 		PlanPath:                   res.Paths.Plan,
 		VerifierPlanOutputPath:     res.Paths.VerifierPlan,

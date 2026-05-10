@@ -57,6 +57,24 @@ func TestSpawnFormattedIn_NilFormatterIsIdentity(t *testing.T) {
 	waitForLogContains(t, logPath, "verbatim")
 }
 
+func TestSpawnFormattedInEnv_OverridesParentEnv(t *testing.T) {
+	t.Setenv("J_RUN_ENV_TEST", "parent")
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "out.log")
+	pid, err := SpawnFormattedInEnv(
+		t.Context(), "", []string{"J_RUN_ENV_TEST=child"},
+		logPath, nil, "sh", "-c",
+		`printf 'env=%s\n' "$J_RUN_ENV_TEST"`,
+	)
+	if err != nil {
+		t.Fatalf("SpawnFormattedInEnv: %v", err)
+	}
+	if pid <= 0 {
+		t.Fatalf("pid = %d", pid)
+	}
+	waitForLogContains(t, logPath, "env=child")
+}
+
 // TestSpawnFormattedIn_MultiLineFormatter pins the case where one
 // source line maps to multiple output lines (e.g. claude's
 // multi-content-block assistant events). Each rendered line lands

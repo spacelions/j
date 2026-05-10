@@ -181,20 +181,20 @@ func writeSession(
 	}
 }
 
-// TestScanSessions pins the workspace + since filter and the
+// TestScanSessions pins the since filter and the
 // newest-first ordering. We populate three sessions: one outside the
-// since window, one with the wrong workspace, and two valid ones.
-// The scan must drop the first two and return the valid pair newest
-// first.
+// since window, and three newer ones. The scan must ignore workspace
+// and return the newer entries newest first.
 func TestScanSessions(t *testing.T) {
 	dir := t.TempDir()
 	since := time.Now().Add(-1 * time.Hour)
 	older := since.Add(-30 * time.Minute)
+	wrongWorkspace := since.Add(20 * time.Minute)
 	mid := since.Add(10 * time.Minute)
 	newer := since.Add(45 * time.Minute)
 
 	writeSession(t, dir, "stale", "stale-id", "/ws/A", older)
-	writeSession(t, dir, "wrong-ws", "wrong-id", "/ws/B", newer)
+	writeSession(t, dir, "wrong-ws", "wrong-id", "/ws/B", wrongWorkspace)
 	writeSession(t, dir, "match-mid", "mid-id", "/ws/A", mid)
 	writeSession(t, dir, "match-new", "new-id", "/ws/A", newer)
 	// Non-JSON file in the dir: must be skipped, not crash.
@@ -214,16 +214,17 @@ func TestScanSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := scanSessions(dir, "/ws/A", since)
+	got, err := scanSessions(dir, since)
 	if err != nil {
 		t.Fatalf("scanSessions: %v", err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("len = %d, want 2: %+v", len(got), got)
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3: %+v", len(got), got)
 	}
-	if got[0].ID != "new-id" || got[1].ID != "mid-id" {
-		t.Fatalf("ordering wrong, got %q then %q",
-			got[0].ID, got[1].ID)
+	if got[0].ID != "new-id" ||
+		got[1].ID != "wrong-id" ||
+		got[2].ID != "mid-id" {
+		t.Fatalf("ordering wrong, got %+v", got)
 	}
 }
 
@@ -233,7 +234,7 @@ func TestScanSessions(t *testing.T) {
 func TestScanSessions_MissingDir(t *testing.T) {
 	got, err := scanSessions(
 		filepath.Join(t.TempDir(), "does-not-exist"),
-		"/ws/A", time.Now(),
+		time.Now(),
 	)
 	if err != nil {
 		t.Fatalf("scanSessions: %v", err)
@@ -248,19 +249,19 @@ func TestScanSessions_ReadDirError(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := scanSessions(path, "/ws/A", time.Now())
+	_, err := scanSessions(path, time.Now())
 	if err == nil {
 		t.Fatal("scanSessions error = nil")
 	}
 }
 
 // TestCaptureResumeID_NoStore covers the happy path of a fresh
-// machine: DEEPSEEK_HOME points at a tempdir with no `sessions/`
-// child, so CaptureResumeID returns ("", nil) without error.
+// task-scoped home with no `sessions/` child, so CaptureResumeID
+// returns ("", nil) without error.
 func TestCaptureResumeID_NoStore(t *testing.T) {
-	t.Setenv(envHome, t.TempDir())
+	taskDir := t.TempDir()
 	got, err := New().CaptureResumeID(
-		t.Context(), "/ws/A", time.Now().Add(-time.Hour),
+		t.Context(), taskDir, time.Now().Add(-time.Hour),
 	)
 	if err != nil {
 		t.Fatalf("CaptureResumeID: %v", err)
@@ -273,9 +274,8 @@ func TestCaptureResumeID_NoStore(t *testing.T) {
 // TestCaptureResumeID_PicksNewest seeds the sessions store with two
 // matching entries and confirms CaptureResumeID returns the newer id.
 func TestCaptureResumeID_PicksNewest(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv(envHome, home)
-	dir := filepath.Join(home, "sessions")
+	taskDir := t.TempDir()
+	dir := sessionsDir(taskDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +285,7 @@ func TestCaptureResumeID_PicksNewest(t *testing.T) {
 	writeSession(t, dir, "new", "newest-id", "/ws/A",
 		since.Add(20*time.Minute))
 
-	got, err := New().CaptureResumeID(t.Context(), "/ws/A", since)
+	got, err := New().CaptureResumeID(t.Context(), taskDir, since)
 	if err != nil {
 		t.Fatalf("CaptureResumeID: %v", err)
 	}
@@ -295,19 +295,18 @@ func TestCaptureResumeID_PicksNewest(t *testing.T) {
 }
 
 // TestCaptureResumeID_NoMatch pins the empty-but-exists branch: the
-// store has sessions but none for our workspace+since. Must return
-// ("", nil).
+// store has sessions but none inside the since window.
 func TestCaptureResumeID_NoMatch(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv(envHome, home)
-	dir := filepath.Join(home, "sessions")
+	taskDir := t.TempDir()
+	dir := sessionsDir(taskDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeSession(t, dir, "other", "other-id", "/ws/B", time.Now())
+	writeSession(t, dir, "other", "other-id", "/ws/B",
+		time.Now().Add(-2*time.Hour))
 
 	got, err := New().CaptureResumeID(
-		t.Context(), "/ws/A", time.Now().Add(-time.Hour),
+		t.Context(), taskDir, time.Now().Add(-time.Hour),
 	)
 	if err != nil {
 		t.Fatalf("CaptureResumeID: %v", err)
@@ -318,14 +317,14 @@ func TestCaptureResumeID_NoMatch(t *testing.T) {
 }
 
 func TestCaptureResumeID_ScanError(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv(envHome, home)
+	taskDir := t.TempDir()
 	if err := os.WriteFile(
-		filepath.Join(home, "sessions"), []byte("not a directory"), 0o644,
+		filepath.Join(taskDir, homeSubdir), []byte("not a directory"),
+		0o644,
 	); err != nil {
 		t.Fatal(err)
 	}
-	_, err := New().CaptureResumeID(t.Context(), "/ws/A", time.Now())
+	_, err := New().CaptureResumeID(t.Context(), taskDir, time.Now())
 	if err == nil {
 		t.Fatal("CaptureResumeID error = nil")
 	}
@@ -347,7 +346,7 @@ func TestScanSessions_SkipsCorruptAndEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeSession(t, dir, "good", "good-id", "/ws/A", time.Now())
-	got, err := scanSessions(dir, "/ws/A", since)
+	got, err := scanSessions(dir, since)
 	if err != nil {
 		t.Fatalf("scanSessions: %v", err)
 	}
@@ -363,29 +362,10 @@ func TestDecodeSession_ReadError(t *testing.T) {
 	}
 }
 
-// TestCaptureResumeID_HomeError pins the sessionsDir error branch:
-// when neither DEEPSEEK_HOME nor a usable $HOME is available,
-// CaptureResumeID surfaces the error so the caller can warn.
-func TestCaptureResumeID_HomeError(t *testing.T) {
-	t.Setenv(envHome, "")
-	t.Setenv("HOME", "")
-	// On darwin/linux, an empty $HOME makes os.UserHomeDir return an
-	// error. CaptureResumeID propagates that wrapped err.
-	_, err := New().CaptureResumeID(t.Context(), "/ws/A", time.Now())
-	if err == nil {
-		t.Skip("os.UserHomeDir tolerated empty HOME on this platform")
-	}
-}
-
-// TestSessionsDir_HomeOverride pins DEEPSEEK_HOME wins over the
-// default $HOME-based path.
-func TestSessionsDir_HomeOverride(t *testing.T) {
-	t.Setenv(envHome, "/tmp/custom-home")
-	got, err := sessionsDir()
-	if err != nil {
-		t.Fatalf("sessionsDir: %v", err)
-	}
-	want := filepath.Join("/tmp/custom-home", "sessions")
+func TestSessionsDir_UsesTaskScopedHome(t *testing.T) {
+	taskDir := t.TempDir()
+	got := sessionsDir(taskDir)
+	want := filepath.Join(taskDir, homeSubdir, "sessions")
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -413,21 +393,50 @@ func TestFormatLog_Identity(t *testing.T) {
 	}
 }
 
-// TestSessionsDir_FallsBackToUserHome pins the no-override branch:
-// when DEEPSEEK_HOME is unset, sessionsDir derives the path from
-// os.UserHomeDir().
-func TestSessionsDir_FallsBackToUserHome(t *testing.T) {
+func TestPopulateScopedHomeCreatesPrivateDirectory(t *testing.T) {
 	t.Setenv(envHome, "")
-	home, err := os.UserHomeDir()
+	t.Setenv("HOME", t.TempDir())
+	taskDir := t.TempDir()
+	got, err := populateScopedHome(taskDir)
 	if err != nil {
-		t.Skipf("UserHomeDir: %v (env strips $HOME)", err)
+		t.Fatalf("populateScopedHome: %v", err)
 	}
-	got, err := sessionsDir()
-	if err != nil {
-		t.Fatalf("sessionsDir: %v", err)
-	}
-	want := filepath.Join(home, ".deepseek", "sessions")
+	want := filepath.Join(taskDir, homeSubdir)
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+	info, err := os.Stat(got)
+	if err != nil {
+		t.Fatalf("stat scoped home: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%s is not a directory", got)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Fatalf("mode = %v, want 0700", info.Mode().Perm())
+	}
+}
+
+func TestCaptureResumeID_IsolatedByTaskDir(t *testing.T) {
+	taskA := t.TempDir()
+	taskB := t.TempDir()
+	since := time.Now().Add(-time.Hour)
+	createdAt := since.Add(10 * time.Minute)
+	if err := os.MkdirAll(sessionsDir(taskA), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(sessionsDir(taskB), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSession(t, sessionsDir(taskA), "a", "id-a", "/same/ws", createdAt)
+	writeSession(t, sessionsDir(taskB), "b", "id-b", "/same/ws",
+		createdAt.Add(time.Minute))
+
+	got, err := New().CaptureResumeID(t.Context(), taskA, since)
+	if err != nil {
+		t.Fatalf("CaptureResumeID: %v", err)
+	}
+	if got != "id-a" {
+		t.Fatalf("got %q, want id-a", got)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
@@ -383,12 +384,54 @@ func TestExecute_FreshFromEmptySession(t *testing.T) {
 	}
 }
 
+func TestExecute_NoWaitSkipsPostRunCapture(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := testutil.WriteFile(taskDir+"/requirements.md", "x"); err != nil {
+		t.Fatalf("write requirements: %v", err)
+	}
+	testutil.SeedTaskRow(t, tasks.Task{
+		ID:      taskID,
+		Status:  tasks.StatusPlanning,
+		Summary: "task",
+	})
+
+	stub := newScriptedPlanAgent("scripted")
+	stub.mintedID = ""
+	stub.captureID = "captured-after-run"
+	if err := Execute(t.Context(), Options{
+		TaskID:            taskID,
+		Agent:             stub,
+		Model:             "m1",
+		WaitForCompletion: false,
+		Stderr:            io.Discard,
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if stub.captureCalls != 0 {
+		t.Fatalf("CaptureResumeID calls = %d, want 0", stub.captureCalls)
+	}
+	got := testutil.ReadTaskRow(t, taskID)
+	if got.PlanResumeSession != "" {
+		t.Fatalf("PlanResumeSession = %q, want empty", got.PlanResumeSession)
+	}
+}
+
 // scriptedPlanAgent stands in for a real codingagents.Agent. Plan
 // writes the per-task requirements.md / plan.md inline so plan.Run's
 // finishPlan promotes the row to plan-done synchronously.
 type scriptedPlanAgent struct {
 	name               string
 	models             []string
+	mintedID           string
+	captureID          string
+	captureCalls       int
 	planCalls          int
 	planErr            error
 	lastReq            codingagents.PlanRequest
@@ -396,7 +439,11 @@ type scriptedPlanAgent struct {
 }
 
 func newScriptedPlanAgent(name string) *scriptedPlanAgent {
-	return &scriptedPlanAgent{name: name, models: []string{"m1"}}
+	return &scriptedPlanAgent{
+		name:     name,
+		models:   []string{"m1"},
+		mintedID: "rid",
+	}
 }
 
 func (a *scriptedPlanAgent) Name() string                                 { return a.name }
@@ -406,7 +453,14 @@ func (a *scriptedPlanAgent) NewResumeID(context.Context) (string, error) {
 	if a.panicOnNewResumeID {
 		panic("NewResumeID must not be called on resume runs")
 	}
-	return "rid", nil
+	return a.mintedID, nil
+}
+
+func (a *scriptedPlanAgent) CaptureResumeID(
+	context.Context, string, time.Time,
+) (string, error) {
+	a.captureCalls++
+	return a.captureID, nil
 }
 
 func (a *scriptedPlanAgent) Plan(_ context.Context, req codingagents.PlanRequest) (int, error) {

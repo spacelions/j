@@ -72,12 +72,12 @@ func Execute(ctx context.Context, opts Options) error {
 		}
 	}
 
-	if planErr == nil && session.ResumeID == "" {
+	if planErr == nil && session.ResumeID == "" && opts.WaitForCompletion {
 		codingagents.CaptureAndRecordResume(
 			ctx, opts.Agent, lc, codingagents.ResumeCapture{
-				Workspace: res.TaskDir,
-				Since:     beginAt,
-				Stderr:    stderr,
+				TaskDir: res.TaskDir,
+				Since:   beginAt,
+				Stderr:  stderr,
 			},
 		)
 	}
@@ -169,6 +169,7 @@ func buildPlanRequest(
 	mustRead []string,
 ) codingagents.PlanRequest {
 	return codingagents.PlanRequest{
+		TaskDir:                 res.TaskDir,
 		FromFilePath:            res.Paths.Requirements,
 		Model:                   session.Model,
 		RequirementsOutputPath:  res.Paths.Requirements,

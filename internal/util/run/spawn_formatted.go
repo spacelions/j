@@ -49,6 +49,20 @@ func SpawnFormattedIn(
 	lineFmt func([]byte) []byte,
 	name string, args ...string,
 ) (int, error) {
+	return SpawnFormattedInEnv(
+		ctx, dir, nil, logPath, lineFmt, name, args...,
+	)
+}
+
+// SpawnFormattedInEnv is SpawnFormattedIn with caller-supplied
+// environment overrides. The supplied env entries are appended after
+// os.Environ(), so later duplicate keys win under os/exec's
+// environment handling.
+func SpawnFormattedInEnv(
+	ctx context.Context, dir string, env []string, logPath string,
+	lineFmt func([]byte) []byte,
+	name string, args ...string,
+) (int, error) {
 	if logPath == "" {
 		return 0, errors.New("run: empty log path")
 	}
@@ -68,7 +82,7 @@ func SpawnFormattedIn(
 		_ = logFile.Close()
 		return 0, fmt.Errorf("run: pipe: %w", err)
 	}
-	pid, err := startFormatted(ctx, dir, name, args, formattedPipes{
+	pid, err := startFormatted(ctx, dir, env, name, args, formattedPipes{
 		DevNull:   devNull,
 		PipeWrite: pw,
 		PipeRead:  pr,
@@ -88,11 +102,13 @@ func SpawnFormattedIn(
 // drain side will see EOF after the child exits. Split out of
 // SpawnFormattedIn to keep that helper under the 80-line method cap.
 func startFormatted(
-	ctx context.Context, dir, name string, args []string,
+	ctx context.Context, dir string, env []string,
+	name string, args []string,
 	pipes formattedPipes, lineFmt func([]byte) []byte,
 ) (int, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	cmd.Env = mergedEnv(env)
 	cmd.Stdin = pipes.DevNull
 	cmd.Stdout = pipes.PipeWrite
 	cmd.Stderr = pipes.PipeWrite

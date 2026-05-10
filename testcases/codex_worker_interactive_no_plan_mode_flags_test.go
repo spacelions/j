@@ -27,6 +27,7 @@ func TestCodexWorkerInteractiveNoPlanModeFlags(t *testing.T) {
 	}
 
 	req := codingagents.WorkRequest{
+		TaskDir:     dir,
 		PlanPath:    planPath,
 		Model:       "gpt-5.5",
 		Interactive: true,

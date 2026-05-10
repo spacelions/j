@@ -66,8 +66,20 @@ func Run(ctx context.Context, name string, args ...string) error {
 // SIGTERM signal handler relies on so the per-task flock truly
 // releases on shutdown.
 func RunIn(ctx context.Context, dir, name string, args ...string) error {
+	return RunInEnv(ctx, dir, nil, name, args...)
+}
+
+// RunInEnv is RunIn with caller-supplied environment overrides. Codex
+// and deepseek use it to point each child at a task-scoped agent home.
+// The supplied env entries are appended after os.Environ(), so later
+// duplicate keys win under os/exec's environment handling.
+func RunInEnv(
+	ctx context.Context, dir string, env []string,
+	name string, args ...string,
+) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	cmd.Env = mergedEnv(env)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -79,4 +91,14 @@ func RunIn(ctx context.Context, dir, name string, args ...string) error {
 		return fmt.Errorf("%s: %w", name, err)
 	}
 	return nil
+}
+
+func mergedEnv(env []string) []string {
+	if len(env) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(os.Environ())+len(env))
+	out = append(out, os.Environ()...)
+	out = append(out, env...)
+	return out
 }
