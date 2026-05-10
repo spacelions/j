@@ -7,15 +7,10 @@ import (
 )
 
 // TestFSM_ForegroundWorkNeedsClarification_LegalEdge pins the new
-// foreground worker-exit edge: the event must be a legal edge from
-// `working` and must land in `needs-clarification`, mirroring the
-// existing planner-foreground assertion.
+// foreground worker-exit edge: the event must move from `working`
+// to `needs-clarification`, mirroring the existing
+// planner-foreground assertion.
 func TestFSM_ForegroundWorkNeedsClarification_LegalEdge(t *testing.T) {
-	if !tasks.IsLegal(
-		tasks.StatusWorking, tasks.EventWorkNeedsClarification) {
-		t.Fatal("IsLegal(working, work_needs_clarification) = false," +
-			" want true")
-	}
 	got, err := tasks.Apply(
 		tasks.StatusWorking, tasks.EventWorkNeedsClarification)
 	if err != nil {

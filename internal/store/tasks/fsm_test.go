@@ -19,10 +19,10 @@ func TestApply_AllTransitionsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestApply_FailedAndCompletedRecoveryEdges pins the nine new edges
+// TestApply_FailedAndCompletedRecoveryEdges pins the recovery edges
 // that let `re-*` and `resume-*` rerun a finished task. Each entry
 // here must remain in the transitions table for the corresponding
-// CLI command to leave its IsLegal guard.
+// lifecycle mutation to succeed.
 func TestApply_FailedAndCompletedRecoveryEdges(t *testing.T) {
 	cases := []struct {
 		from TaskStatus
@@ -65,18 +65,6 @@ func TestApply_IllegalTransition(t *testing.T) {
 	_ = ite
 }
 
-func TestIsLegal(t *testing.T) {
-	if !IsLegal(StatusPlanning, EventPlanDone) {
-		t.Error("IsLegal(planning, plan_done) = false, want true")
-	}
-	if IsLegal(StatusPlanning, EventWorkBegin) {
-		t.Error("IsLegal(planning, work_begin) = true, want false")
-	}
-	if !IsLegal("", EventPlanBegin) {
-		t.Error(`IsLegal("", plan_begin) = false, want true`)
-	}
-}
-
 // TestApply_ForegroundPlanNeedsClarification pins the foreground
 // planner-exit edge: from `planning` the new event lands the row in
 // `needs-clarification`, mirroring the existing reaper-event entry.
@@ -87,9 +75,6 @@ func TestApply_ForegroundPlanNeedsClarification(t *testing.T) {
 	}
 	if got != StatusNeedsClarification {
 		t.Fatalf("Apply = %q, want needs-clarification", got)
-	}
-	if !IsLegal(StatusPlanning, EventPlanNeedsClarification) {
-		t.Fatal("IsLegal returned false for foreground edge")
 	}
 }
 
@@ -104,16 +89,9 @@ func TestApply_ForegroundWorkNeedsClarification(t *testing.T) {
 	if got != StatusNeedsClarification {
 		t.Fatalf("Apply = %q, want needs-clarification", got)
 	}
-	if !IsLegal(StatusWorking, EventWorkNeedsClarification) {
-		t.Fatal("IsLegal returned false for foreground worker edge")
-	}
 }
 
-func TestIsLegal_PlanResumeFromPendingApproval(t *testing.T) {
-	if !IsLegal(StatusPlanPendingApproval, EventPlanResume) {
-		t.Error(
-			"IsLegal(plan-pending-approval, plan_resume) = false, want true")
-	}
+func TestApply_PlanResumeFromPendingApproval(t *testing.T) {
 	got, err := Apply(StatusPlanPendingApproval, EventPlanResume)
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
@@ -121,20 +99,6 @@ func TestIsLegal_PlanResumeFromPendingApproval(t *testing.T) {
 	if got != StatusPlanning {
 		t.Errorf("Apply(...) = %q, want %q", got, StatusPlanning)
 	}
-}
-
-func TestIsLegal_DoesNotFireHooks(t *testing.T) {
-	ResetHooksForTest()
-	fired := false
-	Register(func(tr Transition, task Task) { fired = true })
-
-	if !IsLegal(StatusPlanning, EventPlanDone) {
-		t.Fatal("IsLegal returned false")
-	}
-	if fired {
-		t.Error("IsLegal fired hooks — Apply should not fire hooks either")
-	}
-	ResetHooksForTest()
 }
 
 func TestApply_DoesNotFireHooks(t *testing.T) {
@@ -150,36 +114,6 @@ func TestApply_DoesNotFireHooks(t *testing.T) {
 		t.Error("Apply fired hooks — only Notify should fire hooks")
 	}
 	ResetHooksForTest()
-}
-
-func TestLegalEvents(t *testing.T) {
-	events := LegalEvents(StatusPlanning)
-	if len(events) == 0 {
-		t.Fatal("LegalEvents(planning) returned empty")
-	}
-	seen := map[Event]bool{}
-	for _, e := range events {
-		seen[e] = true
-	}
-	want := []Event{
-		EventPlanDone, EventPlanAwaitApproval,
-		EventPlanError, EventPlanQuit,
-		EventPlanNeedsClarification,
-		EventReaperPlanDone, EventReaperPlanAwaitApproval,
-		EventReaperPlanFail, EventReaperPlanNeedsClarification,
-	}
-	for _, w := range want {
-		if !seen[w] {
-			t.Errorf("LegalEvents(planning) missing %q", w)
-		}
-	}
-}
-
-func TestLegalEvents_NewTask(t *testing.T) {
-	events := LegalEvents("")
-	if len(events) != 1 || events[0] != EventPlanBegin {
-		t.Fatalf("LegalEvents(\"\") = %v, want [plan_begin]", events)
-	}
 }
 
 func TestIllegalTransitionError_Error(t *testing.T) {

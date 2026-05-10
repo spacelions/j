@@ -291,8 +291,8 @@ func TestRunResume_AgentError(t *testing.T) {
 
 // TestRunResume_StatusCompletedIsResumable pins that a completed
 // task carrying a verify resume session is resumable: the FSM edge
-// {completed, EventVerifyResume, verifying} clears the IsLegal
-// guard and the verifier runs through to PASS.
+// {completed, EventVerifyResume, verifying} lets the verifier run
+// through to PASS.
 func TestRunResume_StatusCompletedIsResumable(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
@@ -478,24 +478,6 @@ func TestRunResume_PickerCancelled(t *testing.T) {
 	}
 	if len(agent.verifiedReqs) != 0 {
 		t.Fatal("agent should not be touched after cancel")
-	}
-}
-
-func TestRunResume_IllegalStatus(t *testing.T) {
-	t.Chdir(t.TempDir())
-	mustInit(t)
-	id, _ := seedResumableVerify(t, func(row *tasks.Task) {
-		row.Status = tasks.StatusPlanning
-	})
-	err := RunResume(t.Context(), ResumeOptions{
-		TaskID: id,
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		Agents: []codingagents.Agent{newScriptedAgent()},
-		UI:     &scriptedUI{},
-	})
-	if err == nil || !strings.Contains(err.Error(), "cannot resume verify") {
-		t.Fatalf("err = %v, want illegal status error", err)
 	}
 }
 

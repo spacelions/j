@@ -2,8 +2,8 @@
 // transitions. Apply checks the transition table and returns the
 // destination status (or an error); callers persist the row and
 // then call Notify to fire observer hooks with the durable snapshot.
-// The table is the single source of truth; IsLegal / LegalEvents
-// validate without mutating. The Mermaid diagram below mirrors it.
+// The table is the single source of truth. The Mermaid diagram below
+// mirrors it.
 //
 //	stateDiagram-v2
 //	    [*] --> planning : EventPlanBegin
@@ -220,23 +220,4 @@ func Apply(from TaskStatus, e Event) (TaskStatus, error) {
 		}
 	}
 	return "", IllegalTransitionError{From: from, Event: e}
-}
-
-// IsLegal reports whether the edge (from, e) appears in the
-// transition table. It does not fire hooks.
-func IsLegal(from TaskStatus, e Event) bool {
-	_, err := Apply(from, e)
-	return err == nil
-}
-
-// LegalEvents returns every event that is legal from the given
-// source status. A new task (zero value) is represented by "".
-func LegalEvents(from TaskStatus) []Event {
-	out := make([]Event, 0)
-	for _, tr := range transitions {
-		if tr.From == from {
-			out = append(out, tr.Event)
-		}
-	}
-	return out
 }
