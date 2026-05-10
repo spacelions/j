@@ -23,6 +23,7 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 		`internal/resolver/agent.go:.*lookupAgent`,
 		`internal/resolver/source.go:.*StartTargetFromLinear`,
 		`internal/store/tasks/sort.go`,
+		`internal/util/run/spawn.go:.*Spawn`,
 		`internal/store/tasks/task.go:.*GetTask`,
 		`internal/store/tasks/task.go:.*ListTasks`,
 		`internal/util/agentlog/agentlog.go:.*Emit`,
