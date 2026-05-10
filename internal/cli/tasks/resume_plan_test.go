@@ -157,8 +157,8 @@ func TestRunResumePlan_HappyPath(t *testing.T) {
 // TestRunResumePlan_HappyPath_PlanPendingApproval pins that resume-plan
 // succeeds for a row already at the approval gate. The FSM edge
 // {plan-pending-approval, EventPlanResume, planning} must be present
-// for resume_plan.go's IsLegal guard to permit the transition; this
-// test fails if the edge is removed.
+// for the resume lifecycle mutation to succeed; this test fails if
+// the edge is removed.
 func TestRunResumePlan_HappyPath_PlanPendingApproval(t *testing.T) {
 	setupContinueEnv(t)
 	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
