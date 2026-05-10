@@ -21,6 +21,7 @@ import (
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
+	"github.com/spacelions/j/internal/util/run"
 )
 
 // testCursorChatID is the `cursor-agent create-chat` id from the
@@ -1101,6 +1102,108 @@ func TestRun_NewResumeID_ErrorWarnsButContinues(t *testing.T) {
 	}
 }
 
+func TestRun_CapturesActiveVerifierResumeSession(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedWorkDoneTask(t, "x", "plan", "")
+	agent := &capturingSpawnVerifyAgent{
+		spawnVerifyAgent: &spawnVerifyAgent{
+			verdicts: []string{"PASS"},
+			sleepDur: "0.2",
+		},
+		captureID: "captured-active-verify",
+	}
+
+	err := Run(t.Context(), Options{
+		TaskID:        id,
+		MaxIterations: 1,
+		Stdout:        io.Discard,
+		Stderr:        io.Discard,
+		Agents:        []codingagents.Agent{agent},
+		UI:            &scriptedUI{},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if agent.captureCalls == 0 {
+		t.Fatal("CaptureResumeID calls = 0, want active capture")
+	}
+	got := readTasks(t)[0]
+	if got.VerifyResumeSession != "captured-active-verify" {
+		t.Fatalf("VerifyResumeSession = %q, want captured-active-verify",
+			got.VerifyResumeSession)
+	}
+}
+
+func TestFinishVerifyIteration_UnknownFixAgent(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedWorkDoneTask(t, "x", "plan", "")
+	res := resolvedForTest(taskFilePath(t, id, ""))
+	res.Task.ID = id
+	res.Task.WorkTool = "ghost"
+	res.Paths.Findings = taskFilePath(
+		t, id, tasks.VerifierFindingsFileName,
+	)
+	if err := os.WriteFile(
+		res.Paths.Findings,
+		[]byte("VERDICT: FAIL\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("write findings: %v", err)
+	}
+	lc := lifecycle.BeginVerifyRestart(
+		res.Task,
+		io.Discard,
+		codingagents.AgentSession{
+			Tool:  "cursor",
+			Model: "m",
+		},
+	)
+	_, err := finishVerifyIteration(t.Context(), lc, res, verifyIteration{
+		index: 0,
+		opts: Options{
+			MaxIterations: 2,
+			Agents:        []codingagents.Agent{newScriptedAgent()},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
+		t.Fatalf("err = %v, want unknown tool", err)
+	}
+}
+
+func TestRunVerifyIteration_NonFirstWaitError(t *testing.T) {
+	pid := startLongChild(t)
+	agent := &liveChildAgent{pid: pid}
+	res := resolvedForTest(t.TempDir())
+	session := codingagents.AgentSession{
+		Tool:     "cursor",
+		Model:    "m",
+		ResumeID: "id",
+	}
+	lc := lifecycle.BeginVerifyRestart(
+		res.Task,
+		io.Discard,
+		session,
+	)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := runVerifyIteration(
+		ctx,
+		agent,
+		lc,
+		res,
+		&session,
+		verifyIteration{
+			index: 1,
+			opts:  Options{MaxIterations: 3},
+		},
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
 // TestRun_UnknownToolFromUI rejects an off-list tool name.
 func TestRun_UnknownToolFromUI(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -1441,6 +1544,7 @@ type spawnVerifyAgent struct {
 	sleepDur string
 
 	verifyCalls int
+	pid         int
 }
 
 func (s *spawnVerifyAgent) Name() string                                 { return "cursor" }
@@ -1473,11 +1577,36 @@ func (s *spawnVerifyAgent) Verify(_ context.Context, req codingagents.VerifyRequ
 		return 0, err
 	}
 	pid := cmd.Process.Pid
+	s.pid = pid
 	go func() { _ = cmd.Wait() }()
 	return pid, nil
 }
 
 func (*spawnVerifyAgent) FormatLog(line []byte) []byte { return line }
+
+type capturingSpawnVerifyAgent struct {
+	*spawnVerifyAgent
+	captureID    string
+	captureCalls int
+}
+
+func (a *capturingSpawnVerifyAgent) NewResumeID(context.Context) (
+	string, error,
+) {
+	return "", nil
+}
+
+func (a *capturingSpawnVerifyAgent) CaptureResumeID(
+	context.Context,
+	string,
+	time.Time,
+) (string, error) {
+	a.captureCalls++
+	if a.pid > 0 && run.IsAlive(a.pid) {
+		return a.captureID, nil
+	}
+	return "", nil
+}
 
 // TestRunVerifyLoop_WaitsForSpawnedChild pins the bugfix: an agent
 // that returns a non-zero PID for a spawned child whose findings

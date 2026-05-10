@@ -16,7 +16,6 @@ import (
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
-	"github.com/spacelions/j/internal/util/run"
 )
 
 // UI is the narrow set of picker methods the worker functions call.
@@ -154,28 +153,31 @@ func runWorker(
 	req := buildWorkRequest(res, session, opts.Interactive,
 		resumeFromClarification, mustReadFiles)
 	pid, workErr := agent.Work(ctx, req)
-	if workErr == nil && pid > 0 {
-		if opts.WaitForCompletion {
-			if err := run.WaitForExit(ctx, pid); err != nil {
-				lc.Finish(err)
-				return err
-			}
-		} else {
+	capture := codingagents.ResumeCapture{
+		TaskDir: res.TaskDir,
+		Since:   beginAt,
+		Stderr:  opts.Stderr,
+	}
+	if workErr == nil {
+		resumeID, err := codingagents.CaptureAndSaveProcessResumeID(
+			ctx, agent, lc, capture, codingagents.ResumeProcess{
+				PID:      pid,
+				Wait:     opts.WaitForCompletion,
+				ResumeID: session.ResumeID,
+			},
+		)
+		session.ResumeID = resumeID
+		if err != nil {
+			lc.Finish(err)
+			return err
+		}
+		if pid > 0 && !opts.WaitForCompletion {
 			lc.RecordAgentLog(req.AgentLogPath)
 			uitheme.NormalForkDialog(
 				opts.Stdout, agent.Name(), pid, req.AgentLogPath,
 			)
 			return nil
 		}
-	}
-	if workErr == nil && session.ResumeID == "" {
-		codingagents.CaptureAndRecordResume(
-			ctx, agent, lc, codingagents.ResumeCapture{
-				TaskDir: res.TaskDir,
-				Since:   beginAt,
-				Stderr:  opts.Stderr,
-			},
-		)
 	}
 	lc.Finish(workErr)
 	if workErr != nil {

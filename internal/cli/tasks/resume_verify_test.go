@@ -32,11 +32,12 @@ func TestRunResumeVerify_NoActiveSession(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RunResumeVerify: %v", err)
 	}
-	if stdout.String() != "" {
-		t.Fatalf("stdout = %q, want empty", stdout.String())
+	if !strings.Contains(stdout.String(), noActiveVerifySessionMessage) {
+		t.Fatalf("stdout = %q, want %q",
+			stdout.String(), noActiveVerifySessionMessage)
 	}
-	if ui.pickCalls != 1 {
-		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
+	if ui.pickCalls != 0 {
+		t.Fatalf("PickTask calls = %d, want 0", ui.pickCalls)
 	}
 }
 
@@ -79,13 +80,14 @@ func TestRunResumeVerify_PickerOnlyShowsRowsWithSession(t *testing.T) {
 	if ui.pickCalls != 1 {
 		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
 	}
-	if len(ui.lastPickedFrom) != 2 {
-		t.Fatalf("picker received %d rows, want 2", len(ui.lastPickedFrom))
+	if len(ui.lastPickedFrom) != 1 {
+		t.Fatalf("picker received %d rows, want 1", len(ui.lastPickedFrom))
 	}
-	ids := []string{ui.lastPickedFrom[0].ID, ui.lastPickedFrom[1].ID}
-	if !containsArg(ids, keep) || !containsArg(ids, skip) {
-		t.Fatalf("picker received ids %v, want %q and %q", ids, keep, skip)
+	if ui.lastPickedFrom[0].ID != keep {
+		t.Fatalf("picker received id %q, want %q",
+			ui.lastPickedFrom[0].ID, keep)
 	}
+	_ = skip
 }
 
 func TestRunResumeVerify_PickerAbort(t *testing.T) {

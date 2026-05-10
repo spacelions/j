@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 
 	"github.com/spacelions/j/internal/cli/picker"
 	"github.com/spacelions/j/internal/cli/uitheme"
@@ -165,64 +164,6 @@ func reportOutcome(
 			taskID,
 		)
 	}
-}
-
-// runVerifyLoop alternates verifier turns with worker-resume fix
-// turns until VERDICT: PASS or MaxIterations is exhausted.
-// run.WaitForExit blocks on every spawned child so a headless
-// backend's deferred write doesn't race the verdict parse.
-func runVerifyLoop(
-	ctx context.Context,
-	agent codingagents.Agent,
-	lc *lifecycle.VerifyLifecycle,
-	res resolver.VerifyTask,
-	session codingagents.AgentSession,
-	opts Options,
-) (lifecycle.VerifyOutcome, error) {
-	mustReadFiles, mustReadErr := resolver.MustRead()
-	if mustReadErr != nil {
-		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
-	}
-	beginAt := time.Now().UTC()
-	for i := range opts.MaxIterations {
-		lc.IterationBegin(i, opts.MaxIterations)
-		req := buildVerifyRequest(
-			res, session, i, opts.Interactive, mustReadFiles,
-		)
-		if err := runVerifyTurn(ctx, agent, req); err != nil {
-			return lifecycle.VerifyOutcomeNoRetries, err
-		}
-		if i == 0 && session.ResumeID == "" {
-			session.ResumeID = codingagents.CaptureAndRecordResume(
-				ctx, agent, lc, codingagents.ResumeCapture{
-					TaskDir: res.TaskDir,
-					Since:   beginAt,
-					Stderr:  opts.Stderr,
-				},
-			)
-		}
-		verdict := resolver.ParseVerdict(res.Paths.Findings)
-		lc.Verdict(i, verdict, res.Paths.Findings)
-		if verdict == resolver.VerdictPass {
-			return lifecycle.VerifyOutcomeSuccess, nil
-		}
-		// On FAIL we still need to keep iterating: break out
-		// when the next loop turn would fall off the
-		// MaxIterations cliff so we don't run a worker fix
-		// turn whose verifier counterpart has nowhere to go.
-		if i+1 >= opts.MaxIterations {
-			break
-		}
-		workerAgent, err := resolveFixAgent(opts.Agents, res.Task)
-		if err != nil {
-			return lifecycle.VerifyOutcomeNoRetries, err
-		}
-		if err := runFixTurn(ctx, workerAgent,
-			buildFixRequest(res, opts.Interactive)); err != nil {
-			return lifecycle.VerifyOutcomeNoRetries, err
-		}
-	}
-	return lifecycle.VerifyOutcomeNoRetries, nil
 }
 
 func resolveTask(

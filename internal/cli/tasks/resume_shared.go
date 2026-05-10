@@ -164,6 +164,7 @@ func pickResumeTaskID(
 	if err != nil {
 		return "", false, err
 	}
+	rows = filterTasksBySession(rows, cfg.hasSession)
 	if len(rows) == 0 {
 		uitheme.NormalFprintln(opts.Stdout, cfg.emptyMsg)
 		return "", false, nil

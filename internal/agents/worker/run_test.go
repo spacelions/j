@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
@@ -22,12 +23,13 @@ type runTestAgent struct {
 	name   string
 	models []string
 
-	workCalls   int
-	workErr     error
-	workPid     int
-	lastWorkReq codingagents.WorkRequest
-	resumeID    string
-	resumeIDErr error
+	workCalls     int
+	workErr       error
+	workPid       int
+	lastWorkReq   codingagents.WorkRequest
+	resumeID      string
+	resumeIDErr   error
+	emptyResumeID bool
 }
 
 func newRunTestAgent(name string) *runTestAgent {
@@ -51,6 +53,9 @@ func (a *runTestAgent) NewResumeID(context.Context) (string, error) {
 	if a.resumeIDErr != nil {
 		return "", a.resumeIDErr
 	}
+	if a.emptyResumeID {
+		return "", nil
+	}
 	if a.resumeID != "" {
 		return a.resumeID, nil
 	}
@@ -61,6 +66,21 @@ func (a *runTestAgent) Work(_ context.Context, req codingagents.WorkRequest) (in
 	a.workCalls++
 	a.lastWorkReq = req
 	return a.workPid, a.workErr
+}
+
+type capturingRunAgent struct {
+	*runTestAgent
+	captureID    string
+	captureCalls int
+}
+
+func (a *capturingRunAgent) CaptureResumeID(
+	_ context.Context,
+	_ string,
+	_ time.Time,
+) (string, error) {
+	a.captureCalls++
+	return a.captureID, nil
 }
 
 // fakeRunUI is a scripted UI fake for Execute tests.
@@ -236,6 +256,46 @@ func TestRun_RecordsAgentLog(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "running in background") {
 		t.Fatalf("stdout = %q, missing background message", stdout.String())
+	}
+}
+
+func TestRun_RecordsActiveWorkerResumeSession(t *testing.T) {
+	setupRunEnv(t)
+	id := seedPlanDoneTask(t)
+	base := newRunTestAgent("cursor")
+	base.emptyResumeID = true
+	base.workPid = os.Getpid()
+	agent := &capturingRunAgent{
+		runTestAgent: base,
+		captureID:    "captured-work-session",
+	}
+
+	err := Execute(t.Context(), Options{
+		TaskID: id,
+		Yes:    true,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &fakeRunUI{},
+		Tool:   "cursor",
+		Model:  "m1",
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if agent.captureCalls == 0 {
+		t.Fatal("CaptureResumeID calls = 0, want active capture")
+	}
+	row := testutil.ReadTaskRow(t, id)
+	if row.WorkResumeSession != "captured-work-session" {
+		t.Fatalf(
+			"WorkResumeSession = %q, want captured-work-session",
+			row.WorkResumeSession,
+		)
+	}
+	if row.Status != tasks.StatusWorking {
+		t.Fatalf("Status = %q, want working", row.Status)
 	}
 }
 

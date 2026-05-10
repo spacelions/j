@@ -5,6 +5,13 @@ import (
 	"fmt"
 	"io"
 	"time"
+
+	"github.com/spacelions/j/internal/util/run"
+)
+
+const (
+	activeResumeCaptureInterval = 100 * time.Millisecond
+	activeResumeCaptureTimeout  = 2 * time.Second
 )
 
 // ResumeIDCapturer is the optional, post-run companion to NewResumeID
@@ -48,10 +55,9 @@ func CaptureResumeID(
 	return capturer.CaptureResumeID(ctx, taskDir, since)
 }
 
-// ResumeRecorder is the narrow lifecycle method
-// CaptureAndRecordResume needs. Each per-phase Lifecycle in
-// internal/lifecycle satisfies it via RecordResumeSession, so callers
-// pass `lc` directly without an explicit adapter.
+// ResumeRecorder is the narrow lifecycle method the save helpers need.
+// Each per-phase Lifecycle in internal/lifecycle satisfies it via
+// RecordResumeSession, so callers pass `lc` directly.
 type ResumeRecorder interface {
 	RecordResumeSession(id string)
 }
@@ -64,22 +70,122 @@ type ResumeCapture struct {
 	Stderr  io.Writer
 }
 
-// CaptureAndRecordResume is the shared post-run capture step for
+type ResumeProcess struct {
+	PID      int
+	Wait     bool
+	ResumeID string
+}
+
+// CaptureAndSaveResumeID is the shared post-run capture step for
 // every plan / work / verify call site. It runs CaptureResumeID,
 // stamps the result onto recorder, and surfaces scan failures via
 // stderr without aborting the run. The captured id is returned so
 // callers (e.g. the verifier loop) that need to thread the id into a
 // later iteration can pick it up; an empty string signals "no match"
 // and is the expected outcome for cursor/claude.
-func CaptureAndRecordResume(
+func CaptureAndSaveResumeID(
 	ctx context.Context, agent Agent, recorder ResumeRecorder,
 	capture ResumeCapture,
 ) string {
-	id, err := CaptureResumeID(ctx, agent, capture.TaskDir, capture.Since)
+	id, err := CaptureResumeID(
+		ctx, agent, capture.TaskDir, capture.Since,
+	)
 	if err != nil {
 		fmt.Fprintf(capture.Stderr, "J: %v\n", err)
 		return ""
 	}
 	recorder.RecordResumeSession(id)
 	return id
+}
+
+// CaptureAndSaveActiveResumeID polls a running backend until its
+// post-start resume id appears, the process exits, the context is
+// cancelled, or the bounded capture window expires.
+func CaptureAndSaveActiveResumeID(
+	ctx context.Context,
+	agent Agent,
+	recorder ResumeRecorder,
+	capture ResumeCapture,
+	pid int,
+) string {
+	capturer, ok := agent.(ResumeIDCapturer)
+	if !ok || pid <= 0 {
+		return ""
+	}
+	if id, done := captureAndSaveOnce(ctx, capturer, recorder, capture); done {
+		return id
+	}
+	timeout := time.NewTimer(activeResumeCaptureTimeout)
+	defer timeout.Stop()
+	timer := time.NewTimer(activeResumeCaptureInterval)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ""
+		case <-timeout.C:
+			return ""
+		case <-timer.C:
+			id, done := captureAndSaveOnce(
+				ctx, capturer, recorder, capture,
+			)
+			if done {
+				return id
+			}
+			if !run.IsAlive(pid) {
+				return ""
+			}
+			timer.Reset(activeResumeCaptureInterval)
+		}
+	}
+}
+
+func CaptureAndSaveProcessResumeID(
+	ctx context.Context,
+	agent Agent,
+	recorder ResumeRecorder,
+	capture ResumeCapture,
+	proc ResumeProcess,
+) (string, error) {
+	resumeID := proc.ResumeID
+	if proc.PID > 0 && resumeID == "" {
+		resumeID = CaptureAndSaveActiveResumeID(
+			ctx, agent, recorder, capture, proc.PID,
+		)
+	}
+	if proc.PID > 0 && proc.Wait {
+		if err := run.WaitForExit(ctx, proc.PID); err != nil {
+			return resumeID, err
+		}
+	}
+	if proc.Wait && resumeID == "" {
+		resumeID = CaptureAndSaveResumeID(
+			ctx, agent, recorder, capture,
+		)
+	}
+	return resumeID, nil
+}
+
+func WaitForResumeProcess(ctx context.Context, pid int) error {
+	return run.WaitForExit(ctx, pid)
+}
+
+func captureAndSaveOnce(
+	ctx context.Context,
+	capturer ResumeIDCapturer,
+	recorder ResumeRecorder,
+	capture ResumeCapture,
+) (string, bool) {
+	id, err := capturer.CaptureResumeID(
+		ctx, capture.TaskDir, capture.Since,
+	)
+	if err != nil {
+		fmt.Fprintf(capture.Stderr, "J: %v\n", err)
+		return "", true
+	}
+	if id == "" {
+		return "", false
+	}
+	recorder.RecordResumeSession(id)
+	return id, true
 }

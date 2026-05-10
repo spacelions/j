@@ -12,7 +12,6 @@ import (
 	"github.com/spacelions/j/internal/lifecycle"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
-	"github.com/spacelions/j/internal/util/run"
 )
 
 // Options configures Execute. Agent and Model must already be
@@ -49,13 +48,28 @@ func Execute(ctx context.Context, opts Options) error {
 		return err
 	}
 
+	agent := opts.Agent
+	session := beginPlanSession(ctx, opts, stderr, res.Task)
+	lc := beginPlanLifecycle(res.Task, stderr, session)
+	return runPlanner(ctx, agent, lc, res, session, opts)
+}
+
+func runPlanner(
+	ctx context.Context,
+	agent codingagents.Agent,
+	lc *lifecycle.PlanLifecycle,
+	res resolver.PlanTask,
+	session codingagents.AgentSession,
+	opts Options,
+) error {
+	stderr := opts.Stderr
+	if stderr == nil {
+		stderr = io.Discard
+	}
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
 		uitheme.DangerousDialogBox(stderr, "J: %v", mustReadErr)
 	}
-
-	session := beginPlanSession(ctx, opts, stderr, res.Task)
-	lc := beginPlanLifecycle(res.Task, stderr, session)
 	resume := session.ResumeID == res.Task.PlanResumeSession &&
 		session.ResumeID != ""
 	resumeFromClarification := resume &&
@@ -63,23 +77,26 @@ func Execute(ctx context.Context, opts Options) error {
 	beginAt := time.Now().UTC()
 	req := buildPlanRequest(res, session, opts.Interactive,
 		resume, resumeFromClarification, mustReadFiles)
-	pid, planErr := opts.Agent.Plan(ctx, req)
+	pid, planErr := agent.Plan(ctx, req)
+	capture := codingagents.ResumeCapture{
+		TaskDir: res.TaskDir,
+		Since:   beginAt,
+		Stderr:  stderr,
+	}
 
-	if planErr == nil && pid > 0 && opts.WaitForCompletion {
-		if err := run.WaitForExit(ctx, pid); err != nil {
+	if planErr == nil {
+		resumeID, err := codingagents.CaptureAndSaveProcessResumeID(
+			ctx, agent, lc, capture, codingagents.ResumeProcess{
+				PID:      pid,
+				Wait:     opts.WaitForCompletion,
+				ResumeID: session.ResumeID,
+			},
+		)
+		session.ResumeID = resumeID
+		if err != nil {
 			lc.Finish(err, "", "", res.Paths.Requirements)
 			return err
 		}
-	}
-
-	if planErr == nil && session.ResumeID == "" && opts.WaitForCompletion {
-		codingagents.CaptureAndRecordResume(
-			ctx, opts.Agent, lc, codingagents.ResumeCapture{
-				TaskDir: res.TaskDir,
-				Since:   beginAt,
-				Stderr:  stderr,
-			},
-		)
 	}
 
 	refinedReq, planMD := readPlanArtifacts(

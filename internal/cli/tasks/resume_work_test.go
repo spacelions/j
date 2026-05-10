@@ -41,6 +41,33 @@ func TestRunResumeWork_NoActiveSession(t *testing.T) {
 	}
 }
 
+func TestRunResumeWork_NoResumableWorkSession(t *testing.T) {
+	setupContinueEnv(t)
+	testutil.SeedFullTask(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusWorking
+		task.WorkResumeSession = ""
+	})
+	ui := &fakeUI{}
+	var stdout bytes.Buffer
+	err := RunResumeWork(t.Context(), ResumeWorkOptions{
+		Stdin:  strings.NewReader(""),
+		Stdout: &stdout,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{newContinueAgent()},
+		UI:     ui,
+	})
+	if err != nil {
+		t.Fatalf("RunResumeWork: %v", err)
+	}
+	if !strings.Contains(stdout.String(), noActiveWorkSessionMessage) {
+		t.Fatalf("stdout = %q, want %q",
+			stdout.String(), noActiveWorkSessionMessage)
+	}
+	if ui.pickCalls != 0 {
+		t.Fatalf("PickTask calls = %d, want 0", ui.pickCalls)
+	}
+}
+
 func TestRunResumeWork_HappyPath(t *testing.T) {
 	setupContinueEnv(t)
 	id := seedWorkingTaskWithWorkSession(t)
@@ -61,6 +88,35 @@ func TestRunResumeWork_HappyPath(t *testing.T) {
 	wantArgs := []string{"tasks", "orchestrate", "--id", id, "--phase=work-only", "--interactive=true"}
 	if strings.Join(args, " ") != strings.Join(wantArgs, " ") {
 		t.Fatalf("argv = %v, want %v", args, wantArgs)
+	}
+}
+
+func TestRunResumeWork_PickerOnlyShowsRowsWithWorkSession(t *testing.T) {
+	setupContinueEnv(t)
+	keep := seedWorkingTaskWithWorkSession(t)
+	testutil.SeedFullTask(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusWorking
+		task.WorkResumeSession = ""
+	})
+	ui := &fakeUI{}
+	if err := RunResumeWork(t.Context(), ResumeWorkOptions{
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{newContinueAgent()},
+		UI:     ui,
+	}); err != nil {
+		t.Fatalf("RunResumeWork: %v", err)
+	}
+	if ui.pickCalls != 1 {
+		t.Fatalf("PickTask calls = %d, want 1", ui.pickCalls)
+	}
+	if len(ui.lastPickedFrom) != 1 {
+		t.Fatalf("picker received %d rows, want 1", len(ui.lastPickedFrom))
+	}
+	if ui.lastPickedFrom[0].ID != keep {
+		t.Fatalf("picker received id %q, want %q",
+			ui.lastPickedFrom[0].ID, keep)
 	}
 }
 
