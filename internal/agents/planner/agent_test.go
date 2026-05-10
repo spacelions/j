@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -423,6 +424,164 @@ func TestExecute_NoWaitSkipsPostRunCapture(t *testing.T) {
 	}
 }
 
+func TestExecute_NoWaitCapturesActiveResumeSession(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := testutil.WriteFile(
+		taskDir+"/requirements.md", "x",
+	); err != nil {
+		t.Fatalf("write requirements: %v", err)
+	}
+	testutil.SeedTaskRow(t, tasks.Task{
+		ID:      taskID,
+		Status:  tasks.StatusPlanning,
+		Summary: "task",
+	})
+
+	stub := newScriptedPlanAgent("scripted")
+	stub.mintedID = ""
+	stub.captureID = "captured-active-plan"
+	stub.planPID = os.Getpid()
+	if err := Execute(t.Context(), Options{
+		TaskID:            taskID,
+		Agent:             stub,
+		Model:             "m1",
+		WaitForCompletion: false,
+		Stderr:            io.Discard,
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if stub.captureCalls == 0 {
+		t.Fatal("CaptureResumeID calls = 0, want active capture")
+	}
+	got := testutil.ReadTaskRow(t, taskID)
+	if got.PlanResumeSession != "captured-active-plan" {
+		t.Fatalf("PlanResumeSession = %q, want captured-active-plan",
+			got.PlanResumeSession)
+	}
+}
+
+func TestExecute_WaitCapturesPostRunResumeSession(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := testutil.WriteFile(
+		taskDir+"/requirements.md", "x",
+	); err != nil {
+		t.Fatalf("write requirements: %v", err)
+	}
+	testutil.SeedTaskRow(t, tasks.Task{
+		ID:      taskID,
+		Status:  tasks.StatusPlanning,
+		Summary: "task",
+	})
+
+	stub := newScriptedPlanAgent("scripted")
+	stub.mintedID = ""
+	stub.captureID = "captured-after-plan"
+	if err := Execute(t.Context(), Options{
+		TaskID:            taskID,
+		Agent:             stub,
+		Model:             "m1",
+		WaitForCompletion: true,
+		Stderr:            io.Discard,
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := testutil.ReadTaskRow(t, taskID)
+	if got.PlanResumeSession != "captured-after-plan" {
+		t.Fatalf("PlanResumeSession = %q, want captured-after-plan",
+			got.PlanResumeSession)
+	}
+}
+
+func TestExecute_WaitForCompletionError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := testutil.WriteFile(
+		taskDir+"/requirements.md", "x",
+	); err != nil {
+		t.Fatalf("write requirements: %v", err)
+	}
+	testutil.SeedTaskRow(t, tasks.Task{
+		ID:      taskID,
+		Status:  tasks.StatusPlanning,
+		Summary: "task",
+	})
+
+	stub := newScriptedPlanAgent("scripted")
+	stub.planPID = os.Getpid()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	err = Execute(ctx, Options{
+		TaskID:            taskID,
+		Agent:             stub,
+		Model:             "m1",
+		WaitForCompletion: true,
+		Stderr:            io.Discard,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
+func TestExecute_NilStderrAndMustReadWarning(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := testutil.WriteFile(
+		taskDir+"/requirements.md", "x",
+	); err != nil {
+		t.Fatalf("write requirements: %v", err)
+	}
+	testutil.SeedTaskRow(t, tasks.Task{
+		ID:      taskID,
+		Status:  tasks.StatusPlanning,
+		Summary: "task",
+	})
+	settingsPath, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	if err := os.Remove(settingsPath); err != nil {
+		t.Fatalf("Remove settings: %v", err)
+	}
+	if err := os.Mkdir(settingsPath, 0o755); err != nil {
+		t.Fatalf("Mkdir settings: %v", err)
+	}
+
+	stub := newScriptedPlanAgent("scripted")
+	if err := Execute(t.Context(), Options{
+		TaskID: taskID,
+		Agent:  stub,
+		Model:  "m1",
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+}
+
 // scriptedPlanAgent stands in for a real codingagents.Agent. Plan
 // writes the per-task requirements.md / plan.md inline so plan.Run's
 // finishPlan promotes the row to plan-done synchronously.
@@ -433,6 +592,7 @@ type scriptedPlanAgent struct {
 	captureID          string
 	captureCalls       int
 	planCalls          int
+	planPID            int
 	planErr            error
 	lastReq            codingagents.PlanRequest
 	panicOnNewResumeID bool
@@ -475,7 +635,7 @@ func (a *scriptedPlanAgent) Plan(_ context.Context, req codingagents.PlanRequest
 	if err := testutil.WriteFile(req.PlanOutputPath, "1. step"); err != nil {
 		return 0, err
 	}
-	return 0, nil
+	return a.planPID, nil
 }
 
 func (a *scriptedPlanAgent) Work(context.Context, codingagents.WorkRequest) (int, error) {
