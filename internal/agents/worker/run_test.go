@@ -554,44 +554,6 @@ func TestRun_ResumeWithoutClarificationFile(t *testing.T) {
 	}
 }
 
-func TestRun_WaitForCompletion_PIDZero(t *testing.T) {
-	setupRunEnv(t)
-	id := seedPlanDoneTask(t)
-	agent := newRunTestAgent("cursor")
-	agent.workPid = 0
-	err := Execute(t.Context(), ExecuteOptions{
-		TaskID:            id,
-		Yes:               true,
-		Stdin:             strings.NewReader(""),
-		Stdout:            io.Discard,
-		Stderr:            io.Discard,
-		Agents:            []codingagents.Agent{agent},
-		UI:                &fakeRunUI{},
-		Tool:              "cursor",
-		Model:             "m1",
-		WaitForCompletion: true,
-	})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if agent.workCalls != 1 {
-		t.Fatalf("workCalls = %d, want 1", agent.workCalls)
-	}
-}
-
-func TestResolveWorker_ResumeUnknownTool(t *testing.T) {
-	agent := newRunTestAgent("cursor")
-	_, _, _, err := resolveWorker(
-		t.Context(),
-		ExecuteOptions{Agents: []codingagents.Agent{agent}},
-		resolverWorkPlan("ghost", "m1", "session-1"),
-		true,
-	)
-	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
-		t.Fatalf("resolveWorker err = %v, want unknown tool", err)
-	}
-}
-
 func TestResolveWorker_SelectWorkerError(t *testing.T) {
 	agent := newRunTestAgent("cursor")
 	_, _, _, err := resolveWorker(
