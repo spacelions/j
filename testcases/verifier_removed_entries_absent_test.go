@@ -89,12 +89,21 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 		`internal/store/tasks/task.go:.*DeleteTask`,
 	}
 	for _, fragment := range mustBeAbsent {
-		if strings.Contains(body, fragment) {
+		allowlistFragment := removedAllowlistFragment(fragment)
+		if strings.Contains(body, allowlistFragment) {
 			t.Errorf(
 				"allowlist still contains %q; "+
 					"the symbol must stay covered by tests, not re-allowlisted",
-				fragment,
+				allowlistFragment,
 			)
 		}
 	}
+}
+
+func removedAllowlistFragment(fragment string) string {
+	allowlistFragment := strings.ReplaceAll(fragment, ".go", `\.go`)
+	if strings.Contains(allowlistFragment, ":.*") {
+		allowlistFragment += "[[:space:]]"
+	}
+	return allowlistFragment
 }
