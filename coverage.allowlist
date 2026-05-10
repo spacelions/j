@@ -121,7 +121,6 @@ internal/lifecycle/orchestrator/finalise\.go:.*finaliseVerifyFailIfStuck[[:space
 internal/lifecycle/orchestrator/workflow_task\.go:.*RunForTaskVerifyOnly[[:space:]]
 internal/lifecycle/plan\.go:.*NewPlanTask[[:space:]]
 internal/lifecycle/plan\.go:.*BeginPlanRestart[[:space:]]
-internal/lifecycle/plan\.go:.*BeginPlanExisting[[:space:]]
 internal/lifecycle/plan\.go:.*Finish[[:space:]]
 internal/lifecycle/verify\.go:.*openVerifyLifecycle[[:space:]]
 internal/lifecycle/verify\.go:.*Finish[[:space:]]
