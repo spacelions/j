@@ -14,6 +14,7 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 	body := readRepoFile(t, "coverage.allowlist")
 	mustBeAbsent := []string{
 		`internal/cli/preflight/preflight.go:.*PreRunE`,
+		`internal/cli/settings/display.go:.*displayKey`,
 		`internal/cli/settings/display.go:.*storageKey`,
 		`internal/cli/tasks/cmd.go:.*writeTasks`,
 		`internal/cli/tasks/orchestrate_cmd.go:.*newOrchestrateCmd`,
