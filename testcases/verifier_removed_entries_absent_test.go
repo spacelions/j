@@ -34,6 +34,8 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 		`internal/lifecycle/orchestrator/workflow_task.go:.*driveSequential`,
 		`internal/lifecycle/orchestrator/workflow_task.go:.*finaliseVerifyFailIfStuck`,
 		`internal/lifecycle/plan.go:.*BeginPlanReuse`,
+		`internal/lifecycle/tuiquit/tuiquit.go:.*DecideVerify`,
+		`internal/lifecycle/tuiquit/tuiquit.go:.*runGhPRList`,
 		`internal/lifecycle/work.go:.*clarificationPresent`,
 		`internal/cli/tasks/cmd.go:.*writeTasks`,
 		`internal/cli/tasks/orchestrate_cmd.go:.*newOrchestrateCmd`,
