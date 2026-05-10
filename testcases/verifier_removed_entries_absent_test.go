@@ -18,6 +18,8 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 		`internal/cli/settings/display.go:.*storageKey`,
 		`internal/cli/settings/list.go:.*collectSections`,
 		`internal/cli/settings/list.go:.*printSections`,
+		`internal/cli/settings/reset.go:.*readConfirmationLine`,
+		`internal/cli/settings/reset.go:.*runResetOneKey`,
 		`internal/cli/settings/set.go:.*parseBucketKey`,
 		`internal/cli/tasks/cmd.go:.*writeTasks`,
 		`internal/cli/tasks/orchestrate_cmd.go:.*newOrchestrateCmd`,
