@@ -51,9 +51,37 @@ func TestMakefile_CoverageTargets_AreSplit(t *testing.T) {
 }
 
 func TestClaudeCodeReview_Workflow_IsAbsent(t *testing.T) {
-	path := repoPath(t, ".github", "workflows", "claude-code-review.yml")
-	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("%s should not exist; stat err = %v", path, err)
+	workflows := repoPath(t, ".github", "workflows")
+
+	// The claude.yml workflow must not exist.
+	claudePath := filepath.Join(workflows, "claude.yml")
+	if _, err := os.Stat(claudePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("%s must not exist; stat err = %v", claudePath, err)
+	}
+
+	// No workflow file may reference the Claude Code action or its
+	// OAuth token secret.
+	entries, err := os.ReadDir(workflows)
+	if err != nil {
+		t.Fatalf("ReadDir %s: %v", workflows, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yml") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(workflows, entry.Name()))
+		if err != nil {
+			t.Fatalf("ReadFile %s: %v", entry.Name(), err)
+		}
+		for _, needle := range []string{
+			"anthropics/claude-code-action",
+			"CLAUDE_CODE_OAUTH_TOKEN",
+		} {
+			if strings.Contains(string(body), needle) {
+				t.Fatalf("%s: must not reference %q",
+					entry.Name(), needle)
+			}
+		}
 	}
 }
 
