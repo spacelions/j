@@ -588,6 +588,41 @@ func TestAgent_PromptsAndPersists(t *testing.T) {
 	}
 }
 
+func TestAgent_PromptWithoutStderr(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	cursor := newStubAgent("cursor", "sonnet-4")
+	ui := &scriptedUI{tool: "cursor", model: "sonnet-4"}
+	agent, model, err := Agent(t.Context(), AgentOptions{
+		Bucket: store.BucketPlanner,
+		Agents: []codingagents.Agent{cursor},
+		UI:     ui,
+		Store:  s,
+	})
+	if err != nil {
+		t.Fatalf("Agent: %v", err)
+	}
+	if agent != cursor || model != "sonnet-4" {
+		t.Fatalf("agent=%v model=%q", agent.Name(), model)
+	}
+}
+
+func TestAgent_StoredReadError(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+	_, _, err := Agent(t.Context(), AgentOptions{
+		Bucket: store.BucketPlanner,
+		Agents: []codingagents.Agent{cursor},
+		UI:     &scriptedUI{},
+		Store:  s,
+	})
+	if err == nil || !strings.Contains(err.Error(), "resolver: read planner") {
+		t.Fatalf("err = %v, want wrapped read error", err)
+	}
+}
+
 // TestAgent_PromptError surfaces a UI error from PickAgent without
 // persisting.
 func TestAgent_PromptError(t *testing.T) {

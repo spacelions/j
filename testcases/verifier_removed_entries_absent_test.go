@@ -21,6 +21,7 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 		`internal/cli/tasks/resume_plan.go:.*RunResumePlan`,
 		`internal/coding-agents/cursor/cursor.go:.*CreateChatID`,
 		`internal/lifecycle/verify.go:.*BeginVerifyResume`,
+		`internal/resolver/agent.go:.*Agent`,
 		`internal/resolver/agent.go:.*lookupAgent`,
 		`internal/resolver/source.go:.*StartTargetFromLinear`,
 		`internal/store/tasks/sort.go`,
