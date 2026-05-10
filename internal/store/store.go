@@ -23,16 +23,16 @@ import (
 )
 
 // BucketPlanner is the bucket used by `j plan` to record the
-// most-recently-selected tool/model/interactive flag.
+// most-recently-selected durable tool/model/prompt settings.
 const BucketPlanner = "planner"
 
 // BucketWorker is the bucket used by `j work` to record the
-// most-recently-selected tool/model/interactive flag.
+// most-recently-selected durable tool/model/prompt settings.
 const BucketWorker = "worker"
 
 // BucketVerifier is the bucket used by `j verify` to record the
-// most-recently-selected tool/model/interactive flag, mirroring
-// BucketPlanner / BucketWorker.
+// most-recently-selected durable tool/model/prompt settings,
+// mirroring BucketPlanner / BucketWorker.
 const BucketVerifier = "verifier"
 
 // BucketProject holds project-wide settings that aren't tied to a

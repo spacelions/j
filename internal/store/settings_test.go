@@ -405,32 +405,38 @@ func TestReadSetting_GetError(t *testing.T) {
 // silent-no-op branch.
 func TestPersistAgentSelection_NilStore(t *testing.T) {
 	var stderr bytes.Buffer
-	PersistAgentSelection(nil, &stderr, BucketPlanner, "cursor", "sonnet-4", true)
+	PersistAgentSelection(nil, &stderr, BucketPlanner, "cursor", "sonnet-4")
 	if stderr.Len() != 0 {
 		t.Fatalf("nil store should be silent, got %q", stderr.String())
 	}
 }
 
-// TestPersistAgentSelection_HappyPath pins the three-key write.
+// TestPersistAgentSelection_HappyPath pins the durable two-key write.
 func TestPersistAgentSelection_HappyPath(t *testing.T) {
 	s := openInTemp(t)
 	if err := s.EnsureBucket(BucketWorker); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.Put(BucketWorker, "interactive", "true"); err != nil {
+		t.Fatal(err)
+	}
 	var stderr bytes.Buffer
-	PersistAgentSelection(s, &stderr, BucketWorker, "cursor", "sonnet-4", false)
+	PersistAgentSelection(s, &stderr, BucketWorker, "cursor", "sonnet-4")
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
 	for k, want := range map[string]string{
-		"tool":        "cursor",
-		"model":       "sonnet-4",
-		"interactive": "false",
+		"tool":  "cursor",
+		"model": "sonnet-4",
 	} {
 		got, ok, err := s.Get(BucketWorker, k)
 		if err != nil || !ok || got != want {
 			t.Fatalf("Get(%s) = (%q,%v,%v) want %q", k, got, ok, err, want)
 		}
+	}
+	got, ok, err := s.Get(BucketWorker, "interactive")
+	if err != nil || !ok || got != "true" {
+		t.Fatalf("interactive = (%q,%v,%v), want unchanged true", got, ok, err)
 	}
 }
 
@@ -444,7 +450,7 @@ func TestPersistAgentSelection_StopsOnFirstError(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
-	PersistAgentSelection(s, &stderr, BucketPlanner, "cursor", "sonnet-4", true)
+	PersistAgentSelection(s, &stderr, BucketPlanner, "cursor", "sonnet-4")
 	if !strings.Contains(stderr.String(), "persist tool") {
 		t.Fatalf("stderr = %q, want warning naming the failing key", stderr.String())
 	}

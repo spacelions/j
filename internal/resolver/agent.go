@@ -30,8 +30,8 @@ var ErrNoStoredSelection = errors.New("resolver: no stored selection")
 // call.
 type AgentOptions struct {
 	// Bucket is one of store.BucketPlanner / BucketWorker /
-	// BucketVerifier. Resolver reads "tool" / "model" / "interactive"
-	// keys from it and writes them back on the prompt branch.
+	// BucketVerifier. Resolver reads "tool" / "model" keys from it
+	// and writes them back on the prompt branch.
 	Bucket string
 
 	// Agents is the cli-supplied set of available coding agents. The
@@ -58,12 +58,6 @@ type AgentOptions struct {
 	// Stderr receives the "Choose your favourite:" prompt label and
 	// any best-effort persistence warnings.
 	Stderr io.Writer
-
-	// Interactive is the resolved interactive flag (use
-	// resolver.Interactive to compute it). Recorded alongside the
-	// tool/model on the prompt branch so resume runs read a sensible
-	// default.
-	Interactive bool
 }
 
 // Agent walks the precedence chain (explicit → stored → prompt+persist)
@@ -201,7 +195,7 @@ func agentFromStoreLazy(
 func persistAgent(opts AgentOptions, tool, model string) {
 	if opts.Store != nil {
 		store.PersistAgentSelection(opts.Store, opts.Stderr, opts.Bucket,
-			tool, model, opts.Interactive)
+			tool, model)
 		return
 	}
 	s, ok := store.OpenSettings(opts.Stderr)
@@ -210,7 +204,7 @@ func persistAgent(opts AgentOptions, tool, model string) {
 	}
 	defer func() { _ = s.Close() }()
 	store.PersistAgentSelection(s, opts.Stderr, opts.Bucket,
-		tool, model, opts.Interactive)
+		tool, model)
 }
 
 func readToolModel(s *store.Store, bucket string) (map[string]string, error) {

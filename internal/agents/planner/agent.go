@@ -106,7 +106,6 @@ func New(cfg Config) (agent.Agent, error) {
 					ExplicitTool:  tool,
 					ExplicitModel: agentModel,
 					Stderr:        stderr,
-					Interactive:   interactive,
 				}
 				resolvedAgent, resolvedModel, err := resolver.Agent(
 					ctx, opts,

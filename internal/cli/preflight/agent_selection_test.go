@@ -73,8 +73,8 @@ func TestEnsureAgentSelections_AllBucketsEmpty(t *testing.T) {
 		if tool != "cursor" || model != "sonnet-4" {
 			t.Fatalf("bucket %q = (%q, %q), want (cursor, sonnet-4)", bucket, tool, model)
 		}
-		if interactive != "true" {
-			t.Fatalf("bucket %q interactive = %q, want \"true\"", bucket, interactive)
+		if interactive != "" {
+			t.Fatalf("bucket %q gained interactive=%q", bucket, interactive)
 		}
 	}
 }
@@ -103,8 +103,11 @@ func TestEnsureAgentSelections_PartialBuckets(t *testing.T) {
 	}
 	for _, bucket := range []string{store.BucketWorker, store.BucketVerifier} {
 		tool, model, interactive := testutil.ReadAgentBucket(t, bucket)
-		if tool != "cursor" || model != "sonnet-4" || interactive != "true" {
-			t.Fatalf("bucket %q = (%q, %q, %q), want (cursor, sonnet-4, true)", bucket, tool, model, interactive)
+		if tool != "cursor" || model != "sonnet-4" || interactive != "" {
+			t.Fatalf(
+				"bucket %q = (%q, %q, %q), want (cursor, sonnet-4, '')",
+				bucket, tool, model, interactive,
+			)
 		}
 	}
 }
