@@ -129,6 +129,16 @@ func TestFromStore_NilStore(t *testing.T) {
 	}
 }
 
+func TestReadToolModel_NilStore(t *testing.T) {
+	values, err := readToolModel(nil, store.BucketPlanner)
+	if err != nil {
+		t.Fatalf("readToolModel: %v", err)
+	}
+	if len(values) != 0 {
+		t.Fatalf("values = %v, want empty map", values)
+	}
+}
+
 func TestFromStore_MissingTool(t *testing.T) {
 	s := openTestStore(t, store.BucketPlanner)
 	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
