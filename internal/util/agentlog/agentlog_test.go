@@ -280,6 +280,44 @@ func TestEmit_DurationField(t *testing.T) {
 	}
 }
 
+func TestFormatValue(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		in   any
+		want string
+	}{
+		{
+			name: "nil",
+			in:   nil,
+			want: "",
+		},
+		{
+			name: "string",
+			in:   "plain",
+			want: "plain",
+		},
+		{
+			name: "duration",
+			in:   2 * time.Second,
+			want: "2000000000",
+		},
+		{
+			name: "default",
+			in:   42,
+			want: "42",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if got := formatValue(c.in); got != c.want {
+				t.Fatalf("formatValue(%v) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
 // failingWriter always returns an error from Write so the wrapped
 // write-error branch is exercised.
 type failingWriter struct{}
