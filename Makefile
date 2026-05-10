@@ -68,8 +68,12 @@ lines:
 	@printf '%-30s %6s %7s %10s %8s\n' '------------------------------' '------' '-------' '----------' '--------'
 	@total_files=0; total_code=0; total_comments=0; total_blanks=0; \
 	for dir in $(LINES_DIRS); do \
-		read -r files _ code comments blanks <<< $$(tokei $$dir -e "*_test.go" --types Go 2>/dev/null | awk '/^ Go/{print $$2,$$3,$$4,$$5,$$6}'); \
-		files=$${files:-0}; code=$${code:-0}; comments=$${comments:-0}; blanks=$${blanks:-0}; \
+		row=$$(tokei $$dir -e "*_test.go" --types Go | awk '/^ Go/{print $$2,$$3,$$4,$$5,$$6}' | tr -d ',_'); \
+		if [ -z "$$row" ]; then \
+			echo "error: tokei returned no metrics for $$dir" >&2; \
+			exit 1; \
+		fi; \
+		read -r files _ code comments blanks <<< "$$row"; \
 		printf '%-30s %6s %7s %10s %8s\n' $$dir $$files $$code $$comments $$blanks; \
 		total_files=$$((total_files + files)); \
 		total_code=$$((total_code + code)); \
