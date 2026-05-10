@@ -53,24 +53,29 @@ line-coverage:
 		exit 1; \
 	fi
 
-LINES_DIRS := cmd \
-	internal/cli \
-	internal/agents \
-	internal/coding-agents \
-	internal/store \
-	internal/lifecycle \
-	internal/resolver \
-	internal/tools \
-	internal/util
+LINES_ROOTS := ./cmd/... ./internal/...
+LINES_SKIP  := /internal/testutil(/|$$)
 LINES_FMT  := %-30s %6s %7s %10s %8s\n
 LINES_RULE := ------------------------------
 
 lines:
-	@printf '$(LINES_FMT)' Package Files Code Comments Blanks
-	@printf '$(LINES_FMT)' '$(LINES_RULE)' \
-		'------' '-------' '----------' '--------'
-	@total_files=0; total_code=0; total_comments=0; total_blanks=0; \
-	for dir in $(LINES_DIRS); do \
+	@set -euo pipefail; \
+	lines_dirs=$$(go list -f '{{.ImportPath}}' $(LINES_ROOTS) \
+		| rg -v '$(LINES_SKIP)' \
+		| awk -F/ '{ \
+			for (i = 1; i < NF; i++) { \
+				if ($$i == "cmd") { print "cmd"; next } \
+				if ($$i == "internal") { \
+					print $$i "/" $$(i + 1); next \
+				} \
+			} \
+		}' \
+		| sort -u); \
+	printf '$(LINES_FMT)' Package Files Code Comments Blanks; \
+	printf '$(LINES_FMT)' '$(LINES_RULE)' \
+		'------' '-------' '----------' '--------'; \
+	total_files=0; total_code=0; total_comments=0; total_blanks=0; \
+	for dir in $$lines_dirs; do \
 		row=$$(tokei $$dir -e "*_test.go" --types Go \
 			| awk '/^ Go/{print $$2,$$3,$$4,$$5,$$6}' \
 			| tr -d ',_'); \
