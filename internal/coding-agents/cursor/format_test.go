@@ -302,6 +302,14 @@ func TestFormatLog_ToolCallMissingArgs(t *testing.T) {
 	}
 }
 
+func TestFlattenToolCall_Empty(t *testing.T) {
+	t.Parallel()
+	name, args, result := flattenToolCall(map[string]any{})
+	if name != "" || args != "" || result != "" {
+		t.Fatalf("flattenToolCall = (%q, %q, %q), want empty", name, args, result)
+	}
+}
+
 func TestFormatLog_ResultSparse(t *testing.T) {
 	t.Parallel()
 	src := []byte(`{"type":"result"}` + "\n")

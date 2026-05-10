@@ -19,6 +19,7 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 		`internal/cli/tasks/cmd.go:.*writeTasks`,
 		`internal/cli/tasks/orchestrate_cmd.go:.*newOrchestrateCmd`,
 		`internal/cli/tasks/resume_plan.go:.*RunResumePlan`,
+		`internal/coding-agents/cursor/format.go:.*flattenToolCall`,
 		`internal/coding-agents/cursor/cursor.go:.*CreateChatID`,
 		`internal/lifecycle/verify.go:.*BeginVerifyResume`,
 		`internal/lifecycle/markers.go:.*eventToPhaseVerb`,
