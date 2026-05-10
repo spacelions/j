@@ -9,6 +9,24 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
+func TestInitRegistersMarkersHook(t *testing.T) {
+	tasks.ResetHooksForTest()
+	t.Cleanup(tasks.ResetHooksForTest)
+	Init()
+	logPath := filepath.Join(t.TempDir(), "agent.log")
+	tasks.Notify(
+		tasks.Transition{Event: tasks.EventPlanBegin},
+		tasks.Task{ID: "x", AgentLogPath: logPath},
+	)
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if !strings.Contains(string(data), "plan begin") {
+		t.Fatalf("missing plan marker in %q", data)
+	}
+}
+
 // TestMarkers_ReaperAndStuckEvents pins one marker line per reaper
 // event plus EventVerifyStuck. The hook is exercised directly so the
 // table is the single source of truth — adding a new reaper event
