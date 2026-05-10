@@ -129,6 +129,16 @@ func TestFromStore_NilStore(t *testing.T) {
 	}
 }
 
+func TestReadToolModel_NilStore(t *testing.T) {
+	values, err := readToolModel(nil, store.BucketPlanner)
+	if err != nil {
+		t.Fatalf("readToolModel: %v", err)
+	}
+	if len(values) != 0 {
+		t.Fatalf("values = %v, want empty map", values)
+	}
+}
+
 func TestFromStore_MissingTool(t *testing.T) {
 	s := openTestStore(t, store.BucketPlanner)
 	if err := s.Put(store.BucketPlanner, "model", "sonnet-4"); err != nil {
@@ -588,6 +598,41 @@ func TestAgent_PromptsAndPersists(t *testing.T) {
 	}
 }
 
+func TestAgent_PromptWithoutStderr(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	cursor := newStubAgent("cursor", "sonnet-4")
+	ui := &scriptedUI{tool: "cursor", model: "sonnet-4"}
+	agent, model, err := Agent(t.Context(), AgentOptions{
+		Bucket: store.BucketPlanner,
+		Agents: []codingagents.Agent{cursor},
+		UI:     ui,
+		Store:  s,
+	})
+	if err != nil {
+		t.Fatalf("Agent: %v", err)
+	}
+	if agent != cursor || model != "sonnet-4" {
+		t.Fatalf("agent=%v model=%q", agent.Name(), model)
+	}
+}
+
+func TestAgent_StoredReadError(t *testing.T) {
+	s := openTestStore(t, store.BucketPlanner)
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	cursor := newStubAgent("cursor", "sonnet-4")
+	_, _, err := Agent(t.Context(), AgentOptions{
+		Bucket: store.BucketPlanner,
+		Agents: []codingagents.Agent{cursor},
+		UI:     &scriptedUI{},
+		Store:  s,
+	})
+	if err == nil || !strings.Contains(err.Error(), "resolver: read planner") {
+		t.Fatalf("err = %v, want wrapped read error", err)
+	}
+}
+
 // TestAgent_PromptError surfaces a UI error from PickAgent without
 // persisting.
 func TestAgent_PromptError(t *testing.T) {
@@ -678,6 +723,27 @@ func TestAgent_LazyStorePaths(t *testing.T) {
 	if err != nil || agent != cursor || model != "sonnet-4" {
 		t.Fatalf("stored lazy = %v %q %v", agent, model, err)
 	}
+}
+
+func TestAgentFromStoreLazy_OpenSettingsFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cursor := newStubAgent("cursor", "sonnet-4")
+	_, _, err := agentFromStoreLazy(t.Context(), AgentOptions{
+		Bucket: store.BucketPlanner,
+		Agents: []codingagents.Agent{cursor},
+		Stderr: io.Discard,
+	})
+	if !errors.Is(err, ErrNoStoredSelection) {
+		t.Fatalf("err = %v, want ErrNoStoredSelection", err)
+	}
+}
+
+func TestPersistAgent_OpenSettingsFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	persistAgent(AgentOptions{
+		Bucket: store.BucketPlanner,
+		Stderr: io.Discard,
+	}, "cursor", "sonnet-4")
 }
 
 func TestAgent_LazyPromptPersists(t *testing.T) {

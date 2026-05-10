@@ -391,6 +391,16 @@ func TestLoadPlanRequiresApproval_StatErrorPropagates(t *testing.T) {
 	}
 }
 
+func TestReadSetting_GetError(t *testing.T) {
+	s := openInTemp(t)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readSetting(s, "model"); err == nil {
+		t.Fatal("readSetting error = nil")
+	}
+}
+
 // TestPersistAgentSelection_NilStore exercises the nil-store
 // silent-no-op branch.
 func TestPersistAgentSelection_NilStore(t *testing.T) {

@@ -94,6 +94,20 @@ func TestDisplayKey_Linear(t *testing.T) {
 	}
 }
 
+func TestDisplayKey_ExplicitDisplayMapping(t *testing.T) {
+	const bucket = "test-display"
+	keyTable[bucket] = &keyMap{
+		toDisplay: map[string]string{
+			"stored_key": "display-key",
+		},
+	}
+	t.Cleanup(func() { delete(keyTable, bucket) })
+
+	if got := displayKey(bucket, "stored_key"); got != "display-key" {
+		t.Fatalf("displayKey(%q, stored_key) = %q, want display-key", bucket, got)
+	}
+}
+
 // TestIsSecretKey covers both project.api_key (legacy Gemini key)
 // and the linear.api_key storage key.
 func TestIsSecretKey(t *testing.T) {

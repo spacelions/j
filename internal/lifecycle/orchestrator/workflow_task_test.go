@@ -221,6 +221,38 @@ func TestRunForTaskFromWork_RunsWorkerVerifier(t *testing.T) {
 	}
 }
 
+func TestRunForTaskVerifyOnly_RunsVerifierOnly(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := seedChainTask(t, "scripted")
+	if err := flipToWorkDone(t, id); err != nil {
+		t.Fatal(err)
+	}
+	stub := stubChain("scripted")
+	stub.verdict = "VERDICT: PASS"
+
+	err := RunForTaskVerifyOnly(
+		t.Context(), store.TaskConfig{MaxIterations: 1}, id,
+		[]codingagents.Agent{stub}, io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("RunForTaskVerifyOnly: %v", err)
+	}
+	if stub.planCalls.Load() != 0 || stub.workCalls.Load() != 0 {
+		t.Fatalf(
+			"plan/work calls = %d/%d, want 0/0",
+			stub.planCalls.Load(), stub.workCalls.Load(),
+		)
+	}
+	if stub.verifyCalls.Load() != 1 {
+		t.Fatalf("verify calls = %d, want 1", stub.verifyCalls.Load())
+	}
+	row := readChainTaskRow(t, id)
+	if row.Status != tasks.StatusCompleted {
+		t.Fatalf("Status = %q, want completed", row.Status)
+	}
+}
+
 func TestRunForTaskWithGate_PlanOnly(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
@@ -455,6 +487,25 @@ func flipToPlanDone(t *testing.T, id string) error {
 		return err
 	}
 	task.Status = tasks.StatusPlanDone
+	return s.PutTask(task)
+}
+
+func flipToWorkDone(t *testing.T, id string) error {
+	t.Helper()
+	s, err := tasks.OpenDefault()
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	task, err := s.GetTask(id)
+	if err != nil {
+		return err
+	}
+	task.Status = tasks.StatusWorkDone
+	task.WorkTool = "scripted"
+	task.WorkModel = "m1"
+	task.VerifyTool = "scripted"
+	task.VerifyModel = "m1"
 	return s.PutTask(task)
 }
 

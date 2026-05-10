@@ -334,6 +334,36 @@ func TestBeginPlanRestart_PreservesLinearIssue(t *testing.T) {
 	}
 }
 
+func TestBeginPlanExisting_RefreshesPlannerFields(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	task := tasks.Task{
+		ID:                tasks.NewTaskID(),
+		Status:            tasks.StatusPlanning,
+		PlanResumeSession: "old-resume",
+	}
+	tasks.PersistWarn(io.Discard, task)
+	lc := BeginPlanExisting(
+		task, io.Discard, "claude", "opus", "new-resume",
+		"/tmp/agent.log",
+	)
+	got := lc.Task()
+	if got.PlanTool != "claude" || got.PlanModel != "opus" {
+		t.Fatalf("tool/model = %q/%q", got.PlanTool, got.PlanModel)
+	}
+	if got.PlanResumeSession != "new-resume" {
+		t.Fatalf("PlanResumeSession = %q", got.PlanResumeSession)
+	}
+	if got.AgentLogPath != "/tmp/agent.log" {
+		t.Fatalf("AgentLogPath = %q", got.AgentLogPath)
+	}
+	if got.PlanBeginAt.IsZero() {
+		t.Fatal("PlanBeginAt should be stamped")
+	}
+}
+
 // TestBeginPlanResume_PreservesSessionAndLineage pins the resume
 // branch: BeginPlanResume must NOT overwrite PlanResumeSession,
 // must apply EventPlanResume from a plan-pending-approval row, and

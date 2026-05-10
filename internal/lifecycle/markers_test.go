@@ -9,6 +9,57 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
+func TestInitRegistersMarkersHook(t *testing.T) {
+	tasks.ResetHooksForTest()
+	t.Cleanup(tasks.ResetHooksForTest)
+	Init()
+	logPath := filepath.Join(t.TempDir(), "agent.log")
+	tasks.Notify(
+		tasks.Transition{Event: tasks.EventPlanBegin},
+		tasks.Task{ID: "x", AgentLogPath: logPath},
+	)
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if !strings.Contains(string(data), "plan begin") {
+		t.Fatalf("missing plan marker in %q", data)
+	}
+}
+
+func TestMarkersHookSkipsMissingLogPath(t *testing.T) {
+	markersHook(
+		tasks.Transition{Event: tasks.EventPlanBegin},
+		tasks.Task{ID: "x"},
+	)
+}
+
+func TestMarkersHookSkipsOpenError(t *testing.T) {
+	markersHook(
+		tasks.Transition{Event: tasks.EventPlanBegin},
+		tasks.Task{ID: "x", AgentLogPath: t.TempDir()},
+	)
+}
+
+func TestMarkersHookWorkDoneIncludesPullRequest(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "agent.log")
+	markersHook(
+		tasks.Transition{Event: tasks.EventWorkDone},
+		tasks.Task{
+			ID:             "x",
+			AgentLogPath:   logPath,
+			PullRequestURL: "https://github.com/spacelions/j/pull/1",
+		},
+	)
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if !strings.Contains(string(data), "pull request: ") {
+		t.Fatalf("missing pull request detail in %q", data)
+	}
+}
+
 // TestMarkers_ReaperAndStuckEvents pins one marker line per reaper
 // event plus EventVerifyStuck. The hook is exercised directly so the
 // table is the single source of truth — adding a new reaper event
@@ -70,6 +121,7 @@ func TestMarkers_ReaperAndStuckEvents(t *testing.T) {
 		},
 		{"plan_approve", tasks.EventPlanApprove, "plan approve"},
 		{"plan_resume", tasks.EventPlanResume, "plan resume"},
+		{"plan_quit", tasks.EventPlanQuit, "plan quit"},
 		{"plan_error", tasks.EventPlanError, "plan error"},
 		{
 			"plan_needs_clarification",
@@ -80,6 +132,7 @@ func TestMarkers_ReaperAndStuckEvents(t *testing.T) {
 		{"work_restart", tasks.EventWorkRestart, "work restart"},
 		{"work_resume", tasks.EventWorkResume, "work resume"},
 		{"work_done", tasks.EventWorkDone, "work done"},
+		{"work_quit", tasks.EventWorkQuit, "work quit"},
 		{"work_error", tasks.EventWorkError, "work error"},
 		{
 			"work_needs_clarification",
@@ -87,10 +140,18 @@ func TestMarkers_ReaperAndStuckEvents(t *testing.T) {
 			"work needs clarification",
 		},
 		{"verify_begin", tasks.EventVerifyBegin, "verify begin"},
+		{"verify_restart", tasks.EventVerifyRestart, "verify restart"},
 		{"verify_resume", tasks.EventVerifyResume, "verify resume"},
 		{"verify_pass", tasks.EventVerifyPass, "verify pass"},
 		{"verify_fail", tasks.EventVerifyFail, "verify fail"},
+		{"verify_quit", tasks.EventVerifyQuit, "verify quit"},
 		{"verify_error", tasks.EventVerifyError, "verify error"},
+		{
+			"verify_needs_clarification",
+			tasks.EventVerifyNeedsClarification,
+			"verify needs clarification",
+		},
+		{"unknown", tasks.Event("custom"), "custom "},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

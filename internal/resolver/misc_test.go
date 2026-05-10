@@ -30,6 +30,9 @@ func TestParseMustRead(t *testing.T) {
 	if got := ParseMustRead(" ; "); got != nil {
 		t.Fatalf("empty ParseMustRead = %#v", got)
 	}
+	if got := ParseMustRead("   "); got != nil {
+		t.Fatalf("whitespace ParseMustRead = %#v", got)
+	}
 }
 
 func TestMustRead(t *testing.T) {

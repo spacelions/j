@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
@@ -350,6 +351,75 @@ func TestRun_NewResumeIDError(t *testing.T) {
 	}
 }
 
+func TestRun_MustReadErrorWarnsAndContinues(t *testing.T) {
+	setupRunEnv(t)
+	id := seedPlanDoneTask(t)
+	selectionStore, err := store.Open(filepath.Join(t.TempDir(), "settings"))
+	if err != nil {
+		t.Fatalf("Open selection store: %v", err)
+	}
+	t.Cleanup(func() { _ = selectionStore.Close() })
+	settingsPath, err := store.DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath: %v", err)
+	}
+	if err := os.Remove(settingsPath); err != nil {
+		t.Fatalf("Remove settings: %v", err)
+	}
+	if err := os.Mkdir(settingsPath, 0o755); err != nil {
+		t.Fatalf("Mkdir settings: %v", err)
+	}
+
+	agent := newRunTestAgent("cursor")
+	var stderr bytes.Buffer
+	err = Execute(t.Context(), ExecuteOptions{
+		TaskID: id,
+		Yes:    true,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: &stderr,
+		Agents: []codingagents.Agent{agent},
+		UI:     &fakeRunUI{},
+		Store:  selectionStore,
+		Tool:   "cursor",
+		Model:  "m1",
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if agent.workCalls != 1 {
+		t.Fatalf("workCalls = %d, want 1", agent.workCalls)
+	}
+	if !strings.Contains(stderr.String(), "resolver: open store") {
+		t.Fatalf("stderr = %q, want must-read warning", stderr.String())
+	}
+}
+
+func TestRun_WaitForCompletionError(t *testing.T) {
+	setupRunEnv(t)
+	id := seedPlanDoneTask(t)
+	agent := newRunTestAgent("cursor")
+	agent.workPid = os.Getpid()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := Execute(ctx, ExecuteOptions{
+		TaskID:            id,
+		Yes:               true,
+		Stdin:             strings.NewReader(""),
+		Stdout:            io.Discard,
+		Stderr:            io.Discard,
+		Agents:            []codingagents.Agent{agent},
+		UI:                &fakeRunUI{},
+		Tool:              "cursor",
+		Model:             "m1",
+		WaitForCompletion: true,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
 func TestRun_ConfirmStatusOverrideError(t *testing.T) {
 	setupRunEnv(t)
 	id := seedPlanDoneTask(t)
@@ -369,6 +439,34 @@ func TestRun_ConfirmStatusOverrideError(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "confirm fail") {
 		t.Fatalf("err = %v, want 'confirm fail'", err)
+	}
+	if agent.workCalls != 0 {
+		t.Fatalf("workCalls = %d, want 0", agent.workCalls)
+	}
+}
+
+func TestRun_ResumeUnknownToolError(t *testing.T) {
+	setupRunEnv(t)
+	id := seedPlanDoneTask(t)
+	row := testutil.ReadTaskRow(t, id)
+	row.Status = tasks.StatusWorking
+	row.WorkResumeSession = "prior-cursor"
+	row.WorkTool = "ghost"
+	row.WorkModel = "m1"
+	testutil.SeedTaskRow(t, row)
+
+	agent := newRunTestAgent("cursor")
+	err := Execute(t.Context(), ExecuteOptions{
+		TaskID: id,
+		Yes:    true,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &fakeRunUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), `unknown tool "ghost"`) {
+		t.Fatalf("err = %v, want unknown tool", err)
 	}
 	if agent.workCalls != 0 {
 		t.Fatalf("workCalls = %d, want 0", agent.workCalls)
@@ -456,27 +554,51 @@ func TestRun_ResumeWithoutClarificationFile(t *testing.T) {
 	}
 }
 
-func TestRun_WaitForCompletion_PIDZero(t *testing.T) {
-	setupRunEnv(t)
-	id := seedPlanDoneTask(t)
+func TestResolveWorker_SelectWorkerError(t *testing.T) {
 	agent := newRunTestAgent("cursor")
-	agent.workPid = 0
-	err := Execute(t.Context(), ExecuteOptions{
-		TaskID:            id,
-		Yes:               true,
-		Stdin:             strings.NewReader(""),
-		Stdout:            io.Discard,
-		Stderr:            io.Discard,
-		Agents:            []codingagents.Agent{agent},
-		UI:                &fakeRunUI{},
-		Tool:              "cursor",
-		Model:             "m1",
-		WaitForCompletion: true,
-	})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
+	_, _, _, err := resolveWorker(
+		t.Context(),
+		ExecuteOptions{
+			Agents: []codingagents.Agent{agent},
+			Tool:   "ghost",
+			Stderr: io.Discard,
+			UI:     &fakeRunUI{},
+		},
+		resolverWorkPlan("", "", ""),
+		false,
+	)
+	if err == nil {
+		t.Fatal("resolveWorker err = nil, want select-worker error")
 	}
-	if agent.workCalls != 1 {
-		t.Fatalf("workCalls = %d, want 1", agent.workCalls)
+}
+
+func TestLookupResumeAgent(t *testing.T) {
+	agent := newRunTestAgent("cursor")
+	if got, ok := lookupResumeAgent(
+		[]codingagents.Agent{agent}, "cursor",
+	); !ok || got != agent {
+		t.Fatalf("lookupResumeAgent found = (%v, %v), want agent,true", got, ok)
+	}
+	if got, ok := lookupResumeAgent(
+		[]codingagents.Agent{agent}, "",
+	); ok || got != nil {
+		t.Fatalf("lookupResumeAgent empty = (%v, %v), want nil,false", got, ok)
+	}
+	if got, ok := lookupResumeAgent(
+		[]codingagents.Agent{agent}, "ghost",
+	); ok || got != nil {
+		t.Fatalf("lookupResumeAgent miss = (%v, %v), want nil,false", got, ok)
+	}
+}
+
+func resolverWorkPlan(tool, model, session string) resolver.WorkPlan {
+	return resolver.WorkPlan{
+		Task: tasks.Task{
+			ID:                tasks.NewTaskID(),
+			Status:            tasks.StatusWorking,
+			WorkTool:          tool,
+			WorkModel:         model,
+			WorkResumeSession: session,
+		},
 	}
 }

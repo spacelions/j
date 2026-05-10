@@ -304,3 +304,49 @@ func TestList_OnlyEmptyBuckets(t *testing.T) {
 		t.Fatalf("stdout = %q, want %q", out, want)
 	}
 }
+
+func TestCollectSections_ListBucketsError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := collectSections(s); err == nil {
+		t.Fatal("collectSections error = nil")
+	}
+}
+
+func TestPrintSections_ListError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	path, err := store.DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	err = printSections(
+		&bytes.Buffer{},
+		[]string{store.BucketProject},
+		map[string]bool{store.BucketProject: true},
+		s,
+	)
+	if err == nil {
+		t.Fatal("printSections error = nil")
+	}
+}

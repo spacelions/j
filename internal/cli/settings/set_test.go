@@ -47,6 +47,11 @@ func TestSet_Table(t *testing.T) {
 			wantErr: "missing '='",
 		},
 		{
+			name:    "missing_dot",
+			arg:     "bucket=v",
+			wantErr: "missing '.'",
+		},
+		{
 			name:    "empty_bucket",
 			arg:     ".onlykey=v",
 			wantErr: "non-empty",

@@ -243,6 +243,17 @@ func TestScanSessions_MissingDir(t *testing.T) {
 	}
 }
 
+func TestScanSessions_ReadDirError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions")
+	if err := os.WriteFile(path, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := scanSessions(path, "/ws/A", time.Now())
+	if err == nil {
+		t.Fatal("scanSessions error = nil")
+	}
+}
+
 // TestCaptureResumeID_NoStore covers the happy path of a fresh
 // machine: DEEPSEEK_HOME points at a tempdir with no `sessions/`
 // child, so CaptureResumeID returns ("", nil) without error.
@@ -306,6 +317,20 @@ func TestCaptureResumeID_NoMatch(t *testing.T) {
 	}
 }
 
+func TestCaptureResumeID_ScanError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(envHome, home)
+	if err := os.WriteFile(
+		filepath.Join(home, "sessions"), []byte("not a directory"), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	_, err := New().CaptureResumeID(t.Context(), "/ws/A", time.Now())
+	if err == nil {
+		t.Fatal("CaptureResumeID error = nil")
+	}
+}
+
 // TestScanSessions_SkipsCorruptAndEmpty pins the resilient-scanner
 // contract: a JSON file whose metadata.id is missing is treated as
 // a miss, not a fatal error. The valid sibling still wins.
@@ -328,6 +353,13 @@ func TestScanSessions_SkipsCorruptAndEmpty(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != "good-id" {
 		t.Fatalf("got %+v, want one good-id", got)
+	}
+}
+
+func TestDecodeSession_ReadError(t *testing.T) {
+	_, ok := decodeSession(filepath.Join(t.TempDir(), "missing.json"))
+	if ok {
+		t.Fatal("decodeSession ok = true, want false")
 	}
 }
 

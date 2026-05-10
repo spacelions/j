@@ -258,6 +258,18 @@ func TestReadConfirmationLine_ReadError(t *testing.T) {
 	}
 }
 
+func TestReadConfirmationLine_EmptyEOF(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.SetIn(&bytes.Buffer{})
+	got, err := readConfirmationLine(cmd)
+	if err != nil {
+		t.Fatalf("readConfirmationLine: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("readConfirmationLine = %q, want empty string", got)
+	}
+}
+
 // TestRunResetTargets_StatError exercises the non-ENOENT stat error
 // path: when .j is a regular file the settings stat fails. We bypass
 // cobra so the corrupt layout reaches runResetTargets.

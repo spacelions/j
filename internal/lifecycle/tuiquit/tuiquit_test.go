@@ -50,6 +50,17 @@ func TestDecidePlan_PlanMissing(t *testing.T) {
 	}
 }
 
+func TestDecidePlan_StatError(t *testing.T) {
+	dir := t.TempDir()
+	taskPath := filepath.Join(dir, "task-as-file")
+	writeFile(t, taskPath, "not a directory")
+
+	_, err := DecidePlan(taskPath, false)
+	if err == nil {
+		t.Fatal("DecidePlan should return stat error")
+	}
+}
+
 func TestDecidePlan_PlanEmpty(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, tasks.PlanFileName), "")
@@ -137,6 +148,18 @@ func TestDecideVerify_MissingFile(t *testing.T) {
 	}
 }
 
+func TestDecideVerify_NoVerdict(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, tasks.VerifierFindingsFileName),
+		"some findings\nwithout a verdict\n")
+
+	ev := DecideVerify(dir)
+	if ev != tasks.EventVerifyQuit {
+		t.Errorf("DecideVerify(no verdict) = %q, want %q",
+			ev, tasks.EventVerifyQuit)
+	}
+}
+
 func TestParseAgentLogForPR(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -179,6 +202,14 @@ func TestRunGhPRList_EmptyBranch(t *testing.T) {
 	url := runGhPRList(t.Context(), "")
 	if url != "" {
 		t.Errorf("expected empty for empty branch, got %q", url)
+	}
+}
+
+func TestRunGhPRList_CommandError(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	url := runGhPRList(t.Context(), "branch-without-gh")
+	if url != "" {
+		t.Errorf("expected empty for gh command error, got %q", url)
 	}
 }
 

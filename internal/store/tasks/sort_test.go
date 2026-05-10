@@ -27,7 +27,13 @@ func TestSortTasks_ActiveFirstThenByDoneAtDesc(t *testing.T) {
 	}
 	for i, id := range wantIDs {
 		if tasks[i].ID != id {
-			t.Fatalf("tasks[%d].ID = %q, want %q (got order: %v)", i, tasks[i].ID, id, idsOf(tasks))
+			t.Fatalf(
+				"tasks[%d].ID = %q, want %q (got order: %v)",
+				i,
+				tasks[i].ID,
+				id,
+				idsOf(tasks),
+			)
 		}
 	}
 }
@@ -67,5 +73,33 @@ func TestSortTasks_TieBreakers(t *testing.T) {
 	want := []string{"active-a", "active-b", "inactive-b", "inactive-a"}
 	if got := idsOf(tasks); !equal(got, want) {
 		t.Fatalf("order = %v, want %v", got, want)
+	}
+}
+
+func TestSortTasks_StableEqualRowsAndAlreadyOrdered(t *testing.T) {
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	tasks := []Task{
+		{ID: "active-a", Status: StatusWorking},
+		{ID: "active-a", Status: StatusWorking, Summary: "second"},
+		{ID: "inactive-b", Status: StatusCompleted, DoneAt: at},
+		{ID: "inactive-a", Status: StatusCompleted, DoneAt: at},
+		{ID: "inactive-a", Status: StatusCompleted, DoneAt: at, Summary: "second"},
+	}
+	SortTasks(tasks)
+	want := []string{
+		"active-a",
+		"active-a",
+		"inactive-b",
+		"inactive-a",
+		"inactive-a",
+	}
+	if got := idsOf(tasks); !equal(got, want) {
+		t.Fatalf("order = %v, want %v", got, want)
+	}
+	if tasks[1].Summary != "second" {
+		t.Fatalf("active duplicate order was not stable: %+v", tasks[:2])
+	}
+	if tasks[4].Summary != "second" {
+		t.Fatalf("inactive duplicate order was not stable: %+v", tasks[3:])
 	}
 }

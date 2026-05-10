@@ -476,6 +476,19 @@ func TestDeleteTask_MissingKey(t *testing.T) {
 	}
 }
 
+func TestDeleteTask_StatError(t *testing.T) {
+	s := openTaskStore(t)
+	blocker := filepath.Join(s.tasksDir, "blocked")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := s.DeleteTask(filepath.Join("blocked", "child"))
+	if err == nil || errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want non-ErrNotExist stat error", err)
+	}
+}
+
 // TestDeleteTask_RemoveError creates a task then makes its parent directory
 // read-only so os.Remove can't unlink task.toml, covering the remove-error branch.
 func TestDeleteTask_RemoveError(t *testing.T) {
@@ -722,6 +735,7 @@ func TestDisplayToolModel(t *testing.T) {
 		wantModel string
 	}{
 		{StatusPlanning, "ptool", "pmodel"},
+		{StatusPlanPendingApproval, "ptool", "pmodel"},
 		{StatusPlanDone, "ptool", "pmodel"},
 		{StatusWorking, "wtool", "wmodel"},
 		{StatusWorkDone, "wtool", "wmodel"},
@@ -729,6 +743,8 @@ func TestDisplayToolModel(t *testing.T) {
 		{StatusFailed, "vtool", "vmodel"},
 		{StatusCompleted, "vtool", "vmodel"},
 		{StatusHelp, "vtool", "vmodel"},
+		{StatusNeedsClarification, "vtool", "vmodel"},
+		{"unknown", "ptool", "pmodel"},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.status), func(t *testing.T) {

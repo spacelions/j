@@ -1,8 +1,10 @@
 package codingagents
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -93,5 +95,53 @@ func TestCaptureResumeID_ImplementedError(t *testing.T) {
 	)
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v, want %v", err, want)
+	}
+}
+
+type recordingResume struct {
+	id string
+}
+
+func (r *recordingResume) RecordResumeSession(id string) {
+	r.id = id
+}
+
+func TestCaptureAndRecordResume_RecordsCapturedID(t *testing.T) {
+	recorder := &recordingResume{}
+	got := CaptureAndRecordResume(
+		t.Context(),
+		capturingAgent{id: "captured"},
+		recorder,
+		"/ws/A",
+		time.Now(),
+		&bytes.Buffer{},
+	)
+	if got != "captured" {
+		t.Fatalf("CaptureAndRecordResume = %q, want captured", got)
+	}
+	if recorder.id != "captured" {
+		t.Fatalf("recorded id = %q, want captured", recorder.id)
+	}
+}
+
+func TestCaptureAndRecordResume_WarnsOnCaptureError(t *testing.T) {
+	recorder := &recordingResume{}
+	var stderr bytes.Buffer
+	got := CaptureAndRecordResume(
+		t.Context(),
+		capturingAgent{err: errors.New("scan failed")},
+		recorder,
+		"/ws/A",
+		time.Now(),
+		&stderr,
+	)
+	if got != "" {
+		t.Fatalf("CaptureAndRecordResume = %q, want empty", got)
+	}
+	if recorder.id != "" {
+		t.Fatalf("recorded id = %q, want empty", recorder.id)
+	}
+	if !strings.Contains(stderr.String(), "J: scan failed") {
+		t.Fatalf("stderr = %q, want scan warning", stderr.String())
 	}
 }

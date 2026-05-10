@@ -28,6 +28,8 @@ type showLeaf struct {
 	cmdArgv  []string
 }
 
+const showCommandName = "show"
+
 func showLeaves() []showLeaf {
 	return []showLeaf{
 		{
@@ -36,7 +38,7 @@ func showLeaves() []showLeaf {
 			run:      RunShowRequirements,
 			viperKey: "tasks.show.requirements.from_task",
 			envName:  "TASKS_SHOW_REQUIREMENTS_FROM_TASK",
-			cmdArgv:  []string{"show", "requirements"},
+			cmdArgv:  []string{showCommandName, "requirements"},
 		},
 		{
 			name:     "plan",
@@ -44,7 +46,15 @@ func showLeaves() []showLeaf {
 			run:      RunShowPlan,
 			viperKey: "tasks.show.plan.from_task",
 			envName:  "TASKS_SHOW_PLAN_FROM_TASK",
-			cmdArgv:  []string{"show", "plan"},
+			cmdArgv:  []string{showCommandName, "plan"},
+		},
+		{
+			name:     "clarification",
+			filename: tasks.ClarificationFileName,
+			run:      RunShowClarification,
+			viperKey: "tasks.show.clarification.from_task",
+			envName:  "TASKS_SHOW_CLARIFICATION_FROM_TASK",
+			cmdArgv:  []string{showCommandName, "clarification"},
 		},
 		{
 			name:     "findings",
@@ -52,7 +62,7 @@ func showLeaves() []showLeaf {
 			run:      RunShowFindings,
 			viperKey: "tasks.show.findings.from_task",
 			envName:  "TASKS_SHOW_FINDINGS_FROM_TASK",
-			cmdArgv:  []string{"show", "findings"},
+			cmdArgv:  []string{showCommandName, "findings"},
 		},
 	}
 }
@@ -442,7 +452,7 @@ func TestRunShowLeaf_ViewerErrorPropagates(t *testing.T) {
 
 func TestNewShowCmd_RegistersLeavesAndParentRunE(t *testing.T) {
 	cmd := newShowCmd()
-	if cmd.Use != "show" {
+	if cmd.Use != showCommandName {
 		t.Fatalf("Use = %q, want show", cmd.Use)
 	}
 	if cmd.RunE == nil {
@@ -468,7 +478,7 @@ func TestNewShowCmd_RegistersLeavesAndParentRunE(t *testing.T) {
 func TestNew_HasShowSubcommand(t *testing.T) {
 	cmd := New()
 	for _, child := range cmd.Commands() {
-		if child.Name() == "show" {
+		if child.Name() == showCommandName {
 			return
 		}
 	}
@@ -558,7 +568,7 @@ func TestRunShowCmd_RunE_DirectIDViaEnv(t *testing.T) {
 	root.SetOut(&stdout)
 	root.SetErr(io.Discard)
 	root.SetContext(t.Context())
-	root.SetArgs([]string{"show"})
+	root.SetArgs([]string{showCommandName})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
