@@ -21,6 +21,8 @@ func TestAllowlist_RemovedEntriesAbsent(t *testing.T) {
 		`internal/cli/settings/reset.go:.*readConfirmationLine`,
 		`internal/cli/settings/reset.go:.*runResetOneKey`,
 		`internal/cli/settings/set.go:.*parseBucketKey`,
+		`internal/cli/tasks/show.go:.*RunShowClarification`,
+		`internal/cli/tasks/show.go:.*newShowClarificationCmd`,
 		`internal/cli/tasks/cmd.go:.*writeTasks`,
 		`internal/cli/tasks/orchestrate_cmd.go:.*newOrchestrateCmd`,
 		`internal/cli/tasks/resume_plan.go:.*RunResumePlan`,
