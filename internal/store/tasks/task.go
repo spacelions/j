@@ -110,6 +110,10 @@ type Task struct {
 	// populates it. Upstream display surfaces it as a link in the
 	// task table.
 	PullRequestURL string `toml:"pull_request_url,omitempty"`
+
+	// ProcessedPRCommands stores stable GitHub command comment ids
+	// already handled by the manual PR-feedback command path.
+	ProcessedPRCommands []string `toml:"processed_pr_commands,omitempty"`
 }
 
 // PutTask TOML-encodes t and writes it to

@@ -1,6 +1,7 @@
 package prompts
 
 import (
+	"strings"
 	"testing"
 
 	codingagents "github.com/spacelions/j/internal/coding-agents"
@@ -71,6 +72,40 @@ func TestPlanPromptDispatch(t *testing.T) {
 				t.Fatalf("PlanPrompt() mismatch\nwant: %q\n got: %q", tt.want, got)
 			}
 		})
+	}
+}
+
+func TestPlanPromptDispatch_PRFeedback(t *testing.T) {
+	req := codingagents.PlanRequest{
+		PlanOutputPath: "/task/pr_comments_summary_plan.md",
+		MustRead:       []string{"AGENTS.md"},
+		PRFeedback: &codingagents.PRFeedbackContext{
+			PullRequestURL:        "https://github.com/o/r/pull/1",
+			PullRequestTitle:      "Add feature",
+			PullRequestAuthor:     "alice",
+			InvocationCommentID:   "c1",
+			InvocationCommentBody: "@j take a look",
+			Comments: []codingagents.PRFeedbackComment{{
+				ID: "r1", Author: "reviewer", Body: "add tests",
+				URL:      "https://github.com/o/r/pull/1#discussion_r1",
+				Resolved: true,
+			}},
+		},
+	}
+	got := PlanPrompt(req)
+	for _, want := range []string{
+		"Before starting, read these project files",
+		"The PR author invoked J with '@j take a look'",
+		"PR URL: https://github.com/o/r/pull/1",
+		"Invocation comment ID: c1",
+		"resolved: true",
+		"Save the PR feedback plan to " +
+			"\"/task/pr_comments_summary_plan.md\"",
+		"- Actionable Feedback",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("PlanPrompt missing %q in:\n%s", want, got)
+		}
 	}
 }
 

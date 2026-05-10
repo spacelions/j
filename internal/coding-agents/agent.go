@@ -148,6 +148,10 @@ type PlanRequest struct {
 	// builder; resume runs ignore it. Empty preserves byte-identical
 	// pre-must-read output.
 	MustRead []string
+	// PRFeedback switches the planner prompt to the manual
+	// pull-request feedback triage mode. PlanOutputPath is the
+	// destination for pr_comments_summary_plan.md in this mode.
+	PRFeedback *PRFeedbackContext
 }
 
 // WorkRequest is the input to Agent.Work. There is no OutputPath:

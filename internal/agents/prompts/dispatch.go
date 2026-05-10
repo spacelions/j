@@ -12,6 +12,11 @@ import (
 // resume runs (a help-status row whose first run skipped the
 // artefacts must still produce them on resume).
 func PlanPrompt(req codingagents.PlanRequest) string {
+	if req.PRFeedback != nil {
+		return BuildPRFeedbackPlannerPrompt(
+			*req.PRFeedback, req.PlanOutputPath, req.MustRead,
+		)
+	}
 	paths := tasks.TaskPaths{
 		Requirements:  req.RequirementsOutputPath,
 		Plan:          req.PlanOutputPath,
