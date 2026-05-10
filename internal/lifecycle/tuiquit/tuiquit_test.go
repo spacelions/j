@@ -50,6 +50,17 @@ func TestDecidePlan_PlanMissing(t *testing.T) {
 	}
 }
 
+func TestDecidePlan_StatError(t *testing.T) {
+	dir := t.TempDir()
+	taskPath := filepath.Join(dir, "task-as-file")
+	writeFile(t, taskPath, "not a directory")
+
+	_, err := DecidePlan(taskPath, false)
+	if err == nil {
+		t.Fatal("DecidePlan should return stat error")
+	}
+}
+
 func TestDecidePlan_PlanEmpty(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, tasks.PlanFileName), "")

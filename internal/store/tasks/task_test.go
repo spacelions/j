@@ -476,6 +476,19 @@ func TestDeleteTask_MissingKey(t *testing.T) {
 	}
 }
 
+func TestDeleteTask_StatError(t *testing.T) {
+	s := openTaskStore(t)
+	blocker := filepath.Join(s.tasksDir, "blocked")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := s.DeleteTask(filepath.Join("blocked", "child"))
+	if err == nil || errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want non-ErrNotExist stat error", err)
+	}
+}
+
 // TestDeleteTask_RemoveError creates a task then makes its parent directory
 // read-only so os.Remove can't unlink task.toml, covering the remove-error branch.
 func TestDeleteTask_RemoveError(t *testing.T) {
