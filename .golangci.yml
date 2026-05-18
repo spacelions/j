@@ -70,8 +70,6 @@ linters:
     # no structured logger in this project
     - sloglint
     - loggercheck
-    # no testify
-    - testifylint
     # no SQL
     - sqlclosecheck
     - rowserrcheck

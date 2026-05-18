@@ -4,19 +4,16 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNew_Smoke(t *testing.T) {
 	cmd := New()
-	if cmd == nil {
-		t.Fatal("New returned nil")
-	}
-	if cmd.Use != "settings" {
-		t.Fatalf("Use = %q, want settings", cmd.Use)
-	}
-	if cmd.RunE == nil {
-		t.Fatal("RunE is nil; bare `j settings` would fail")
-	}
+	require.NotNil(t, cmd)
+	assert.Equal(t, "settings", cmd.Use)
+	assert.NotNil(t, cmd.RunE, "bare `j settings` would fail")
 
 	var found struct{ set, reset bool }
 	for _, sub := range cmd.Commands() {
@@ -27,9 +24,8 @@ func TestNew_Smoke(t *testing.T) {
 			found.reset = true
 		}
 	}
-	if !found.set || !found.reset {
-		t.Fatalf("missing subcommands: %+v", found)
-	}
+	assert.True(t, found.set, "missing set subcommand")
+	assert.True(t, found.reset, "missing reset subcommand")
 }
 
 // TestNew_BareSettingsRunsList exercises the parent RunE: plain
@@ -45,9 +41,7 @@ func TestNew_BareSettingsRunsList(t *testing.T) {
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{})
 
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
+	require.NoError(t, cmd.Execute(), "Execute")
 	want := "[project]\n" +
 		"  must_read = \n" +
 		"\n" +
@@ -56,7 +50,5 @@ func TestNew_BareSettingsRunsList(t *testing.T) {
 		"[worker]\n" +
 		"\n" +
 		"[verifier]\n"
-	if stdout.String() != want {
-		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
-	}
+	assert.Equal(t, want, stdout.String())
 }

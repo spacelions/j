@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseVerdict(t *testing.T) {
@@ -23,29 +25,18 @@ func TestParseVerdict(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(dir, tc.name+".md")
-			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			if got := ParseVerdict(path); got != tc.want {
-				t.Fatalf("ParseVerdict = %q, want %q", got, tc.want)
-			}
+			require.NoError(t, os.WriteFile(path, []byte(tc.body), 0o644))
+			assert.Equal(t, tc.want, ParseVerdict(path))
 		})
 	}
-	if got := ParseVerdict(filepath.Join(dir, "missing.md")); got != "FAIL" {
-		t.Fatalf("missing verdict = %q", got)
-	}
+	assert.Equal(t, "FAIL", ParseVerdict(filepath.Join(dir, "missing.md")))
 }
 
 func TestReadVerdictForTask(t *testing.T) {
 	setupResolverProject(t)
 	dir, err := tasks.EnsureDir("task")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, tasks.VerifierFindingsFileName), []byte("VERDICT: PASS\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := ReadVerdictForTask("task"); got != "PASS" {
-		t.Fatalf("ReadVerdictForTask = %q", got)
-	}
+	require.NoError(t, err)
+	path := filepath.Join(dir, tasks.VerifierFindingsFileName)
+	require.NoError(t, os.WriteFile(path, []byte("VERDICT: PASS\n"), 0o644))
+	assert.Equal(t, "PASS", ReadVerdictForTask("task"))
 }
