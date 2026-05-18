@@ -4,14 +4,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDefaultWorkspace(t *testing.T) {
 	got := DefaultWorkspace(filepath.FromSlash("/tmp/foo/spec.md"))
 	want := filepath.FromSlash("/tmp/foo")
-	if got != want {
-		t.Fatalf("got %q, want %q", got, want)
-	}
+	assert.Equal(t, want, got)
 }
 
 // TestProjectRootWorkspace pins the happy-path contract: the helper
@@ -22,14 +23,8 @@ func TestProjectRootWorkspace(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd: %v", err)
-	}
+	require.NoError(t, err, "Getwd")
 	got := ProjectRootWorkspace()
-	if got != cwd {
-		t.Fatalf("ProjectRootWorkspace = %q, want %q", got, cwd)
-	}
-	if !filepath.IsAbs(got) {
-		t.Fatalf("ProjectRootWorkspace returned non-absolute %q", got)
-	}
+	assert.Equal(t, cwd, got)
+	assert.Truef(t, filepath.IsAbs(got), "%q is not absolute", got)
 }

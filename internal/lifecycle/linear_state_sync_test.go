@@ -14,6 +14,8 @@ import (
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/tools/linear"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // stateSyncEnv bundles the per-test scaffolding the state-sync hook
@@ -40,9 +42,7 @@ type stateSyncEnv struct {
 func newStateSyncEnv(t *testing.T) *stateSyncEnv {
 	t.Helper()
 	t.Chdir(t.TempDir())
-	if err := store.EnsureProject(); err != nil {
-		t.Fatalf("EnsureProject: %v", err)
-	}
+	require.NoError(t, store.EnsureProject(), "EnsureProject")
 	env := &stateSyncEnv{
 		issueResp: &linear.Issue{
 			ID: "node-1", Identifier: "ENG-1", Title: "t",
@@ -67,9 +67,7 @@ func newStateSyncEnv(t *testing.T) *stateSyncEnv {
 func installStderrPipe(t *testing.T, env *stateSyncEnv) {
 	t.Helper()
 	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
-	}
+	require.NoError(t, err, "os.Pipe")
 	env.stderrOrig = os.Stderr
 	os.Stderr = w
 	env.stderrR = r
@@ -90,9 +88,7 @@ func (e *stateSyncEnv) stderrText(t *testing.T) string {
 		e.stderrClosed = true
 	}
 	buf, err := io.ReadAll(e.stderrR)
-	if err != nil {
-		t.Fatalf("read stderr: %v", err)
-	}
+	require.NoError(t, err, "read stderr")
 	return string(buf)
 }
 
@@ -214,9 +210,7 @@ func writeClarification(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "clarification.md")
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatalf("write clarification.md: %v", err)
-	}
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
 	return filepath.Join(dir, "agent.log")
 }
 
@@ -269,10 +263,7 @@ func assertVarStr(t *testing.T, body, key, want string) {
 	var req struct {
 		Variables map[string]any `json:"variables"`
 	}
-	if err := json.Unmarshal([]byte(body), &req); err != nil {
-		t.Fatalf("decode body: %v (%s)", err, body)
-	}
-	if got := req.Variables[key]; got != want {
-		t.Fatalf("variables[%q] = %v, want %q", key, got, want)
-	}
+	require.NoErrorf(t, json.Unmarshal([]byte(body), &req),
+		"decode body: %s", body)
+	assert.Equal(t, want, req.Variables[key], "variables[%q]", key)
 }

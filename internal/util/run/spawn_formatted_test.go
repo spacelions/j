@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestSpawnFormattedIn_AppliesFormatterPerLine pins the per-line
@@ -21,12 +24,8 @@ func TestSpawnFormattedIn_AppliesFormatterPerLine(t *testing.T) {
 	pid, err := SpawnFormattedIn(
 		t.Context(), "", logPath, bytes.ToUpper, "sh", "-c",
 		"printf 'hello\\nworld\\n'")
-	if err != nil {
-		t.Fatalf("SpawnFormattedIn: %v", err)
-	}
-	if pid <= 0 {
-		t.Fatalf("pid = %d, want > 0", pid)
-	}
+	require.NoError(t, err, "SpawnFormattedIn")
+	require.Positive(t, pid)
 	body := waitForLogContainsAndExit(t, logPath, "HELLO", "WORLD")
 	helloAt := strings.Index(body, "HELLO")
 	worldAt := strings.Index(body, "WORLD")
@@ -48,12 +47,8 @@ func TestSpawnFormattedIn_NilFormatterIsIdentity(t *testing.T) {
 	logPath := filepath.Join(dir, "out.log")
 	pid, err := SpawnFormattedIn(
 		t.Context(), "", logPath, nil, "sh", "-c", "echo verbatim")
-	if err != nil {
-		t.Fatalf("SpawnFormattedIn: %v", err)
-	}
-	if pid <= 0 {
-		t.Fatalf("pid = %d", pid)
-	}
+	require.NoError(t, err, "SpawnFormattedIn")
+	require.Positive(t, pid)
 	waitForLogContains(t, logPath, "verbatim")
 }
 
@@ -66,12 +61,8 @@ func TestSpawnFormattedInEnv_OverridesParentEnv(t *testing.T) {
 		logPath, nil, "sh", "-c",
 		`printf 'env=%s\n' "$J_RUN_ENV_TEST"`,
 	)
-	if err != nil {
-		t.Fatalf("SpawnFormattedInEnv: %v", err)
-	}
-	if pid <= 0 {
-		t.Fatalf("pid = %d", pid)
-	}
+	require.NoError(t, err, "SpawnFormattedInEnv")
+	require.Positive(t, pid)
 	waitForLogContains(t, logPath, "env=child")
 }
 
@@ -87,18 +78,15 @@ func TestSpawnFormattedIn_MultiLineFormatter(t *testing.T) {
 		s := strings.TrimRight(string(line), "\r\n")
 		return fmt.Appendf(nil, "a:%s\nb:%s\n", s, s)
 	}
-	if _, err := SpawnFormattedIn(
+	_, err := SpawnFormattedIn(
 		t.Context(), "", logPath, expand,
 		"sh", "-c", "echo X; echo Y",
-	); err != nil {
-		t.Fatalf("SpawnFormattedIn: %v", err)
-	}
+	)
+	require.NoError(t, err, "SpawnFormattedIn")
 	body := waitForLogContainsAndExit(t, logPath,
 		"a:X", "b:X", "a:Y", "b:Y")
 	for _, want := range []string{"a:X", "b:X", "a:Y", "b:Y"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("missing %q: %q", want, body)
-		}
+		assert.Contains(t, body, want)
 	}
 	if strings.Index(body, "a:X") > strings.Index(body, "b:X") ||
 		strings.Index(body, "b:X") > strings.Index(body, "a:Y") ||
@@ -119,12 +107,11 @@ func TestSpawnFormattedIn_ChildExitAfterDrain(t *testing.T) {
 		time.Sleep(40 * time.Millisecond)
 		return append([]byte("fmt:"), line...)
 	}
-	if _, err := SpawnFormattedIn(
+	_, err := SpawnFormattedIn(
 		t.Context(), "", logPath, slow,
 		"sh", "-c", "echo last-line",
-	); err != nil {
-		t.Fatalf("SpawnFormattedIn: %v", err)
-	}
+	)
+	require.NoError(t, err, "SpawnFormattedIn")
 	body := waitForLogContainsAndExit(t, logPath,
 		"fmt:last-line", "child exit")
 	if strings.Index(body, "fmt:last-line") >
@@ -138,10 +125,7 @@ func TestSpawnFormattedIn_EmptyLogPath(t *testing.T) {
 	t.Parallel()
 	_, err := SpawnFormattedIn(
 		t.Context(), "", "", nil, "true")
-	if err == nil ||
-		!strings.Contains(err.Error(), "empty log path") {
-		t.Fatalf("err = %v", err)
-	}
+	require.ErrorContains(t, err, "empty log path")
 }
 
 // TestSpawnFormattedIn_LogOpenFails pins the OpenFile error path:
@@ -149,11 +133,10 @@ func TestSpawnFormattedIn_EmptyLogPath(t *testing.T) {
 func TestSpawnFormattedIn_LogOpenFails(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	if _, err := SpawnFormattedIn(
+	_, err := SpawnFormattedIn(
 		t.Context(), "", dir, nil, "true",
-	); err == nil {
-		t.Fatal("expected open error when logPath is a directory")
-	}
+	)
+	require.Error(t, err, "expected open error when logPath is a directory")
 }
 
 // TestSpawnFormattedIn_MissingBinary pins the cmd.Start error path.
@@ -164,13 +147,7 @@ func TestSpawnFormattedIn_MissingBinary(t *testing.T) {
 	_, err := SpawnFormattedIn(
 		t.Context(), "", logPath, nil,
 		"/no/such/binary-spawnformatted-xyz")
-	if err == nil {
-		t.Fatal("expected error from missing binary")
-	}
-	if !strings.Contains(err.Error(),
-		"binary-spawnformatted-xyz") {
-		t.Fatalf("err = %v", err)
-	}
+	require.ErrorContains(t, err, "binary-spawnformatted-xyz")
 }
 
 // TestSpawnFormattedIn_PartialLineAtEOF pins the no-trailing-newline
@@ -181,49 +158,35 @@ func TestSpawnFormattedIn_PartialLineAtEOF(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "out.log")
-	if _, err := SpawnFormattedIn(
+	_, err := SpawnFormattedIn(
 		t.Context(), "", logPath, nil,
 		"sh", "-c", "printf 'no-newline'",
-	); err != nil {
-		t.Fatalf("SpawnFormattedIn: %v", err)
-	}
+	)
+	require.NoError(t, err, "SpawnFormattedIn")
 	waitForLogContains(t, logPath, "no-newline")
 }
 
 func TestDrainFormatted_AllowsSuppressedLines(t *testing.T) {
 	pr, pw, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "out.log")
 	logFile, err := os.OpenFile(
 		logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	done := make(chan struct{})
 	go drainFormatted(&formattedRun{
 		LogFile:   logFile,
 		DrainDone: done,
 	}, pr, func([]byte) []byte { return nil })
-	if _, err := pw.WriteString("hidden\n"); err != nil {
-		t.Fatal(err)
-	}
-	if err := pw.Close(); err != nil {
-		t.Fatal(err)
-	}
+	_, err = pw.WriteString("hidden\n")
+	require.NoError(t, err)
+	require.NoError(t, pw.Close())
 	<-done
-	if err := logFile.Close(); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, logFile.Close())
 	data, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(data) != 0 {
-		t.Fatalf("log = %q, want empty", data)
-	}
+	require.NoError(t, err)
+	assert.Empty(t, data)
 }
 
 // waitForLogContainsAndExit polls logPath for every needle plus the

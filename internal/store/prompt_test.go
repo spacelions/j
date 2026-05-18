@@ -1,6 +1,10 @@
 package store
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 // TestIsRoleBucket_Table pins the membership rule shared by the
 // settings/set copy-on-set helper and the prompts package.
@@ -20,10 +24,7 @@ func TestIsRoleBucket_Table(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := IsRoleBucket(tc.bucket); got != tc.want {
-				t.Fatalf("IsRoleBucket(%q) = %v, want %v",
-					tc.bucket, got, tc.want)
-			}
+			assert.Equal(t, tc.want, IsRoleBucket(tc.bucket))
 		})
 	}
 }
@@ -32,7 +33,5 @@ func TestIsRoleBucket_Table(t *testing.T) {
 // would invalidate every existing user's `<role>.prompt` setting and
 // silently break the override chain.
 func TestKeyPromptPath_Constant(t *testing.T) {
-	if KeyPromptPath != "prompt" {
-		t.Fatalf("KeyPromptPath = %q, want \"prompt\"", KeyPromptPath)
-	}
+	assert.Equal(t, "prompt", KeyPromptPath)
 }

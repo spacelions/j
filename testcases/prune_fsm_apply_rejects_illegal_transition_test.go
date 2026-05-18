@@ -1,6 +1,7 @@
 package testcases_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/spacelions/j/internal/store/tasks"
@@ -34,8 +35,8 @@ func TestPrune_FSM_ApplyRejectsIllegalTransition(t *testing.T) {
 			continue
 		}
 		// Verify it's an IllegalTransitionError.
-		ite, ok := err.(tasks.IllegalTransitionError)
-		if !ok {
+		var ite tasks.IllegalTransitionError
+		if !errors.As(err, &ite) {
 			t.Errorf(
 				"Apply(%q, %q) error type = %T, "+
 					"want IllegalTransitionError",

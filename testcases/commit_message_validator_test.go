@@ -4,8 +4,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCommitMessageValidator_AcceptsValidMessages(t *testing.T) {
@@ -55,10 +57,7 @@ func TestCommitMessageValidator_AcceptsValidMessages(t *testing.T) {
 			t.Parallel()
 
 			output, err := runCommitMessageValidator(t, tt.message)
-			if err != nil {
-				t.Fatalf("check-commit-message failed: %v\n%s",
-					err, output)
-			}
+			require.NoErrorf(t, err, "check-commit-message failed:\n%s", output)
 		})
 	}
 }
@@ -93,19 +92,10 @@ func TestCommitMessageValidator_RejectsInvalidMessages(t *testing.T) {
 			t.Parallel()
 
 			output, err := runCommitMessageValidator(t, tt.message)
-			if err == nil {
-				t.Fatalf("check-commit-message passed unexpectedly:\n%s",
-					output)
-			}
-			if !strings.Contains(output, "required format:") {
-				t.Fatalf("failure output missing required format:\n%s",
-					output)
-			}
+			require.Errorf(t, err, "check-commit-message passed:\n%s", output)
+			assert.Contains(t, output, "required format:")
 			required := "<type>(<component>)[SPA-<number>]: <title>"
-			if !strings.Contains(output, required) {
-				t.Fatalf("failure output missing %q:\n%s",
-					required, output)
-			}
+			assert.Contains(t, output, required)
 		})
 	}
 }
@@ -114,9 +104,7 @@ func runCommitMessageValidator(t *testing.T, message string) (string, error) {
 	t.Helper()
 
 	messageFile := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")
-	if err := os.WriteFile(messageFile, []byte(message), 0o600); err != nil {
-		t.Fatalf("WriteFile %s: %v", messageFile, err)
-	}
+	require.NoError(t, os.WriteFile(messageFile, []byte(message), 0o600))
 
 	script := filepath.Join(
 		repoPath(t),
