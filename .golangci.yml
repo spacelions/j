@@ -2,7 +2,7 @@ version: "2"
 run:
   concurrency: 4
   timeout: 5m
-  tests: false
+  tests: true
 
 issues:
   max-issues-per-linter: 0
@@ -50,6 +50,7 @@ linters:
     # testing
     - thelper
     - usetesting
+    - testifylint
     # modernization & meta
     - modernize
     - exptostd
@@ -144,6 +145,13 @@ linters:
       # goconst is noisy in test files with repeated fixture strings
       - linters: [goconst]
         path: "_test\\.go"
+      # model name strings and common field keys inflated by test fixtures
+      - linters: [goconst]
+        path: "internal/coding-agents/claude/claude\\.go|internal/coding-agents/codex/codex\\.go|internal/coding-agents/deepseek/deepseek\\.go|internal/lifecycle/linear_state_sync\\.go"
+      # G602: taskRows is parallel to rows[1:] by construction; no OOB possible
+      - linters: [gosec]
+        text: "G602"
+        path: "internal/cli/uitheme/table\\.go"
       # dupl: e2e testcases for parallel show subcommands are structurally identical
       - linters: [dupl]
         path: "testcases/"
