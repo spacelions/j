@@ -80,7 +80,7 @@ func DangerousFprintln(w io.Writer, a ...any) (int, error) {
 
 // DangerousDialogBox writes the formatted message inside a bordered orange
 // box — the heavier sibling of DangerousFprintf used for warnings
-// (failed persistence, lock contention, missing artifacts) where the
+// (failed persistence, lock contention) where the
 // line should visibly separate from surrounding output.
 //
 // The format string should NOT include a leading "warning:" prefix —

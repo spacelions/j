@@ -2,7 +2,9 @@ package planner
 
 import (
 	"context"
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -118,17 +120,25 @@ func readPlanArtifacts(
 	}
 	if data, readErr := os.ReadFile(requirementsPath); readErr == nil {
 		refinedReq = string(data)
+	} else if errors.Is(readErr, fs.ErrNotExist) {
+		_, _ = uitheme.NormalFprintf(
+			stderr, "J: missing planner artifact %s\n",
+			requirementsPath,
+		)
 	} else {
-		uitheme.DangerousDialogBox(
-			stderr, "J: read %s: %v",
-			requirementsPath, readErr,
+		_, _ = uitheme.DangerousFprintf(
+			stderr, "J: read %s: %v\n", requirementsPath, readErr,
 		)
 	}
 	if data, readErr := os.ReadFile(planPath); readErr == nil {
 		planMD = string(data)
+	} else if errors.Is(readErr, fs.ErrNotExist) {
+		_, _ = uitheme.NormalFprintf(
+			stderr, "J: missing planner artifact %s\n", planPath,
+		)
 	} else {
-		uitheme.DangerousDialogBox(
-			stderr, "J: read %s: %v", planPath, readErr,
+		_, _ = uitheme.DangerousFprintf(
+			stderr, "J: read %s: %v\n", planPath, readErr,
 		)
 	}
 	return refinedReq, planMD

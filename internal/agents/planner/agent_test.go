@@ -1,14 +1,17 @@
 package planner
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
@@ -582,6 +585,104 @@ func TestExecute_NilStderrAndMustReadWarning(t *testing.T) {
 	}
 }
 
+func TestReadPlanArtifacts_MissingFilesUseNormalMessages(t *testing.T) {
+	tests := []struct {
+		name        string
+		requirement string
+		plan        string
+		missing     []string
+	}{
+		{
+			name:    "missing requirements",
+			plan:    "plan-ok",
+			missing: []string{"requirements.md"},
+		},
+		{
+			name:        "missing plan",
+			requirement: "requirements-ok",
+			missing:     []string{"plan.md"},
+		},
+		{
+			name:    "missing both",
+			missing: []string{"requirements.md", "plan.md"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			requirementsPath := filepath.Join(dir, "requirements.md")
+			planPath := filepath.Join(dir, "plan.md")
+			if tt.requirement != "" {
+				if err := testutil.WriteFile(
+					requirementsPath, tt.requirement,
+				); err != nil {
+					t.Fatalf("write requirements: %v", err)
+				}
+			}
+			if tt.plan != "" {
+				if err := testutil.WriteFile(planPath, tt.plan); err != nil {
+					t.Fatalf("write plan: %v", err)
+				}
+			}
+
+			var stderr bytes.Buffer
+			gotReq, gotPlan := readPlanArtifacts(
+				&stderr, nil, requirementsPath, planPath,
+			)
+			if gotReq != tt.requirement {
+				t.Fatalf("refinedReq = %q, want %q", gotReq, tt.requirement)
+			}
+			if gotPlan != tt.plan {
+				t.Fatalf("planMD = %q, want %q", gotPlan, tt.plan)
+			}
+
+			stripped := ansi.Strip(stderr.String())
+			assertNoDialogBorder(t, stripped)
+			for _, filename := range tt.missing {
+				path := filepath.Join(dir, filename)
+				want := "J: missing planner artifact " + path + "\n"
+				if !strings.Contains(stripped, want) {
+					t.Fatalf("stderr = %q, want message %q", stripped, want)
+				}
+			}
+		})
+	}
+}
+
+func TestReadPlanArtifacts_NonMissingReadErrorUsesDangerousText(t *testing.T) {
+	dir := t.TempDir()
+	requirementsPath := filepath.Join(dir, "requirements.md")
+	planPath := filepath.Join(dir, "plan.md")
+	if err := os.Mkdir(requirementsPath, 0o755); err != nil {
+		t.Fatalf("mkdir requirements path: %v", err)
+	}
+	if err := testutil.WriteFile(planPath, "plan-ok"); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	gotReq, gotPlan := readPlanArtifacts(
+		&stderr, nil, requirementsPath, planPath,
+	)
+	if gotReq != "" {
+		t.Fatalf("refinedReq = %q, want empty", gotReq)
+	}
+	if gotPlan != "plan-ok" {
+		t.Fatalf("planMD = %q, want plan-ok", gotPlan)
+	}
+
+	stripped := ansi.Strip(stderr.String())
+	assertNoDialogBorder(t, stripped)
+	want := "J: read " + requirementsPath + ": "
+	if !strings.Contains(stripped, want) {
+		t.Fatalf("stderr = %q, want read warning prefix %q", stripped, want)
+	}
+	if strings.Contains(stripped, "missing planner artifact") {
+		t.Fatalf("stderr = %q, want non-missing read warning", stripped)
+	}
+}
+
 // scriptedPlanAgent stands in for a real codingagents.Agent. Plan
 // writes the per-task requirements.md / plan.md inline so plan.Run's
 // finishPlan promotes the row to plan-done synchronously.
@@ -666,5 +767,14 @@ func seedPlanApproval(t *testing.T, v bool) {
 	if err := s.Put(store.BucketProject,
 		store.KeyPlanRequiresApproval, val); err != nil {
 		t.Fatalf("Put: %v", err)
+	}
+}
+
+func assertNoDialogBorder(t *testing.T, s string) {
+	t.Helper()
+	for _, glyph := range []string{"┌", "┐", "└", "┘"} {
+		if strings.Contains(s, glyph) {
+			t.Fatalf("stderr contains dialog border glyph %q: %q", glyph, s)
+		}
 	}
 }
