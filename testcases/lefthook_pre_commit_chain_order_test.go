@@ -10,8 +10,9 @@ import (
 )
 
 // TestLefthook_PreCommit_ChainOrder pins the acceptance criterion that
-// the pre-commit chain runs in the order line-cap → lint → tests, with
-// distinct ascending priorities so lefthook executes them in that order.
+// the pre-commit chain runs in the order line-cap → lint → tests →
+// line-coverage, with distinct ascending priorities so lefthook
+// executes them in that order.
 func TestLefthook_PreCommit_ChainOrder(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -25,7 +26,7 @@ func TestLefthook_PreCommit_ChainOrder(t *testing.T) {
 	}
 	body := string(raw)
 
-	wantOrder := []string{"line-cap", "lint", "tests"}
+	wantOrder := []string{"line-cap", "lint", "tests", "line-coverage"}
 	idx := make(map[string]int, len(wantOrder))
 	for _, name := range wantOrder {
 		re := regexp.MustCompile(`(?m)^\s{4}` + regexp.QuoteMeta(name) +
@@ -37,9 +38,11 @@ func TestLefthook_PreCommit_ChainOrder(t *testing.T) {
 		}
 		idx[name] = loc[0]
 	}
-	if idx["line-cap"] >= idx["lint"] || idx["lint"] >= idx["tests"] {
+	if idx["line-cap"] >= idx["lint"] ||
+		idx["lint"] >= idx["tests"] ||
+		idx["tests"] >= idx["line-coverage"] {
 		t.Fatalf("lefthook.yml: command order should be line-cap, "+
-			"lint, tests; got positions %v", idx)
+			"lint, tests, line-coverage; got positions %v", idx)
 	}
 
 	// Each command must declare a priority. Extract them and verify
@@ -61,14 +64,17 @@ func TestLefthook_PreCommit_ChainOrder(t *testing.T) {
 		prios[name] = n
 	}
 	if prios["line-cap"] >= prios["lint"] ||
-		prios["lint"] >= prios["tests"] {
+		prios["lint"] >= prios["tests"] ||
+		prios["tests"] >= prios["line-coverage"] {
 		t.Fatalf("lefthook.yml: priorities must be strictly ascending "+
-			"line-cap < lint < tests; got %v", prios)
+			"line-cap < lint < tests < line-coverage; got %v", prios)
 	}
 
-	// Sanity: the priority field for `lint` should sit between the two
-	// other priorities (no shared/duplicate values).
-	all := []int{prios["line-cap"], prios["lint"], prios["tests"]}
+	// Sanity: priorities must be unique across commands.
+	all := []int{
+		prios["line-cap"], prios["lint"],
+		prios["tests"], prios["line-coverage"],
+	}
 	seen := map[int]bool{}
 	for _, p := range all {
 		if seen[p] {
@@ -78,9 +84,9 @@ func TestLefthook_PreCommit_ChainOrder(t *testing.T) {
 		seen[p] = true
 	}
 
-	// The header comment block should still describe all three steps so
-	// the file remains self-documenting.
-	for _, hint := range []string{"line-cap", "lint", "tests"} {
+	// The header comment block should still describe all steps so the
+	// file remains self-documenting.
+	for _, hint := range wantOrder {
 		if !strings.Contains(body, hint) {
 			t.Fatalf("lefthook.yml: header/comments must mention %q",
 				hint)

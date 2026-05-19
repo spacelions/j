@@ -47,10 +47,7 @@ func WatchActiveResumeID(
 			if !run.IsAlive(pid) {
 				return ""
 			}
-		case ev, ok := <-w.Events:
-			if !ok {
-				return ""
-			}
+		case ev := <-w.Events:
 			maybeAddDir(w, ev)
 			id, _ := capturer.CaptureResumeID(
 				ctx, capture.TaskDir, capture.Since,
@@ -58,7 +55,6 @@ func WatchActiveResumeID(
 			if id != "" {
 				return id
 			}
-		case <-w.Errors:
 		}
 	}
 }
