@@ -5,9 +5,13 @@ import (
 	"context"
 	"errors"
 	"os"
-	"strings"
+	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // stubAgent is a minimal Agent that does not implement
@@ -57,16 +61,20 @@ func (c capturingAgent) CaptureResumeID(
 	return c.id, c.err
 }
 
+// delayedCapturingAgent returns "" on the first call (so the
+// immediate pre-watch scan misses) and "delayed" on every subsequent
+// call (so the first watcher-driven scan after a filesystem event
+// succeeds). The call counter is atomic so the watcher goroutine and
+// the test driver can both observe it safely.
 type delayedCapturingAgent struct {
 	stubAgent
-	calls int
+	calls atomic.Int32
 }
 
 func (d *delayedCapturingAgent) CaptureResumeID(
 	_ context.Context, _ string, _ time.Time,
 ) (string, error) {
-	d.calls++
-	if d.calls == 1 {
+	if d.calls.Add(1) == 1 {
 		return "", nil
 	}
 	return "delayed", nil
@@ -79,12 +87,8 @@ func TestCaptureResumeID_NotImplemented(t *testing.T) {
 	got, err := CaptureResumeID(
 		t.Context(), stubAgent{}, "/ws/A", time.Now(),
 	)
-	if err != nil {
-		t.Fatalf("CaptureResumeID: %v", err)
-	}
-	if got != "" {
-		t.Fatalf("got %q, want empty", got)
-	}
+	require.NoError(t, err)
+	assert.Empty(t, got)
 }
 
 // TestCaptureResumeID_Implemented pins the happy path: the
@@ -94,12 +98,8 @@ func TestCaptureResumeID_Implemented(t *testing.T) {
 	got, err := CaptureResumeID(
 		t.Context(), a, "/ws/A", time.Now(),
 	)
-	if err != nil {
-		t.Fatalf("CaptureResumeID: %v", err)
-	}
-	if got != "captured" {
-		t.Fatalf("got %q, want captured", got)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "captured", got)
 }
 
 // TestCaptureResumeID_ImplementedError pins the error pass-through.
@@ -109,9 +109,7 @@ func TestCaptureResumeID_ImplementedError(t *testing.T) {
 	_, err := CaptureResumeID(
 		t.Context(), a, "/ws/A", time.Now(),
 	)
-	if !errors.Is(err, want) {
-		t.Fatalf("err = %v, want %v", err, want)
-	}
+	require.ErrorIs(t, err, want)
 }
 
 type recordingResume struct {
@@ -134,12 +132,8 @@ func TestCaptureAndSaveResumeID_RecordsCapturedID(t *testing.T) {
 			Stderr:  &bytes.Buffer{},
 		},
 	)
-	if got != "captured" {
-		t.Fatalf("CaptureAndSaveResumeID = %q, want captured", got)
-	}
-	if recorder.id != "captured" {
-		t.Fatalf("recorded id = %q, want captured", recorder.id)
-	}
+	assert.Equal(t, "captured", got)
+	assert.Equal(t, "captured", recorder.id)
 }
 
 func TestCaptureAndSaveResumeID_WarnsOnCaptureError(t *testing.T) {
@@ -155,166 +149,135 @@ func TestCaptureAndSaveResumeID_WarnsOnCaptureError(t *testing.T) {
 			Stderr:  &stderr,
 		},
 	)
-	if got != "" {
-		t.Fatalf("CaptureAndSaveResumeID = %q, want empty", got)
-	}
-	if recorder.id != "" {
-		t.Fatalf("recorded id = %q, want empty", recorder.id)
-	}
-	if !strings.Contains(stderr.String(), "J: scan failed") {
-		t.Fatalf("stderr = %q, want scan warning", stderr.String())
-	}
+	assert.Empty(t, got)
+	assert.Empty(t, recorder.id)
+	assert.Contains(t, stderr.String(), "J: scan failed")
 }
 
-func TestCaptureAndSaveActiveResumeID_NotCapturer(t *testing.T) {
+func TestWatchAndSaveActiveResumeID_NotCapturer(t *testing.T) {
 	recorder := &recordingResume{}
-	got := CaptureAndSaveActiveResumeID(
+	got := WatchAndSaveActiveResumeID(
 		t.Context(),
 		stubAgent{},
 		recorder,
-		ResumeCapture{Stderr: &bytes.Buffer{}},
+		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
 		os.Getpid(),
 	)
-	if got != "" {
-		t.Fatalf("got %q, want empty", got)
-	}
+	assert.Empty(t, got)
+	assert.Empty(t, recorder.id)
 }
 
-func TestCaptureAndSaveActiveResumeID_RecordsImmediateID(t *testing.T) {
+func TestWatchAndSaveActiveResumeID_InvalidPID(t *testing.T) {
 	recorder := &recordingResume{}
-	got := CaptureAndSaveActiveResumeID(
+	got := WatchAndSaveActiveResumeID(
+		t.Context(),
+		capturingAgent{id: "ignored"},
+		recorder,
+		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
+		0,
+	)
+	assert.Empty(t, got)
+	assert.Empty(t, recorder.id)
+}
+
+func TestWatchAndSaveActiveResumeID_ImmediateCapture(t *testing.T) {
+	recorder := &recordingResume{}
+	got := WatchAndSaveActiveResumeID(
 		t.Context(),
 		capturingAgent{id: "active"},
 		recorder,
-		ResumeCapture{Stderr: &bytes.Buffer{}},
+		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
 		os.Getpid(),
 	)
-	if got != "active" {
-		t.Fatalf("got %q, want active", got)
-	}
-	if recorder.id != "active" {
-		t.Fatalf("recorded id = %q, want active", recorder.id)
-	}
+	assert.Equal(t, "active", got)
+	assert.Equal(t, "active", recorder.id)
 }
 
-func TestCaptureAndSaveActiveResumeID_RecordsDelayedID(t *testing.T) {
+func TestWatchAndSaveActiveResumeID_DelayedCapture(t *testing.T) {
 	recorder := &recordingResume{}
+	dir := t.TempDir()
 	agent := &delayedCapturingAgent{}
-	got := CaptureAndSaveActiveResumeID(
-		t.Context(),
-		agent,
-		recorder,
-		ResumeCapture{Stderr: &bytes.Buffer{}},
-		os.Getpid(),
-	)
-	if got != "delayed" {
-		t.Fatalf("got %q, want delayed", got)
+	done := make(chan string, 1)
+	go func() {
+		done <- WatchAndSaveActiveResumeID(
+			t.Context(),
+			agent,
+			recorder,
+			ResumeCapture{TaskDir: dir, Stderr: &bytes.Buffer{}},
+			os.Getpid(),
+		)
+	}()
+	require.Eventually(t, func() bool {
+		return agent.calls.Load() >= 1
+	}, time.Second, 10*time.Millisecond)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "rollout.jsonl"), []byte("x"), 0o600,
+	))
+	select {
+	case got := <-done:
+		assert.Equal(t, "delayed", got)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for capture")
 	}
-	if recorder.id != "delayed" {
-		t.Fatalf("recorded id = %q, want delayed", recorder.id)
-	}
+	assert.Equal(t, "delayed", recorder.id)
 }
 
-func TestCaptureAndSaveActiveResumeID_WarnsOnCaptureError(t *testing.T) {
+func TestWatchAndSaveActiveResumeID_PIDExited(t *testing.T) {
 	recorder := &recordingResume{}
-	var stderr bytes.Buffer
-	got := CaptureAndSaveActiveResumeID(
+	got := WatchAndSaveActiveResumeID(
 		t.Context(),
-		capturingAgent{err: errors.New("scan failed")},
+		capturingAgent{},
 		recorder,
-		ResumeCapture{Stderr: &stderr},
-		os.Getpid(),
+		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
+		999999,
 	)
-	if got != "" {
-		t.Fatalf("got %q, want empty", got)
-	}
-	if !strings.Contains(stderr.String(), "J: scan failed") {
-		t.Fatalf("stderr = %q, want scan warning", stderr.String())
-	}
+	assert.Empty(t, got)
+	assert.Empty(t, recorder.id)
 }
 
-func TestCaptureAndSaveActiveResumeID_ContextCanceled(t *testing.T) {
+func TestWatchAndSaveActiveResumeID_ContextCancelled(t *testing.T) {
 	recorder := &recordingResume{}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	got := CaptureAndSaveActiveResumeID(
+	got := WatchAndSaveActiveResumeID(
 		ctx,
 		capturingAgent{},
 		recorder,
-		ResumeCapture{Stderr: &bytes.Buffer{}},
+		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
 		os.Getpid(),
 	)
-	if got != "" {
-		t.Fatalf("got %q, want empty", got)
-	}
+	assert.Empty(t, got)
 }
 
-func TestCaptureAndSaveActiveResumeID_ProcessExited(t *testing.T) {
-	recorder := &recordingResume{}
-	got := CaptureAndSaveActiveResumeID(
-		t.Context(),
-		capturingAgent{},
-		recorder,
-		ResumeCapture{Stderr: &bytes.Buffer{}},
-		999999,
-	)
-	if got != "" {
-		t.Fatalf("got %q, want empty", got)
-	}
-}
-
-func TestCaptureAndSaveActiveResumeID_TimesOut(t *testing.T) {
-	recorder := &recordingResume{}
-	got := CaptureAndSaveActiveResumeID(
-		t.Context(),
-		capturingAgent{},
-		recorder,
-		ResumeCapture{Stderr: &bytes.Buffer{}},
-		os.Getpid(),
-	)
-	if got != "" {
-		t.Fatalf("got %q, want empty", got)
-	}
-}
-
-func TestCaptureAndSaveProcessResumeID_ActiveCaptureAndWait(t *testing.T) {
+func TestCaptureAndSaveProcessResumeID_ActiveCapture(t *testing.T) {
 	recorder := &recordingResume{}
 	got, err := CaptureAndSaveProcessResumeID(
 		t.Context(),
 		capturingAgent{id: "process"},
 		recorder,
-		ResumeCapture{Stderr: &bytes.Buffer{}},
-		ResumeProcess{
-			PID:  os.Getpid(),
-			Wait: false,
+		ResumeCapture{
+			TaskDir: t.TempDir(),
+			Stderr:  &bytes.Buffer{},
 		},
+		ResumeProcess{PID: os.Getpid()},
 	)
-	if err != nil {
-		t.Fatalf("CaptureAndSaveProcessResumeID: %v", err)
-	}
-	if got != "process" {
-		t.Fatalf("got %q, want process", got)
-	}
-	if recorder.id != "process" {
-		t.Fatalf("recorded id = %q, want process", recorder.id)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "process", got)
+	assert.Equal(t, "process", recorder.id)
 }
 
-func TestCaptureAndSaveProcessResumeID_PostWaitFallback(t *testing.T) {
+func TestCaptureAndSaveProcessResumeID_ReusesPriorID(t *testing.T) {
 	recorder := &recordingResume{}
 	got, err := CaptureAndSaveProcessResumeID(
 		t.Context(),
-		capturingAgent{id: "fallback"},
+		capturingAgent{id: "ignored"},
 		recorder,
 		ResumeCapture{Stderr: &bytes.Buffer{}},
-		ResumeProcess{Wait: true},
+		ResumeProcess{ResumeID: "prior"},
 	)
-	if err != nil {
-		t.Fatalf("CaptureAndSaveProcessResumeID: %v", err)
-	}
-	if got != "fallback" {
-		t.Fatalf("got %q, want fallback", got)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "prior", got)
+	assert.Empty(t, recorder.id)
 }
 
 func TestCaptureAndSaveProcessResumeID_WaitError(t *testing.T) {
@@ -331,16 +294,10 @@ func TestCaptureAndSaveProcessResumeID_WaitError(t *testing.T) {
 			Wait: true,
 		},
 	)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("err = %v, want context.Canceled", err)
-	}
-	if got != "" {
-		t.Fatalf("got %q, want empty", got)
-	}
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, got)
 }
 
 func TestWaitForResumeProcess(t *testing.T) {
-	if err := WaitForResumeProcess(t.Context(), 0); err != nil {
-		t.Fatalf("WaitForResumeProcess: %v", err)
-	}
+	require.NoError(t, WaitForResumeProcess(t.Context(), 0))
 }

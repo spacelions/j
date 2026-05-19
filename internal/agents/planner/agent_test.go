@@ -470,45 +470,6 @@ func TestExecute_NoWaitCapturesActiveResumeSession(t *testing.T) {
 	}
 }
 
-func TestExecute_WaitCapturesPostRunResumeSession(t *testing.T) {
-	t.Chdir(t.TempDir())
-	testutil.Init(t)
-
-	taskID := tasks.NewTaskID()
-	taskDir, err := tasks.EnsureDir(taskID)
-	if err != nil {
-		t.Fatalf("EnsureDir: %v", err)
-	}
-	if err := testutil.WriteFile(
-		taskDir+"/requirements.md", "x",
-	); err != nil {
-		t.Fatalf("write requirements: %v", err)
-	}
-	testutil.SeedTaskRow(t, tasks.Task{
-		ID:      taskID,
-		Status:  tasks.StatusPlanning,
-		Summary: "task",
-	})
-
-	stub := newScriptedPlanAgent("scripted")
-	stub.mintedID = ""
-	stub.captureID = "captured-after-plan"
-	if err := Execute(t.Context(), Options{
-		TaskID:            taskID,
-		Agent:             stub,
-		Model:             "m1",
-		WaitForCompletion: true,
-		Stderr:            io.Discard,
-	}); err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	got := testutil.ReadTaskRow(t, taskID)
-	if got.PlanResumeSession != "captured-after-plan" {
-		t.Fatalf("PlanResumeSession = %q, want captured-after-plan",
-			got.PlanResumeSession)
-	}
-}
-
 func TestExecute_WaitForCompletionError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)

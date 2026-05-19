@@ -9,11 +9,6 @@ import (
 	"github.com/spacelions/j/internal/util/run"
 )
 
-const (
-	activeResumeCaptureInterval = 100 * time.Millisecond
-	activeResumeCaptureTimeout  = 2 * time.Second
-)
-
 // ResumeIDCapturer is the optional, post-run companion to NewResumeID
 // for backends whose CLI mints the session id only after the first
 // turn writes to disk (deepseek-tui has no `--session-id`-style
@@ -98,10 +93,12 @@ func CaptureAndSaveResumeID(
 	return id
 }
 
-// CaptureAndSaveActiveResumeID polls a running backend until its
-// post-start resume id appears, the process exits, the context is
-// cancelled, or the bounded capture window expires.
-func CaptureAndSaveActiveResumeID(
+// WatchAndSaveActiveResumeID watches a running backend's task-scoped
+// session store and persists the resume id the moment it appears.
+// It returns when the id is captured, the worker pid disappears, or
+// ctx is cancelled. Backends that do not implement ResumeIDCapturer
+// (cursor / claude) short-circuit to "" without side effect.
+func WatchAndSaveActiveResumeID(
 	ctx context.Context,
 	agent Agent,
 	recorder ResumeRecorder,
@@ -112,34 +109,25 @@ func CaptureAndSaveActiveResumeID(
 	if !ok || pid <= 0 {
 		return ""
 	}
-	if id, done := captureAndSaveOnce(ctx, capturer, recorder, capture); done {
+	if id, _ := capturer.CaptureResumeID(
+		ctx, capture.TaskDir, capture.Since,
+	); id != "" {
+		recorder.RecordResumeSession(id)
 		return id
 	}
-	timeout := time.NewTimer(activeResumeCaptureTimeout)
-	defer timeout.Stop()
-	timer := time.NewTimer(activeResumeCaptureInterval)
-	defer timer.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ""
-		case <-timeout.C:
-			return ""
-		case <-timer.C:
-			id, done := captureAndSaveOnce(
-				ctx, capturer, recorder, capture,
-			)
-			if done {
-				return id
-			}
-			if !run.IsAlive(pid) {
-				return ""
-			}
-			timer.Reset(activeResumeCaptureInterval)
-		}
+	id := WatchActiveResumeID(ctx, capturer, capture, pid)
+	if id != "" {
+		recorder.RecordResumeSession(id)
 	}
+	return id
 }
 
+// CaptureAndSaveProcessResumeID drives the active capture for one run
+// of a coding agent. When the row already carries a resume id from a
+// prior turn it is reused; otherwise the watcher blocks until the
+// backend writes its session_meta (codex, deepseek), the worker pid
+// exits, or ctx is cancelled. If proc.Wait is set the caller also
+// blocks on the worker's pid exit before returning.
 func CaptureAndSaveProcessResumeID(
 	ctx context.Context,
 	agent Agent,
@@ -149,7 +137,7 @@ func CaptureAndSaveProcessResumeID(
 ) (string, error) {
 	resumeID := proc.ResumeID
 	if proc.PID > 0 && resumeID == "" {
-		resumeID = CaptureAndSaveActiveResumeID(
+		resumeID = WatchAndSaveActiveResumeID(
 			ctx, agent, recorder, capture, proc.PID,
 		)
 	}
@@ -158,34 +146,9 @@ func CaptureAndSaveProcessResumeID(
 			return resumeID, err
 		}
 	}
-	if proc.Wait && resumeID == "" {
-		resumeID = CaptureAndSaveResumeID(
-			ctx, agent, recorder, capture,
-		)
-	}
 	return resumeID, nil
 }
 
 func WaitForResumeProcess(ctx context.Context, pid int) error {
 	return run.WaitForExit(ctx, pid)
-}
-
-func captureAndSaveOnce(
-	ctx context.Context,
-	capturer ResumeIDCapturer,
-	recorder ResumeRecorder,
-	capture ResumeCapture,
-) (string, bool) {
-	id, err := capturer.CaptureResumeID(
-		ctx, capture.TaskDir, capture.Since,
-	)
-	if err != nil {
-		fmt.Fprintf(capture.Stderr, "J: %v\n", err)
-		return "", true
-	}
-	if id == "" {
-		return "", false
-	}
-	recorder.RecordResumeSession(id)
-	return id, true
 }
