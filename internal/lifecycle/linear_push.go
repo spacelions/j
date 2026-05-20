@@ -78,12 +78,11 @@ func linearPushHook(tr tasks.Transition, task tasks.Task) {
 // the hook short-circuits before any HTTP traffic. Empty contents
 // (zero-byte files) round-trip as-is — Linear accepts an empty
 // description / comment body and the upstream issue is no worse off.
+// A failed DefaultDir lookup flows through as an empty tasks root;
+// the subsequent ReadFile then errors and surfaces a "read
+// requirements.md" warning instead of a separate "tasks dir" one.
 func readPlanArtefacts(id string) (req, plan string, ok bool) {
-	dir, err := tasks.DefaultDir()
-	if err != nil {
-		warnLinear("tasks dir: %s", err)
-		return "", "", false
-	}
+	dir, _ := tasks.DefaultDir()
 	taskDir := filepath.Join(dir, id)
 	reqBytes, err := os.ReadFile(
 		filepath.Join(taskDir, tasks.RequirementsFileName))
