@@ -45,29 +45,25 @@ func WaitForExit(ctx context.Context, pid int) error {
 
 // IsAlive reports whether the OS process identified by pid is still
 // running. It uses os.FindProcess + signal 0 (the standard "no-op"
-// liveness probe on POSIX): an ESRCH / os.ErrProcessDone error means
-// the process is gone. Any other error is conservatively treated as
-// "alive" so a transient permission error does not cause the reaper
-// to declare a still-running child dead.
+// liveness probe on POSIX): os.ErrProcessDone means the process is
+// gone (Go's (*Process).Signal already converts the underlying ESRCH
+// errno into ErrProcessDone). Any other error is conservatively
+// treated as "alive" so a transient permission error (EPERM, e.g.
+// for a process owned by another user) does not cause the reaper to
+// declare a still-running child dead.
 func IsAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	err = proc.Signal(syscall.Signal(0))
+	// os.FindProcess never returns an error on unix (the only OS this
+	// CLI builds for), so we can skip the err check.
+	proc, _ := os.FindProcess(pid)
+	err := proc.Signal(syscall.Signal(0))
 	if err == nil {
 		return true
 	}
 	if errors.Is(err, os.ErrProcessDone) {
 		return false
 	}
-	if errors.Is(err, syscall.ESRCH) {
-		return false
-	}
-	// EPERM means the process exists but is owned by another user
-	// (or we are not allowed to signal it). Treat as alive.
 	return true
 }
