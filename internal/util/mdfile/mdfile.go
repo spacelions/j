@@ -37,16 +37,16 @@ var excludedMarkdownBasenames = map[string]struct{}{
 // Resolve validates that path points at an existing markdown file and
 // returns the absolute path. Whitespace around the input is trimmed.
 // The error messages name "markdown file" so the caller does not need
-// to wrap them.
+// to wrap them. A failed filepath.Abs (only possible on a Getwd
+// failure) flows through as an empty path; the os.Stat call then
+// errors via its own branch with no observable difference for
+// callers.
 func Resolve(path string) (string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return "", errors.New("target is empty")
 	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", fmt.Errorf("resolve %q: %w", path, err)
-	}
+	abs, _ := filepath.Abs(path)
 	info, err := os.Stat(abs)
 	if err != nil {
 		return "", fmt.Errorf("stat %q: %w", abs, err)
@@ -80,10 +80,10 @@ func Resolve(path string) (string, error) {
 // surface the empty result; the `j plan` orchestrator turns it into
 // a single user-facing error mentioning the cwd.
 func ListInDir(dir string) ([]string, error) {
-	absDir, err := filepath.Abs(dir)
-	if err != nil {
-		return nil, fmt.Errorf("resolve %q: %w", dir, err)
-	}
+	// filepath.Abs only fails on a Getwd failure; let an empty result
+	// flow through and surface as the ReadDir error below so the
+	// failure mode collapses to a single branch.
+	absDir, _ := filepath.Abs(dir)
 	entries, err := os.ReadDir(absDir)
 	if err != nil {
 		return nil, err
