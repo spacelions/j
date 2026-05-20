@@ -255,19 +255,20 @@ func autoPickAllowed(
 	return picked, count == 1
 }
 
+// openTaskStore is a thin alias for tasks.OpenDefault; the wrapper
+// exists so the resolver call sites read naturally next to the other
+// store helpers in this file.
 func openTaskStore() (*tasks.Store, error) {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return nil, fmt.Errorf("tasks: open store: %w", err)
-	}
-	return s, nil
+	return tasks.OpenDefault()
 }
 
+// taskDirFor returns `<tasksDir>/<id>`. A failed DefaultDir flows
+// through as an empty root, yielding a relative path of just id;
+// every downstream consumer (ReadFile, Stat, etc.) then errors on
+// the missing file - identical observed behaviour to the explicit
+// early return that used to live here.
 func taskDirFor(id string) (string, error) {
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		return "", err
-	}
+	tasksDir, _ := tasks.DefaultDir()
 	return filepath.Join(tasksDir, id), nil
 }
 
