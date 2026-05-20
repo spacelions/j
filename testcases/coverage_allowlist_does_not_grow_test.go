@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-const allowlistCeiling = 135
+const allowlistCeiling = 134
 
 func TestCoverageAllowlist_DoesNotGrow(t *testing.T) {
 	body := readRepoFile(t, "coverage.allowlist")
