@@ -103,8 +103,7 @@ func fillWorktree(task *tasks.Task) {
 	if task.Worktree != "" {
 		return
 	}
-	project, _ := store.ProjectName()
-	task.Worktree = tasks.WorktreeNameFor(project, *task)
+	task.Worktree = tasks.WorktreeNameFor(store.ProjectName(), *task)
 }
 
 // RecordResumeSession stamps id onto the in-memory work task row's

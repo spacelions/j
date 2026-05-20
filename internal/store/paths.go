@@ -26,17 +26,14 @@ func DefaultDir() (string, error) {
 // ProjectName returns the basename of the current working directory.
 // It is the single rule used by WorktreeNameFor so every call site —
 // `j work`, tests, any future caller — derives the project slug
-// from the same source. A non-nil error only surfaces when os.Getwd
-// itself fails (e.g. the current directory was removed while the
-// process is running); the caller decides whether to treat that as
-// fatal or silently fall back to an empty project slug (fillWorktree
-// does the latter so a cosmetic worktree label never blocks `j work`).
-func ProjectName() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("store: resolve cwd: %w", err)
-	}
-	return filepath.Base(cwd), nil
+// from the same source. A Getwd failure (e.g. the current directory
+// was removed while the process is running) yields filepath.Base("")
+// = "." which slugify normalises to ""; callers that build worktree
+// names then naturally fall back to a task-only label rather than
+// blocking on a cosmetic lookup.
+func ProjectName() string {
+	cwd, _ := os.Getwd()
+	return filepath.Base(cwd)
 }
 
 // DefaultPath returns the absolute path to the default settings DB

@@ -996,11 +996,7 @@ func TestProjectName(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(sub)
-	got, err := ProjectName()
-	if err != nil {
-		t.Fatalf("ProjectName: %v", err)
-	}
-	if got != "myproj" {
+	if got := ProjectName(); got != "myproj" {
 		t.Fatalf("ProjectName = %q, want %q", got, "myproj")
 	}
 }

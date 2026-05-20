@@ -68,8 +68,7 @@ func parseWorktreeListPorcelain(output string) []worktreeRecord {
 func removeTaskWorktree(ctx context.Context, stderr io.Writer, t tasks.Task) {
 	name := t.Worktree
 	if name == "" {
-		project, _ := store.ProjectName()
-		name = tasks.WorktreeNameFor(project, t)
+		name = tasks.WorktreeNameFor(store.ProjectName(), t)
 	}
 	if name == "" {
 		return
