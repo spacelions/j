@@ -276,6 +276,20 @@ func TestTryAcquireForReap_StaleFileSucceeds(t *testing.T) {
 	}
 }
 
+// TestReadHolder_InvalidTOMLReturnsZero drives the Unmarshal error
+// branch by writing junk that decodes neither as a Holder nor as a
+// valid TOML document.
+func TestReadHolder_InvalidTOMLReturnsZero(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, LockFileName)
+	if err := os.WriteFile(path, []byte("this is not toml\x00"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := readHolder(path); got.PID != 0 || got.Host != "" {
+		t.Fatalf("readHolder = %+v, want zero Holder on invalid TOML", got)
+	}
+}
+
 func TestPhaseFromContext_NilSafe(t *testing.T) {
 	//nolint:staticcheck // testing the nil-safety contract
 	if PhaseFromContext(nil) != "" {
