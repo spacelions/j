@@ -148,10 +148,7 @@ func ResolvePlanTask(taskID string) (PlanTask, error) {
 	if err != nil {
 		return PlanTask{}, err
 	}
-	taskDir, err := taskDirFor(taskID)
-	if err != nil {
-		return PlanTask{}, err
-	}
+	taskDir := taskDirFor(taskID)
 	return PlanTask{
 		Task:    row,
 		TaskDir: taskDir,
@@ -192,10 +189,7 @@ func resolveVerifyByTaskID(id string) (VerifyTask, error) {
 	if err != nil {
 		return VerifyTask{}, err
 	}
-	taskDir, err := taskDirFor(id)
-	if err != nil {
-		return VerifyTask{}, err
-	}
+	taskDir := taskDirFor(id)
 	paths := taskPaths(taskDir)
 	if _, err := os.Stat(paths.Plan); err != nil {
 		return VerifyTask{}, fmt.Errorf("verify: read plan: %w", err)
@@ -212,10 +206,7 @@ func ListAllTasks() ([]tasks.Task, error) {
 }
 
 func TaskByID(id string) (tasks.Task, error) {
-	s, err := openTaskStore()
-	if err != nil {
-		return tasks.Task{}, err
-	}
+	s := openTaskStore()
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(id)
 	if err != nil {
@@ -228,10 +219,7 @@ func TaskByID(id string) (tasks.Task, error) {
 }
 
 func listResolvableTasks() ([]tasks.Task, error) {
-	s, err := openTaskStore()
-	if err != nil {
-		return nil, err
-	}
+	s := openTaskStore()
 	defer func() { _ = s.Close() }()
 	all, err := s.ListTasks()
 	if err != nil {
@@ -257,9 +245,13 @@ func autoPickAllowed(
 
 // openTaskStore is a thin alias for tasks.OpenDefault; the wrapper
 // exists so the resolver call sites read naturally next to the other
-// store helpers in this file.
-func openTaskStore() (*tasks.Store, error) {
-	return tasks.OpenDefault()
+// store helpers in this file. tasks.OpenDefault never errors today
+// (its only failure mode flows through as an empty root which the
+// per-method file ops surface on first access), so the helper drops
+// the error return.
+func openTaskStore() *tasks.Store {
+	s, _ := tasks.OpenDefault()
+	return s
 }
 
 // taskDirFor returns `<tasksDir>/<id>`. A failed DefaultDir flows
@@ -267,9 +259,9 @@ func openTaskStore() (*tasks.Store, error) {
 // every downstream consumer (ReadFile, Stat, etc.) then errors on
 // the missing file - identical observed behaviour to the explicit
 // early return that used to live here.
-func taskDirFor(id string) (string, error) {
+func taskDirFor(id string) string {
 	tasksDir, _ := tasks.DefaultDir()
-	return filepath.Join(tasksDir, id), nil
+	return filepath.Join(tasksDir, id)
 }
 
 func taskPaths(taskDir string) tasks.TaskPaths {
