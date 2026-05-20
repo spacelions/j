@@ -70,3 +70,28 @@ func TestNewStartTargetFromMarkdown_UnreadableFile(t *testing.T) {
 		t.Fatal("NewStartTargetFromMarkdown should fail on unreadable file")
 	}
 }
+
+// TestPrepareStartTaskFiles_WriteRequirementsFails drives the
+// WriteFile error branch by pre-creating the task directory with
+// no write bit so EnsureDir succeeds (mkdir -p is a no-op when the
+// target already exists) but the subsequent WriteFile fails with
+// EACCES.
+func TestPrepareStartTaskFiles_WriteRequirementsFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	setupResolverProject(t)
+	id := "locked-task"
+	taskDir, err := tasks.EnsureDir(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(taskDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(taskDir, 0o755) })
+	st := StartTarget{TaskID: id, IsNew: true, Body: "body"}
+	if _, err := PrepareStartTaskFiles(st); err == nil {
+		t.Fatal("PrepareStartTaskFiles should fail when task dir is read-only")
+	}
+}
