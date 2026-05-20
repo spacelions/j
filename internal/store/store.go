@@ -222,23 +222,23 @@ func (s *Store) DeleteBucket(name string) error {
 }
 
 // IsEmpty reports whether the database has no buckets or every
-// bucket has no key/value entries.
+// bucket has no key/value entries. The whole walk happens inside a
+// single View transaction so we never have to chain a List call per
+// bucket; the previous two-stage implementation surfaced a
+// near-unreachable "list one bucket failed" branch that could not be
+// driven from a test without racing the DB close.
 func (s *Store) IsEmpty() (bool, error) {
-	buckets, err := s.ListBuckets()
+	empty := true
+	err := s.db.View(func(tx *bolt.Tx) error {
+		return tx.ForEach(func(_ []byte, b *bolt.Bucket) error {
+			if k, _ := b.Cursor().First(); k != nil {
+				empty = false
+			}
+			return nil
+		})
+	})
 	if err != nil {
 		return false, err
 	}
-	if len(buckets) == 0 {
-		return true, nil
-	}
-	for _, name := range buckets {
-		entries, err := s.List(name)
-		if err != nil {
-			return false, err
-		}
-		if len(entries) > 0 {
-			return false, nil
-		}
-	}
-	return true, nil
+	return empty, nil
 }
