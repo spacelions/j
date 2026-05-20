@@ -1,5 +1,4 @@
 internal/resolver/agent\.go:.*ResolveToolModel[[:space:]]
-internal/resolver/markdown\.go:.*NewStartTargetFromMarkdown[[:space:]]
 internal/resolver/markdown\.go:.*PrepareStartTaskFiles[[:space:]]
 internal/agents/planner/run\.go:.*Execute[[:space:]]
 internal/agents/planner/run\.go:.*beginPlanSession[[:space:]]
