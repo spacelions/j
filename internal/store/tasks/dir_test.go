@@ -134,6 +134,95 @@ func TestEnsureDir_TasksDirIsFile(t *testing.T) {
 	}
 }
 
+// TestEnsureDir_TasksDirStatFails forces a non-NotExist stat error
+// by chmod-zeroing the `.j` parent so stat on `.j/tasks` returns
+// EACCES instead of ENOENT.
+func TestEnsureDir_TasksDirStatFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	jDir, err := store.DefaultDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(jDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(jDir, 0o755) })
+	_, err = EnsureDir("x")
+	if err == nil {
+		t.Fatal("EnsureDir should surface a stat EACCES error")
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want non-NotExist", err)
+	}
+}
+
+// TestRemoveDir_TasksDirStatFails mirrors EnsureDir's stat-error
+// branch for the removal path.
+func TestRemoveDir_TasksDirStatFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	jDir, err := store.DefaultDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(jDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(jDir, 0o755) })
+	err = RemoveDir("x")
+	if err == nil {
+		t.Fatal("RemoveDir should surface a stat EACCES error")
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want non-NotExist", err)
+	}
+}
+
+// TestRemoveDir_RemoveAllFails chmod-zeroes the tasks parent after
+// stat passes so os.RemoveAll cannot unlink the target.
+func TestRemoveDir_RemoveAllFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	taskDir, err := EnsureDir("locked")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Create a sub-entry so RemoveAll has actual work that requires
+	// write perms on the parent.
+	if err := os.WriteFile(
+		filepath.Join(taskDir, "x"), []byte("y"), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	tasksDir, err := DefaultDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(tasksDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tasksDir, 0o755) })
+	if err := RemoveDir("locked"); err == nil {
+		t.Fatal("RemoveDir should fail when tasks dir is read-only")
+	}
+}
+
 func TestClarificationFileExists(t *testing.T) {
 	taskDir := t.TempDir()
 	if ClarificationFileExists(taskDir) {

@@ -109,10 +109,7 @@ func EnsureDir(id string) (string, error) {
 	if id == "" {
 		return "", errors.New("task: empty task id")
 	}
-	tasksDir, err := DefaultDir()
-	if err != nil {
-		return "", err
-	}
+	tasksDir, _ := DefaultDir()
 	if _, err := os.Stat(tasksDir); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", fmt.Errorf("task: %q missing; run `j init`: %w", tasksDir, err)
@@ -137,10 +134,7 @@ func RemoveDir(id string) error {
 	if id == "" {
 		return errors.New("task: empty task id")
 	}
-	tasksDir, err := DefaultDir()
-	if err != nil {
-		return err
-	}
+	tasksDir, _ := DefaultDir()
 	if _, err := os.Stat(tasksDir); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("task: %q missing; run `j init`: %w", tasksDir, err)
