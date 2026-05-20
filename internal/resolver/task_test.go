@@ -262,3 +262,59 @@ func TestTaskStoreHelpers(t *testing.T) {
 		t.Fatalf("autoPickAllowed = %q, %v", id, ok)
 	}
 }
+
+// TestTaskByID_NonENOENT drives the GetTask non-ErrNotExist error
+// branch by chmod-zeroing the seeded task.toml so ReadFile returns
+// EACCES instead of the usual missing-file error.
+func TestTaskByID_NonENOENT(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	setupResolverProject(t)
+	seedResolverTask(t, tasks.Task{ID: "locked", Status: tasks.StatusPlanDone}, "plan", "")
+	tasksDir, err := tasks.DefaultDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tomlPath := filepath.Join(tasksDir, "locked", tasks.TaskFileName)
+	if err := os.Chmod(tomlPath, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tomlPath, 0o600) })
+	if _, err := TaskByID("locked"); err == nil {
+		t.Fatal("TaskByID should propagate non-ENOENT read error")
+	}
+}
+
+// TestListResolvableTasks_ListTasksError drives the ListTasks error
+// path inside listResolvableTasks (and therefore the
+// ResolveWorkPlan / ResolveVerifyTask err-propagation branches) by
+// chmod-zeroing the tasks directory so os.ReadDir returns EACCES.
+func TestListResolvableTasks_ListTasksError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	setupResolverProject(t)
+	tasksDir, err := tasks.DefaultDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(tasksDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tasksDir, 0o755) })
+
+	if _, err := listResolvableTasks(); err == nil {
+		t.Fatal("listResolvableTasks should propagate ReadDir error")
+	}
+	if _, _, err := ResolveWorkPlan(
+		t.Context(), WorkPlanOptions{UI: &taskUI{}},
+	); err == nil {
+		t.Fatal("ResolveWorkPlan should propagate listResolvableTasks error")
+	}
+	if _, _, err := ResolveVerifyTask(
+		t.Context(), VerifyTaskOptions{UI: &taskUI{}},
+	); err == nil {
+		t.Fatal("ResolveVerifyTask should propagate listResolvableTasks error")
+	}
+}

@@ -97,11 +97,7 @@ func resolveWorkByTaskID(id string) (WorkPlan, error) {
 	if err != nil {
 		return WorkPlan{}, err
 	}
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		return WorkPlan{}, err
-	}
-	taskDir := filepath.Join(tasksDir, id)
+	taskDir := taskDirFor(id)
 	paths := taskPaths(taskDir)
 	body, err := os.ReadFile(paths.Plan)
 	if err != nil {
