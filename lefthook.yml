@@ -6,10 +6,14 @@
 #      project SPA message format.
 #
 # pre-commit runs:
-#   1. line-cap: fails if any staged non-test file exceeds 300 lines, any
-#      line exceeds 80 chars, or any method exceeds 80 lines.
-#   2. lint:     runs `make lint` (golangci-lint over the whole module).
-#   3. tests:    runs `make test`.
+#   1. line-cap:      fails if any staged non-test file exceeds 300
+#                     lines, any line exceeds 80 chars, or any method
+#                     exceeds 80 lines.
+#   2. lint:          runs `make lint` (golangci-lint over the whole
+#                     module).
+#   3. tests:         runs `make test`.
+#   4. line-coverage: runs `make line-coverage` so the
+#                     100%-or-allowlist gate matches CI locally.
 
 commit-msg:
   commands:
@@ -38,3 +42,6 @@ pre-commit:
     tests:
       priority: 3
       run: make test
+    line-coverage:
+      priority: 4
+      run: make line-coverage
