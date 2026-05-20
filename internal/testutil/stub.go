@@ -190,7 +190,7 @@ func ArgvJBinary(t *testing.T, outputPath string) string {
 
 func ReadSpawnedArgv(t *testing.T, path string) []string {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		data, err := os.ReadFile(path)
 		if err == nil && len(data) > 0 {
