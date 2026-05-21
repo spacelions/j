@@ -102,8 +102,11 @@ lines:
 
 branch-coverage:
 	@set -euo pipefail; \
-	coverage_pkgs=$$(go list ./internal/... | \
-		rg -v '/internal/testutil$$'); \
+	pkg_dirs=$$(.hooks/branch-coverage-pkgs); \
+	if [ -z "$$pkg_dirs" ]; then \
+		echo "branch coverage: no production packages touched"; \
+		exit 0; \
+	fi; \
 	branch_num=0; branch_den=0; \
 	while IFS= read -r dir; do \
 		if ! out=$$(go tool gobco -branch "$$dir" 2>&1); then \
@@ -118,7 +121,7 @@ branch-coverage:
 		num=$${ratio%/*}; den=$${ratio#*/}; \
 		branch_num=$$((branch_num + num)); \
 		branch_den=$$((branch_den + den)); \
-	done < <(go list -f '{{.Dir}}' $$coverage_pkgs); \
+	done <<< "$$pkg_dirs"; \
 	branch_pct=$$(awk -v num="$$branch_num" -v den="$$branch_den" 'BEGIN { \
 		if (den == 0) { print "100.0"; exit } \
 		printf "%.1f", num * 100 / den; \
