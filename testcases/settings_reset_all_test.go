@@ -25,10 +25,7 @@ func TestSettingsResetAll_HeadlessYesFlag(t *testing.T) {
 		t.Fatalf("set: %v", err)
 	}
 
-	jDir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultDir: %v", err)
-	}
+	jDir := store.DefaultDir()
 	stdout, _, err := testutil.RunCobra(t, settings.New(), "reset", "--yes")
 	if err != nil {
 		t.Fatalf("reset --yes: %v", err)
@@ -58,10 +55,7 @@ func TestSettingsResetAll_InteractiveDecline(t *testing.T) {
 	); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	jDir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultDir: %v", err)
-	}
+	jDir := store.DefaultDir()
 
 	cmd := settings.New()
 	cmd.SetIn(strings.NewReader("n\n"))
@@ -98,10 +92,7 @@ func TestSettingsResetAll_InteractiveAccept(t *testing.T) {
 	); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	jDir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultDir: %v", err)
-	}
+	jDir := store.DefaultDir()
 
 	cmd := settings.New()
 	cmd.SetIn(strings.NewReader("y\n"))

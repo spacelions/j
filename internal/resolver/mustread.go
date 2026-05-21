@@ -20,10 +20,7 @@ const KeyMustRead = "must_read"
 // stderr-warning pattern and pass nil through to the agent — the
 // workflow must never block on a must-read lookup.
 func MustRead() ([]string, error) {
-	path, err := store.DefaultPath()
-	if err != nil {
-		return nil, fmt.Errorf("resolver: default path: %w", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("resolver: open store: %w", err)

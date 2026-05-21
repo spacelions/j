@@ -76,10 +76,7 @@ func openTestStore(t *testing.T) *store.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -104,10 +101,7 @@ func mustGet(t *testing.T, s *store.Store, key string) (string, bool) {
 // this after Run to assert the lifecycle wrote what we expect.
 func readTasks(t *testing.T) []tasks.Task {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	got, err := s.ListTasks()
 	if err != nil {
@@ -278,10 +272,7 @@ func (*scriptedAgent) FormatLog(line []byte) []byte { return line }
 // working directory's `.j/tasks/<id>/`.
 func taskFilePath(t *testing.T, id, name string) string {
 	t.Helper()
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	tasksDir := tasks.DefaultDir()
 	return filepath.Join(tasksDir, id, name)
 }
 
@@ -304,10 +295,7 @@ func seedWorkDoneTask(t *testing.T, summary, planBody, requirementBody string) s
 			t.Fatalf("write requirements: %v", err)
 		}
 	}
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	planBegin := time.Now().UTC().Add(-2 * time.Hour)
 	planEnd := planBegin.Add(time.Minute)
@@ -446,10 +434,7 @@ func TestRun_ThreadsWorktreeIntoRequests(t *testing.T) {
 	mustInit(t)
 	id := seedWorkDoneTask(t, "summary", "plan body", "# req")
 	// Overwrite the seeded row to add a Worktree value.
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	row, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -773,10 +758,7 @@ func TestRun_FromTask_StatusMismatch_DeclinedExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "body", "")
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -818,10 +800,7 @@ func TestRun_FromTask_StatusMismatch_AcceptedRuns(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -891,10 +870,7 @@ func TestRun_FromTask_StatusMismatch_PromptError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -928,10 +904,7 @@ func TestRun_FromTask_StatusMismatch_AbortExitsClean(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -1229,10 +1202,7 @@ func TestRun_UnknownTool_OnTaskRow(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	got, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -1338,10 +1308,7 @@ func TestRun_ExplicitTool_SkipsPersistence(t *testing.T) {
 func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -1377,10 +1344,7 @@ func TestRun_ExplicitTool_NilStore_LazyOpenSucceeds(t *testing.T) {
 func TestRun_ExplicitTool_NilStore_LazyOpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	settingsPath, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	settingsPath := store.DefaultPath()
 	if err := os.Remove(settingsPath); err != nil {
 		t.Fatal(err)
 	}
@@ -1389,7 +1353,7 @@ func TestRun_ExplicitTool_NilStore_LazyOpenFails(t *testing.T) {
 	}
 	id := seedWorkDoneTask(t, "x", "plan", "")
 	agent := newScriptedAgent()
-	err = Run(t.Context(), Options{
+	err := Run(t.Context(), Options{
 		TaskID: id,
 		Tool:   "cursor",
 		Stdout: io.Discard,

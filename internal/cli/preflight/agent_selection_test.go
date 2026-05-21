@@ -170,23 +170,19 @@ func TestEnsureAgentSelections_AppliesDefaults(t *testing.T) {
 func TestEnsureAgentSelections_StoreOpenFailure(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	if err := removeAndMkdir(path); err != nil {
 		t.Fatalf("replace settings with dir: %v", err)
 	}
 	sel := &testutil.SelectorFake{Tool: "cursor", Model: "sonnet-4"}
 	var stderr bytes.Buffer
-	err = EnsureAgentSelections(t.Context(), AgentCheckOptions{
+	if err := EnsureAgentSelections(t.Context(), AgentCheckOptions{
 		Stdin:  strings.NewReader(""),
 		Stdout: io.Discard,
 		Stderr: &stderr,
 		Agents: []codingagents.Agent{testutil.NewScriptedAgent()},
 		UI:     sel,
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("EnsureAgentSelections: %v", err)
 	}
 	if sel.ToolCalls != 3 {

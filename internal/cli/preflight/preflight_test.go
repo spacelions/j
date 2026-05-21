@@ -51,10 +51,7 @@ func (u *scriptedUI) AskMustRead(context.Context) (string, error) {
 // initialized-and-already-asked path.
 func putMustRead(t *testing.T, value string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -72,10 +69,7 @@ func putMustRead(t *testing.T, value string) {
 // "set" flag from the current cwd's settings store.
 func readMustRead(t *testing.T) (string, bool) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)

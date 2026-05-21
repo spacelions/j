@@ -45,10 +45,7 @@ func TestPlanFinish_ClarificationPresent_LandsNeedsClarification(
 
 	lc.Finish(nil, "", "", "/tmp/x.md")
 
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultDir: %v", err)
-	}
+	tasksDir := tasks.DefaultDir()
 	s := tasks.Open(tasksDir)
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
@@ -84,10 +81,7 @@ func TestPlanFinish_ClarificationAbsent_LandsPlanDone(t *testing.T) {
 		"/tmp/x.md", "# heading", "", "", "")
 	lc.Finish(nil, "# heading", "## plan", "/tmp/x.md")
 
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultDir: %v", err)
-	}
+	tasksDir := tasks.DefaultDir()
 	s := tasks.Open(tasksDir)
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)

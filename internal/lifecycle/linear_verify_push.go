@@ -83,12 +83,9 @@ func pushFindings(stderr io.Writer, task tasks.Task, header string) {
 }
 
 // readFindings loads `<tasksDir>/<id>/verifier_findings.md`. Either
-// step warning short-circuits the hook before any HTTP traffic. A
-// failed DefaultDir lookup flows through as an empty tasks root; the
-// subsequent ReadFile then errors and surfaces a "read
-// verifier_findings.md" warning instead of a separate "tasks dir" one.
+// step warning short-circuits the hook before any HTTP traffic.
 func readFindings(stderr io.Writer, id string) (string, bool) {
-	dir, _ := tasks.DefaultDir()
+	dir := tasks.DefaultDir()
 	path := filepath.Join(dir, id, tasks.VerifierFindingsFileName)
 	data, err := os.ReadFile(path)
 	if err != nil {

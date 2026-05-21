@@ -30,10 +30,7 @@ import (
 func TestRun_FromStore_NilStore_LazyOpenSucceeds(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	settingsPath, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	settingsPath := store.DefaultPath()
 	seed, err := store.Open(settingsPath)
 	if err != nil {
 		t.Fatal(err)
@@ -87,10 +84,7 @@ func TestRun_FromStore_NilStore_SettingsOpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedWorkDoneTask(t, "x", "plan", "")
-	settingsPath, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	settingsPath := store.DefaultPath()
 	if err := os.Remove(settingsPath); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +94,7 @@ func TestRun_FromStore_NilStore_SettingsOpenFails(t *testing.T) {
 	agent := newScriptedAgent()
 	agent.verifyVerdicts = []string{"PASS"}
 	var stderr bytes.Buffer
-	err = Run(t.Context(), Options{
+	err := Run(t.Context(), Options{
 		TaskID: id,
 		Stdout: io.Discard,
 		Stderr: &stderr,

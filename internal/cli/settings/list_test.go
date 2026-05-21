@@ -87,10 +87,7 @@ func TestList_EmptyDB(t *testing.T) {
 func TestList_PrintsSortedEntries(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -150,10 +147,7 @@ func TestList_PrintsSortedEntries(t *testing.T) {
 // runList unchanged.
 func TestList_OpenError(t *testing.T) {
 	t.Chdir(t.TempDir())
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -167,10 +161,7 @@ func TestList_OpenError(t *testing.T) {
 // test bypasses cobra so the corrupt layout survives pre-flight.
 func TestList_StatNonENOENT(t *testing.T) {
 	t.Chdir(t.TempDir())
-	dir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := store.DefaultDir()
 	if err := os.WriteFile(dir, []byte("not a dir"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -187,10 +178,7 @@ func TestList_StatNonENOENT(t *testing.T) {
 func TestList_MasksAPIKey(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -232,10 +220,7 @@ func TestList_MasksAPIKey(t *testing.T) {
 func TestList_MasksLinearAPIKey(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -275,10 +260,7 @@ func TestList_OnlyEmptyBuckets(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -308,10 +290,7 @@ func TestList_OnlyEmptyBuckets(t *testing.T) {
 func TestCollectSections_ListBucketsError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -328,10 +307,7 @@ func TestCollectSections_ListBucketsError(t *testing.T) {
 func TestPrintSections_ListError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)

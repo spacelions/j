@@ -65,15 +65,9 @@ func Open(tasksDir string) *Store {
 }
 
 // OpenDefault is the common shorthand for DefaultDir + Open.
-// The returned Store is rooted at `<cwd>/.j/tasks`. A Getwd failure
-// inside DefaultDir is returned immediately so callers can surface it
-// rather than silently operating on an empty root.
-func OpenDefault() (*Store, error) {
-	dir, err := DefaultDir()
-	if err != nil {
-		return nil, err
-	}
-	return Open(dir), nil
+// The returned Store is rooted at `<cwd>/.j/tasks`.
+func OpenDefault() *Store {
+	return Open(DefaultDir())
 }
 
 // Dir returns the absolute path the Store is rooted at. Useful for
@@ -90,14 +84,9 @@ func (s *Store) Close() error { return nil }
 // DefaultDir returns the absolute path to the per-project tasks
 // directory (`<cwd>/.j/tasks`). The directory holds one subdirectory
 // per task; each holds `requirements.md`, `plan.md`, `agent.log`,
-// and `task.toml` (the row metadata). A Getwd failure inside
-// store.DefaultDir is returned so callers can propagate it.
-func DefaultDir() (string, error) {
-	dir, err := store.DefaultDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, DirName), nil
+// and `task.toml` (the row metadata).
+func DefaultDir() string {
+	return filepath.Join(store.DefaultDir(), DirName)
 }
 
 // EnsureDir creates `<cwd>/.j/tasks/<id>/` (with mkdir -p) and
@@ -109,7 +98,7 @@ func EnsureDir(id string) (string, error) {
 	if id == "" {
 		return "", errors.New("task: empty task id")
 	}
-	tasksDir, _ := DefaultDir()
+	tasksDir := DefaultDir()
 	if _, err := os.Stat(tasksDir); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", fmt.Errorf("task: %q missing; run `j init`: %w", tasksDir, err)
@@ -134,7 +123,7 @@ func RemoveDir(id string) error {
 	if id == "" {
 		return errors.New("task: empty task id")
 	}
-	tasksDir, _ := DefaultDir()
+	tasksDir := DefaultDir()
 	if _, err := os.Stat(tasksDir); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("task: %q missing; run `j init`: %w", tasksDir, err)

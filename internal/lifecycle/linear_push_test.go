@@ -264,7 +264,7 @@ func TestLinearPush_Replan_AddsNewComment(t *testing.T) {
 	saveAPIKey(t, "lin_api_test")
 	InitLinearPush()
 	fireHook(id, "ENG-1", tasks.EventPlanDone)
-	dir, _ := tasks.DefaultDir()
+	dir := tasks.DefaultDir()
 	writeFile(t, filepath.Join(dir, id, tasks.PlanFileName), "plan v2")
 	fireHook(id, "ENG-1", tasks.EventReaperPlanDone)
 	got := env.recordedBodies()
@@ -286,10 +286,7 @@ func TestLinearPush_LoadAPIKeyError_Warns(t *testing.T) {
 	// Replace the settings file with a directory so store.Open
 	// fails — exercises the LoadAPIKey-returns-error branch
 	// without exposing a test-only seam in the linear package.
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	if err := os.RemoveAll(path); err != nil {
 		t.Fatalf("RemoveAll: %v", err)
 	}

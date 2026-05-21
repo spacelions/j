@@ -60,10 +60,7 @@ func seedResolverTask(t *testing.T, row tasks.Task, plan, req string) {
 			t.Fatalf("write requirements: %v", err)
 		}
 	}
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -272,10 +269,7 @@ func TestTaskByID_NonENOENT(t *testing.T) {
 	}
 	setupResolverProject(t)
 	seedResolverTask(t, tasks.Task{ID: "locked", Status: tasks.StatusPlanDone}, "plan", "")
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	tomlPath := filepath.Join(tasksDir, "locked", tasks.TaskFileName)
 	if err := os.Chmod(tomlPath, 0o000); err != nil {
 		t.Fatal(err)
@@ -295,10 +289,7 @@ func TestListResolvableTasks_ListTasksError(t *testing.T) {
 		t.Skip("root bypasses file-mode permissions")
 	}
 	setupResolverProject(t)
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	if err := os.Chmod(tasksDir, 0o000); err != nil {
 		t.Fatal(err)
 	}

@@ -48,10 +48,7 @@ func TestTasksLogs_RendersAgentLog(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("OpenDefault: %v", err)
-	}
+	s := tasks.OpenDefault()
 	if err := s.PutTask(tasks.Task{
 		ID:        "id-render",
 		Status:    tasks.StatusPlanDone,

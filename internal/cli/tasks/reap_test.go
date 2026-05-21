@@ -24,10 +24,7 @@ func openTestStore(t *testing.T) *tasks.Store {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 	storeSeedPlanApprovalDisabled(t)
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
@@ -88,10 +85,7 @@ func seedHeldLock(t *testing.T, id string) {
 // must NOT mutate the row.
 func TestReap_LockHeldLeftAlone(t *testing.T) {
 	s := openTestStore(t)
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	tasksDir := tasks.DefaultDir()
 	id := "live-task"
 	seedHeldLock(t, id)
 	begin := time.Now().UTC().Add(-time.Minute)
@@ -122,10 +116,7 @@ func TestReap_LockHeldLeftAlone(t *testing.T) {
 func TestReap_DeadPlanning_WithArtifacts(t *testing.T) {
 	s := openTestStore(t)
 	putProjectPlanRequiresApproval(t, "false")
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	tasksDir := tasks.DefaultDir()
 	id := "done-with-artifacts"
 	seedTaskDir(t, id, "# refined heading\nbody", "1. step\n2. step")
 	seedStaleLockFile(t, id)
@@ -159,10 +150,7 @@ func TestReap_DeadPlanning_WithArtifacts(t *testing.T) {
 func TestReap_DeadPlanning_WithBlankSummaryKeepsExisting(t *testing.T) {
 	s := openTestStore(t)
 	putProjectPlanRequiresApproval(t, "false")
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	tasksDir := tasks.DefaultDir()
 	id := "done-blank-summary"
 	seedTaskDir(t, id, "\n\t\n", "1. step")
 	seedStaleLockFile(t, id)
@@ -186,10 +174,7 @@ func TestReap_DeadPlanning_WithBlankSummaryKeepsExisting(t *testing.T) {
 // (e.g. the spawned child crashed early), so the row flips to help.
 func TestReap_DeadPlanning_NoArtifacts(t *testing.T) {
 	s := openTestStore(t)
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	tasksDir := tasks.DefaultDir()
 	id := "dead-without-artifacts"
 	seedTaskDir(t, id, "", "")
 	seedStaleLockFile(t, id)
@@ -216,10 +201,7 @@ func TestReap_DeadPlanning_NoArtifacts(t *testing.T) {
 // must flip to help (both files are required for plan-done).
 func TestReap_DeadPlanning_OnlyPlanMissing(t *testing.T) {
 	s := openTestStore(t)
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	tasksDir := tasks.DefaultDir()
 	id := "dead-missing-plan"
 	seedTaskDir(t, id, "# heading\nbody", "")
 	seedStaleLockFile(t, id)
@@ -238,10 +220,7 @@ func TestReap_DeadPlanning_OnlyPlanMissing(t *testing.T) {
 // artifact gate.
 func TestReap_DeadWorking(t *testing.T) {
 	s := openTestStore(t)
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	tasksDir := tasks.DefaultDir()
 	id := "dead-working"
 	seedTaskDir(t, id, "", "")
 	seedStaleLockFile(t, id)
@@ -266,10 +245,7 @@ func TestReap_DeadWorking(t *testing.T) {
 // is present. Only planning and working transition through the reaper.
 func TestReap_NonActiveStateUntouched(t *testing.T) {
 	s := openTestStore(t)
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	tasksDir := tasks.DefaultDir()
 	id := "stale-help"
 	seedTaskDir(t, id, "", "")
 	seedStaleLockFile(t, id)
@@ -291,10 +267,7 @@ func TestReap_NonActiveStateUntouched(t *testing.T) {
 // transition.
 func TestReap_NoLockFileUntouched(t *testing.T) {
 	s := openTestStore(t)
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	tasksDir := tasks.DefaultDir()
 	id := "no-lock"
 	seedTaskDir(t, id, "", "")
 	in := []tasks.Task{{
@@ -371,10 +344,7 @@ func TestReap_ListTasksWiresThroughCommand(t *testing.T) {
 	if !strings.Contains(out, id) || !strings.Contains(out, "plan-done") {
 		t.Fatalf("output should reflect reaped row: %q", out)
 	}
-	s2, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s2 := tasks.OpenDefault()
 	defer func() { _ = s2.Close() }()
 	persisted, err := s2.GetTask(id)
 	if err != nil {
@@ -426,10 +396,7 @@ func TestReap_Dead_WithClarification(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			s := openTestStore(t)
-			tasksDir, err := tasks.DefaultDir()
-			if err != nil {
-				t.Fatalf("DefaultTasksDir: %v", err)
-			}
+			tasksDir := tasks.DefaultDir()
 			dir := seedTaskDir(t, tc.id, tc.req, tc.plan)
 			seedStaleLockFile(t, tc.id)
 			if err := os.WriteFile(
@@ -528,10 +495,7 @@ func TestReap_TransitionsEmitMarkers(t *testing.T) {
 			} else {
 				putProjectPlanRequiresApproval(t, "false")
 			}
-			tasksDir, err := tasks.DefaultDir()
-			if err != nil {
-				t.Fatalf("DefaultDir: %v", err)
-			}
+			tasksDir := tasks.DefaultDir()
 			id := "reap-" + c.name
 			dir := seedTaskDir(t, id, c.requirements, c.plan)
 			seedStaleLockFile(t, id)
@@ -586,10 +550,7 @@ func TestReap_TransitionsEmitMarkers(t *testing.T) {
 
 func storeSeedPlanApprovalDisabled(t *testing.T) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)

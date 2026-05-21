@@ -510,10 +510,7 @@ func TestFinaliseVerifyFailIfStuck_PutErrorWarns(t *testing.T) {
 	row.Status = tasks.StatusVerifying
 	writeChainTaskRow(t, row)
 
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	taskDir := filepath.Join(tasksDir, id)
 	if err := os.Chmod(taskDir, 0o500); err != nil {
 		t.Fatalf("chmod: %v", err)
@@ -559,10 +556,7 @@ func seedChainTask(t *testing.T, tool string) string {
 
 func flipToPlanDone(t *testing.T, id string) error {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return err
-	}
+	s := tasks.OpenDefault()
 	defer s.Close()
 	task, err := s.GetTask(id)
 	if err != nil {
@@ -574,10 +568,7 @@ func flipToPlanDone(t *testing.T, id string) error {
 
 func flipToWorkDone(t *testing.T, id string) error {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return err
-	}
+	s := tasks.OpenDefault()
 	defer s.Close()
 	task, err := s.GetTask(id)
 	if err != nil {
@@ -593,10 +584,7 @@ func flipToWorkDone(t *testing.T, id string) error {
 
 func seedAgentBucketWithInteractive(t *testing.T, bucket, tool, model, interactive string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -618,10 +606,7 @@ func seedAgentBucketWithInteractive(t *testing.T, bucket, tool, model, interacti
 
 func writeChainTaskRow(t *testing.T, row tasks.Task) {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -630,10 +615,7 @@ func writeChainTaskRow(t *testing.T, row tasks.Task) {
 
 func readChainTaskRow(t *testing.T, id string) tasks.Task {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {
@@ -725,10 +707,7 @@ func testTaskContext(id string, agents []codingagents.Agent) TaskContext {
 // seedPlanApprovalDisabled writes plan_requires_approval=false.
 func seedPlanApprovalDisabled(t *testing.T) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open settings: %v", err)

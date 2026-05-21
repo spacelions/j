@@ -116,10 +116,7 @@ func seedOrchestrateTask(t *testing.T, tool string) string {
 		PlanTool: tool,
 		Summary:  "task",
 	}
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -133,10 +130,7 @@ func seedOrchestrateTask(t *testing.T, tool string) string {
 // exercise the read path too).
 func writeBucketKey(t *testing.T, bucket, key, value string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -149,10 +143,7 @@ func writeBucketKey(t *testing.T, bucket, key, value string) {
 
 func readOrchestrateTaskRow(t *testing.T, id string) tasks.Task {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {
@@ -489,10 +480,7 @@ func TestRunOrchestrate_FromWorkRunsWorkVerify(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedOrchestrateTask(t, "scripted")
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	if err := os.WriteFile(filepath.Join(tasksDir, id, tasks.PlanFileName), []byte("1. step"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -677,10 +665,7 @@ func TestRunOrchestrate_RegisteredAsChild(t *testing.T) {
 // store.LoadTaskConfig picks up the supplied bound.
 func putProjectMaxIters(t *testing.T, value string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -696,10 +681,7 @@ func putProjectMaxIters(t *testing.T, value string) {
 // phase running.
 func setRowWorkTool(t *testing.T, id, tool string) {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(id)
 	if err != nil {
@@ -715,10 +697,7 @@ func setRowWorkTool(t *testing.T, id, tool string) {
 // shell-out finds the stored plan when planning is skipped.
 func stagePlan(t *testing.T, id string) {
 	t.Helper()
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	if err := os.WriteFile(filepath.Join(tasksDir, id, tasks.PlanFileName), []byte("1. step"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -871,10 +850,7 @@ func TestRunOrchestrate_InfersPlanResumeFromRow(t *testing.T) {
 // resume-plan branch has a session to reuse.
 func seedRowPlanPendingApprovalWithSession(t *testing.T, id, session string) {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(id)
 	if err != nil {

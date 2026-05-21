@@ -77,10 +77,7 @@ func (*resumePlanChainAgent) FormatLog(line []byte) []byte { return line }
 // here so the testcases package stays self-contained.
 func putProjectKey(t *testing.T, key, value string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)

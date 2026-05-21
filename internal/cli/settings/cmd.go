@@ -62,10 +62,7 @@ func New() *cobra.Command {
 // with the result. The store is closed before withOpenStore returns,
 // regardless of fn's outcome.
 func withOpenStore(fn func(path string, s *store.Store) error) error {
-	path, err := store.DefaultPath()
-	if err != nil {
-		return err
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		return err

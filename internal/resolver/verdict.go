@@ -18,13 +18,8 @@ const (
 )
 
 func ReadVerdictForTask(taskID string) string {
-	// A failed DefaultDir flows through as an empty tasks root; the
-	// resulting path is unreadable and ParseVerdict's ReadFile error
-	// branch returns VerdictFail — identical observed behaviour to an
-	// explicit early return.
-	tasksDir, _ := tasks.DefaultDir()
 	return ParseVerdict(filepath.Join(
-		tasksDir, taskID, tasks.VerifierFindingsFileName))
+		tasks.DefaultDir(), taskID, tasks.VerifierFindingsFileName))
 }
 
 var verdictRegexp = regexp.MustCompile(`(?i)^\s*VERDICT:\s*(PASS|FAIL)\s*$`)

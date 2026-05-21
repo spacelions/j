@@ -465,67 +465,6 @@ func TestRunEnter_ListDecodeError_Picker(t *testing.T) {
 	}
 }
 
-// TestRunEnter_DefaultTasksPathError mirrors the same-named test in
-// delete_test.go: replace cwd with one that is then removed so
-// DefaultTasksDir -> os.Getwd fails. Skipped on root /
-// macOS-FUSE-cached-inode environments where getwd still succeeds.
-func TestRunEnter_DefaultTasksPathError(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root may bypass relevant FS errors")
-	}
-	parent := t.TempDir()
-	gone := filepath.Join(parent, "gone")
-	if err := os.Mkdir(gone, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(gone)
-	t.Setenv("PWD", "")
-	if err := os.Remove(gone); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
-	if _, err := os.Getwd(); err == nil {
-		t.Skip("os.Getwd unexpectedly succeeded")
-	}
-	if err := RunEnter(t.Context(), EnterOptions{
-		TaskID:  "x",
-		Stdout:  io.Discard,
-		Stderr:  io.Discard,
-		UI:      &fakeUI{},
-		Spawner: withFakeSpawner(&fakeSpawner{}),
-	}); err == nil {
-		t.Fatal("expected DefaultTasksDir to surface getwd error on direct branch")
-	}
-}
-
-// TestRunEnter_DefaultTasksPathError_Picker exercises the same
-// failure mode on the picker branch (no --id).
-func TestRunEnter_DefaultTasksPathError_Picker(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root may bypass relevant FS errors")
-	}
-	parent := t.TempDir()
-	gone := filepath.Join(parent, "gone")
-	if err := os.Mkdir(gone, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(gone)
-	t.Setenv("PWD", "")
-	if err := os.Remove(gone); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
-	if _, err := os.Getwd(); err == nil {
-		t.Skip("os.Getwd unexpectedly succeeded")
-	}
-	if err := RunEnter(t.Context(), EnterOptions{
-		Stdout:  io.Discard,
-		Stderr:  io.Discard,
-		UI:      &fakeUI{},
-		Spawner: withFakeSpawner(&fakeSpawner{}),
-	}); err == nil {
-		t.Fatal("expected DefaultTasksDir to surface getwd error on picker branch")
-	}
-}
-
 // TestEnterOptions_WithDefaults_FillsAllNilStreams exercises the
 // nil-default branches without invoking RunEnter.
 func TestEnterOptions_WithDefaults_FillsAllNilStreams(t *testing.T) {

@@ -684,10 +684,7 @@ func TestAgent_LazyStorePaths(t *testing.T) {
 		t.Fatalf("explicit lazy = %v %q %v", agent, model, err)
 	}
 
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -749,10 +746,7 @@ func TestAgent_LazyPromptPersists(t *testing.T) {
 	if err != nil || agent != cursor || model != "sonnet-4" {
 		t.Fatalf("prompt lazy = %v %q %v", agent, model, err)
 	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)

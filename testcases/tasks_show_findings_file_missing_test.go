@@ -18,10 +18,7 @@ func TestTasksShowFindings_FileMissing(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
 
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("OpenDefault: %v", err)
-	}
+	s := tasks.OpenDefault()
 	if err := s.PutTask(tasks.Task{
 		ID:        "id-no-findings",
 		Status:    tasks.StatusPlanDone,

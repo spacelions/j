@@ -60,11 +60,7 @@ func resumeWorkInlineOrchestrator(
 // trailing `agent.log` carries the `session_start` marker that names
 // the orchestrator pid for users tailing the log.
 func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string) {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		uitheme.DangerousDialogBox(stderr, "J: tasks dir: %v", err)
-		return
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(taskID)
 	if err != nil {

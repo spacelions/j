@@ -76,10 +76,7 @@ func readSpawnedArgv(t *testing.T, path string) []string {
 // task row for id (or fails the test if missing).
 func readTaskFromBolt(t *testing.T, id string) tasks.Task {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {
@@ -90,10 +87,7 @@ func readTaskFromBolt(t *testing.T, id string) tasks.Task {
 
 func putProjectPlanRequiresApproval(t *testing.T, value string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -119,10 +113,7 @@ func firstSeededTaskID(t *testing.T) string {
 // source-picker tests that need to assert "no new row created."
 func allTaskRows(t *testing.T) []tasks.Task {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	rows, err := s.ListTasks()
 	if err != nil {
@@ -273,10 +264,7 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 		t.Fatalf("Summary should be derived from the markdown body")
 	}
 
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	reqPath := filepath.Join(tasksDir, id, tasks.RequirementsFileName)
 	body, err := os.ReadFile(reqPath)
 	if err != nil {
@@ -540,10 +528,7 @@ func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
 	if row.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", row.Status)
 	}
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	body, err := os.ReadFile(filepath.Join(tasksDir, id, tasks.RequirementsFileName))
 	if err != nil {
 		t.Fatalf("read requirements.md: %v", err)
@@ -595,10 +580,7 @@ func TestRunStart_FromLinearFlag(t *testing.T) {
 		t.Fatalf("--from-linear should bypass the source picker: sourceCalls=%d", ui.sourceCalls)
 	}
 	id := firstSeededTaskID(t)
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	body, err := os.ReadFile(filepath.Join(tasksDir, id, tasks.RequirementsFileName))
 	if err != nil {
 		t.Fatalf("read requirements.md: %v", err)
@@ -822,10 +804,7 @@ func TestRunStart_BucketInteractiveUntouched(t *testing.T) {
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
-		path, err := store.DefaultPath()
-		if err != nil {
-			t.Fatal(err)
-		}
+		path := store.DefaultPath()
 		s, err := store.Open(path)
 		if err != nil {
 			t.Fatal(err)
@@ -1183,10 +1162,7 @@ func containsArg(args []string, want string) bool {
 // without going through any phase lifecycle.
 func seedTaskRowDirect(t *testing.T, row tasks.Task) {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)

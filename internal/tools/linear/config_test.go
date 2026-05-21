@@ -72,10 +72,7 @@ func TestLoadProject_MissingSettings(t *testing.T) {
 
 func TestLoadAPIKey_StatNonENOENT(t *testing.T) {
 	t.Chdir(t.TempDir())
-	dir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := store.DefaultDir()
 	// A non-directory at the .j path makes the settings stat path fail
 	// on a non-ErrNotExist error. The settings DB lives at .j/settings.
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -91,10 +88,7 @@ func TestLoadAPIKey_StatNonENOENT(t *testing.T) {
 
 func TestSaveAPIKey_OpenError(t *testing.T) {
 	t.Chdir(t.TempDir())
-	dir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := store.DefaultDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

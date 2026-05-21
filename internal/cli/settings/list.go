@@ -23,10 +23,7 @@ var knownSectionOrder = []string{
 }
 
 func runList(cmd *cobra.Command) error {
-	path, err := store.DefaultPath()
-	if err != nil {
-		return err
-	}
+	path := store.DefaultPath()
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			uitheme.NormalFprintln(cmd.OutOrStdout(), "J: no settings stored")

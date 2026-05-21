@@ -48,10 +48,7 @@ func TestCase_PRURL_Finish_PopulatesFromAgentLog(t *testing.T) {
 
 func readSinglePersistedTask(t *testing.T) tasks.Task {
 	t.Helper()
-	dir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("tasks.DefaultDir: %v", err)
-	}
+	dir := tasks.DefaultDir()
 	s := tasks.Open(dir)
 	defer func() { _ = s.Close() }()
 	rows, err := s.ListTasks()

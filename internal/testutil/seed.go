@@ -14,10 +14,7 @@ import (
 // plan / work / verify treat the bucket as already configured.
 func SeedAgentBucket(t *testing.T, bucket, tool, model string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("testutil: DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("testutil: Open: %v", err)
@@ -84,10 +81,7 @@ func SeedFullTask(t *testing.T, mutate func(*tasks.Task)) string {
 // site.
 func SeedAgentBucketToolModel(t *testing.T, bucket, tool, model string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("testutil: DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("testutil: Open: %v", err)
@@ -107,10 +101,7 @@ func SeedAgentBucketToolModel(t *testing.T, bucket, tool, model string) {
 // ReadAgentBucket returns (tool, model, interactive) from the settings bucket.
 func ReadAgentBucket(t *testing.T, bucket string) (string, string, string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("testutil: DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("testutil: Open: %v", err)
@@ -127,10 +118,7 @@ func ReadAgentBucket(t *testing.T, bucket string) (string, string, string) {
 // when invoked with TaskID set.
 func SeedTaskRow(t *testing.T, row tasks.Task) {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("testutil: DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("testutil: PutTask: %v", err)
@@ -141,10 +129,7 @@ func SeedTaskRow(t *testing.T, row tasks.Task) {
 // missing or unreadable.
 func ReadTaskRow(t *testing.T, id string) tasks.Task {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("testutil: DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {
@@ -166,10 +151,7 @@ func WriteFile(path, body string) error {
 // to plant a corrupted row without going through PutTask's encoder.
 func SeedRawTaskFile(t *testing.T, id string, body []byte) {
 	t.Helper()
-	dir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("testutil: DefaultTasksDir: %v", err)
-	}
+	dir := tasks.DefaultDir()
 	taskDir := filepath.Join(dir, id)
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		t.Fatalf("testutil: mkdir: %v", err)

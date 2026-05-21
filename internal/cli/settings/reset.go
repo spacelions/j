@@ -37,14 +37,8 @@ func runReset(cmd *cobra.Command, args []string) error {
 }
 
 func runResetFull(cmd *cobra.Command) error {
-	jDir, err := store.DefaultDir()
-	if err != nil {
-		return err
-	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		return err
-	}
+	jDir := store.DefaultDir()
+	path := store.DefaultPath()
 	noOp, err := resetIsNoOp(jDir, path)
 	if err != nil {
 		return err
@@ -154,10 +148,7 @@ func runResetTargets(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		return err
-	}
+	path := store.DefaultPath()
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			uitheme.NormalFprintln(cmd.OutOrStdout(), "J: nothing to reset")

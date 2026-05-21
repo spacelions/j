@@ -838,10 +838,7 @@ func TestRunContinue_GetTaskDecodeError(t *testing.T) {
 func TestResolveContinueTaskFromStore_PickedMissingTask(t *testing.T) {
 	setupContinueEnv(t)
 	testutil.SeedFullTask(t, nil)
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	_, ok, err := resolveContinueTaskFromStore(t.Context(), s, ContinueOptions{
 		Stdout: io.Discard,
@@ -933,10 +930,7 @@ func TestStampSpawnOnRow_KnownTask(t *testing.T) {
 		t.Fatalf("unexpected stderr: %q", stderr.String())
 	}
 	// Verify the row was updated.
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(id)
 	if err != nil {

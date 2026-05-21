@@ -31,10 +31,7 @@ import (
 // surfaces a wrapped error otherwise. `j init` and the pre-flight
 // confirm path are the sole callers.
 func EnsureProject() error {
-	jDir, err := DefaultDir()
-	if err != nil {
-		return err
-	}
+	jDir := DefaultDir()
 	if err := os.MkdirAll(jDir, 0o755); err != nil {
 		return fmt.Errorf("store: mkdir %q: %w", jDir, err)
 	}
@@ -85,10 +82,7 @@ func touchBoltFile(path string) error {
 // initialisation contract — they are created on demand by
 // EnsureTaskDir as tasks are minted.
 func ProjectInitialized() (bool, error) {
-	jDir, err := DefaultDir()
-	if err != nil {
-		return false, err
-	}
+	jDir := DefaultDir()
 	checks := []struct {
 		path  string
 		isDir bool

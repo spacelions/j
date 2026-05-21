@@ -189,10 +189,7 @@ func TestLinearStateSync_NoAPIKey_Warns(t *testing.T) {
 
 func TestLinearStateSync_LoadAPIKeyError_Warns(t *testing.T) {
 	env := newStateSyncEnv(t)
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	if err := os.RemoveAll(path); err != nil {
 		t.Fatalf("RemoveAll: %v", err)
 	}

@@ -49,10 +49,7 @@ func openTasksDB(t *testing.T) *tasks.Store {
 	t.Helper()
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	return s
 }
 
@@ -343,32 +340,6 @@ func TestRun_HidesSessionLines(t *testing.T) {
 	}
 }
 
-// TestRun_DefaultTasksPathError replaces the cwd with one we then
-// remove so DefaultTasksDir -> os.Getwd fails. On macOS getwd may
-// still succeed via cached inodes; in that case the test skips. We
-// bypass cobra (and pre-flight) so the broken cwd reaches listTasks.
-func TestRun_DefaultTasksPathError(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root may bypass relevant FS errors")
-	}
-	parent := t.TempDir()
-	gone := filepath.Join(parent, "gone")
-	if err := os.Mkdir(gone, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(gone)
-	t.Setenv("PWD", "")
-	if err := os.Remove(gone); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
-	if _, err := os.Getwd(); err == nil {
-		t.Skip("os.Getwd unexpectedly succeeded; cannot exercise failure path")
-	}
-	if err := listTasks(io.Discard, false); err == nil {
-		t.Fatal("expected DefaultTasksDir to surface getwd error")
-	}
-}
-
 // TestRun_DecodeError plants a non-JSON value into the tasks bucket so
 // ListTasks returns a decode error and runList propagates it. The
 // seeded list.db satisfies pre-flight so the cobra path runs end-to-
@@ -393,10 +364,7 @@ func TestRun_DecodeError(t *testing.T) {
 // to seed a malformed row without going through PutTask's encoder.
 func writeRawTaskBytes(t *testing.T, id string, value []byte) error {
 	t.Helper()
-	dir, err := tasks.DefaultDir()
-	if err != nil {
-		return err
-	}
+	dir := tasks.DefaultDir()
 	taskDir := filepath.Join(dir, id)
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		return err
@@ -422,10 +390,7 @@ func TestStoreReloader_SortsAndReaps(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	got, err := storeReloader(s, tasksDir)()
 	if err != nil {
 		t.Fatalf("reloader: %v", err)
@@ -444,10 +409,7 @@ func TestStoreReloader_PropagatesListErr(t *testing.T) {
 	if err := writeRawTaskBytes(t, "bad", []byte("not-json")); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	t.Cleanup(func() { _ = s.Close() })
 	if _, err := storeReloader(s, s.Dir())(); err == nil {
 		t.Fatal("expected decode error to propagate from reloader")

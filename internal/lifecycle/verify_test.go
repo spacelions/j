@@ -25,10 +25,7 @@ func TestTask_BeginVerifyRestart_FlipsStatusAndStampsResume(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dbPath := tasks.DefaultDir()
 	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
@@ -76,10 +73,7 @@ func TestVerifyLifecycle_FinishFailed(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dbPath := tasks.DefaultDir()
 	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
@@ -104,10 +98,7 @@ func TestVerifyLifecycle_FinishErrorPath(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dbPath := tasks.DefaultDir()
 	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
@@ -130,10 +121,7 @@ func TestVerifyLifecycle_RecordAgentLog_StampsPath(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dbPath := tasks.DefaultDir()
 	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
@@ -161,10 +149,7 @@ func TestVerifyLifecycle_RecordResumeSession(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dbPath := tasks.DefaultDir()
 	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
@@ -191,10 +176,7 @@ func TestVerifyLifecycle_RecordAgentLog_ClosedShortCircuit(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dbPath := tasks.DefaultDir()
 	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
@@ -220,10 +202,7 @@ func TestVerifyLifecycle_FinishIdempotent(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedWorkDoneTask(t, "x")
-	dbPath, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dbPath := tasks.DefaultDir()
 	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
@@ -247,10 +226,7 @@ func TestBeginVerifyRestart_OpenFails(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	path, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := tasks.DefaultDir()
 	if err := os.RemoveAll(path); err != nil {
 		t.Fatal(err)
 	}
@@ -357,10 +333,7 @@ func TestVerifyLifecycle_MarkersGoToAgentLogNotStderr(t *testing.T) {
 				t.Fatalf("store.EnsureProject: %v", err)
 			}
 			id := seedWorkDoneTask(t, "x")
-			dbPath, err := tasks.DefaultDir()
-			if err != nil {
-				t.Fatal(err)
-			}
+			dbPath := tasks.DefaultDir()
 			s := tasks.Open(dbPath)
 			existing, err := s.GetTask(id)
 			if err != nil {

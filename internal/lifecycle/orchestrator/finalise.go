@@ -17,11 +17,7 @@ import (
 // / help / etc.) is the silent no-op path; PutTask errors surface as a
 // warning so a stuck row never fails silently.
 func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		uitheme.DangerousDialogBox(stderr, "J: tasks dir: %v", err)
-		return
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	t, err := s.GetTask(taskID)
 	if err != nil {

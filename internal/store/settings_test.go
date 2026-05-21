@@ -14,10 +14,7 @@ import (
 // this helper just opens, puts, closes.
 func putProject(t *testing.T, key, value string) {
 	t.Helper()
-	path, err := DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := DefaultPath()
 	s, err := Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -54,10 +51,7 @@ func TestOpenSettings_OpenFailure(t *testing.T) {
 	if err := EnsureProject(); err != nil {
 		t.Fatal(err)
 	}
-	path, err := DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := DefaultPath()
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
@@ -99,14 +93,11 @@ func TestLoadProjectConfig_MissingStore(t *testing.T) {
 func TestLoadProjectConfig_StatNonENOENT(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	jDir, err := DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	jDir := DefaultDir()
 	if err := os.WriteFile(jDir, []byte("not a dir"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = LoadProjectConfig()
+	_, err := LoadProjectConfig()
 	if err == nil {
 		t.Fatal("expected stat error to propagate")
 	}
@@ -124,17 +115,14 @@ func TestLoadProjectConfig_OpenError(t *testing.T) {
 	if err := EnsureProject(); err != nil {
 		t.Fatal(err)
 	}
-	path, err := DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := DefaultPath()
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	_, err = LoadProjectConfig()
+	_, err := LoadProjectConfig()
 	if err == nil {
 		t.Fatal("expected open error")
 	}
@@ -314,14 +302,11 @@ func TestLoadTaskConfig_DefaultsOnUnparseable(t *testing.T) {
 func TestLoadTaskConfig_StatErrorPropagates(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	jDir, err := DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	jDir := DefaultDir()
 	if err := os.WriteFile(jDir, []byte("not a dir"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = LoadTaskConfig()
+	_, err := LoadTaskConfig()
 	if err == nil || !strings.Contains(err.Error(), "stat") {
 		t.Fatalf("err = %v, want wrapped stat error", err)
 	}
@@ -378,14 +363,11 @@ func TestLoadPlanRequiresApproval_DefaultsOnMissingOrUnparseable(t *testing.T) {
 func TestLoadPlanRequiresApproval_StatErrorPropagates(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	jDir, err := DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	jDir := DefaultDir()
 	if err := os.WriteFile(jDir, []byte("not a dir"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = LoadPlanRequiresApproval()
+	_, err := LoadPlanRequiresApproval()
 	if err == nil || !strings.Contains(err.Error(), "stat") {
 		t.Fatalf("err = %v, want wrapped stat error", err)
 	}

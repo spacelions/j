@@ -525,10 +525,7 @@ func TestExecute_NilStderrAndMustReadWarning(t *testing.T) {
 		Status:  tasks.StatusPlanning,
 		Summary: "task",
 	})
-	settingsPath, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	settingsPath := store.DefaultPath()
 	if err := os.Remove(settingsPath); err != nil {
 		t.Fatalf("Remove settings: %v", err)
 	}
@@ -712,10 +709,7 @@ func (*scriptedPlanAgent) FormatLog(line []byte) []byte { return line }
 
 func seedPlanApproval(t *testing.T, v bool) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)

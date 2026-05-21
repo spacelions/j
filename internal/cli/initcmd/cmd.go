@@ -141,10 +141,7 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}
 	if initialized {
-		jDir, err := store.DefaultDir()
-		if err != nil {
-			return err
-		}
+		jDir := store.DefaultDir()
 		if err := os.RemoveAll(jDir); err != nil {
 			return fmt.Errorf("remove %q: %w", jDir, err)
 		}
@@ -155,10 +152,7 @@ func Run(ctx context.Context, opts Options) error {
 	if err := seedDefaults(opts.MustRead, opts.PlanRequiresApproval); err != nil {
 		return err
 	}
-	jDir, err := store.DefaultDir()
-	if err != nil {
-		return err
-	}
+	jDir := store.DefaultDir()
 	uitheme.NormalFprintf(opts.Stdout, "J: initialized %s\n", jDir)
 	return nil
 }
@@ -178,10 +172,7 @@ const defaultMaxIterations = "3"
 // The empty string is stored as-is to honour the "blank input is
 // valid" contract.
 func seedDefaults(mustRead *string, planRequiresApproval *bool) error {
-	path, err := store.DefaultPath()
-	if err != nil {
-		return err
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		return err

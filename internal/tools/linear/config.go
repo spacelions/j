@@ -38,10 +38,7 @@ func SaveProject(id string) error {
 }
 
 func loadKey(key string) (string, error) {
-	path, err := store.DefaultPath()
-	if err != nil {
-		return "", err
-	}
+	path := store.DefaultPath()
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", nil
@@ -61,10 +58,7 @@ func loadKey(key string) (string, error) {
 }
 
 func saveKey(key, value string) error {
-	path, err := store.DefaultPath()
-	if err != nil {
-		return err
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		return fmt.Errorf("linear: open settings: %w", err)

@@ -93,10 +93,7 @@ func RunContinue(ctx context.Context, opts ContinueOptions) (err error) {
 func resolveContinueTask(
 	ctx context.Context, opts ContinueOptions,
 ) (tasks.Task, bool, error) {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return tasks.Task{}, false, err
-	}
+	s := tasks.OpenDefault()
 	task, ok, err := resolveContinueTaskFromStore(ctx, s, opts)
 	_ = s.Close()
 	return task, ok, err

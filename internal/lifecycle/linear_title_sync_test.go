@@ -352,10 +352,7 @@ func TestLinearTitleSync_UpdateFails_Warns(t *testing.T) {
 
 func TestLinearTitleSync_LoadAPIKeyError_Warns(t *testing.T) {
 	env := newTitleSyncEnv(t)
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	if err := os.RemoveAll(path); err != nil {
 		t.Fatalf("RemoveAll: %v", err)
 	}

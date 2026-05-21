@@ -254,10 +254,7 @@ func openAndResolveTaskID(
 	ctx context.Context,
 	opts fileResolveOptions,
 ) (string, string, bool, error) {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return "", "", false, err
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	if opts.TaskID != "" {
 		if _, err := s.GetTask(opts.TaskID); err != nil {

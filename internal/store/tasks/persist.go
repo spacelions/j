@@ -17,8 +17,7 @@ import (
 // between writes" stays intact even though there is no longer a lock
 // to release.
 func PersistWarn(stderr io.Writer, task Task) {
-	tasksDir, _ := DefaultDir()
-	s := Open(tasksDir)
+	s := OpenDefault()
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(task); err != nil {
 		fmt.Fprintf(stderr, "J: tasks put: %v\n", err)

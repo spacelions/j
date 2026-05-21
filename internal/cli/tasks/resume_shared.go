@@ -155,10 +155,7 @@ func waitLockReleased(
 func pickResumeTaskID(
 	ctx context.Context, opts resumeOptions, cfg resumePhaseConfig,
 ) (string, bool, error) {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return "", false, err
-	}
+	s := tasks.OpenDefault()
 	rows, err := s.ListTasks()
 	_ = s.Close()
 	if err != nil {

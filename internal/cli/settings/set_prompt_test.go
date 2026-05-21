@@ -167,10 +167,7 @@ func TestSet_PromptStatErrorPropagates(t *testing.T) {
 
 func assertStoredPath(t *testing.T, bucket, want string) {
 	t.Helper()
-	dbPath, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	dbPath := store.DefaultPath()
 	s, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("Open: %v", err)

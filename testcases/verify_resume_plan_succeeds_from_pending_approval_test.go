@@ -103,10 +103,7 @@ func TestVerify_ResumePlan_SucceedsFromPlanPendingApproval(t *testing.T) {
 	); err != nil {
 		t.Fatalf("write requirements: %v", err)
 	}
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("OpenDefault: %v", err)
-	}
+	s := tasks.OpenDefault()
 	if err := s.PutTask(tasks.Task{
 		ID:                id,
 		Status:            tasks.StatusPlanPendingApproval,

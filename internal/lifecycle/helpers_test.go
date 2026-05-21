@@ -18,10 +18,7 @@ import (
 // tests can distinguish "missing" from a real read error.
 func listAllTasks(t *testing.T) []tasks.Task {
 	t.Helper()
-	dir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultDir: %v", err)
-	}
+	dir := tasks.DefaultDir()
 	if _, statErr := os.Stat(dir); errors.Is(statErr, os.ErrNotExist) {
 		return nil
 	}
@@ -40,10 +37,7 @@ func listAllTasks(t *testing.T) []tasks.Task {
 func seedPlanDoneTask(t *testing.T, summary string) string {
 	t.Helper()
 	id := tasks.NewTaskID()
-	dir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultDir: %v", err)
-	}
+	dir := tasks.DefaultDir()
 	s := tasks.Open(dir)
 	defer func() { _ = s.Close() }()
 	begin := time.Now().UTC().Add(-time.Hour)
@@ -70,10 +64,7 @@ func seedPlanDoneTask(t *testing.T, summary string) string {
 func seedWorkDoneTask(t *testing.T, summary string) string {
 	t.Helper()
 	id := tasks.NewTaskID()
-	dir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultDir: %v", err)
-	}
+	dir := tasks.DefaultDir()
 	s := tasks.Open(dir)
 	defer func() { _ = s.Close() }()
 	planBegin := time.Now().UTC().Add(-2 * time.Hour)
@@ -118,10 +109,7 @@ func seedPlanApprovalEnabled(t *testing.T) {
 
 func seedPlanApproval(t *testing.T, value string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open settings: %v", err)

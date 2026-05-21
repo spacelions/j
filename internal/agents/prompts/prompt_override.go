@@ -77,12 +77,9 @@ func Resolve(role string) string {
 // override" — the workflow continues with the embedded default and
 // no warning is emitted, since "store not yet initialised" is a
 // normal precondition (e.g. unit tests that exercise the prompts
-// package without an `.j/settings` file present). A Getwd failure
-// underneath DefaultPath flows through as an empty path; os.Stat("")
-// then errors and the function returns "no override" via the stat
-// branch.
+// package without an `.j/settings` file present).
 func lookupPromptPath(bucket string) (string, bool) {
-	dbPath, _ := store.DefaultPath()
+	dbPath := store.DefaultPath()
 	if _, err := os.Stat(dbPath); err != nil {
 		return "", false
 	}

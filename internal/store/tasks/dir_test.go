@@ -15,10 +15,7 @@ func TestOpenDefault_HappyPath(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	s, err := OpenDefault()
-	if err != nil {
-		t.Fatalf("OpenDefault: %v", err)
-	}
+	s := OpenDefault()
 	if s == nil {
 		t.Fatal("OpenDefault returned nil store")
 	}
@@ -118,17 +115,14 @@ func TestEnsureDir_TasksDirIsFile(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	tasksDir, err := DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultDir: %v", err)
-	}
+	tasksDir := DefaultDir()
 	if err := os.RemoveAll(tasksDir); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(tasksDir, []byte("not a dir"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err = EnsureDir("x")
+	_, err := EnsureDir("x")
 	if err == nil {
 		t.Fatal("EnsureDir with tasks-as-file should error")
 	}
@@ -145,15 +139,12 @@ func TestEnsureDir_TasksDirStatFails(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatal(err)
 	}
-	jDir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	jDir := store.DefaultDir()
 	if err := os.Chmod(jDir, 0o000); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(jDir, 0o755) })
-	_, err = EnsureDir("x")
+	_, err := EnsureDir("x")
 	if err == nil {
 		t.Fatal("EnsureDir should surface a stat EACCES error")
 	}
@@ -172,15 +163,12 @@ func TestRemoveDir_TasksDirStatFails(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatal(err)
 	}
-	jDir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	jDir := store.DefaultDir()
 	if err := os.Chmod(jDir, 0o000); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(jDir, 0o755) })
-	err = RemoveDir("x")
+	err := RemoveDir("x")
 	if err == nil {
 		t.Fatal("RemoveDir should surface a stat EACCES error")
 	}
@@ -210,10 +198,7 @@ func TestRemoveDir_RemoveAllFails(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	tasksDir, err := DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := DefaultDir()
 	if err := os.Chmod(tasksDir, 0o500); err != nil {
 		t.Fatal(err)
 	}

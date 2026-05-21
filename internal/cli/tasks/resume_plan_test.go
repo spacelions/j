@@ -246,10 +246,7 @@ func TestRunResumePlan_ListDecodeError(t *testing.T) {
 	if _, err := tasks.EnsureDir("bad"); err != nil {
 		t.Fatal(err)
 	}
-	dir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := tasks.DefaultDir()
 	bad := filepath.Join(dir, "bad", tasks.TaskFileName)
 	if err := os.WriteFile(bad, []byte("not = valid = toml"), 0o644); err != nil {
 		t.Fatal(err)

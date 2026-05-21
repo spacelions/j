@@ -81,10 +81,7 @@ func New() *cobra.Command {
 // PutTask errors are warned on stderr) and is opt-in per row: only
 // entries whose per-task lock file is no longer held are touched.
 func listTasks(stdout io.Writer, simple bool) error {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return err
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 
 	rows, err := s.ListTasks()

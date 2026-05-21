@@ -22,10 +22,7 @@ func StartTargetFromExistingTask(
 	if err != nil {
 		return StartTarget{}, err
 	}
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		return StartTarget{}, err
-	}
+	tasksDir := tasks.DefaultDir()
 	reqPath := filepath.Join(tasksDir, taskID, tasks.RequirementsFileName)
 	if task.LinearIssue != "" {
 		body, _, fetchErr := FetchLinearBody(ctx, task.LinearIssue)

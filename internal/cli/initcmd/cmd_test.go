@@ -312,10 +312,7 @@ func TestWithDefaults_FillsAllNilStreams(t *testing.T) {
 // cwd's settings store and returns (value, set).
 func readProjectKey(t *testing.T, key string) (string, bool) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -395,10 +392,7 @@ func TestRun_ResetReseedsMaxIterations(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatal(err)
 	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)

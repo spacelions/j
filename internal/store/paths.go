@@ -11,16 +11,10 @@ import (
 // DefaultDir returns the absolute path to the per-project settings
 // directory (`<cwd>/.j`). It is exposed for callers that want to
 // surface the location to the user without opening the DB.
-func DefaultDir() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("store: resolve cwd: %w", err)
-	}
-	abs, err := filepath.Abs(cwd)
-	if err != nil {
-		return "", fmt.Errorf("store: resolve cwd abs: %w", err)
-	}
-	return filepath.Join(abs, dirName), nil
+func DefaultDir() string {
+	cwd, _ := os.Getwd()
+	abs, _ := filepath.Abs(cwd)
+	return filepath.Join(abs, dirName)
 }
 
 // ProjectName returns the basename of the current working directory.
@@ -38,12 +32,8 @@ func ProjectName() string {
 
 // DefaultPath returns the absolute path to the default settings DB
 // (`<cwd>/.j/settings`).
-func DefaultPath() (string, error) {
-	dir, err := DefaultDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, fileName), nil
+func DefaultPath() string {
+	return filepath.Join(DefaultDir(), fileName)
 }
 
 // pathHasKind returns true when path exists as the requested kind

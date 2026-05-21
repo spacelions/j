@@ -66,10 +66,7 @@ func TestReset_Full_MissingJDir(t *testing.T) {
 // reaches runReset instead of being completed by pre-flight.
 func TestReset_Full_EmptyJ(t *testing.T) {
 	t.Chdir(t.TempDir())
-	jDir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	jDir := store.DefaultDir()
 	if err := os.MkdirAll(jDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -88,10 +85,7 @@ func TestReset_Full_YesRemovesJ(t *testing.T) {
 	if _, err := runSetArgs(t, "set", "a.k=v"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	jDir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	jDir := store.DefaultDir()
 	if _, err := os.Stat(jDir); err != nil {
 		t.Fatalf(".j: %v", err)
 	}
@@ -117,7 +111,7 @@ func TestReset_Full_StdinYes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	jDir, _ := store.DefaultDir()
+	jDir := store.DefaultDir()
 	if _, err := os.Stat(jDir); !os.IsNotExist(err) {
 		t.Fatal("expected .j removed")
 	}
@@ -133,7 +127,7 @@ func TestReset_Full_StdinY(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	jDir, _ := store.DefaultDir()
+	jDir := store.DefaultDir()
 	if _, err := os.Stat(jDir); !os.IsNotExist(err) {
 		t.Fatal("expected .j removed")
 	}
@@ -152,7 +146,7 @@ func TestReset_Full_StdinNo(t *testing.T) {
 	if !strings.Contains(out, "reset aborted") {
 		t.Fatalf("stdout = %q", out)
 	}
-	p, _ := store.DefaultPath()
+	p := store.DefaultPath()
 	if _, err := os.Stat(p); err != nil {
 		t.Fatalf("db should still exist: %v", err)
 	}
@@ -188,7 +182,7 @@ func TestReset_Single_RemovesValue(t *testing.T) {
 	if !strings.Contains(out, "unset b.k1") {
 		t.Fatalf("out = %q", out)
 	}
-	p, _ := store.DefaultPath()
+	p := store.DefaultPath()
 	s, err := store.Open(p)
 	if err != nil {
 		t.Fatal(err)
@@ -275,10 +269,7 @@ func TestReadConfirmationLine_EmptyEOF(t *testing.T) {
 // cobra so the corrupt layout reaches runResetTargets.
 func TestRunResetTargets_StatError(t *testing.T) {
 	t.Chdir(t.TempDir())
-	d, err := store.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	d := store.DefaultDir()
 	if err := os.WriteFile(d, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +297,7 @@ func TestReset_Bucket_RemovesAllKeys(t *testing.T) {
 	if strings.Contains(out, "unset planner.") {
 		t.Fatalf("out = %q, bucket reset must not emit per-key lines", out)
 	}
-	p, _ := store.DefaultPath()
+	p := store.DefaultPath()
 	s, err := store.Open(p)
 	if err != nil {
 		t.Fatal(err)
@@ -362,7 +353,7 @@ func TestReset_MultiArg_Space(t *testing.T) {
 	if idxBucket < 0 || idxKey < 0 || idxBucket > idxKey {
 		t.Fatalf("out = %q, want `unset planner` before `unset worker.model`", out)
 	}
-	p, _ := store.DefaultPath()
+	p := store.DefaultPath()
 	s, err := store.Open(p)
 	if err != nil {
 		t.Fatal(err)
@@ -403,7 +394,7 @@ func TestReset_MultiArg_Mixed(t *testing.T) {
 	if idxPlanner >= idxWorker || idxWorker >= idxVerifier {
 		t.Fatalf("out = %q, want planner < worker.model < verifier", out)
 	}
-	p, _ := store.DefaultPath()
+	p := store.DefaultPath()
 	s, err := store.Open(p)
 	if err != nil {
 		t.Fatal(err)
@@ -449,10 +440,7 @@ func TestReset_MultiArg_MissingDB(t *testing.T) {
 func TestReset_Linear_APIKey(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)

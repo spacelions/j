@@ -163,10 +163,7 @@ func Ensure(ctx context.Context, ui UI, stderr io.Writer) error {
 // their original command proceeds. An explicit empty answer is
 // stored verbatim so subsequent runs don't re-prompt.
 func ensureMustRead(ctx context.Context, ui UI) error {
-	path, err := store.DefaultPath()
-	if err != nil {
-		return err
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		return err

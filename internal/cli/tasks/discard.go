@@ -105,10 +105,7 @@ func (o DiscardOptions) withDefaults() DiscardOptions {
 // re-acquire it.
 func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 	opts = opts.withDefaults()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return err
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 
 	if opts.TaskID == "" {

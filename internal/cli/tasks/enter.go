@@ -116,10 +116,7 @@ func (o EnterOptions) withDefaults() EnterOptions {
 //     prefix on a non-zero shell.
 func RunEnter(ctx context.Context, opts EnterOptions) error {
 	opts = opts.withDefaults()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return err
-	}
+	s := tasks.OpenDefault()
 	id, ok, err := resolveEnterID(ctx, s, opts)
 	_ = s.Close()
 	if err != nil {
