@@ -64,15 +64,15 @@ func Open(tasksDir string) *Store {
 	return &Store{tasksDir: tasksDir}
 }
 
-// OpenDefault is the common shorthand for DefaultDir + Open. The
-// returned Store is rooted at `<cwd>/.j/tasks`. A Getwd failure
-// underneath DefaultDir flows through as an empty root; per-method
-// file ops then surface the failure via fs.ErrNotExist (or EACCES,
-// etc.) on first access. The (Store, error) signature is preserved
-// for symmetry with the rest of the package; the error is always
-// nil today.
+// OpenDefault is the common shorthand for DefaultDir + Open.
+// The returned Store is rooted at `<cwd>/.j/tasks`. A Getwd failure
+// inside DefaultDir is returned immediately so callers can surface it
+// rather than silently operating on an empty root.
 func OpenDefault() (*Store, error) {
-	dir, _ := DefaultDir()
+	dir, err := DefaultDir()
+	if err != nil {
+		return nil, err
+	}
 	return Open(dir), nil
 }
 
@@ -90,13 +90,13 @@ func (s *Store) Close() error { return nil }
 // DefaultDir returns the absolute path to the per-project tasks
 // directory (`<cwd>/.j/tasks`). The directory holds one subdirectory
 // per task; each holds `requirements.md`, `plan.md`, `agent.log`,
-// and `task.toml` (the row metadata). A Getwd failure underneath
-// store.DefaultDir flows through as an empty root; downstream file
-// ops surface the failure when they actually need the path. The
-// (string, error) signature is kept for symmetry with store.DefaultDir;
-// the error is always nil today.
+// and `task.toml` (the row metadata). A Getwd failure inside
+// store.DefaultDir is returned so callers can propagate it.
 func DefaultDir() (string, error) {
-	dir, _ := store.DefaultDir()
+	dir, err := store.DefaultDir()
+	if err != nil {
+		return "", err
+	}
 	return filepath.Join(dir, DirName), nil
 }
 
