@@ -309,3 +309,19 @@ func TestLockedError_Error(t *testing.T) {
 		t.Fatal("empty")
 	}
 }
+
+// TestWriteHolder_WriteError covers the os.WriteFile error branch by
+// making the target directory read-only before the write.
+func TestWriteHolder_WriteError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	if err := writeHolder(filepath.Join(dir, "lock"), Holder{PID: 1}); err == nil {
+		t.Fatal("expected writeHolder to fail when dir is not writable")
+	}
+}

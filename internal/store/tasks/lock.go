@@ -195,10 +195,7 @@ func tryAcquireForReapAt(path string) (*Lock, error) {
 }
 
 func writeHolder(path string, h Holder) error {
-	data, err := toml.Marshal(h)
-	if err != nil {
-		return fmt.Errorf("tasks: marshal holder: %w", err)
-	}
+	data, _ := toml.Marshal(h)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("tasks: write holder %q: %w", path, err)
 	}
