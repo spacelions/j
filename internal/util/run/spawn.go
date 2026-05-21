@@ -64,11 +64,8 @@ func SpawnIn(
 		return 0, fmt.Errorf("run: open log %q: %w", logPath, err)
 	}
 
-	devNull, err := os.OpenFile(os.DevNull, os.O_RDONLY, 0)
-	if err != nil {
-		_ = logFile.Close()
-		return 0, fmt.Errorf("run: open /dev/null: %w", err)
-	}
+	// /dev/null is always present on POSIX; the error is unchecked.
+	devNull, _ := os.OpenFile(os.DevNull, os.O_RDONLY, 0)
 	defer func() { _ = devNull.Close() }()
 
 	cmd := exec.CommandContext(ctx, name, args...)

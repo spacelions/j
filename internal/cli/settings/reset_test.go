@@ -66,10 +66,7 @@ func TestReset_Full_MissingJDir(t *testing.T) {
 // reaches runReset instead of being completed by pre-flight.
 func TestReset_Full_EmptyJ(t *testing.T) {
 	t.Chdir(t.TempDir())
-	jDir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	jDir := store.DefaultDir()
 	if err := os.MkdirAll(jDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -88,10 +85,7 @@ func TestReset_Full_YesRemovesJ(t *testing.T) {
 	if _, err := runSetArgs(t, "set", "a.k=v"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	jDir, err := store.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	jDir := store.DefaultDir()
 	if _, err := os.Stat(jDir); err != nil {
 		t.Fatalf(".j: %v", err)
 	}
@@ -117,7 +111,7 @@ func TestReset_Full_StdinYes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	jDir, _ := store.DefaultDir()
+	jDir := store.DefaultDir()
 	if _, err := os.Stat(jDir); !os.IsNotExist(err) {
 		t.Fatal("expected .j removed")
 	}
@@ -133,7 +127,7 @@ func TestReset_Full_StdinY(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	jDir, _ := store.DefaultDir()
+	jDir := store.DefaultDir()
 	if _, err := os.Stat(jDir); !os.IsNotExist(err) {
 		t.Fatal("expected .j removed")
 	}
@@ -152,7 +146,7 @@ func TestReset_Full_StdinNo(t *testing.T) {
 	if !strings.Contains(out, "reset aborted") {
 		t.Fatalf("stdout = %q", out)
 	}
-	p, _ := store.DefaultPath()
+	p := store.DefaultPath()
 	if _, err := os.Stat(p); err != nil {
 		t.Fatalf("db should still exist: %v", err)
 	}
@@ -188,7 +182,7 @@ func TestReset_Single_RemovesValue(t *testing.T) {
 	if !strings.Contains(out, "unset b.k1") {
 		t.Fatalf("out = %q", out)
 	}
-	p, _ := store.DefaultPath()
+	p := store.DefaultPath()
 	s, err := store.Open(p)
 	if err != nil {
 		t.Fatal(err)
@@ -270,15 +264,29 @@ func TestReadConfirmationLine_EmptyEOF(t *testing.T) {
 	}
 }
 
+// TestResetIsNoOp_StatError exercises the non-ENOENT stat error branch
+// in resetIsNoOp: when .j exists as a file (not a directory), the
+// stat of .j/settings returns ENOTDIR, which propagates as an error.
+func TestResetIsNoOp_StatError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	d := store.DefaultDir()
+	// Place a file at the .j path so stat(.j) succeeds but stat(.j/settings)
+	// returns ENOTDIR.
+	if err := os.WriteFile(d, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runResetDirect(t, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 // TestRunResetTargets_StatError exercises the non-ENOENT stat error
 // path: when .j is a regular file the settings stat fails. We bypass
 // cobra so the corrupt layout reaches runResetTargets.
 func TestRunResetTargets_StatError(t *testing.T) {
 	t.Chdir(t.TempDir())
-	d, err := store.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	d := store.DefaultDir()
 	if err := os.WriteFile(d, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +314,7 @@ func TestReset_Bucket_RemovesAllKeys(t *testing.T) {
 	if strings.Contains(out, "unset planner.") {
 		t.Fatalf("out = %q, bucket reset must not emit per-key lines", out)
 	}
-	p, _ := store.DefaultPath()
+	p := store.DefaultPath()
 	s, err := store.Open(p)
 	if err != nil {
 		t.Fatal(err)
@@ -362,7 +370,7 @@ func TestReset_MultiArg_Space(t *testing.T) {
 	if idxBucket < 0 || idxKey < 0 || idxBucket > idxKey {
 		t.Fatalf("out = %q, want `unset planner` before `unset worker.model`", out)
 	}
-	p, _ := store.DefaultPath()
+	p := store.DefaultPath()
 	s, err := store.Open(p)
 	if err != nil {
 		t.Fatal(err)
@@ -403,7 +411,7 @@ func TestReset_MultiArg_Mixed(t *testing.T) {
 	if idxPlanner >= idxWorker || idxWorker >= idxVerifier {
 		t.Fatalf("out = %q, want planner < worker.model < verifier", out)
 	}
-	p, _ := store.DefaultPath()
+	p := store.DefaultPath()
 	s, err := store.Open(p)
 	if err != nil {
 		t.Fatal(err)
@@ -449,10 +457,7 @@ func TestReset_MultiArg_MissingDB(t *testing.T) {
 func TestReset_Linear_APIKey(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -482,4 +487,105 @@ func TestParseResetTargets_EmptyArg(t *testing.T) {
 	if _, err := parseResetTargets([]string{""}); err == nil {
 		t.Fatal("expected error for empty target")
 	}
+}
+
+// TestResetIsNoOp_OpenError covers the store.Open error branch in
+// resetIsNoOp: .j/ and .j/settings both exist (stat succeeds) but
+// .j/settings is a directory so bolt.Open fails.
+func TestResetIsNoOp_OpenError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	jDir := store.DefaultDir()
+	path := store.DefaultPath()
+	if err := os.MkdirAll(jDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := resetIsNoOp(jDir, path)
+	if err == nil {
+		t.Fatal("expected open error when settings is a directory")
+	}
+}
+
+// TestReadConfirmationLine_IOError exercises the non-EOF read error
+// branch in readConfirmationLine via a reader that returns an error.
+func TestReadConfirmationLine_IOError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	if _, err := runSetArgs(t, "set", "a.k=v"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	cmd := newResetCmd()
+	cmd.SetIn(&errorReader{})
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stdout)
+	cmd.SetArgs(nil)
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("expected read error")
+	}
+}
+
+// TestRunResetFull_RemoveAllError exercises the os.RemoveAll error path
+// by making .j/ non-deletable (a chmod 000 subdirectory inside it).
+func TestRunResetFull_RemoveAllError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	// Seed a key so resetIsNoOp returns false.
+	if _, err := runSetArgs(t, "set", "a.k=v"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	// Make .j/ itself undeletable.
+	jDir := store.DefaultDir()
+	if err := os.Chmod(jDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(jDir, 0o755) })
+	if _, err := runResetDirect(t, &bytes.Buffer{}, "--yes"); err == nil {
+		t.Fatal("expected RemoveAll error")
+	}
+}
+
+// TestRunResetTargets_DeleteBucketError exercises the s.DeleteBucket
+// error branch in runResetTargets by closing the store first.
+func TestRunResetTargets_DeleteBucketError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	// Make .j/settings a directory so withOpenStore fails.
+	path := store.DefaultPath()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runResetDirect(t, nil, "planner"); err == nil {
+		t.Fatal("expected open error")
+	}
+}
+
+// TestRunResetTargets_DeleteKeyError exercises the s.Delete error path.
+func TestRunResetTargets_DeleteKeyError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	path := store.DefaultPath()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runResetDirect(t, nil, "planner.tool"); err == nil {
+		t.Fatal("expected open error")
+	}
+}
+
+type errorReader struct{}
+
+func (e *errorReader) Read([]byte) (int, error) {
+	return 0, errors.New("read error")
 }

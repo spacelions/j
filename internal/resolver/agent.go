@@ -239,10 +239,7 @@ func ResolveToolModel(
 		return tool, model
 	}
 	defer func() { _ = s.Close() }()
-	entries, err := s.List(bucket)
-	if err != nil {
-		return tool, model
-	}
+	entries, _ := s.List(bucket)
 	for _, kv := range entries {
 		if tool == "" && kv.Key == "tool" {
 			tool = kv.Value

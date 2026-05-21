@@ -81,11 +81,7 @@ type TaskConfig struct {
 // PersistAgentSelection close the store inside the call so the file
 // lock is not held across long-running agent invocations.
 func OpenSettings(stderr io.Writer) (*Store, bool) {
-	path, err := DefaultPath()
-	if err != nil {
-		fmt.Fprintf(stderr, "J: settings path: %v\n", err)
-		return nil, false
-	}
+	path := DefaultPath()
 	s, err := Open(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "J: settings db: %v\n", err)
@@ -100,10 +96,7 @@ func OpenSettings(stderr io.Writer) (*Store, bool) {
 // a missing or unparseable value surfaces the matching sentinel
 // above (ErrMissingAPIKey / ErrMissingModel / ErrMissingMaxIterations).
 func LoadProjectConfig() (ProjectConfig, error) {
-	path, err := DefaultPath()
-	if err != nil {
-		return ProjectConfig{}, err
-	}
+	path := DefaultPath()
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return ProjectConfig{}, fmt.Errorf(
@@ -119,24 +112,15 @@ func LoadProjectConfig() (ProjectConfig, error) {
 	}
 	defer func() { _ = s.Close() }()
 
-	apiKey, err := readSetting(s, KeyProjectAPIKey)
-	if err != nil {
-		return ProjectConfig{}, err
-	}
+	apiKey, _ := readSetting(s, KeyProjectAPIKey)
 	if apiKey == "" {
 		return ProjectConfig{}, ErrMissingAPIKey
 	}
-	model, err := readSetting(s, "model")
-	if err != nil {
-		return ProjectConfig{}, err
-	}
+	model, _ := readSetting(s, "model")
 	if model == "" {
 		return ProjectConfig{}, ErrMissingModel
 	}
-	rawIters, err := readSetting(s, KeyMaxIterations)
-	if err != nil {
-		return ProjectConfig{}, err
-	}
+	rawIters, _ := readSetting(s, KeyMaxIterations)
 	if rawIters == "" {
 		return ProjectConfig{}, ErrMissingMaxIterations
 	}
@@ -157,10 +141,7 @@ func LoadProjectConfig() (ProjectConfig, error) {
 // silently defaulted.
 func LoadTaskConfig() (TaskConfig, error) {
 	cfg := TaskConfig{MaxIterations: DefaultTaskMaxIterations}
-	path, err := DefaultPath()
-	if err != nil {
-		return TaskConfig{}, err
-	}
+	path := DefaultPath()
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return cfg, nil
@@ -172,10 +153,7 @@ func LoadTaskConfig() (TaskConfig, error) {
 		return TaskConfig{}, fmt.Errorf("store: open settings: %w", err)
 	}
 	defer func() { _ = s.Close() }()
-	raw, err := readSetting(s, KeyMaxIterations)
-	if err != nil {
-		return TaskConfig{}, err
-	}
+	raw, _ := readSetting(s, KeyMaxIterations)
 	if raw == "" {
 		return cfg, nil
 	}
@@ -193,10 +171,7 @@ func LoadTaskConfig() (TaskConfig, error) {
 // back to DefaultPlanRequiresApproval so stale project settings never
 // block the detached task orchestrator.
 func LoadPlanRequiresApproval() (bool, error) {
-	path, err := DefaultPath()
-	if err != nil {
-		return false, err
-	}
+	path := DefaultPath()
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return DefaultPlanRequiresApproval, nil
@@ -208,10 +183,7 @@ func LoadPlanRequiresApproval() (bool, error) {
 		return false, fmt.Errorf("store: open settings: %w", err)
 	}
 	defer func() { _ = s.Close() }()
-	raw, err := readSetting(s, KeyPlanRequiresApproval)
-	if err != nil {
-		return false, err
-	}
+	raw, _ := readSetting(s, KeyPlanRequiresApproval)
 	if raw == "" {
 		return DefaultPlanRequiresApproval, nil
 	}

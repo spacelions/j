@@ -566,3 +566,19 @@ func TestIsAlive_KnownDead(t *testing.T) {
 		t.Skip("PID 0x7fffffff is unexpectedly alive on this system")
 	}
 }
+
+// TestIsAlive_EPERM_TreatedAsAlive pins the conservative branch: a
+// signal(0) that returns EPERM (process exists, but we are not
+// allowed to signal it) must be reported as alive so a transient
+// permission error never causes the reaper to declare a still-running
+// child dead. PID 1 (init / launchd) is owned by root, so a non-root
+// process gets EPERM on every signal attempt.
+func TestIsAlive_EPERM_TreatedAsAlive(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root can signal pid 1, so EPERM is not observed")
+	}
+	if !IsAlive(1) {
+		t.Fatal("IsAlive(1) should be true (EPERM treated as alive)")
+	}
+}

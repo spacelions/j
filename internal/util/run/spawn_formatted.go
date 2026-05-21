@@ -71,17 +71,10 @@ func SpawnFormattedInEnv(
 	if err != nil {
 		return 0, fmt.Errorf("run: open log %q: %w", logPath, err)
 	}
-	devNull, err := os.OpenFile(os.DevNull, os.O_RDONLY, 0)
-	if err != nil {
-		_ = logFile.Close()
-		return 0, fmt.Errorf("run: open /dev/null: %w", err)
-	}
+	// /dev/null is always present and os.Pipe rarely fails on POSIX.
+	devNull, _ := os.OpenFile(os.DevNull, os.O_RDONLY, 0)
 	defer func() { _ = devNull.Close() }()
-	pr, pw, err := os.Pipe()
-	if err != nil {
-		_ = logFile.Close()
-		return 0, fmt.Errorf("run: pipe: %w", err)
-	}
+	pr, pw, _ := os.Pipe()
 	pid, err := startFormatted(ctx, dir, env, name, args, formattedPipes{
 		DevNull:   devNull,
 		PipeWrite: pw,

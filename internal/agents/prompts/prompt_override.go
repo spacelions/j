@@ -79,10 +79,7 @@ func Resolve(role string) string {
 // normal precondition (e.g. unit tests that exercise the prompts
 // package without an `.j/settings` file present).
 func lookupPromptPath(bucket string) (string, bool) {
-	dbPath, err := store.DefaultPath()
-	if err != nil {
-		return "", false
-	}
+	dbPath := store.DefaultPath()
 	if _, err := os.Stat(dbPath); err != nil {
 		return "", false
 	}

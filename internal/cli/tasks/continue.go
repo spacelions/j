@@ -93,10 +93,7 @@ func RunContinue(ctx context.Context, opts ContinueOptions) (err error) {
 func resolveContinueTask(
 	ctx context.Context, opts ContinueOptions,
 ) (tasks.Task, bool, error) {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return tasks.Task{}, false, err
-	}
+	s := tasks.OpenDefault()
 	task, ok, err := resolveContinueTaskFromStore(ctx, s, opts)
 	_ = s.Close()
 	return task, ok, err
@@ -171,10 +168,7 @@ func dispatchByStatus(
 func reverifyAsDetachedOrchestrator(
 	ctx context.Context, opts ContinueOptions, taskID string,
 ) error {
-	taskDir, err := tasks.EnsureDir(taskID)
-	if err != nil {
-		return fmt.Errorf("ensure task dir: %w", err)
-	}
+	taskDir, _ := tasks.EnsureDir(taskID)
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 	pid, err := spawnDetachedOrchestrator(
 		ctx, opts.JBinary, agentLogPath,
@@ -191,9 +185,7 @@ func reverifyAsDetachedOrchestrator(
 func resumeVerifyingInline(
 	ctx context.Context, opts ContinueOptions, taskID string,
 ) error {
-	if _, err := tasks.EnsureDir(taskID); err != nil {
-		return err
-	}
+	_, _ = tasks.EnsureDir(taskID)
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
 		cmdTasks, cmdOrchestrate, flagID, taskID,
 		flagPhaseVerifyOnly, flagInteractiveTrue,

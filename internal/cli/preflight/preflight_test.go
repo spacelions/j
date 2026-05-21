@@ -51,10 +51,7 @@ func (u *scriptedUI) AskMustRead(context.Context) (string, error) {
 // initialized-and-already-asked path.
 func putMustRead(t *testing.T, value string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -72,10 +69,7 @@ func putMustRead(t *testing.T, value string) {
 // "set" flag from the current cwd's settings store.
 func readMustRead(t *testing.T) (string, bool) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -358,5 +352,85 @@ func TestEnsure_MustReadUIError(t *testing.T) {
 func TestNewHuhUI_NotNil(t *testing.T) {
 	if ui := NewHuhUI(&bytes.Buffer{}, &bytes.Buffer{}); ui == nil {
 		t.Fatal("NewHuhUI returned nil")
+	}
+}
+
+// TestHuhUI_ConfirmInit_Yes drives ConfirmInit via huh accessible
+// mode (TERM=dumb): "y\n" input means yes.
+func TestHuhUI_ConfirmInit_Yes(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	ui := NewHuhUI(strings.NewReader("y\n"), &bytes.Buffer{})
+	got, err := ui.ConfirmInit(t.Context())
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !got {
+		t.Fatal("expected true for y input")
+	}
+}
+
+// TestHuhUI_ConfirmInit_No drives ConfirmInit via accessible mode.
+func TestHuhUI_ConfirmInit_No(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	ui := NewHuhUI(strings.NewReader("n\n"), &bytes.Buffer{})
+	got, err := ui.ConfirmInit(t.Context())
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got {
+		t.Fatal("expected false for n input")
+	}
+}
+
+// TestHuhUI_AskMustRead_Value drives AskMustRead via accessible mode.
+func TestHuhUI_AskMustRead_Value(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	ui := NewHuhUI(strings.NewReader("AGENTS.md;CLAUDE.md\n"), &bytes.Buffer{})
+	got, err := ui.AskMustRead(t.Context())
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != "AGENTS.md;CLAUDE.md" {
+		t.Fatalf("got = %q, want AGENTS.md;CLAUDE.md", got)
+	}
+}
+
+// TestHuhUI_AskMustRead_Empty drives AskMustRead with an empty input.
+func TestHuhUI_AskMustRead_Empty(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	ui := NewHuhUI(strings.NewReader("\n"), &bytes.Buffer{})
+	got, err := ui.AskMustRead(t.Context())
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != "" {
+		t.Fatalf("got = %q, want empty", got)
+	}
+}
+
+// TestMustReadForm_NotNil pins the constructor.
+func TestMustReadForm_NotNil(t *testing.T) {
+	var v string
+	f := MustReadForm(&v)
+	if f == nil {
+		t.Fatal("MustReadForm returned nil")
+	}
+}
+
+// TestEnsureMustRead_OpenError covers the store.Open error branch in
+// ensureMustRead by calling it directly with a settings path that is
+// a directory (bolt cannot open a directory).
+func TestEnsureMustRead_OpenError(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	path := store.DefaultPath()
+	if err := os.MkdirAll(store.DefaultDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureMustRead(t.Context(), &scriptedUI{}); err == nil {
+		t.Fatal("expected error when settings is a directory")
 	}
 }

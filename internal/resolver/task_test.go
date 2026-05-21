@@ -60,10 +60,7 @@ func seedResolverTask(t *testing.T, row tasks.Task, plan, req string) {
 			t.Fatalf("write requirements: %v", err)
 		}
 	}
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -260,5 +257,55 @@ func TestTaskStoreHelpers(t *testing.T) {
 	}
 	if id, ok := autoPickAllowed(rows, ReplanAllowed); !ok || id != "a" {
 		t.Fatalf("autoPickAllowed = %q, %v", id, ok)
+	}
+}
+
+// TestTaskByID_NonENOENT drives the GetTask non-ErrNotExist error
+// branch by chmod-zeroing the seeded task.toml so ReadFile returns
+// EACCES instead of the usual missing-file error.
+func TestTaskByID_NonENOENT(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	setupResolverProject(t)
+	seedResolverTask(t, tasks.Task{ID: "locked", Status: tasks.StatusPlanDone}, "plan", "")
+	tasksDir := tasks.DefaultDir()
+	tomlPath := filepath.Join(tasksDir, "locked", tasks.TaskFileName)
+	if err := os.Chmod(tomlPath, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tomlPath, 0o600) })
+	if _, err := TaskByID("locked"); err == nil {
+		t.Fatal("TaskByID should propagate non-ENOENT read error")
+	}
+}
+
+// TestListResolvableTasks_ListTasksError drives the ListTasks error
+// path inside listResolvableTasks (and therefore the
+// ResolveWorkPlan / ResolveVerifyTask err-propagation branches) by
+// chmod-zeroing the tasks directory so os.ReadDir returns EACCES.
+func TestListResolvableTasks_ListTasksError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file-mode permissions")
+	}
+	setupResolverProject(t)
+	tasksDir := tasks.DefaultDir()
+	if err := os.Chmod(tasksDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tasksDir, 0o755) })
+
+	if _, err := listResolvableTasks(); err == nil {
+		t.Fatal("listResolvableTasks should propagate ReadDir error")
+	}
+	if _, _, err := ResolveWorkPlan(
+		t.Context(), WorkPlanOptions{UI: &taskUI{}},
+	); err == nil {
+		t.Fatal("ResolveWorkPlan should propagate listResolvableTasks error")
+	}
+	if _, _, err := ResolveVerifyTask(
+		t.Context(), VerifyTaskOptions{UI: &taskUI{}},
+	); err == nil {
+		t.Fatal("ResolveVerifyTask should propagate listResolvableTasks error")
 	}
 }

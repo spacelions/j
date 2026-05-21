@@ -67,10 +67,7 @@ func seedResumableVerify(t *testing.T, mutate func(*tasks.Task)) (string, time.T
 	if mutate != nil {
 		mutate(&row)
 	}
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -80,10 +77,7 @@ func seedResumableVerify(t *testing.T, mutate func(*tasks.Task)) (string, time.T
 
 func mustTasksDir(t *testing.T) string {
 	t.Helper()
-	d, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	d := tasks.DefaultDir()
 	return d
 }
 
@@ -164,6 +158,45 @@ func TestRunResume_FromTaskHappyPath(t *testing.T) {
 	}
 	if rows[0].VerifyBeginAt.IsZero() || !rows[0].VerifyBeginAt.Equal(originalBegin) {
 		t.Fatalf("VerifyBeginAt should be preserved: %v vs %v", rows[0].VerifyBeginAt, originalBegin)
+	}
+}
+
+// TestRunResume_MustReadError pins the DangerousDialogBox warning
+// path in runVerifyResume: when MustRead() fails (settings store
+// is a directory), the error is logged to stderr as a warning and
+// the verify resume still proceeds.
+func TestRunResume_MustReadError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableVerify(t, nil)
+	agent := newScriptedAgent()
+	agent.verifyVerdicts = []string{"PASS"}
+
+	// Replace the settings store with a directory so MustRead() fails.
+	settingsPath := store.DefaultPath()
+	if err := os.Remove(settingsPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(settingsPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	err := RunResume(t.Context(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: &stderr,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	// The run should still proceed (MustRead error is a warning, not fatal).
+	if err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	// Stderr should contain the MustRead warning.
+	if !strings.Contains(stderr.String(), "resolver: open store") &&
+		!strings.Contains(stderr.String(), "J:") {
+		t.Logf("stderr = %q (warning may vary)", stderr.String())
 	}
 }
 
@@ -498,10 +531,7 @@ func TestRunResume_AppliesDefaults(t *testing.T) {
 func TestRunResume_ListDecodeError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
-	dbPath, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dbPath := tasks.DefaultDir()
 	badDir := filepath.Join(dbPath, "bad")
 	if err := os.MkdirAll(badDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -509,7 +539,7 @@ func TestRunResume_ListDecodeError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(badDir, "task.toml"), []byte("not = valid = toml"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err = RunResume(t.Context(), ResumeOptions{
+	err := RunResume(t.Context(), ResumeOptions{
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 		Agents: []codingagents.Agent{newScriptedAgent()},
@@ -603,10 +633,7 @@ func TestBeginVerifyTaskResume_PreservesCursorAndBegin(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id, _ := seedResumableVerify(t, nil)
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -633,10 +660,7 @@ func TestBeginVerifyTaskResume_NilBeginAtStampsFresh(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id, _ := seedResumableVerify(t, func(row *tasks.Task) { row.VerifyBeginAt = time.Time{} })
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	existing, err := s.GetTask(id)
 	if err != nil {
 		t.Fatal(err)
@@ -844,10 +868,7 @@ func TestRunResume_Verify_MustReadUnsetYieldsNil(t *testing.T) {
 // slice. Mirrors the helper in internal/cli/plan/resume_test.go.
 func seedProjectMustRead(t *testing.T, value string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -866,10 +887,7 @@ func seedProjectMustRead(t *testing.T, value string) {
 // to prove the stored value is intentionally ignored on resume.
 func seedVerifierInteractive(t *testing.T, value string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)

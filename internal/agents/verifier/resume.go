@@ -119,10 +119,7 @@ func runVerifyResume(
 	ctx context.Context, opts ResumeOptions,
 	t tasks.Task, agent codingagents.Agent,
 ) error {
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		return err
-	}
+	tasksDir := tasks.DefaultDir()
 	taskDir := filepath.Join(tasksDir, t.ID)
 	paths := tasks.TaskPaths{
 		Requirements: filepath.Join(taskDir, tasks.RequirementsFileName),

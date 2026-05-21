@@ -44,10 +44,7 @@ func TestMustRead(t *testing.T) {
 	if got != nil {
 		t.Fatalf("empty MustRead = %#v", got)
 	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)

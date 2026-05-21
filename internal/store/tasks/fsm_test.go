@@ -281,10 +281,7 @@ func TestExistingTest_StatusBackwardCompat(t *testing.T) {
 
 func TestTask_PullRequestURLRoundTrip(t *testing.T) {
 	// TOML omitempty: empty PR URL must not appear in output.
-	s, err := OpenDefault()
-	if err != nil {
-		t.Skipf("open: %v", err)
-	}
+	s := OpenDefault()
 	defer s.Close()
 	task := Task{
 		ID:             "01KRTEST",

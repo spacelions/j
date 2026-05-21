@@ -11,14 +11,8 @@ func TestDefaultPath_RootedInCwd(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
-	got, err := DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
-	wantDir, err := DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultDir: %v", err)
-	}
+	got := DefaultPath()
+	wantDir := DefaultDir()
 	resolvedDir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
@@ -43,34 +37,6 @@ func TestDefaultPath_RootedInCwd(t *testing.T) {
 
 // TestDefaultDir_CwdRemoved exercises the os.Getwd failure path by
 // chdir-ing into a temp dir, removing it, and clearing PWD so Go's
-// getwd helper has to fall back to the syscall (which fails). On
-// systems where the kernel reconstructs the path via cached inodes
-// (macOS, some FUSE setups) the syscall still succeeds, in which case
-// the test skips rather than failing - the same line is exercised in
-// CI on Linux where the failure is deterministic.
-func TestDefaultDir_CwdRemoved(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root may bypass relevant FS errors")
-	}
-	parent := t.TempDir()
-	gone := filepath.Join(parent, "gone")
-	if err := os.Mkdir(gone, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(gone)
-	t.Setenv("PWD", "")
-	if err := os.Remove(gone); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
-
-	if _, err := DefaultDir(); err == nil {
-		t.Skip("os.Getwd unexpectedly succeeded after cwd removal; cannot exercise failure path on this OS")
-	}
-	if _, err := DefaultPath(); err == nil {
-		t.Fatal("DefaultPath should propagate DefaultDir error")
-	}
-}
-
 func TestOpen_EmptyPath(t *testing.T) {
 	if _, err := Open(""); err == nil || !strings.Contains(err.Error(), "empty path") {
 		t.Fatalf("err = %v, want empty path error", err)
@@ -95,10 +61,7 @@ func TestOpen_OpensExistingPath(t *testing.T) {
 	if err := EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	path, err := DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := DefaultPath()
 	s, err := Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -136,10 +99,7 @@ func openInTemp(t *testing.T) *Store {
 	if err := EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	path, err := DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := DefaultPath()
 	s, err := Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -327,10 +287,7 @@ func TestStore_OperationsAfterClose(t *testing.T) {
 	if err := EnsureProject(); err != nil {
 		t.Fatal(err)
 	}
-	path, err := DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := DefaultPath()
 	s, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -744,30 +701,6 @@ func TestEnsureProject_MkdirJDirFails(t *testing.T) {
 	}
 }
 
-// TestEnsureProject_PropagatesCwdError exercises the DefaultDir
-// propagation branch by removing cwd out from under the helper.
-func TestEnsureProject_PropagatesCwdError(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root may bypass relevant FS errors")
-	}
-	parent := t.TempDir()
-	gone := filepath.Join(parent, "gone")
-	if err := os.Mkdir(gone, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(gone)
-	t.Setenv("PWD", "")
-	if err := os.Remove(gone); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
-	if _, err := DefaultDir(); err == nil {
-		t.Skip("os.Getwd unexpectedly succeeded")
-	}
-	if err := EnsureProject(); err == nil {
-		t.Fatal("EnsureProject should propagate DefaultDir error")
-	}
-}
-
 // TestProjectInitialized_FullLayoutIsTrue pins the happy path.
 func TestProjectInitialized_FullLayoutIsTrue(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -885,30 +818,6 @@ func TestProjectInitialized_StatError(t *testing.T) {
 	}
 }
 
-// TestProjectInitialized_PropagatesCwdError covers the DefaultDir
-// failure path.
-func TestProjectInitialized_PropagatesCwdError(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root may bypass relevant FS errors")
-	}
-	parent := t.TempDir()
-	gone := filepath.Join(parent, "gone")
-	if err := os.Mkdir(gone, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(gone)
-	t.Setenv("PWD", "")
-	if err := os.Remove(gone); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
-	if _, err := DefaultDir(); err == nil {
-		t.Skip("os.Getwd unexpectedly succeeded")
-	}
-	if _, err := ProjectInitialized(); err == nil {
-		t.Fatal("ProjectInitialized should propagate DefaultDir error")
-	}
-}
-
 // TestTouchBoltFile_BoltOpenFails exercises the bolt.Open failure
 // branch of the unexported touchBoltFile helper by pointing it at a
 // path whose parent directory does not exist. EnsureProject never
@@ -943,6 +852,25 @@ func TestTouchBoltFile_StatNonENOENT(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
 	if err := touchBoltFile(target); err == nil {
 		t.Fatal("expected stat error to propagate")
+	}
+}
+
+// TestTouchBoltFile_IsDir covers the info.IsDir() branch: when a
+// directory already exists at the target path, touchBoltFile returns
+// a wrapped "is a directory" error rather than trying to open it
+// with bolt (which would succeed and corrupt the dir entry).
+func TestTouchBoltFile_IsDir(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "settings")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := touchBoltFile(target)
+	if err == nil {
+		t.Fatal("expected error when path is a directory")
+	}
+	if !strings.Contains(err.Error(), "is a directory") {
+		t.Fatalf("err = %v, want 'is a directory'", err)
 	}
 }
 
@@ -996,11 +924,7 @@ func TestProjectName(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(sub)
-	got, err := ProjectName()
-	if err != nil {
-		t.Fatalf("ProjectName: %v", err)
-	}
-	if got != "myproj" {
+	if got := ProjectName(); got != "myproj" {
 		t.Fatalf("ProjectName = %q, want %q", got, "myproj")
 	}
 }

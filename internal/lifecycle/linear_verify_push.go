@@ -85,11 +85,7 @@ func pushFindings(stderr io.Writer, task tasks.Task, header string) {
 // readFindings loads `<tasksDir>/<id>/verifier_findings.md`. Either
 // step warning short-circuits the hook before any HTTP traffic.
 func readFindings(stderr io.Writer, id string) (string, bool) {
-	dir, err := tasks.DefaultDir()
-	if err != nil {
-		warnLinearVerify(stderr, "tasks dir: %s", err)
-		return "", false
-	}
+	dir := tasks.DefaultDir()
 	path := filepath.Join(dir, id, tasks.VerifierFindingsFileName)
 	data, err := os.ReadFile(path)
 	if err != nil {

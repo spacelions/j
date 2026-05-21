@@ -50,10 +50,7 @@ func TestTask_BeginWorkRestart_PreservesPlanPhase(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedPlanDoneTask(t, "seeded")
-	dbPath, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dbPath := tasks.DefaultDir()
 	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
@@ -189,10 +186,7 @@ func TestNewWorkTask_OpenFails(t *testing.T) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	path, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := tasks.DefaultDir()
 	if err := os.RemoveAll(path); err != nil {
 		t.Fatal(err)
 	}
@@ -256,10 +250,7 @@ func TestTask_BeginWorkRestart_MintsWorktreeWhenEmpty(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedPlanDoneTask(t, "hello world")
-	dbPath, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dbPath := tasks.DefaultDir()
 	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {
@@ -285,10 +276,7 @@ func TestTask_BeginWorkRestart_PreservesPreExistingWorktree(t *testing.T) {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
 	id := seedPlanDoneTask(t, "hello")
-	dbPath, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dbPath := tasks.DefaultDir()
 	s := tasks.Open(dbPath)
 	existing, err := s.GetTask(id)
 	if err != nil {

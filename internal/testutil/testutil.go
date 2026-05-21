@@ -34,10 +34,7 @@ func Init(t testTB) {
 // Use it directly when EnsureProject has already run.
 func SeedMustRead(t testTB) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("testutil: DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("testutil: Open: %v", err)

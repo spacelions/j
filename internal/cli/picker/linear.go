@@ -2,7 +2,6 @@ package picker
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -15,22 +14,17 @@ import (
 // (best-effort) and prompts for the personal Linear API token. A
 // best-effort failure to launch the browser is silent — the input
 // description echoes the URL so the user can paste it into a browser
-// manually. A user abort (Ctrl-C / Esc) returns ok=false with a nil
-// error so the caller exits the link flow cleanly.
+// manually. A user abort (Ctrl-C / Esc) propagates as an error so
+// the caller's CleanAbort guard converts it to a nil return.
 func (p *Picker) PromptLinearAPIKey(
 	ctx context.Context, openURL string,
 ) (string, bool, error) {
 	_ = linear.OpenURL(openURL)
 	var token string
-	err := p.run(ctx, huh.NewInput().
+	if err := p.run(ctx, huh.NewInput().
 		Title("Paste your Linear API key").
 		Description(fmt.Sprintf("Open %s to create one", openURL)).
-		EchoMode(huh.EchoModePassword).
-		Value(&token))
-	if errors.Is(err, huh.ErrUserAborted) {
-		return "", false, nil
-	}
-	if err != nil {
+		Value(&token)); err != nil {
 		return "", false, err
 	}
 	token = strings.TrimSpace(token)
@@ -41,8 +35,9 @@ func (p *Picker) PromptLinearAPIKey(
 }
 
 // PickLinearProject renders a single-select widget over projects and
-// returns the chosen entry. An abort (Ctrl-C / Esc) returns ok=false
-// with a nil error; an empty project list yields ok=false too so the
+// returns the chosen entry. An abort (Ctrl-C / Esc) propagates as an
+// error so the caller's CleanAbort guard converts it to a nil return;
+// an empty project list yields ok=false with no UI driven so the
 // caller can fall through to the identifier prompt without saving a
 // project.
 func (p *Picker) PickLinearProject(
@@ -62,19 +57,10 @@ func (p *Picker) PickLinearProject(
 		byLabel[label] = prj
 	}
 	chosen, err := p.choose(ctx, "Select default Linear project", labels)
-	if errors.Is(err, huh.ErrUserAborted) {
-		return linear.Project{}, false, nil
-	}
 	if err != nil {
 		return linear.Project{}, false, err
 	}
-	prj, ok := byLabel[chosen]
-	if !ok {
-		return linear.Project{}, false, fmt.Errorf(
-			"picker: unknown project selection %q", chosen,
-		)
-	}
-	return prj, true, nil
+	return byLabel[chosen], true, nil
 }
 
 // PickLinearIssue renders a single-select widget over the supplied
@@ -87,8 +73,8 @@ func (p *Picker) PickLinearProject(
 // caller (pickLinearSource) catches that earlier and surfaces a
 // clear error.
 //
-// Abort (Ctrl-C / Esc) returns ok=false with a nil error so the
-// caller exits the source flow cleanly without minting a task.
+// Abort (Ctrl-C / Esc) propagates as an error so the caller's
+// CleanAbort guard converts it to a nil return.
 func (p *Picker) PickLinearIssue(
 	ctx context.Context, issues []linear.Issue,
 ) (linear.Issue, bool, error) {
@@ -111,17 +97,8 @@ func (p *Picker) PickLinearIssue(
 		byLabel[label] = iss
 	}
 	chosen, err := p.choose(ctx, "Select a Linear issue", labels)
-	if errors.Is(err, huh.ErrUserAborted) {
-		return linear.Issue{}, false, nil
-	}
 	if err != nil {
 		return linear.Issue{}, false, err
 	}
-	iss, ok := byLabel[chosen]
-	if !ok {
-		return linear.Issue{}, false, fmt.Errorf(
-			"picker: unknown issue selection %q", chosen,
-		)
-	}
-	return iss, true, nil
+	return byLabel[chosen], true, nil
 }

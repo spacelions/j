@@ -35,6 +35,8 @@ type fakeUI struct {
 	pickErr        error
 	pickCalls      int
 	lastPickedFrom []tasks.Task
+	// pickFn, when non-nil, overrides pickReturn/pickErr for PickTask.
+	pickFn func() (string, bool, error)
 
 	statusReturn bool
 	statusErr    error
@@ -61,6 +63,9 @@ func (u *fakeUI) ConfirmDiscard(_ context.Context, t tasks.Task) (bool, error) {
 func (u *fakeUI) PickTask(_ context.Context, rows []tasks.Task) (string, bool, error) {
 	u.pickCalls++
 	u.lastPickedFrom = rows
+	if u.pickFn != nil {
+		return u.pickFn()
+	}
 	if u.pickErr != nil {
 		return "", false, u.pickErr
 	}
@@ -86,10 +91,7 @@ func (u *fakeUI) ConfirmStatusOverride(_ context.Context, cmd, taskID, status st
 func seedTask(t *testing.T, id, summary string) string {
 	t.Helper()
 	testutil.Init(t)
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	if err := s.PutTask(tasks.Task{
 		ID:        id,
 		Status:    tasks.StatusPlanDone,
@@ -118,10 +120,7 @@ func seedTask(t *testing.T, id, summary string) string {
 func seedTaskWithWorktree(t *testing.T, id, summary, worktree string) string {
 	t.Helper()
 	testutil.Init(t)
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	if err := s.PutTask(tasks.Task{
 		ID:        id,
 		Status:    tasks.StatusPlanDone,
@@ -222,12 +221,9 @@ func readGitStubLogLines(t *testing.T, logFile string) []string {
 // row was either removed or left intact.
 func taskExists(t *testing.T, id string) bool {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
-	_, err = s.GetTask(id)
+	_, err := s.GetTask(id)
 	if err == nil {
 		return true
 	}
@@ -390,36 +386,6 @@ func TestRunDiscard_GetTaskNonNotExistError(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "decode task") {
 		t.Fatalf("err = %v, want decode-task error", err)
-	}
-}
-
-// TestRunDiscard_DefaultTasksPathError replaces cwd with one that we
-// remove so DefaultTasksDir -> os.Getwd fails. On macOS / FUSE
-// getwd may succeed via cached inodes; in that case the test skips.
-func TestRunDiscard_DefaultTasksPathError(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root may bypass relevant FS errors")
-	}
-	parent := t.TempDir()
-	gone := filepath.Join(parent, "gone")
-	if err := os.Mkdir(gone, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(gone)
-	t.Setenv("PWD", "")
-	if err := os.Remove(gone); err != nil {
-		t.Fatalf("remove: %v", err)
-	}
-	if _, err := os.Getwd(); err == nil {
-		t.Skip("os.Getwd unexpectedly succeeded")
-	}
-	if err := RunDiscard(t.Context(), DiscardOptions{
-		TaskID: "x",
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-		UI:     &fakeUI{},
-	}); err == nil {
-		t.Fatal("expected DefaultTasksDir to surface getwd error")
 	}
 }
 

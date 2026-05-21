@@ -97,11 +97,7 @@ func resolveWorkByTaskID(id string) (WorkPlan, error) {
 	if err != nil {
 		return WorkPlan{}, err
 	}
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		return WorkPlan{}, err
-	}
-	taskDir := filepath.Join(tasksDir, id)
+	taskDir := taskDirFor(id)
 	paths := taskPaths(taskDir)
 	body, err := os.ReadFile(paths.Plan)
 	if err != nil {
@@ -148,10 +144,7 @@ func ResolvePlanTask(taskID string) (PlanTask, error) {
 	if err != nil {
 		return PlanTask{}, err
 	}
-	taskDir, err := taskDirFor(taskID)
-	if err != nil {
-		return PlanTask{}, err
-	}
+	taskDir := taskDirFor(taskID)
 	return PlanTask{
 		Task:    row,
 		TaskDir: taskDir,
@@ -192,10 +185,7 @@ func resolveVerifyByTaskID(id string) (VerifyTask, error) {
 	if err != nil {
 		return VerifyTask{}, err
 	}
-	taskDir, err := taskDirFor(id)
-	if err != nil {
-		return VerifyTask{}, err
-	}
+	taskDir := taskDirFor(id)
 	paths := taskPaths(taskDir)
 	if _, err := os.Stat(paths.Plan); err != nil {
 		return VerifyTask{}, fmt.Errorf("verify: read plan: %w", err)
@@ -212,10 +202,7 @@ func ListAllTasks() ([]tasks.Task, error) {
 }
 
 func TaskByID(id string) (tasks.Task, error) {
-	s, err := openTaskStore()
-	if err != nil {
-		return tasks.Task{}, err
-	}
+	s := openTaskStore()
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(id)
 	if err != nil {
@@ -228,10 +215,7 @@ func TaskByID(id string) (tasks.Task, error) {
 }
 
 func listResolvableTasks() ([]tasks.Task, error) {
-	s, err := openTaskStore()
-	if err != nil {
-		return nil, err
-	}
+	s := openTaskStore()
 	defer func() { _ = s.Close() }()
 	all, err := s.ListTasks()
 	if err != nil {
@@ -255,20 +239,16 @@ func autoPickAllowed(
 	return picked, count == 1
 }
 
-func openTaskStore() (*tasks.Store, error) {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return nil, fmt.Errorf("tasks: open store: %w", err)
-	}
-	return s, nil
+// openTaskStore is a thin alias for tasks.OpenDefault; the wrapper
+// exists so the resolver call sites read naturally next to the other
+// store helpers in this file.
+func openTaskStore() *tasks.Store {
+	return tasks.OpenDefault()
 }
 
-func taskDirFor(id string) (string, error) {
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(tasksDir, id), nil
+// taskDirFor returns `<tasksDir>/<id>`.
+func taskDirFor(id string) string {
+	return filepath.Join(tasks.DefaultDir(), id)
 }
 
 func taskPaths(taskDir string) tasks.TaskPaths {

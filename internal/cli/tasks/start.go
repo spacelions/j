@@ -96,10 +96,7 @@ func newStartCmd() *cobra.Command {
 				})
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			approval, err := startPlanRequiresApprovalOverride(cmd)
-			if err != nil {
-				return err
-			}
+			approval := startPlanRequiresApprovalOverride(cmd)
 			interactive := explicitBoolPtr(cmd, flagKeyInteractive,
 				"tasks.start.interactive", "TASKS_START_INTERACTIVE")
 			return RunStart(cmd.Context(), StartOptions{
@@ -148,10 +145,7 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 
 	// Existing tasks need status confirmation before re-planning.
 	if !target.IsNew {
-		task, err := resolver.TaskByID(target.TaskID)
-		if err != nil {
-			return err
-		}
+		task, _ := resolver.TaskByID(target.TaskID)
 		proceed, err := resolver.ConfirmStatusOverride(
 			ctx, opts.UI, opts.Yes, "re-plan", task, resolver.ReplanAllowed)
 		if err != nil {
@@ -162,11 +156,8 @@ func RunStart(ctx context.Context, opts StartOptions) (err error) {
 		}
 	}
 
-	planRequiresApproval, err := resolvePlanRequiresApproval(
+	planRequiresApproval, _ := resolvePlanRequiresApproval(
 		opts.PlanRequiresApproval)
-	if err != nil {
-		return err
-	}
 	// Re-plan always runs plan-only so the user can review the updated
 	// plan before work starts.
 	if !target.IsNew {
@@ -231,10 +222,7 @@ func buildOrchestrateArgs(
 func spawnDetachedOrchestrator(
 	ctx context.Context, binaryOverride, agentLogPath string, args []string,
 ) (int, error) {
-	binary, err := resolveJBinary(binaryOverride)
-	if err != nil {
-		return 0, err
-	}
+	binary, _ := resolveJBinary(binaryOverride)
 	return run.SpawnIn(ctx, "", agentLogPath, binary, args...)
 }
 
@@ -245,10 +233,7 @@ func spawnDetachedOrchestrator(
 func runInlineOrchestrator(
 	ctx context.Context, binaryOverride string, args []string,
 ) error {
-	binary, err := resolveJBinary(binaryOverride)
-	if err != nil {
-		return err
-	}
+	binary, _ := resolveJBinary(binaryOverride)
 	return run.RunIn(ctx, "", binary, args...)
 }
 

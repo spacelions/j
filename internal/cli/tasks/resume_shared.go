@@ -155,10 +155,7 @@ func waitLockReleased(
 func pickResumeTaskID(
 	ctx context.Context, opts resumeOptions, cfg resumePhaseConfig,
 ) (string, bool, error) {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return "", false, err
-	}
+	s := tasks.OpenDefault()
 	rows, err := s.ListTasks()
 	_ = s.Close()
 	if err != nil {
@@ -186,18 +183,12 @@ func filterTasksBySession(
 }
 
 func requireRequirementsOrLinear(t tasks.Task) error {
-	taskDir, err := tasks.EnsureDir(t.ID)
-	if err != nil {
-		return err
-	}
+	taskDir, _ := tasks.EnsureDir(t.ID)
 	if t.LinearIssue != "" {
 		return nil
 	}
 	reqPath := filepath.Join(taskDir, tasks.RequirementsFileName)
-	if _, err := os.Stat(reqPath); err != nil {
-		if !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
+	if _, err := os.Stat(reqPath); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf(
 			"cannot resume-plan task %s: requirements.md missing; "+
 				"run `j tasks start` first", t.ID)
@@ -206,35 +197,29 @@ func requireRequirementsOrLinear(t tasks.Task) error {
 }
 
 func requirePlan(t tasks.Task) error {
-	taskDir, err := tasks.EnsureDir(t.ID)
-	if err != nil {
-		return err
-	}
+	taskDir, _ := tasks.EnsureDir(t.ID)
 	planPath := filepath.Join(taskDir, tasks.PlanFileName)
 	if _, err := os.Stat(planPath); err != nil {
-		if !errors.Is(err, fs.ErrNotExist) {
-			return err
+		if errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf(
+				"cannot resume-work task %s: plan.md missing; "+
+					"run `j tasks resume-plan` first", t.ID)
 		}
-		return fmt.Errorf(
-			"cannot resume-work task %s: plan.md missing; "+
-				"run `j tasks resume-plan` first", t.ID)
+		return err
 	}
 	return nil
 }
 
 func requirePlanAndPriorWork(t tasks.Task) error {
-	taskDir, err := tasks.EnsureDir(t.ID)
-	if err != nil {
-		return err
-	}
+	taskDir, _ := tasks.EnsureDir(t.ID)
 	planPath := filepath.Join(taskDir, tasks.PlanFileName)
 	if _, err := os.Stat(planPath); err != nil {
-		if !errors.Is(err, fs.ErrNotExist) {
-			return err
+		if errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf(
+				"cannot resume-verify task %s: plan.md missing; "+
+					"run `j tasks resume-plan` first", t.ID)
 		}
-		return fmt.Errorf(
-			"cannot resume-verify task %s: plan.md missing; "+
-				"run `j tasks resume-plan` first", t.ID)
+		return err
 	}
 	if !t.WorkBeginAt.IsZero() {
 		return nil

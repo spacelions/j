@@ -22,10 +22,7 @@ func StartTargetFromExistingTask(
 	if err != nil {
 		return StartTarget{}, err
 	}
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		return StartTarget{}, err
-	}
+	tasksDir := tasks.DefaultDir()
 	reqPath := filepath.Join(tasksDir, taskID, tasks.RequirementsFileName)
 	if task.LinearIssue != "" {
 		body, _, fetchErr := FetchLinearBody(ctx, task.LinearIssue)
@@ -37,13 +34,9 @@ func StartTargetFromExistingTask(
 		}
 		return StartTarget{TaskID: task.ID, IsNew: false}, nil
 	}
-	_, statErr := os.Stat(reqPath)
-	if errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Stat(reqPath); errors.Is(statErr, os.ErrNotExist) {
 		return StartTarget{}, fmt.Errorf(
 			"task %q has no requirements.md; cannot re-plan", taskID)
-	}
-	if statErr != nil {
-		return StartTarget{}, statErr
 	}
 	return StartTarget{TaskID: task.ID, IsNew: false}, nil
 }

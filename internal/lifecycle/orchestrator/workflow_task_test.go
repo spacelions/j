@@ -17,6 +17,89 @@ import (
 	"github.com/spacelions/j/internal/testutil"
 )
 
+// TestRunForTaskPlanOnly_RunsPlannerOnly exercises the plan-only
+// entry point (used by resume-plan).
+func TestRunForTaskPlanOnly_RunsPlannerOnly(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := seedChainTask(t, "scripted")
+	stub := stubChain("scripted")
+
+	err := RunForTaskPlanOnly(
+		t.Context(),
+		testTaskContext(id, []codingagents.Agent{stub}),
+		PhaseConfig{},
+	)
+	if err != nil {
+		t.Fatalf("RunForTaskPlanOnly: %v", err)
+	}
+	if stub.planCalls.Load() != 1 {
+		t.Fatalf("plan calls = %d, want 1", stub.planCalls.Load())
+	}
+	if stub.workCalls.Load() != 0 || stub.verifyCalls.Load() != 0 {
+		t.Fatalf("worker/verifier should not run")
+	}
+}
+
+// TestRunForTaskWorkOnly_RunsWorkerOnly exercises the work-only
+// entry point.
+func TestRunForTaskWorkOnly_RunsWorkerOnly(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := seedChainTask(t, "scripted")
+	if err := flipToPlanDone(t, id); err != nil {
+		t.Fatal(err)
+	}
+	stub := stubChain("scripted")
+
+	err := RunForTaskWorkOnly(
+		t.Context(),
+		testTaskContext(id, []codingagents.Agent{stub}),
+		PhaseConfig{},
+	)
+	if err != nil {
+		t.Fatalf("RunForTaskWorkOnly: %v", err)
+	}
+	if stub.workCalls.Load() != 1 {
+		t.Fatalf("work calls = %d, want 1", stub.workCalls.Load())
+	}
+	if stub.planCalls.Load() != 0 || stub.verifyCalls.Load() != 0 {
+		t.Fatalf("planner/verifier should not run")
+	}
+}
+
+// TestRunForTaskWithGate_DefaultsToFull pins that RunForTaskWithGate
+// with an empty Phase uses RunPhaseFull.
+func TestRunForTaskWithGate_DefaultsToFull(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	id := seedChainTask(t, "scripted")
+	stub := stubChain("scripted")
+	stub.verdict = "VERDICT: PASS"
+
+	err := RunForTaskWithGate(
+		t.Context(),
+		testTaskContext(id, []codingagents.Agent{stub}),
+		PhaseConfig{}, // empty phase → defaults to RunPhaseFull
+	)
+	if err != nil {
+		t.Fatalf("RunForTaskWithGate: %v", err)
+	}
+}
+
+// TestTaskSubAgents_UnknownPhase pins the default fallthrough for an
+// unrecognised RunPhase value.
+func TestTaskSubAgents_UnknownPhase(t *testing.T) {
+	agents := []codingagents.Agent{stubChain("scripted")}
+	_, err := taskSubAgents(
+		testTaskContext("task-id", agents),
+		PhaseConfig{Phase: RunPhase("bad-phase")},
+	)
+	if err == nil || !strings.Contains(err.Error(), "unknown phase") {
+		t.Fatalf("err = %v, want unknown phase", err)
+	}
+}
+
 // TestRunForTask_RequiresTaskID pins the empty-id guard.
 func TestRunForTask_RequiresTaskID(t *testing.T) {
 	err := RunForTask(t.Context(), store.TaskConfig{}, "", []codingagents.Agent{stubChain("scripted")}, io.Discard, PhaseOverrides{})
@@ -510,10 +593,7 @@ func TestFinaliseVerifyFailIfStuck_PutErrorWarns(t *testing.T) {
 	row.Status = tasks.StatusVerifying
 	writeChainTaskRow(t, row)
 
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	taskDir := filepath.Join(tasksDir, id)
 	if err := os.Chmod(taskDir, 0o500); err != nil {
 		t.Fatalf("chmod: %v", err)
@@ -559,10 +639,7 @@ func seedChainTask(t *testing.T, tool string) string {
 
 func flipToPlanDone(t *testing.T, id string) error {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return err
-	}
+	s := tasks.OpenDefault()
 	defer s.Close()
 	task, err := s.GetTask(id)
 	if err != nil {
@@ -574,10 +651,7 @@ func flipToPlanDone(t *testing.T, id string) error {
 
 func flipToWorkDone(t *testing.T, id string) error {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return err
-	}
+	s := tasks.OpenDefault()
 	defer s.Close()
 	task, err := s.GetTask(id)
 	if err != nil {
@@ -593,10 +667,7 @@ func flipToWorkDone(t *testing.T, id string) error {
 
 func seedAgentBucketWithInteractive(t *testing.T, bucket, tool, model, interactive string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -618,10 +689,7 @@ func seedAgentBucketWithInteractive(t *testing.T, bucket, tool, model, interacti
 
 func writeChainTaskRow(t *testing.T, row tasks.Task) {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -630,10 +698,7 @@ func writeChainTaskRow(t *testing.T, row tasks.Task) {
 
 func readChainTaskRow(t *testing.T, id string) tasks.Task {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("DefaultTasksDir: %v", err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {
@@ -722,13 +787,86 @@ func testTaskContext(id string, agents []codingagents.Agent) TaskContext {
 	}
 }
 
+// noAgentCtx returns a TaskContext with no Agents, used to make
+// constructor calls (verifier.New, worker.New, planner.New) return errors.
+func noAgentCtx() TaskContext {
+	return TaskContext{
+		MaxIterations: 1,
+		TaskID:        "task-id",
+		Agents:        nil,
+		Stderr:        io.Discard,
+	}
+}
+
+// TestTaskSubAgents_VerifyOnlyNoAgentsError covers the verifier.New error
+// branch by providing an empty Agents slice.
+func TestTaskSubAgents_VerifyOnlyNoAgentsError(t *testing.T) {
+	_, err := taskSubAgents(noAgentCtx(), PhaseConfig{Phase: RunPhaseVerifyOnly})
+	if err == nil || !strings.Contains(err.Error(), "workflow: verifier") {
+		t.Fatalf("err = %v, want verifier error", err)
+	}
+}
+
+// TestTaskSubAgents_WorkOnlyNoAgentsError covers the newWorker error branch.
+func TestTaskSubAgents_WorkOnlyNoAgentsError(t *testing.T) {
+	_, err := taskSubAgents(noAgentCtx(), PhaseConfig{Phase: RunPhaseWorkOnly})
+	if err == nil {
+		t.Fatal("expected worker error with no agents")
+	}
+}
+
+// TestTaskSubAgents_FromWorkNoAgentsError covers the newWorkVerify error
+// branch when agents is empty.
+func TestTaskSubAgents_FromWorkNoAgentsError(t *testing.T) {
+	_, err := taskSubAgents(noAgentCtx(), PhaseConfig{Phase: RunPhaseFromWork})
+	if err == nil {
+		t.Fatal("expected newWorkVerify error with no agents")
+	}
+}
+
+// TestTaskSubAgents_PlanOnlyNoAgentsError covers the planner.New error branch.
+func TestTaskSubAgents_PlanOnlyNoAgentsError(t *testing.T) {
+	_, err := taskSubAgents(noAgentCtx(), PhaseConfig{Phase: RunPhasePlanOnly})
+	if err == nil || !strings.Contains(err.Error(), "workflow: planner") {
+		t.Fatalf("err = %v, want planner error", err)
+	}
+}
+
+// TestTaskSubAgents_FullNoAgentsNewWorkVerifyError covers the newWorkVerify
+// error in the PlanOnly/Full branch when agents is empty (no approval gate).
+func TestTaskSubAgents_FullNoAgentsNewWorkVerifyError(t *testing.T) {
+	_, err := taskSubAgents(noAgentCtx(), PhaseConfig{Phase: RunPhaseFull})
+	if err == nil || !strings.Contains(err.Error(), "workflow: planner") {
+		t.Fatalf("err = %v, want planner error (planner.New fails first)", err)
+	}
+}
+
+// TestNewWorkVerify_WorkerError covers the newWorker error branch in newWorkVerify.
+func TestNewWorkVerify_WorkerError(t *testing.T) {
+	_, _, err := newWorkVerify(noAgentCtx(), false, nil)
+	if err == nil || !strings.Contains(err.Error(), "workflow: worker") {
+		t.Fatalf("err = %v, want worker error", err)
+	}
+}
+
+// TestRunForTask_TaskSubAgentsError covers the taskSubAgents error branch
+// in runForTask by passing an unknown phase.
+func TestRunForTask_TaskSubAgentsError(t *testing.T) {
+	agents := []codingagents.Agent{stubChain("scripted")}
+	err := runForTask(
+		context.Background(),
+		TaskContext{TaskID: "t", Agents: agents, Stderr: io.Discard},
+		PhaseConfig{Phase: RunPhase("invalid-phase")},
+	)
+	if err == nil || !strings.Contains(err.Error(), "unknown phase") {
+		t.Fatalf("err = %v, want unknown phase error", err)
+	}
+}
+
 // seedPlanApprovalDisabled writes plan_requires_approval=false.
 func seedPlanApprovalDisabled(t *testing.T) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open settings: %v", err)

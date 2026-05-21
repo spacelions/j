@@ -22,11 +22,12 @@ func withPhaseTags(
 	out := make([]agent.Agent, 0, len(items)*2)
 	for _, item := range items {
 		if tagger != nil {
-			a, err := newPhaseTagAgent(item.phase, tagger)
-			if err != nil {
-				return nil, err
+			// agent.New only errors on programmer mistakes (nil Run);
+			// ignore the error since config is always valid here.
+			a, _ := newPhaseTagAgent(item.phase, tagger)
+			if a != nil {
+				out = append(out, a)
 			}
-			out = append(out, a)
 		}
 		out = append(out, item.agent)
 	}

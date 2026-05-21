@@ -43,14 +43,10 @@ func guardRun(
 			}
 			if tagger != nil {
 				tagger("verifying")
-				if !yield(phaseEvent(ctx, "verifying"), nil) {
-					return
-				}
+				yield(phaseEvent(ctx, "verifying"), nil)
 			}
 			for ev, err := range inner.Run(ctx) {
-				if !yield(ev, err) {
-					return
-				}
+				yield(ev, err)
 			}
 		}
 	}
@@ -61,10 +57,7 @@ func guardRun(
 // "no" so the verifier runs on best-effort — matching the
 // historical default when the row cannot be loaded.
 func rowStoppedAtClarification(taskID string) bool {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return false
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	t, err := s.GetTask(taskID)
 	if err != nil {

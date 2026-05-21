@@ -419,10 +419,7 @@ func TestRun_MustReadErrorWarnsAndContinues(t *testing.T) {
 		t.Fatalf("Open selection store: %v", err)
 	}
 	t.Cleanup(func() { _ = selectionStore.Close() })
-	settingsPath, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	settingsPath := store.DefaultPath()
 	if err := os.Remove(settingsPath); err != nil {
 		t.Fatalf("Remove settings: %v", err)
 	}

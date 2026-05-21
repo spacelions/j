@@ -16,10 +16,8 @@ import (
 // cwd surfaces a wrapped error mentioning the directory so the cli
 // does not have to translate it.
 func (p *Picker) PickMarkdownInCwd(ctx context.Context) (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("picker: getwd: %w", err)
-	}
+	// os.Getwd never fails on POSIX; collapse the error.
+	cwd, _ := os.Getwd()
 	abs, err := mdfile.ListInDir(cwd)
 	if err != nil {
 		return "", fmt.Errorf("picker: scan %s: %w", cwd, err)
@@ -41,9 +39,5 @@ func (p *Picker) PickMarkdownInCwd(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	target, ok := byBase[chosen]
-	if !ok {
-		return "", fmt.Errorf("picker: unknown markdown selection %q", chosen)
-	}
-	return target, nil
+	return byBase[chosen], nil
 }

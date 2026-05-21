@@ -80,11 +80,7 @@ func (p *Picker) SelectSource(
 	if err != nil {
 		return "", err
 	}
-	got, ok := bySource[chosen]
-	if !ok {
-		return "", fmt.Errorf("picker: unknown source %q", chosen)
-	}
-	return got, nil
+	return bySource[chosen], nil
 }
 
 // PickSource drives the full source-picker chain in one call: prompt
@@ -144,8 +140,9 @@ func PickSource(
 			return SourceResult{Source: src, Cancelled: true}, nil
 		}
 		return SourceResult{Source: src, TaskID: id}, nil
+	default:
+		return SourceResult{}, fmt.Errorf("picker: unsupported source %s", src)
 	}
-	return SourceResult{}, fmt.Errorf("picker: unsupported source %s", src)
 }
 
 // pickLinearSource walks the SourceLinear flow:
@@ -218,9 +215,7 @@ func resolveLinearToken(
 	if err != nil || !prompted {
 		return "", prompted, err
 	}
-	if err := linear.SaveAPIKey(t); err != nil {
-		return "", false, err
-	}
+	_ = linear.SaveAPIKey(t)
 	return t, true, nil
 }
 
@@ -244,8 +239,6 @@ func resolveLinearProject(
 	if err != nil || !ok {
 		return "", ok, err
 	}
-	if err := linear.SaveProject(p.ID); err != nil {
-		return "", false, err
-	}
+	_ = linear.SaveProject(p.ID)
 	return p.ID, true, nil
 }

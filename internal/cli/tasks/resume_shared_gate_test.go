@@ -127,3 +127,26 @@ func TestResumeArtifactGateFailures(t *testing.T) {
 		t.Fatalf("verify worker err = %v", err)
 	}
 }
+
+// TestRequirePlanAndPriorWork_StatError covers the non-ErrNotExist stat path:
+// making the task directory chmod 000 makes stat(plan.md) return EACCES.
+func TestRequirePlanAndPriorWork_StatError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	setupContinueEnv(t)
+	id := testutil.SeedFullTask(t, nil)
+	taskDir, err := storetasks.EnsureDir(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := readTaskFromBolt(t, id)
+	if err := os.Chmod(taskDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(taskDir, 0o755) })
+	if err := requirePlanAndPriorWork(row); err == nil ||
+		strings.Contains(err.Error(), "plan.md missing") {
+		t.Fatalf("requirePlanAndPriorWork err = %v, want raw stat error", err)
+	}
+}

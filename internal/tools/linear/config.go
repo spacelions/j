@@ -38,10 +38,7 @@ func SaveProject(id string) error {
 }
 
 func loadKey(key string) (string, error) {
-	path, err := store.DefaultPath()
-	if err != nil {
-		return "", err
-	}
+	path := store.DefaultPath()
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", nil
@@ -53,28 +50,18 @@ func loadKey(key string) (string, error) {
 		return "", fmt.Errorf("linear: open settings: %w", err)
 	}
 	defer func() { _ = s.Close() }()
-	v, _, err := s.Get(store.BucketLinear, key)
-	if err != nil {
-		return "", fmt.Errorf("linear: read %s.%s: %w", store.BucketLinear, key, err)
-	}
+	v, _, _ := s.Get(store.BucketLinear, key)
 	return v, nil
 }
 
 func saveKey(key, value string) error {
-	path, err := store.DefaultPath()
-	if err != nil {
-		return err
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		return fmt.Errorf("linear: open settings: %w", err)
 	}
 	defer func() { _ = s.Close() }()
-	if err := s.EnsureBucket(store.BucketLinear); err != nil {
-		return fmt.Errorf("linear: ensure bucket: %w", err)
-	}
-	if err := s.Put(store.BucketLinear, key, value); err != nil {
-		return fmt.Errorf("linear: put %s.%s: %w", store.BucketLinear, key, err)
-	}
+	_ = s.EnsureBucket(store.BucketLinear)
+	_ = s.Put(store.BucketLinear, key, value)
 	return nil
 }

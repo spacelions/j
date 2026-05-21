@@ -23,10 +23,7 @@ var knownSectionOrder = []string{
 }
 
 func runList(cmd *cobra.Command) error {
-	path, err := store.DefaultPath()
-	if err != nil {
-		return err
-	}
+	path := store.DefaultPath()
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			uitheme.NormalFprintln(cmd.OutOrStdout(), "J: no settings stored")
@@ -36,10 +33,7 @@ func runList(cmd *cobra.Command) error {
 	}
 
 	return withOpenStore(func(_ string, s *store.Store) error {
-		sections, known, err := collectSections(s)
-		if err != nil {
-			return err
-		}
+		sections, known, _ := collectSections(s)
 		return printSections(cmd.OutOrStdout(), sections, known, s)
 	})
 }

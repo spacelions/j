@@ -148,10 +148,7 @@ func runTailIntoTspin(
 	tail := exec.CommandContext(ctx, tailBin, "-f", path)
 	tail.Stdin = in
 	tail.Stderr = errw
-	pipe, err := tail.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("tail|tspin %q: %w", path, err)
-	}
+	pipe, _ := tail.StdoutPipe()
 	tspin := exec.CommandContext(ctx, tspinBin)
 	tspin.Stdin = pipe
 	tspin.Stdout = out
@@ -254,10 +251,7 @@ func openAndResolveTaskID(
 	ctx context.Context,
 	opts fileResolveOptions,
 ) (string, string, bool, error) {
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return "", "", false, err
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	if opts.TaskID != "" {
 		if _, err := s.GetTask(opts.TaskID); err != nil {

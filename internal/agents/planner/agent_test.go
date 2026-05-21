@@ -506,6 +506,41 @@ func TestExecute_WaitForCompletionError(t *testing.T) {
 	}
 }
 
+// TestExecute_NewResumeIDError covers the DangerousDialogBox warning
+// path in beginPlanSession when NewResumeID returns an error.
+// The plan run continues with an empty resume ID.
+func TestExecute_NewResumeIDError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := testutil.WriteFile(taskDir+"/requirements.md", "x"); err != nil {
+		t.Fatalf("write requirements: %v", err)
+	}
+	testutil.SeedTaskRow(t, tasks.Task{
+		ID:      taskID,
+		Status:  tasks.StatusPlanning,
+		Summary: "task",
+	})
+	stub := newScriptedPlanAgent("scripted")
+	stub.newResumeIDErr = errors.New("NewResumeID boom")
+	var stderr bytes.Buffer
+	if err := Execute(t.Context(), Options{
+		TaskID: taskID,
+		Agent:  stub,
+		Model:  "m1",
+		Stderr: &stderr,
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "NewResumeID boom") {
+		t.Fatalf("stderr = %q, want NewResumeID error warning", stderr.String())
+	}
+}
+
 func TestExecute_NilStderrAndMustReadWarning(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
@@ -525,10 +560,7 @@ func TestExecute_NilStderrAndMustReadWarning(t *testing.T) {
 		Status:  tasks.StatusPlanning,
 		Summary: "task",
 	})
-	settingsPath, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	settingsPath := store.DefaultPath()
 	if err := os.Remove(settingsPath); err != nil {
 		t.Fatalf("Remove settings: %v", err)
 	}
@@ -543,6 +575,23 @@ func TestExecute_NilStderrAndMustReadWarning(t *testing.T) {
 		Model:  "m1",
 	}); err != nil {
 		t.Fatalf("Execute: %v", err)
+	}
+}
+
+// TestExecute_ResolvePlanTaskError covers the ResolvePlanTask error branch in
+// Execute: an unknown task ID causes ResolvePlanTask to fail.
+func TestExecute_ResolvePlanTaskError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+	stub := newScriptedPlanAgent("scripted")
+	err := Execute(t.Context(), Options{
+		TaskID: "ghost-id",
+		Agent:  stub,
+		Model:  "m1",
+		Stderr: io.Discard,
+	})
+	if err == nil {
+		t.Fatal("Execute with unknown task id: expected error, got nil")
 	}
 }
 
@@ -658,6 +707,7 @@ type scriptedPlanAgent struct {
 	planErr            error
 	lastReq            codingagents.PlanRequest
 	panicOnNewResumeID bool
+	newResumeIDErr     error
 }
 
 func newScriptedPlanAgent(name string) *scriptedPlanAgent {
@@ -674,6 +724,9 @@ func (a *scriptedPlanAgent) CheckLogin(context.Context) error             { retu
 func (a *scriptedPlanAgent) NewResumeID(context.Context) (string, error) {
 	if a.panicOnNewResumeID {
 		panic("NewResumeID must not be called on resume runs")
+	}
+	if a.newResumeIDErr != nil {
+		return "", a.newResumeIDErr
 	}
 	return a.mintedID, nil
 }
@@ -712,10 +765,7 @@ func (*scriptedPlanAgent) FormatLog(line []byte) []byte { return line }
 
 func seedPlanApproval(t *testing.T, v bool) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)

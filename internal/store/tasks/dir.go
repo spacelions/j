@@ -64,18 +64,10 @@ func Open(tasksDir string) *Store {
 	return &Store{tasksDir: tasksDir}
 }
 
-// OpenDefault is the common shorthand for DefaultDir + Open. The
-// returned Store is rooted at `<cwd>/.j/tasks`; the only failure mode
-// is DefaultDir's (missing cwd / store root). Per-method file ops
-// surface fs.ErrNotExist when the dir itself is missing — callers
-// that care about that case should branch on those errors rather
-// than stat-checking the dir up front.
-func OpenDefault() (*Store, error) {
-	dir, err := DefaultDir()
-	if err != nil {
-		return nil, err
-	}
-	return Open(dir), nil
+// OpenDefault is the common shorthand for DefaultDir + Open.
+// The returned Store is rooted at `<cwd>/.j/tasks`.
+func OpenDefault() *Store {
+	return Open(DefaultDir())
 }
 
 // Dir returns the absolute path the Store is rooted at. Useful for
@@ -93,12 +85,8 @@ func (s *Store) Close() error { return nil }
 // directory (`<cwd>/.j/tasks`). The directory holds one subdirectory
 // per task; each holds `requirements.md`, `plan.md`, `agent.log`,
 // and `task.toml` (the row metadata).
-func DefaultDir() (string, error) {
-	dir, err := store.DefaultDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, DirName), nil
+func DefaultDir() string {
+	return filepath.Join(store.DefaultDir(), DirName)
 }
 
 // EnsureDir creates `<cwd>/.j/tasks/<id>/` (with mkdir -p) and
@@ -110,10 +98,7 @@ func EnsureDir(id string) (string, error) {
 	if id == "" {
 		return "", errors.New("task: empty task id")
 	}
-	tasksDir, err := DefaultDir()
-	if err != nil {
-		return "", err
-	}
+	tasksDir := DefaultDir()
 	if _, err := os.Stat(tasksDir); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", fmt.Errorf("task: %q missing; run `j init`: %w", tasksDir, err)
@@ -138,10 +123,7 @@ func RemoveDir(id string) error {
 	if id == "" {
 		return errors.New("task: empty task id")
 	}
-	tasksDir, err := DefaultDir()
-	if err != nil {
-		return err
-	}
+	tasksDir := DefaultDir()
 	if _, err := os.Stat(tasksDir); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("task: %q missing; run `j init`: %w", tasksDir, err)

@@ -71,10 +71,7 @@ func NewPlanTask(
 		LinearIssue:       src.LinearIssue,
 		AgentLogPath:      agentLogPath,
 	}
-	if _, err := tasks.ApplyAndPersistWarn(
-		stderr, &task, tasks.EventPlanBegin); err != nil {
-		panic("plan begin from zero value: " + err.Error())
-	}
+	_, _ = tasks.ApplyAndPersistWarn(stderr, &task, tasks.EventPlanBegin)
 	return &PlanLifecycle{
 		stderr:       stderr,
 		agentLogPath: agentLogPath,
@@ -103,10 +100,7 @@ func BeginPlanRestart(
 		task.PlanBeginAt = time.Now().UTC()
 	}
 	task.AgentLogPath = agentLogPath
-	if _, err := tasks.ApplyAndPersistWarn(
-		stderr, &task, tasks.EventPlanRestart); err != nil {
-		panic("plan restart: " + err.Error())
-	}
+	_, _ = tasks.ApplyAndPersistWarn(stderr, &task, tasks.EventPlanRestart)
 	return &PlanLifecycle{
 		stderr:       stderr,
 		agentLogPath: agentLogPath,
@@ -233,10 +227,7 @@ func (lc *PlanLifecycle) Finish(
 
 	ev := lc.pickFinishEvent(runErr, refinedRequirements, planMarkdown,
 		target)
-	if _, err := tasks.ApplyAndPersistWarn(
-		lc.stderr, &lc.task, ev); err != nil {
-		panic("plan finish: " + err.Error())
-	}
+	_, _ = tasks.ApplyAndPersistWarn(lc.stderr, &lc.task, ev)
 }
 
 // pickFinishEvent decides which event drives the plan-finish

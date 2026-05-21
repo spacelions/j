@@ -6,6 +6,22 @@ import (
 	"testing"
 )
 
+// TestWriteFileAtomic_HappyPath verifies a successful round-trip.
+func TestWriteFileAtomic_HappyPath(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "out.toml")
+	if err := writeFileAtomic(target, []byte("x = 1"), 0o644); err != nil {
+		t.Fatalf("writeFileAtomic: %v", err)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != "x = 1" {
+		t.Fatalf("data = %q, want x = 1", data)
+	}
+}
+
 // TestWriteFileAtomic_CreateTempError makes the target directory read-only so
 // os.CreateTemp fails, covering the createTemp error branch.
 func TestWriteFileAtomic_CreateTempError(t *testing.T) {
@@ -23,36 +39,18 @@ func TestWriteFileAtomic_CreateTempError(t *testing.T) {
 	}
 }
 
-// TestWriteFileAtomic_RenameError writes the temp file successfully but makes
-// the target directory read-only before the rename so os.Rename fails.
+// TestWriteFileAtomic_RenameError makes the target path a directory so
+// os.Rename(tmpFile, dir) fails with EISDIR, exercising the rename-error
+// and cleanup branches.
 func TestWriteFileAtomic_RenameError(t *testing.T) {
-	if os.Getuid() == 0 {
-		t.Skip("root bypasses file permissions")
-	}
 	dir := t.TempDir()
-
-	// Pre-create the file so its dir is writable during temp-file creation.
-	// Then lock the directory after the write but before the rename by
-	// wrapping in a subdir that we can chmod.
-	sub := filepath.Join(dir, "sub")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
+	// target is a directory: rename a regular temp file over it fails.
+	target := filepath.Join(dir, "out.toml")
+	if err := os.Mkdir(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(sub, "out.toml")
-
-	// First write succeeds (sub is writable).
-	if err := writeFileAtomic(target, []byte("x = 1"), 0o644); err != nil {
-		t.Fatalf("first write: %v", err)
-	}
-
-	// Now lock sub so rename will fail on the second write.
-	if err := os.Chmod(sub, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(sub, 0o755) })
-
 	err := writeFileAtomic(target, []byte("x = 2"), 0o644)
 	if err == nil {
-		t.Fatal("writeFileAtomic should fail when rename is blocked")
+		t.Fatal("writeFileAtomic should fail when rename target is a dir")
 	}
 }

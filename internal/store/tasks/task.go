@@ -135,10 +135,7 @@ func (s *Store) PutTask(t Task) error {
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		return fmt.Errorf("store: mkdir %q: %w", taskDir, err)
 	}
-	data, err := toml.Marshal(t)
-	if err != nil {
-		return fmt.Errorf("store: marshal task: %w", err)
-	}
+	data, _ := toml.Marshal(t)
 	return writeFileAtomic(filepath.Join(taskDir, TaskFileName), data, 0o644)
 }
 

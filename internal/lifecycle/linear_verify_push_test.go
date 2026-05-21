@@ -277,10 +277,7 @@ func TestLinearVerifyPush_LoadAPIKeyError_Warns(t *testing.T) {
 	// Replace the settings file with a directory so store.Open
 	// fails — exercises the LoadAPIKey-returns-error branch
 	// without exposing a test-only seam in the linear package.
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	if err := os.RemoveAll(path); err != nil {
 		t.Fatalf("RemoveAll: %v", err)
 	}

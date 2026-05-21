@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -103,12 +104,10 @@ func (o DiscardOptions) withDefaults() DiscardOptions {
 // The store is closed via defer so every return path releases the
 // bbolt file lock before the next `j tasks` invocation tries to
 // re-acquire it.
-func RunDiscard(ctx context.Context, opts DiscardOptions) error {
+func RunDiscard(ctx context.Context, opts DiscardOptions) (err error) {
+	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		return err
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 
 	if opts.TaskID == "" {
@@ -141,9 +140,7 @@ func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 		}
 	}
 	removeTaskWorktree(ctx, opts.Stderr, t)
-	if err := s.DeleteTask(opts.TaskID); err != nil {
-		return fmt.Errorf("tasks discard: %w", err)
-	}
+	_ = s.DeleteTask(opts.TaskID)
 	if err := tasks.RemoveDir(opts.TaskID); err != nil {
 		return fmt.Errorf("tasks discard: %w", err)
 	}

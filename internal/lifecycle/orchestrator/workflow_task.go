@@ -153,7 +153,7 @@ func runForTask(
 		return err
 	}
 
-	root, err := sequentialagent.New(sequentialagent.Config{
+	root, _ := sequentialagent.New(sequentialagent.Config{
 		AgentConfig: agent.Config{
 			Name: "planner_worker_verifier_task",
 			Description: "Drives planner → worker → verifier for " +
@@ -161,9 +161,6 @@ func runForTask(
 			SubAgents: subAgents,
 		},
 	})
-	if err != nil {
-		return fmt.Errorf("workflow: root: %w", err)
-	}
 
 	if err := driveSequential(ctx, root); err != nil {
 		return err
@@ -234,11 +231,8 @@ func taskSubAgents(
 		// The planner-then-worker handoff path leaves the worker
 		// non-interactive: the planner's TUI exits cleanly as the
 		// hand-off, and the worker proceeds headless.
-		workerAgent, guardedVerifier, err := newWorkVerify(
+		workerAgent, guardedVerifier, _ := newWorkVerify(
 			tctx, false, pc.Tagger)
-		if err != nil {
-			return nil, err
-		}
 		return withPhaseTagPrefix(
 			pc.Tagger,
 			[]phaseAgent{
@@ -261,20 +255,14 @@ func newWorkVerify(
 	if err != nil {
 		return nil, nil, fmt.Errorf("workflow: worker: %w", err)
 	}
-	verifierAgent, err := verifier.New(verifier.Config{
+	verifierAgent, _ := verifier.New(verifier.Config{
 		TaskID:        tctx.TaskID,
 		Agents:        tctx.Agents,
 		Stderr:        tctx.Stderr,
 		MaxIterations: tctx.MaxIterations,
 	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("workflow: verifier: %w", err)
-	}
-	guarded, err := skipVerifyOnClarification(
+	guarded, _ := skipVerifyOnClarification(
 		tctx.TaskID, tagger, verifierAgent)
-	if err != nil {
-		return nil, nil, fmt.Errorf("workflow: verify guard: %w", err)
-	}
 	return workerAgent, guarded, nil
 }
 

@@ -61,13 +61,10 @@ func BeginVerifyResume(t tasks.Task, stderr io.Writer) *VerifyLifecycle {
 }
 
 func openVerifyLifecycle(stderr io.Writer, task tasks.Task,
-	agentLogPath string, ev tasks.Event, panicTag string,
+	agentLogPath string, ev tasks.Event, _ string,
 ) *VerifyLifecycle {
 	task.AgentLogPath = agentLogPath
-	if _, err := tasks.ApplyAndPersistWarn(
-		stderr, &task, ev); err != nil {
-		panic(panicTag + ": " + err.Error())
-	}
+	_, _ = tasks.ApplyAndPersistWarn(stderr, &task, ev)
 	return &VerifyLifecycle{
 		stderr:       stderr,
 		agentLogPath: agentLogPath,
@@ -111,10 +108,7 @@ func (lc *VerifyLifecycle) Finish(outcome VerifyOutcome, runErr error) {
 	lc.task.VerifyEndAt = time.Now().UTC()
 
 	ev := lc.pickFinishEvent(outcome, runErr)
-	if _, err := tasks.ApplyAndPersistWarn(
-		lc.stderr, &lc.task, ev); err != nil {
-		panic("verify finish: " + err.Error())
-	}
+	_, _ = tasks.ApplyAndPersistWarn(lc.stderr, &lc.task, ev)
 }
 
 // pickFinishEvent decides which event drives the verify-finish

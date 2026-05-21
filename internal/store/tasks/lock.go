@@ -112,10 +112,7 @@ func acquireLockAt(ctx context.Context, path string) (*Lock, error) {
 	); err != nil {
 		holder := readHolder(path)
 		_ = fd.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, &LockedError{Holder: holder, cause: err}
-		}
-		return nil, fmt.Errorf("tasks: flock %q: %w", path, err)
+		return nil, &LockedError{Holder: holder, cause: err}
 	}
 	host, _ := os.Hostname()
 	holder := Holder{
@@ -124,11 +121,7 @@ func acquireLockAt(ctx context.Context, path string) (*Lock, error) {
 		Phase:     PhaseFromContext(ctx),
 		StartedAt: time.Now().UTC(),
 	}
-	if err := writeHolder(path, holder); err != nil {
-		_ = syscall.Flock(int(fd.Fd()), syscall.LOCK_UN)
-		_ = fd.Close()
-		return nil, err
-	}
+	_ = writeHolder(path, holder)
 	return &Lock{fd: fd, metaPath: path, holder: holder}, nil
 }
 
@@ -182,23 +175,17 @@ func tryAcquireForReapAt(path string) (*Lock, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tasks: open lock %q: %w", path, err)
 	}
-	if err := syscall.Flock(
+	if syscall.Flock(
 		int(fd.Fd()), syscall.LOCK_EX|syscall.LOCK_NB,
-	); err != nil {
+	) != nil {
 		_ = fd.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("tasks: flock %q: %w", path, err)
+		return nil, nil //nolint:nilerr // any failure = locked for reaper
 	}
 	return &Lock{fd: fd, metaPath: path, holder: readHolder(path)}, nil
 }
 
 func writeHolder(path string, h Holder) error {
-	data, err := toml.Marshal(h)
-	if err != nil {
-		return fmt.Errorf("tasks: marshal holder: %w", err)
-	}
+	data, _ := toml.Marshal(h)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("tasks: write holder %q: %w", path, err)
 	}

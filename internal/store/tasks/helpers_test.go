@@ -24,10 +24,7 @@ func openTaskStore(t *testing.T) *Store {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("store.EnsureProject: %v", err)
 	}
-	dir, err := DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultDir: %v", err)
-	}
+	dir := DefaultDir()
 	s := Open(dir)
 	t.Cleanup(func() { _ = s.Close() })
 	return s
@@ -61,10 +58,7 @@ func equal(a, b []string) bool {
 // from a real read error.
 func listAllTasks(t *testing.T) []Task {
 	t.Helper()
-	dir, err := DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultDir: %v", err)
-	}
+	dir := DefaultDir()
 	if _, statErr := os.Stat(dir); errors.Is(statErr, os.ErrNotExist) {
 		return nil
 	}

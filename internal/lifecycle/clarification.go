@@ -7,9 +7,6 @@ import (
 )
 
 func taskClarificationPresent(taskID string) bool {
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		return false
-	}
+	tasksDir := tasks.DefaultDir()
 	return tasks.ClarificationFileExists(filepath.Join(tasksDir, taskID))
 }

@@ -25,3 +25,19 @@ func TestPickLinearProject_Empty(t *testing.T) {
 		t.Fatalf("prj = %+v", prj)
 	}
 }
+
+// TestPickLinearIssue_Empty pins the empty-list short-circuit for
+// PickLinearIssue, mirroring the contract of PickLinearProject_Empty.
+func TestPickLinearIssue_Empty(t *testing.T) {
+	p := New(strings.NewReader(""), io.Discard)
+	iss, ok, err := p.PickLinearIssue(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if ok {
+		t.Fatalf("ok = true; want false for empty list")
+	}
+	if iss.Identifier != "" {
+		t.Fatalf("iss = %+v", iss)
+	}
+}

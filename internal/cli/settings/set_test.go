@@ -88,10 +88,7 @@ func TestSet_Table(t *testing.T) {
 			if parseErr != nil {
 				t.Fatalf("parseKeyValue helper failed: %v", parseErr)
 			}
-			path, err := store.DefaultPath()
-			if err != nil {
-				t.Fatalf("DefaultPath: %v", err)
-			}
+			path := store.DefaultPath()
 			s, err := store.Open(path)
 			if err != nil {
 				t.Fatalf("Open: %v", err)
@@ -123,10 +120,7 @@ func TestSet_RoleBucketPrompt(t *testing.T) {
 			t.Fatalf("Execute %q: %v", arg, err)
 		}
 	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -158,10 +152,7 @@ func TestSet_PostInitWritesValue(t *testing.T) {
 	if !strings.Contains(out, "set mybucket.key = hello") {
 		t.Fatalf("stdout = %q", out)
 	}
-	p, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	p := store.DefaultPath()
 	if _, err := os.Stat(p); err != nil {
 		t.Fatalf("db not present: %v", err)
 	}
@@ -184,10 +175,7 @@ func TestSet_MultiplePairs(t *testing.T) {
 	if first > second {
 		t.Fatalf("stdout = %q, want first pair printed before second", out)
 	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -223,10 +211,7 @@ func TestSet_MultipleParseErrorBeforeWrites(t *testing.T) {
 	if !strings.Contains(err.Error(), "missing '='") {
 		t.Fatalf("err = %v, want missing '='", err)
 	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -257,10 +242,7 @@ func TestSet_Linear_APIKey_RoundTripBothForms(t *testing.T) {
 			if _, err := runSetArgs(t, "set", arg); err != nil {
 				t.Fatalf("Execute: %v", err)
 			}
-			path, err := store.DefaultPath()
-			if err != nil {
-				t.Fatal(err)
-			}
+			path := store.DefaultPath()
 			s, err := store.Open(path)
 			if err != nil {
 				t.Fatal(err)
@@ -289,10 +271,7 @@ func TestSet_Linear_ProjectIsIdentityMapped(t *testing.T) {
 	if _, err := runSetArgs(t, "set", "linear.project=p123"); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -315,10 +294,7 @@ func TestSet_DuplicateKeyLastWins(t *testing.T) {
 	if _, err := runSetArgs(t, "set", "a.b=1", "a.b=2"); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -366,10 +342,7 @@ func runSetDirect(t *testing.T, args ...string) (string, error) {
 // layout reaches runSet instead of being healed by pre-flight.
 func TestSet_OpenFails(t *testing.T) {
 	t.Chdir(t.TempDir())
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}

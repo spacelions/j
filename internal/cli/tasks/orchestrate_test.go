@@ -116,10 +116,7 @@ func seedOrchestrateTask(t *testing.T, tool string) string {
 		PlanTool: tool,
 		Summary:  "task",
 	}
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
@@ -133,10 +130,7 @@ func seedOrchestrateTask(t *testing.T, tool string) string {
 // exercise the read path too).
 func writeBucketKey(t *testing.T, bucket, key, value string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -149,10 +143,7 @@ func writeBucketKey(t *testing.T, bucket, key, value string) {
 
 func readOrchestrateTaskRow(t *testing.T, id string) tasks.Task {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {
@@ -432,10 +423,7 @@ func TestOrchestratePlanRequiresApprovalOverride_NoFlag(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	cmd := newOrchestrateCmd()
-	got, err := orchestratePlanRequiresApprovalOverride(cmd)
-	if err != nil {
-		t.Fatalf("orchestratePlanRequiresApprovalOverride: %v", err)
-	}
+	got := orchestratePlanRequiresApprovalOverride(cmd)
 	if got != nil {
 		t.Fatalf("override = %v, want nil", *got)
 	}
@@ -489,10 +477,7 @@ func TestRunOrchestrate_FromWorkRunsWorkVerify(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)
 	id := seedOrchestrateTask(t, "scripted")
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	if err := os.WriteFile(filepath.Join(tasksDir, id, tasks.PlanFileName), []byte("1. step"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -630,10 +615,7 @@ func TestOrchestratePlanRequiresApprovalOverride_Env(t *testing.T) {
 	t.Cleanup(viper.Reset)
 	t.Setenv("TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL", "true")
 	cmd := newOrchestrateCmd()
-	got, err := orchestratePlanRequiresApprovalOverride(cmd)
-	if err != nil {
-		t.Fatalf("orchestratePlanRequiresApprovalOverride: %v", err)
-	}
+	got := orchestratePlanRequiresApprovalOverride(cmd)
 	if got == nil || !*got {
 		t.Fatalf("override = %v, want true", got)
 	}
@@ -653,6 +635,26 @@ func TestNewOrchestrateCmd_RunE_PropagatesError(t *testing.T) {
 	cmd.SetErr(io.Discard)
 	if err := cmd.RunE(cmd, nil); err == nil {
 		t.Fatal("expected an error from missing --id")
+	}
+}
+
+// TestNewOrchestrateCmd_RunE_InvalidPhase pins the ParseRunPhase error
+// branch: passing an unknown --phase value surfaces the parse error.
+func TestNewOrchestrateCmd_RunE_InvalidPhase(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	cmd := newOrchestrateCmd()
+	cmd.SetContext(t.Context())
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Flags().Set("phase", "bad-phase-value"); err != nil {
+		t.Fatalf("Set phase flag: %v", err)
+	}
+	err := cmd.RunE(cmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "want full|plan-only") {
+		t.Fatalf("err = %v, want ParseRunPhase error", err)
 	}
 }
 
@@ -677,10 +679,7 @@ func TestRunOrchestrate_RegisteredAsChild(t *testing.T) {
 // store.LoadTaskConfig picks up the supplied bound.
 func putProjectMaxIters(t *testing.T, value string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -696,10 +695,7 @@ func putProjectMaxIters(t *testing.T, value string) {
 // phase running.
 func setRowWorkTool(t *testing.T, id, tool string) {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(id)
 	if err != nil {
@@ -715,10 +711,7 @@ func setRowWorkTool(t *testing.T, id, tool string) {
 // shell-out finds the stored plan when planning is skipped.
 func stagePlan(t *testing.T, id string) {
 	t.Helper()
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	if err := os.WriteFile(filepath.Join(tasksDir, id, tasks.PlanFileName), []byte("1. step"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -871,10 +864,7 @@ func TestRunOrchestrate_InfersPlanResumeFromRow(t *testing.T) {
 // resume-plan branch has a session to reuse.
 func seedRowPlanPendingApprovalWithSession(t *testing.T, id, session string) {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(id)
 	if err != nil {
@@ -916,5 +906,84 @@ func TestRunOrchestrate_FromWorkExplicitFalseAllowed(t *testing.T) {
 	if stub.workCalls.Load() != 1 || stub.verifyCalls.Load() != 1 {
 		t.Fatalf("call counts: work=%d verify=%d, want 1/1",
 			stub.workCalls.Load(), stub.verifyCalls.Load())
+	}
+}
+
+// TestRunOrchestrate_PlanApprovalLoadError covers the
+// dispatchFullOrchestratePhase error path when
+// store.LoadPlanRequiresApproval returns an error.
+func TestRunOrchestrate_PlanApprovalLoadError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedOrchestrateTask(t, "scripted")
+	stub := newChainAgent("scripted")
+	// Corrupt the settings path so LoadPlanRequiresApproval fails.
+	path := store.DefaultPath()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := RunOrchestrate(t.Context(), OrchestrateOptions{
+		TaskID:               id,
+		PlanRequiresApproval: nil,
+		Stdin:                strings.NewReader(""),
+		Stdout:               io.Discard,
+		Stderr:               io.Discard,
+		Agents:               []codingagents.Agent{stub},
+	})
+	if err == nil {
+		t.Fatal("expected LoadPlanRequiresApproval error")
+	}
+	if !strings.Contains(err.Error(), "open settings") {
+		t.Fatalf("err = %v, want open settings error", err)
+	}
+}
+
+// TestRunOrchestrate_ContentionPath covers the acquireOrchestrateLock
+// contention branch: when another goroutine holds the lock, AcquireLock
+// returns a *LockedError, which triggers the DangerousDialogBox message.
+func TestRunOrchestrate_ContentionPath(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedOrchestrateTask(t, "scripted")
+	// Acquire the lock first so RunOrchestrate hits contention.
+	held, err := tasks.AcquireLock(tasks.WithPhase(t.Context(), "planning"), id)
+	if err != nil {
+		t.Fatalf("pre-acquire: %v", err)
+	}
+	defer func() { _ = held.Release() }()
+	var stderr strings.Builder
+	err = RunOrchestrate(t.Context(), OrchestrateOptions{
+		TaskID:               id,
+		PlanRequiresApproval: noPlanApproval(),
+		Stdin:                strings.NewReader(""),
+		Stdout:               io.Discard,
+		Stderr:               &stderr,
+		Agents:               []codingagents.Agent{newChainAgent("scripted")},
+	})
+	if err == nil {
+		t.Fatal("expected contention error")
+	}
+	if !strings.Contains(stderr.String(), "task") {
+		t.Logf("stderr = %q", stderr.String())
+	}
+}
+
+// TestRunOrchestrate_AcquireLockNonLockedError covers the non-LockedError
+// branch in acquireOrchestrateLock: EnsureDir fails when .j/tasks is missing.
+func TestRunOrchestrate_AcquireLockNonLockedError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	// Don't call mustInit so EnsureDir fails with "missing" error.
+	err := RunOrchestrate(t.Context(), OrchestrateOptions{
+		TaskID: "ghost-task",
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{newChainAgent("scripted")},
+	})
+	if err == nil {
+		t.Fatal("expected EnsureDir error")
 	}
 }

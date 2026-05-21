@@ -88,10 +88,7 @@ func TestResolve_EmptyValueFallsBack(t *testing.T) {
 func TestResolve_OpenFailsFallsBack(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	dbPath, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	dbPath := store.DefaultPath()
 	if err := os.MkdirAll(dbPath, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -125,10 +122,7 @@ func putPromptOverride(t *testing.T, bucket, path string) {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	dbPath, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	dbPath := store.DefaultPath()
 	s, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -156,10 +150,7 @@ func seedPromptOverride(t *testing.T, bucket, body string) string {
 	if err := store.EnsureProject(); err != nil {
 		t.Fatalf("EnsureProject: %v", err)
 	}
-	dbPath, err := store.DefaultPath()
-	if err != nil {
-		t.Fatalf("DefaultPath: %v", err)
-	}
+	dbPath := store.DefaultPath()
 	s, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("Open: %v", err)

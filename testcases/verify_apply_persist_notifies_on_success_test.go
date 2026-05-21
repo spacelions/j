@@ -32,10 +32,7 @@ func TestVerify_ApplyAndPersist_NotifiesAndStampsDoneAt(t *testing.T) {
 	if _, err := tasks.EnsureDir(id); err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatalf("OpenDefault: %v", err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 
 	row := tasks.Task{ID: id, Status: tasks.StatusVerifying}

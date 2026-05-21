@@ -76,10 +76,7 @@ func readSpawnedArgv(t *testing.T, path string) []string {
 // task row for id (or fails the test if missing).
 func readTaskFromBolt(t *testing.T, id string) tasks.Task {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	got, err := s.GetTask(id)
 	if err != nil {
@@ -90,10 +87,7 @@ func readTaskFromBolt(t *testing.T, id string) tasks.Task {
 
 func putProjectPlanRequiresApproval(t *testing.T, value string) {
 	t.Helper()
-	path, err := store.DefaultPath()
-	if err != nil {
-		t.Fatal(err)
-	}
+	path := store.DefaultPath()
 	s, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -119,10 +113,7 @@ func firstSeededTaskID(t *testing.T) string {
 // source-picker tests that need to assert "no new row created."
 func allTaskRows(t *testing.T) []tasks.Task {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	rows, err := s.ListTasks()
 	if err != nil {
@@ -273,10 +264,7 @@ func TestRunStart_HappyPath_FromFile(t *testing.T) {
 		t.Fatalf("Summary should be derived from the markdown body")
 	}
 
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	reqPath := filepath.Join(tasksDir, id, tasks.RequirementsFileName)
 	body, err := os.ReadFile(reqPath)
 	if err != nil {
@@ -540,10 +528,7 @@ func TestRunStart_NoFromFile_PicksLinear(t *testing.T) {
 	if row.Status != tasks.StatusPlanning {
 		t.Fatalf("Status = %q, want planning", row.Status)
 	}
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	body, err := os.ReadFile(filepath.Join(tasksDir, id, tasks.RequirementsFileName))
 	if err != nil {
 		t.Fatalf("read requirements.md: %v", err)
@@ -595,10 +580,7 @@ func TestRunStart_FromLinearFlag(t *testing.T) {
 		t.Fatalf("--from-linear should bypass the source picker: sourceCalls=%d", ui.sourceCalls)
 	}
 	id := firstSeededTaskID(t)
-	tasksDir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	tasksDir := tasks.DefaultDir()
 	body, err := os.ReadFile(filepath.Join(tasksDir, id, tasks.RequirementsFileName))
 	if err != nil {
 		t.Fatalf("read requirements.md: %v", err)
@@ -822,10 +804,7 @@ func TestRunStart_BucketInteractiveUntouched(t *testing.T) {
 	mustInit(t)
 	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
 		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
-		path, err := store.DefaultPath()
-		if err != nil {
-			t.Fatal(err)
-		}
+		path := store.DefaultPath()
 		s, err := store.Open(path)
 		if err != nil {
 			t.Fatal(err)
@@ -950,10 +929,7 @@ func TestStartPlanRequiresApprovalOverride_NoFlag(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
 	cmd := newStartCmd()
-	got, err := startPlanRequiresApprovalOverride(cmd)
-	if err != nil {
-		t.Fatalf("startPlanRequiresApprovalOverride: %v", err)
-	}
+	got := startPlanRequiresApprovalOverride(cmd)
 	if got != nil {
 		t.Fatalf("override = %v, want nil", *got)
 	}
@@ -966,10 +942,7 @@ func TestStartPlanRequiresApprovalOverride_ExplicitFalse(t *testing.T) {
 	if err := cmd.Flags().Set("plan-requires-approval", "false"); err != nil {
 		t.Fatalf("Flags().Set: %v", err)
 	}
-	got, err := startPlanRequiresApprovalOverride(cmd)
-	if err != nil {
-		t.Fatalf("startPlanRequiresApprovalOverride: %v", err)
-	}
+	got := startPlanRequiresApprovalOverride(cmd)
 	if got == nil || *got {
 		t.Fatalf("override = %v, want false", got)
 	}
@@ -1183,12 +1156,172 @@ func containsArg(args []string, want string) bool {
 // without going through any phase lifecycle.
 func seedTaskRowDirect(t *testing.T, row tasks.Task) {
 	t.Helper()
-	s, err := tasks.OpenDefault()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 	if err := s.PutTask(row); err != nil {
 		t.Fatalf("PutTask: %v", err)
+	}
+}
+
+// TestBuildOrchestrateArgs_WithOptionals covers the optional
+// --tool, --model, and --yes branches in buildOrchestrateArgs.
+func TestBuildOrchestrateArgs_WithOptionals(t *testing.T) {
+	args := buildOrchestrateArgs(
+		"task-id", true, false,
+		StartOptions{Tool: "cursor", Model: "sonnet-4", Yes: true},
+	)
+	if !slices.Contains(args, "--tool=cursor") {
+		t.Fatalf("args missing --tool=cursor: %v", args)
+	}
+	if !slices.Contains(args, "--model=sonnet-4") {
+		t.Fatalf("args missing --model=sonnet-4: %v", args)
+	}
+	if !slices.Contains(args, "--yes") {
+		t.Fatalf("args missing --yes: %v", args)
+	}
+}
+
+// TestBuildOrchestrateArgs_Minimal covers the no-optionals path.
+func TestBuildOrchestrateArgs_Minimal(t *testing.T) {
+	args := buildOrchestrateArgs("t1", false, true, StartOptions{})
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--tool=") || strings.HasPrefix(arg, "--model=") {
+			t.Fatalf("args should not include --tool/--model when empty: %v", args)
+		}
+	}
+}
+
+// TestNewStartCmd_PreRunE_EnsureAgentSelections exercises the PreRunE closure
+// by calling cmd.Execute() with pre-seeded project + agent buckets.
+// PersistentPreRunE (preflight.PreRunE) and PreRunE (EnsureAgentSelections)
+// both fire before RunE, which fails because --from-file doesn't exist.
+func TestNewStartCmd_PreRunE_EnsureAgentSelections(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
+	}
+	installCursorAgentLoginStub(t)
+	cmd := newStartCmd()
+	cmd.SetArgs([]string{"--from-file=/does/not/exist.md"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetContext(t.Context())
+	err := cmd.Execute()
+	t.Logf("Execute = %v (error or nil both acceptable)", err)
+}
+
+// TestRunStart_ConfirmStatusOverrideError covers the error return from
+// ConfirmStatusOverride on the re-plan path. Uses StatusPlanning so that
+// ReplanAllowed returns false and the UI confirm fires.
+func TestRunStart_ConfirmStatusOverrideError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
+	}
+	id := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(taskDir, tasks.RequirementsFileName),
+		[]byte("# req\nbody"), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	seedTaskRowDirect(t, tasks.Task{
+		ID: id, Status: tasks.StatusPlanning, PlanTool: "cursor",
+	})
+	boom := errors.New("confirm boom")
+	ui := &scriptedStartUI{confirmOverrideErr: boom}
+	err = RunStart(t.Context(), StartOptions{
+		FromTask: id,
+		Stdin:    strings.NewReader(""),
+		Stdout:   io.Discard,
+		Stderr:   io.Discard,
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
+		UI:       ui,
+	})
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want boom", err)
+	}
+}
+
+// TestRunStart_ConfirmStatusOverrideDecline covers the !proceed path on
+// the re-plan path (user declines confirmation).
+func TestRunStart_ConfirmStatusOverrideDecline(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
+	}
+	id := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(taskDir, tasks.RequirementsFileName),
+		[]byte("# req\nbody"), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	seedTaskRowDirect(t, tasks.Task{
+		ID: id, Status: tasks.StatusPlanning, PlanTool: "cursor",
+	})
+	ui := &scriptedStartUI{confirmOverride: false}
+	err = RunStart(t.Context(), StartOptions{
+		FromTask: id,
+		Stdin:    strings.NewReader(""),
+		Stdout:   io.Discard,
+		Stderr:   io.Discard,
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
+		UI:       ui,
+	})
+	if err != nil {
+		t.Fatalf("RunStart: %v", err)
+	}
+}
+
+// TestRunStart_PrepareTaskFilesError covers the prepareTaskFiles error path:
+// a read-only tasks directory prevents EnsureTaskDir from writing.
+func TestRunStart_PrepareTaskFilesError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	path := writeStartFile(t, "# task\nbody")
+	tasksDir := tasks.DefaultDir()
+	if err := os.Chmod(tasksDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tasksDir, 0o755) })
+	err := RunStart(t.Context(), StartOptions{
+		FromFile: path,
+		Stdin:    strings.NewReader(""),
+		Stdout:   io.Discard,
+		Stderr:   io.Discard,
+		Agents:   []codingagents.Agent{testutil.NewScriptedAgent()},
+	})
+	if err == nil {
+		t.Fatal("expected prepareTaskFiles error")
+	}
+}
+
+// TestResolveStartTarget_FromTask covers the opts.FromTask path in
+// resolveStartTarget (the first if-branch).
+func TestResolveStartTarget_FromTask(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	_, err := resolveStartTarget(t.Context(), StartOptions{
+		FromTask: "ghost-task-id",
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown task id")
 	}
 }

@@ -22,10 +22,7 @@ func TestLinearPush_Replan_AppendsNewComment(t *testing.T) {
 
 	firePlanDone(id, "ENG-1", tasks.EventPlanDone)
 
-	dir, err := tasks.DefaultDir()
-	if err != nil {
-		t.Fatalf("DefaultDir: %v", err)
-	}
+	dir := tasks.DefaultDir()
 	writeArtefact(t,
 		filepath.Join(dir, id, tasks.RequirementsFileName), "req v2")
 	writeArtefact(t,

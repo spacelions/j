@@ -131,11 +131,11 @@ func NormalForkDialog(w io.Writer, subject string, pid int, absLogPath string) {
 // from the project root). When os.Getwd or filepath.Rel fail, or
 // when the relative form escapes cwd via a leading `..`, the
 // absolute path is returned instead so the line stays unambiguous.
+// A failed Getwd flows through as an empty cwd; filepath.Rel("", abs)
+// then errors and the function falls back to absLogPath via the
+// Rel-error branch, so no separate Getwd-error return is needed.
 func displayLogPath(absLogPath string) string {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return absLogPath
-	}
+	cwd, _ := os.Getwd()
 	rel, err := filepath.Rel(cwd, absLogPath)
 	if err != nil {
 		return absLogPath

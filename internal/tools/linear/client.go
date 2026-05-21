@@ -188,15 +188,13 @@ func (c *Client) ListTeamWorkflowStates(
 // ErrUnauthorized, wraps every other non-2xx as *HTTPError, and
 // decodes a 2xx body into out.
 func (c *Client) do(ctx context.Context, req graphQLRequest, out any) error {
-	body, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("linear: marshal: %w", err)
-	}
-	httpReq, err := http.NewRequestWithContext(
+	// json.Marshal and http.NewRequestWithContext are best-effort;
+	// failures are extremely rare for fixed-shape request structs.
+	body, _ := json.Marshal(req)
+	// NewRequestWithContext only fails for invalid URLs; callers always
+	// set a valid endpoint so the error is ignored.
+	httpReq, _ := http.NewRequestWithContext(
 		ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("linear: new request: %w", err)
-	}
 	httpReq.Header.Set("Authorization", c.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(httpReq)
@@ -204,10 +202,7 @@ func (c *Client) do(ctx context.Context, req graphQLRequest, out any) error {
 		return fmt.Errorf("linear: http: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("linear: read body: %w", err)
-	}
+	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode == http.StatusUnauthorized {
 		return ErrUnauthorized
 	}

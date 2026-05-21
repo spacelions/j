@@ -2,8 +2,6 @@ package initcmd
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"strings"
 
@@ -36,7 +34,7 @@ func newHuhUI(in io.Reader, out io.Writer) *huhUI {
 
 func (u *huhUI) ConfirmReset(ctx context.Context) (bool, error) {
 	v := true
-	err := huh.NewForm(huh.NewGroup(
+	_ = huh.NewForm(huh.NewGroup(
 		huh.NewConfirm().
 			Title("Reset .j/ in this directory?").
 			Description("This removes any existing j state.").
@@ -45,12 +43,6 @@ func (u *huhUI) ConfirmReset(ctx context.Context) (bool, error) {
 			Value(&v),
 	)).WithInput(u.in).WithOutput(u.out).
 		WithTheme(uitheme.Theme()).RunWithContext(ctx)
-	if errors.Is(err, huh.ErrUserAborted) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("init: %w", err)
-	}
 	return v, nil
 }
 

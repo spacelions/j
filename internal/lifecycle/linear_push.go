@@ -79,11 +79,7 @@ func linearPushHook(tr tasks.Transition, task tasks.Task) {
 // (zero-byte files) round-trip as-is — Linear accepts an empty
 // description / comment body and the upstream issue is no worse off.
 func readPlanArtefacts(id string) (req, plan string, ok bool) {
-	dir, err := tasks.DefaultDir()
-	if err != nil {
-		warnLinear("tasks dir: %s", err)
-		return "", "", false
-	}
+	dir := tasks.DefaultDir()
 	taskDir := filepath.Join(dir, id)
 	reqBytes, err := os.ReadFile(
 		filepath.Join(taskDir, tasks.RequirementsFileName))
