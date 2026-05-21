@@ -855,6 +855,25 @@ func TestTouchBoltFile_StatNonENOENT(t *testing.T) {
 	}
 }
 
+// TestTouchBoltFile_IsDir covers the info.IsDir() branch: when a
+// directory already exists at the target path, touchBoltFile returns
+// a wrapped "is a directory" error rather than trying to open it
+// with bolt (which would succeed and corrupt the dir entry).
+func TestTouchBoltFile_IsDir(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "settings")
+	if err := os.Mkdir(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := touchBoltFile(target)
+	if err == nil {
+		t.Fatal("expected error when path is a directory")
+	}
+	if !strings.Contains(err.Error(), "is a directory") {
+		t.Fatalf("err = %v, want 'is a directory'", err)
+	}
+}
+
 // TestEnsureProject_MkdirTasksDirFails forces the os.MkdirAll error
 // branch for the tasks subdirectory by making .j read-only after it
 // exists but before EnsureProject runs. The existing .j dir survives

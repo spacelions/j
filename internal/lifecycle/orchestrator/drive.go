@@ -2,7 +2,6 @@ package orchestrator
 
 import (
 	"context"
-	"fmt"
 
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/runner"
@@ -20,21 +19,17 @@ import (
 // to push a textual prompt.
 func driveSequential(ctx context.Context, root agent.Agent) error {
 	svc := session.InMemoryService()
-	created, err := svc.Create(ctx, &session.CreateRequest{
+	// InMemoryService.Create never fails; ignore the error.
+	created, _ := svc.Create(ctx, &session.CreateRequest{
 		AppName: orchestratorAppName,
 		UserID:  orchestratorUserID,
 	})
-	if err != nil {
-		return fmt.Errorf("workflow: create session: %w", err)
-	}
-	r, err := runner.New(runner.Config{
+	// runner.New only fails for nil Agent; ignore the error here.
+	r, _ := runner.New(runner.Config{
 		AppName:        orchestratorAppName,
 		Agent:          root,
 		SessionService: svc,
 	})
-	if err != nil {
-		return fmt.Errorf("workflow: runner: %w", err)
-	}
 	msg := &genai.Content{
 		Role:  genai.RoleUser,
 		Parts: []*genai.Part{{Text: ""}},

@@ -48,7 +48,7 @@ func New() *cobra.Command {
 		PersistentPreRunE: preflight.PreRunE,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			simple, _ := cmd.Flags().GetBool(simpleFlag)
-			return listTasks(cmd.OutOrStdout(), simple)
+			return listTasks(cmd.InOrStdin(), cmd.OutOrStdout(), simple)
 		},
 	}
 	cmd.Flags().BoolP(simpleFlag, "s", false,
@@ -80,7 +80,7 @@ func New() *cobra.Command {
 // rows reflect fresh state. Reaping mutates the store (best-effort:
 // PutTask errors are warned on stderr) and is opt-in per row: only
 // entries whose per-task lock file is no longer held are touched.
-func listTasks(stdout io.Writer, simple bool) error {
+func listTasks(stdin io.Reader, stdout io.Writer, simple bool) error {
 	s := tasks.OpenDefault()
 	defer func() { _ = s.Close() }()
 
@@ -98,7 +98,7 @@ func listTasks(stdout io.Writer, simple bool) error {
 		return writeTasks(stdout, rows)
 	}
 	if isTerminal(stdout) {
-		return uitheme.RunTasksWatch(os.Stdin, stdout, storeReloader(s, s.Dir()))
+		return uitheme.RunTasksWatch(stdin, stdout, storeReloader(s, s.Dir()))
 	}
 	return uitheme.WriteTaskTable(stdout, rows, time.Now(), terminalWidth(stdout))
 }
@@ -114,10 +114,7 @@ func terminalWidth(w io.Writer) int {
 	if !ok {
 		return 0
 	}
-	cols, _, err := term.GetSize(int(f.Fd()))
-	if err != nil {
-		return 0
-	}
+	cols, _, _ := term.GetSize(int(f.Fd()))
 	return cols
 }
 

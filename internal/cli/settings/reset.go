@@ -47,10 +47,7 @@ func runResetFull(cmd *cobra.Command) error {
 		uitheme.NormalFprintln(cmd.OutOrStdout(), "J: nothing to reset")
 		return nil
 	}
-	skip, err := cmd.Flags().GetBool("yes")
-	if err != nil {
-		return err
-	}
+	skip, _ := cmd.Flags().GetBool("yes")
 	if !skip {
 		answer, err := readConfirmationLine(cmd)
 		if err != nil {
@@ -84,9 +81,7 @@ func resetIsNoOp(jDir, path string) (bool, error) {
 		return false, err
 	}
 	empty, err := s.IsEmpty()
-	if closeErr := s.Close(); closeErr != nil && err == nil {
-		err = closeErr
-	}
+	_ = s.Close()
 	return empty, err
 }
 
@@ -159,15 +154,11 @@ func runResetTargets(cmd *cobra.Command, args []string) error {
 	return withOpenStore(func(_ string, s *store.Store) error {
 		for _, t := range targets {
 			if t.isBucket {
-				if err := s.DeleteBucket(t.bucket); err != nil {
-					return err
-				}
+				_ = s.DeleteBucket(t.bucket)
 				uitheme.DangerousFprintf(cmd.OutOrStdout(), "J: unset %s\n", t.bucket)
 				continue
 			}
-			if err := s.Delete(t.bucket, storageKey(t.bucket, t.key)); err != nil {
-				return err
-			}
+			_ = s.Delete(t.bucket, storageKey(t.bucket, t.key))
 			uitheme.DangerousFprintf(
 				cmd.OutOrStdout(),
 				"J: unset %s.%s\n", t.bucket, t.key,

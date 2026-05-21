@@ -187,6 +187,68 @@ func TestRunResumePlan_HappyPath_PlanPendingApproval(t *testing.T) {
 	}
 }
 
+// TestRunResumePlan_TaskByIDError covers the resolver.TaskByID error
+// branch: the picker returns a valid id but the task is gone from the
+// store by the time runResumePhase calls resolver.TaskByID.
+// We use a fakeUI wrapper that deletes the task when PickTask is called.
+func TestRunResumePlan_TaskByIDError(t *testing.T) {
+	setupContinueEnv(t)
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
+		task.PlanResumeSession = "active-cursor"
+	})
+	// The picker returns id, but we intercept to delete the task first.
+	picked := false
+	ui := &fakeUI{
+		pickFn: func() (string, bool, error) {
+			if !picked {
+				picked = true
+				s := tasks.OpenDefault()
+				_ = s.DeleteTask(id)
+				_ = s.Close()
+			}
+			return id, true, nil
+		},
+	}
+	err := RunResumePlan(t.Context(), ResumePlanOptions{
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{newContinueAgent()},
+		UI:     ui,
+	})
+	if err == nil {
+		t.Fatal("expected error, task was deleted after picker")
+	}
+}
+
+// TestRunResumePlan_GateFails covers the cfg.gate() error branch in
+// runResumePhase: a row that has PlanResumeSession but is missing
+// requirements.md fails the requireRequirementsOrLinear gate.
+func TestRunResumePlan_GateFails(t *testing.T) {
+	setupContinueEnv(t)
+	// Seed a task with a session but no requirements.md.
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
+		task.PlanResumeSession = "active-cursor"
+	})
+	// Remove requirements.md to make the gate fail.
+	taskDir := filepath.Join(tasks.DefaultDir(), id)
+	reqPath := filepath.Join(taskDir, tasks.RequirementsFileName)
+	if err := os.Remove(reqPath); err != nil {
+		t.Fatal(err)
+	}
+	ui := &fakeUI{pickReturn: id}
+	err := RunResumePlan(t.Context(), ResumePlanOptions{
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{newContinueAgent()},
+		UI:     ui,
+	})
+	if err == nil || !strings.Contains(err.Error(), "requirements.md missing") {
+		t.Fatalf("err = %v, want requirements.md missing error", err)
+	}
+}
+
 // TestRunResumePlan_SpawnFails pins the inline-exec error branch:
 // pointing JBinary at a missing path surfaces the run.RunIn error.
 func TestRunResumePlan_SpawnFails(t *testing.T) {

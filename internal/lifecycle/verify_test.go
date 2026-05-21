@@ -438,6 +438,39 @@ func TestVerifyLifecycle_Verdict_NoLinearIssue_NoPost(t *testing.T) {
 	}
 }
 
+// TestVerifyLifecycle_Finish_ClarificationPresent pins the
+// clarification branch: a clean verify run that left
+// `clarification.md` lands the row in `needs-clarification`.
+func TestVerifyLifecycle_Finish_ClarificationPresent(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	id := seedWorkDoneTask(t, "x")
+	dbPath := tasks.DefaultDir()
+	s := tasks.Open(dbPath)
+	existing, err := s.GetTask(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	// Write clarification.md so pickFinishEvent routes there.
+	taskDir, err := tasks.EnsureDir(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clarPath := filepath.Join(taskDir, tasks.ClarificationFileName)
+	if err := os.WriteFile(clarPath, []byte("need answer"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lc := beginVerifyRestartTest(existing, io.Discard, "cursor", "m", "", "")
+	lc.Finish(VerifyOutcomeSuccess, nil)
+	got := listAllTasks(t)[0]
+	if got.Status != tasks.StatusNeedsClarification {
+		t.Fatalf("Status = %q, want needs-clarification", got.Status)
+	}
+}
+
 // TestBeginVerifyResume_SetsBeginAtWhenZero covers the
 // VerifyBeginAt.IsZero() true branch in BeginVerifyResume.
 func TestBeginVerifyResume_SetsBeginAtWhenZero(t *testing.T) {

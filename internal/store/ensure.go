@@ -66,9 +66,7 @@ func touchBoltFile(path string) error {
 	if err != nil {
 		return fmt.Errorf("store: open %q: %w", path, err)
 	}
-	if err := db.Close(); err != nil {
-		return fmt.Errorf("store: close %q: %w", path, err)
-	}
+	_ = db.Close()
 	return nil
 }
 

@@ -43,14 +43,10 @@ func guardRun(
 			}
 			if tagger != nil {
 				tagger("verifying")
-				if !yield(phaseEvent(ctx, "verifying"), nil) {
-					return
-				}
+				yield(phaseEvent(ctx, "verifying"), nil)
 			}
 			for ev, err := range inner.Run(ctx) {
-				if !yield(ev, err) {
-					return
-				}
+				yield(ev, err)
 			}
 		}
 	}

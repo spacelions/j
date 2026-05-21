@@ -99,3 +99,20 @@ func TestSaveAPIKey_OpenError(t *testing.T) {
 		t.Fatal("SaveAPIKey on bad layout: err = nil, want failure")
 	}
 }
+
+// TestLoadAPIKey_StatError covers the stat non-ErrNotExist branch in loadKey:
+// a symlink loop at the settings path makes os.Stat return ELOOP (not ENOENT).
+func TestLoadAPIKey_StatError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	dir := store.DefaultDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(dir, "settings")
+	if err := os.Symlink(settingsPath, settingsPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadAPIKey(); err == nil {
+		t.Fatal("LoadAPIKey on stat error: err = nil, want failure")
+	}
+}

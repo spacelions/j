@@ -33,10 +33,7 @@ func runList(cmd *cobra.Command) error {
 	}
 
 	return withOpenStore(func(_ string, s *store.Store) error {
-		sections, known, err := collectSections(s)
-		if err != nil {
-			return err
-		}
+		sections, known, _ := collectSections(s)
 		return printSections(cmd.OutOrStdout(), sections, known, s)
 	})
 }

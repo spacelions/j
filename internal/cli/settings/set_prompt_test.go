@@ -142,6 +142,62 @@ func TestSet_PromptRelativePathCopiesUnderCwd(t *testing.T) {
 	}
 }
 
+// TestSet_PromptMkdirError pins the os.MkdirAll error branch in
+// maybeSeedPromptFile: when the parent directory cannot be created
+// because an ancestor is a file, the error is propagated.
+func TestSet_PromptMkdirError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	mustInit(t)
+	// Create a read-only directory at the parent of the prompt path so
+	// MkdirAll fails when trying to create the nested directories.
+	parentDir := filepath.Join(dir, "locked")
+	if err := os.MkdirAll(parentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(parentDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parentDir, 0o755) })
+	dest := filepath.Join(parentDir, "sub", "planner.md")
+	_, err := runSetArgs(t, "set", "planner.prompt="+dest)
+	if err == nil {
+		t.Fatal("expected MkdirAll error")
+	}
+	if !strings.Contains(err.Error(), "mkdir") {
+		t.Fatalf("err = %v, want mkdir-wrapped error", err)
+	}
+}
+
+// TestSet_PromptWriteError pins the os.WriteFile error branch: we make
+// the destination directory read-only after MkdirAll succeeds so the
+// WriteFile call fails.
+func TestSet_PromptWriteError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	mustInit(t)
+	// Create the parent dir and make it read-only so WriteFile fails.
+	destDir := filepath.Join(dir, "ro")
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(destDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(destDir, 0o755) })
+	dest := filepath.Join(destDir, "planner.md")
+	_, err := runSetArgs(t, "set", "planner.prompt="+dest)
+	if err == nil {
+		t.Fatal("expected WriteFile error")
+	}
+}
+
 // TestSet_PromptStatErrorPropagates pins the defensive branch where
 // stat fails with a non-ENOENT error: the helper returns the wrapped
 // error rather than masking it. We force ENOTDIR by placing the

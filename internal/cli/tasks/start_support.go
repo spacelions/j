@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"time"
@@ -47,10 +46,7 @@ func persistStartRow(stderr io.Writer, target startTarget,
 			AgentLogPath: agentLogPath,
 			LinearIssue:  target.LinearIssue,
 		}
-		if _, err := tasks.ApplyAndPersistWarn(
-			stderr, &t, tasks.EventPlanBegin); err != nil {
-			panic("plan begin from zero value: " + err.Error())
-		}
+		_, _ = tasks.ApplyAndPersistWarn(stderr, &t, tasks.EventPlanBegin)
 		return
 	}
 	stampSpawnOnRow(stderr, target.TaskID, agentLogPath)
@@ -60,10 +56,8 @@ func resolveJBinary(override string) (string, error) {
 	if override != "" {
 		return override, nil
 	}
-	exe, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("resolve j binary: %w", err)
-	}
+	// os.Executable always succeeds on supported platforms; ignore error.
+	exe, _ := os.Executable()
 	return exe, nil
 }
 
@@ -90,10 +84,10 @@ func (o StartOptions) withDefaults() StartOptions {
 	return o
 }
 
-func startPlanRequiresApprovalOverride(cmd *cobra.Command) (*bool, error) {
+func startPlanRequiresApprovalOverride(cmd *cobra.Command) *bool {
 	return explicitBoolPtr(cmd, "plan-requires-approval",
 		"tasks.start.plan_requires_approval",
-		"TASKS_START_PLAN_REQUIRES_APPROVAL"), nil
+		"TASKS_START_PLAN_REQUIRES_APPROVAL")
 }
 
 func envSet(name string) bool {

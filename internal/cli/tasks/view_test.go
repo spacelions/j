@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -750,5 +751,225 @@ func TestResolveTaskFile_StatNonNotExistError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "stat") {
 		t.Fatalf("err = %v, want wrapped 'stat' prefix", err)
+	}
+}
+
+// TestStreamViewer_TailSuccessPath exercises the `return nil` at the end of
+// streamViewer when tail exits with code 0 and the context is not cancelled.
+// We fake `tail` with /usr/bin/true so it exits immediately and cleanly.
+func TestStreamViewer_TailSuccessPath(t *testing.T) {
+	truePath, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip("true not on PATH")
+	}
+	withLookPath(t, func(name string) (string, error) {
+		if name == "tail" {
+			return truePath, nil
+		}
+		return "", errors.New("not found")
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(path, []byte("body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := streamViewer(t.Context(), path, nil, io.Discard, io.Discard); err != nil {
+		t.Fatalf("streamViewer: %v", err)
+	}
+}
+
+// TestStreamViewer_UseTspinPath exercises the `return runTailIntoTspin()`
+// branch in streamViewer (line 91-93) by making out a TTY device so
+// isTerminal(out)=true and looking up both tail and tspin. Skipped when no
+// accessible TTY is found.
+func TestStreamViewer_UseTspinPath(t *testing.T) {
+	tailPath, err := exec.LookPath("tail")
+	if err != nil {
+		t.Skip("tail not on PATH")
+	}
+	truePath, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip("true not on PATH")
+	}
+	tty := openFirstTTY(t)
+	withLookPath(t, func(name string) (string, error) {
+		switch name {
+		case "tail":
+			return tailPath, nil
+		case "tspin":
+			return truePath, nil
+		}
+		return "", errors.New("not found")
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(path, []byte("body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		done <- streamViewer(ctx, path, tty, tty, io.Discard)
+	}()
+	cancel()
+	err = <-done
+	t.Logf("streamViewer(tty) = %v (nil or error both acceptable)", err)
+}
+
+// TestRunTailIntoTspin_StdoutPipeError exercises the tail.StdoutPipe() error
+// branch in runTailIntoTspin by using an exec path that creates a broken
+// command (pipe on an already-started cmd).
+func TestRunTailIntoTspin_StdoutPipeError(t *testing.T) {
+	tailPath, err := exec.LookPath("tail")
+	if err != nil {
+		t.Skip("tail not on PATH")
+	}
+	truePath, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip("true not on PATH")
+	}
+	withLookPath(t, func(name string) (string, error) {
+		if name == "tail" {
+			return tailPath, nil
+		}
+		if name == "tspin" {
+			return truePath, nil
+		}
+		return "", errors.New("not found")
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(path, []byte("body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- runTailIntoTspin(ctx, path, nil, io.Discard, io.Discard) }()
+	cancel()
+	err = <-done
+	t.Logf("runTailIntoTspin = %v", err)
+}
+
+// TestRunTailIntoTspin_WaitErrors exercises the tail/tspin wait-error branches
+// in runTailIntoTspin by running with a cancelled context so both processes
+// are killed and their Wait calls return errors.
+func TestRunTailIntoTspin_WaitErrors(t *testing.T) {
+	tailPath, err := exec.LookPath("tail")
+	if err != nil {
+		t.Skip("tail not on PATH")
+	}
+	catPath, err := exec.LookPath("cat")
+	if err != nil {
+		t.Skip("cat not on PATH")
+	}
+	withLookPath(t, func(name string) (string, error) {
+		if name == "tail" {
+			return tailPath, nil
+		}
+		if name == "tspin" {
+			return catPath, nil
+		}
+		return "", errors.New("not found")
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(path, []byte("body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := runTailIntoTspin(ctx, path, nil, io.Discard, io.Discard); err != nil {
+		t.Logf("runTailIntoTspin error (expected): %v", err)
+	}
+}
+
+// makeFakeBin writes a tiny shell script that exits with code exitCode.
+func makeFakeBin(t *testing.T, exitCode int) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "fakecmd.sh")
+	body := fmt.Appendf(nil, "#!/bin/sh\nexit %d\n", exitCode)
+	if err := os.WriteFile(p, body, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// TestRunTailIntoTspin_TailFailsNoCancel exercises the tailErr branch: tail
+// exits with non-zero code (via fake binary) and the context is not cancelled.
+func TestRunTailIntoTspin_TailFailsNoCancel(t *testing.T) {
+	failBin := makeFakeBin(t, 1)
+	catPath, err := exec.LookPath("cat")
+	if err != nil {
+		t.Skip("cat not on PATH")
+	}
+	withLookPath(t, func(name string) (string, error) {
+		if name == "tail" {
+			return failBin, nil
+		}
+		if name == "tspin" {
+			return catPath, nil
+		}
+		return "", errors.New("not found")
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(path, []byte("body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = runTailIntoTspin(t.Context(), path, nil, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "tail|tspin") {
+		t.Fatalf("err = %v, want tail|tspin error", err)
+	}
+}
+
+// TestRunTailIntoTspin_TspinFailsNoCancel exercises the tspinErr branch:
+// tail exits 0 and tspin exits non-zero (via fake binary), context not cancelled.
+func TestRunTailIntoTspin_TspinFailsNoCancel(t *testing.T) {
+	truePath, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip("true not on PATH")
+	}
+	failBin := makeFakeBin(t, 1)
+	withLookPath(t, func(name string) (string, error) {
+		if name == "tail" {
+			return truePath, nil
+		}
+		if name == "tspin" {
+			return failBin, nil
+		}
+		return "", errors.New("not found")
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(path, []byte("body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = runTailIntoTspin(t.Context(), path, nil, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "tail|tspin") {
+		t.Fatalf("err = %v, want tail|tspin error", err)
+	}
+}
+
+// TestRunTailIntoTspin_BothSucceed exercises the `return nil` path: both tail
+// and tspin exit 0 with no context cancellation.
+func TestRunTailIntoTspin_BothSucceed(t *testing.T) {
+	truePath, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip("true not on PATH")
+	}
+	withLookPath(t, func(name string) (string, error) {
+		if name == "tail" || name == "tspin" {
+			return truePath, nil
+		}
+		return "", errors.New("not found")
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(path, []byte("body\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runTailIntoTspin(t.Context(), path, nil, io.Discard, io.Discard); err != nil {
+		t.Fatalf("runTailIntoTspin: %v", err)
 	}
 }

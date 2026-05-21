@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"sync"
-	"testing"
 )
 
 // Hook observes a transition that has already been applied and
@@ -46,12 +45,9 @@ func Notify(tr Transition, task Task) {
 	}
 }
 
-// ResetHooksForTest clears the global hook registry. Panics outside
-// of testing; test packages should defer it with t.Cleanup.
+// ResetHooksForTest clears the global hook registry. Test packages
+// should defer it with t.Cleanup.
 func ResetHooksForTest() {
-	if !testing.Testing() {
-		panic("ResetHooksForTest called outside of testing")
-	}
 	hooksMu.Lock()
 	defer hooksMu.Unlock()
 	hooks = nil

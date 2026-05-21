@@ -221,6 +221,54 @@ func TestLoadProjectConfig_Success(t *testing.T) {
 	}
 }
 
+// TestLoadTaskConfig_OpenError covers the store.Open failure branch:
+// when .j/settings is a directory, bbolt cannot open it.
+func TestLoadTaskConfig_OpenError(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	path := DefaultPath()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadTaskConfig()
+	if err == nil {
+		t.Fatal("expected open error")
+	}
+	if !strings.Contains(err.Error(), "open settings") {
+		t.Fatalf("err = %v, want wrapped open error", err)
+	}
+}
+
+// TestLoadPlanRequiresApproval_OpenError covers the store.Open failure
+// branch for LoadPlanRequiresApproval.
+func TestLoadPlanRequiresApproval_OpenError(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	path := DefaultPath()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadPlanRequiresApproval()
+	if err == nil {
+		t.Fatal("expected open error")
+	}
+	if !strings.Contains(err.Error(), "open settings") {
+		t.Fatalf("err = %v, want wrapped open error", err)
+	}
+}
+
 // TestLoadTaskConfig_DefaultsWhenNoSettings pins that a fresh
 // project (no .j layout at all) yields the documented default
 // MaxIterations=DefaultTaskMaxIterations with no error so

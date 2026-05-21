@@ -34,13 +34,9 @@ func StartTargetFromExistingTask(
 		}
 		return StartTarget{TaskID: task.ID, IsNew: false}, nil
 	}
-	_, statErr := os.Stat(reqPath)
-	if errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Stat(reqPath); errors.Is(statErr, os.ErrNotExist) {
 		return StartTarget{}, fmt.Errorf(
 			"task %q has no requirements.md; cannot re-plan", taskID)
-	}
-	if statErr != nil {
-		return StartTarget{}, statErr
 	}
 	return StartTarget{TaskID: task.ID, IsNew: false}, nil
 }

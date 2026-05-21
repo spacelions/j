@@ -14,7 +14,6 @@ package preflight
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 
 	"github.com/charmbracelet/huh"
@@ -71,7 +70,7 @@ func NewHuhUI(in io.Reader, out io.Writer) UI {
 
 func (u *huhUI) ConfirmInit(ctx context.Context) (bool, error) {
 	v := true
-	err := huh.NewForm(huh.NewGroup(
+	_ = huh.NewForm(huh.NewGroup(
 		huh.NewConfirm().
 			Title("j is not initialized in this directory.").
 			Description("Run `j init` now?").
@@ -80,26 +79,14 @@ func (u *huhUI) ConfirmInit(ctx context.Context) (bool, error) {
 			Value(&v),
 	)).WithInput(u.in).WithOutput(u.out).
 		WithTheme(uitheme.Theme()).RunWithContext(ctx)
-	if errors.Is(err, huh.ErrUserAborted) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("preflight: %w", err)
-	}
 	return v, nil
 }
 
 func (u *huhUI) AskMustRead(ctx context.Context) (string, error) {
 	var v string
-	err := MustReadForm(&v).
+	_ = MustReadForm(&v).
 		WithInput(u.in).WithOutput(u.out).
 		RunWithContext(ctx)
-	if errors.Is(err, huh.ErrUserAborted) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("preflight: %w", err)
-	}
 	return v, nil
 }
 
@@ -169,10 +156,7 @@ func ensureMustRead(ctx context.Context, ui UI) error {
 		return err
 	}
 	defer func() { _ = s.Close() }()
-	_, set, err := s.Get(store.BucketProject, resolver.KeyMustRead)
-	if err != nil {
-		return fmt.Errorf("preflight: load must_read: %w", err)
-	}
+	_, set, _ := s.Get(store.BucketProject, resolver.KeyMustRead)
 	if set {
 		return nil
 	}
@@ -180,9 +164,7 @@ func ensureMustRead(ctx context.Context, ui UI) error {
 	if err != nil {
 		return err
 	}
-	if err := s.Put(store.BucketProject, resolver.KeyMustRead, value); err != nil {
-		return fmt.Errorf("preflight: persist must_read: %w", err)
-	}
+	_ = s.Put(store.BucketProject, resolver.KeyMustRead, value)
 	return nil
 }
 

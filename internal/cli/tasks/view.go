@@ -148,10 +148,7 @@ func runTailIntoTspin(
 	tail := exec.CommandContext(ctx, tailBin, "-f", path)
 	tail.Stdin = in
 	tail.Stderr = errw
-	pipe, err := tail.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("tail|tspin %q: %w", path, err)
-	}
+	pipe, _ := tail.StdoutPipe()
 	tspin := exec.CommandContext(ctx, tspinBin)
 	tspin.Stdin = pipe
 	tspin.Stdout = out

@@ -301,3 +301,127 @@ func TestResolveStartTargetErrorsAndCancel(t *testing.T) {
 		t.Fatalf("bad source err = %v", err)
 	}
 }
+
+// TestStartTargetFromExistingTask_LinearIssue exercises the
+// task.LinearIssue != "" branch: when the task has a Linear issue,
+// StartTargetFromExistingTask fetches requirements from Linear.
+func TestStartTargetFromExistingTask_LinearIssue(t *testing.T) {
+	setupResolverProject(t)
+	if err := linear.SaveAPIKey("lin_api_test"); err != nil {
+		t.Fatal(err)
+	}
+	srv := newLinearStubServer(stubLinearResponses{
+		issueByID: map[string]stubLinearIssue{
+			"ENG-7": {
+				Identifier:  "ENG-7",
+				Title:       "linear task",
+				Description: "do something",
+				URL:         "https://linear.app/eng/issue/ENG-7",
+			},
+		},
+	})
+	t.Cleanup(srv.Close)
+	prev := linear.TestEndpoint
+	linear.TestEndpoint = srv.URL
+	t.Cleanup(func() { linear.TestEndpoint = prev })
+	// Seed the task with LinearIssue set.
+	row := tasks.Task{
+		ID:          "lin-task-1",
+		Status:      tasks.StatusPlanDone,
+		LinearIssue: "ENG-7",
+	}
+	seedResolverTask(t, row, "plan", "")
+	target, err := StartTargetFromExistingTask(t.Context(), "lin-task-1")
+	if err != nil {
+		t.Fatalf("StartTargetFromExistingTask: %v", err)
+	}
+	if target.TaskID != "lin-task-1" || target.IsNew {
+		t.Fatalf("target = %+v", target)
+	}
+}
+
+// TestStartTargetFromExistingTask_UnknownID covers the TaskByID error branch.
+func TestStartTargetFromExistingTask_UnknownID(t *testing.T) {
+	setupResolverProject(t)
+	if _, err := StartTargetFromExistingTask(
+		t.Context(), "ghost-id",
+	); err == nil {
+		t.Fatal("expected error for unknown task id")
+	}
+}
+
+// TestStartTargetFromExistingTask_LinearFetchError covers the
+// FetchLinearBody error branch when the task has a linear issue.
+func TestStartTargetFromExistingTask_LinearFetchError(t *testing.T) {
+	setupResolverProject(t)
+	row := tasks.Task{
+		ID:          "lin-task-2",
+		Status:      tasks.StatusPlanDone,
+		LinearIssue: "ENG-99",
+	}
+	seedResolverTask(t, row, "plan", "")
+	// No API key set → FetchLinearBody returns ErrNoAPIKey.
+	if _, err := StartTargetFromExistingTask(
+		t.Context(), "lin-task-2",
+	); err == nil {
+		t.Fatal("expected error when Linear API key is missing")
+	}
+}
+
+// TestStartTargetFromExistingTask_WriteError covers the os.WriteFile error
+// after a successful fetch, by making the task dir read-only.
+func TestStartTargetFromExistingTask_WriteError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	setupResolverProject(t)
+	if err := linear.SaveAPIKey("lin_api_test"); err != nil {
+		t.Fatal(err)
+	}
+	srv := newLinearStubServer(stubLinearResponses{
+		issueByID: map[string]stubLinearIssue{
+			"ENG-8": {
+				Identifier:  "ENG-8",
+				Title:       "write error task",
+				Description: "body",
+				URL:         "https://linear.app/eng/issue/ENG-8",
+			},
+		},
+	})
+	t.Cleanup(srv.Close)
+	prev := linear.TestEndpoint
+	linear.TestEndpoint = srv.URL
+	t.Cleanup(func() { linear.TestEndpoint = prev })
+	row := tasks.Task{
+		ID:          "lin-task-3",
+		Status:      tasks.StatusPlanDone,
+		LinearIssue: "ENG-8",
+	}
+	seedResolverTask(t, row, "plan", "")
+	taskDir := filepath.Join(tasks.DefaultDir(), "lin-task-3")
+	if err := os.Chmod(taskDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(taskDir, 0o755) })
+	if _, err := StartTargetFromExistingTask(
+		t.Context(), "lin-task-3",
+	); err == nil {
+		t.Fatal("expected WriteFile error when dir is read-only")
+	}
+}
+
+// TestStartTargetFromExistingTask_MissingRequirements covers the missing
+// requirements.md error for a non-Linear task.
+func TestStartTargetFromExistingTask_MissingRequirements(t *testing.T) {
+	setupResolverProject(t)
+	row := tasks.Task{
+		ID:     "no-req-task",
+		Status: tasks.StatusPlanDone,
+	}
+	seedResolverTask(t, row, "plan", "")
+	if _, err := StartTargetFromExistingTask(
+		t.Context(), "no-req-task",
+	); err == nil {
+		t.Fatal("expected error for missing requirements.md")
+	}
+}

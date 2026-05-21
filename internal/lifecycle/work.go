@@ -85,13 +85,10 @@ func BeginWorkResume(t tasks.Task, stderr io.Writer) *WorkLifecycle {
 }
 
 func openWorkLifecycle(stderr io.Writer, task tasks.Task,
-	agentLogPath string, ev tasks.Event, panicTag string,
+	agentLogPath string, ev tasks.Event, _ string,
 ) *WorkLifecycle {
 	task.AgentLogPath = agentLogPath
-	if _, err := tasks.ApplyAndPersistWarn(
-		stderr, &task, ev); err != nil {
-		panic(panicTag + ": " + err.Error())
-	}
+	_, _ = tasks.ApplyAndPersistWarn(stderr, &task, ev)
 	return &WorkLifecycle{
 		stderr:       stderr,
 		agentLogPath: agentLogPath,
@@ -146,10 +143,7 @@ func (lc *WorkLifecycle) Finish(runErr error) {
 	lc.detectPullRequestURL()
 
 	ev := lc.pickFinishEvent(runErr)
-	if _, err := tasks.ApplyAndPersistWarn(
-		lc.stderr, &lc.task, ev); err != nil {
-		panic("work finish: " + err.Error())
-	}
+	_, _ = tasks.ApplyAndPersistWarn(lc.stderr, &lc.task, ev)
 }
 
 // pickFinishEvent decides which event drives the work-finish

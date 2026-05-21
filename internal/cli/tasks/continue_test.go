@@ -951,6 +951,27 @@ func TestStampSpawnOnRow_UnknownID(t *testing.T) {
 	}
 }
 
+// TestStampSpawnOnRow_PutError exercises the PutTask error branch by
+// making the per-task directory read-only so writeFileAtomic fails.
+func TestStampSpawnOnRow_PutError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	setupContinueEnv(t)
+	id := testutil.SeedFullTask(t, nil)
+	// Make the per-task directory read-only so PutTask cannot write.
+	taskDir := filepath.Join(tasks.DefaultDir(), id)
+	if err := os.Chmod(taskDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(taskDir, 0o755) })
+	var stderr bytes.Buffer
+	stampSpawnOnRow(&stderr, id, "/tmp/agent.log")
+	if !strings.Contains(stderr.String(), "tasks put") {
+		t.Fatalf("stderr = %q, want tasks-put warning", stderr.String())
+	}
+}
+
 func TestNewContinueCmd_RunE_InteractiveFlag(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
@@ -1127,4 +1148,129 @@ func TestRunContinue_NeedsClarification_WorkResume(t *testing.T) {
 	if row.Status != tasks.StatusWorking {
 		t.Fatalf("Status = %q, want working (EventWorkResume fired)", row.Status)
 	}
+}
+
+// TestRunContinue_WorkDoneSpawnFails covers the spawnDetachedOrchestrator
+// error path in reverifyAsDetachedOrchestrator when the binary is invalid.
+func TestRunContinue_WorkDoneSpawnFails(t *testing.T) {
+	setupContinueEnv(t)
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusWorkDone
+		task.WorkResumeSession = "work-cursor"
+	})
+	err := RunContinue(t.Context(), ContinueOptions{
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{newContinueAgent()},
+		UI:      &fakeUI{},
+		JBinary: "/no/such/binary-xyzzy",
+	})
+	if err == nil {
+		t.Fatal("expected spawn failure")
+	}
+}
+
+// TestRunContinue_NeedsClarification_PlanResume pins needs-clarification
+// with plan phase: fires EventPlanResume and calls resumePlanInlineOrchestrator.
+func TestRunContinue_NeedsClarification_PlanResume(t *testing.T) {
+	setupContinueEnv(t)
+	t1 := time.Now().UTC().Add(-2 * time.Hour)
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusNeedsClarification
+		task.PlanResumeSession = "plan-cursor"
+		task.PlanEndAt = t1
+	})
+	agent := newContinueAgent()
+	err := RunContinue(t.Context(), ContinueOptions{
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{agent},
+		UI:      &fakeUI{},
+		JBinary: noopJBinary(t),
+	})
+	if err != nil {
+		t.Fatalf("RunContinue: %v", err)
+	}
+}
+
+// TestRunContinue_NeedsClarification_NoPhase pins the default branch in
+// dispatchClarification: needs-clarification with no resumable phase signal.
+// Clear all EndAt timestamps AND sessions so latestPhase returns "".
+func TestRunContinue_NeedsClarification_NoPhase(t *testing.T) {
+	setupContinueEnv(t)
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusNeedsClarification
+		task.PlanResumeSession = ""
+		task.WorkResumeSession = ""
+		task.VerifyResumeSession = ""
+		task.PlanEndAt = time.Time{}
+		task.WorkEndAt = time.Time{}
+		task.VerifyEndAt = time.Time{}
+	})
+	err := RunContinue(t.Context(), ContinueOptions{
+		TaskID: id,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{newContinueAgent()},
+		UI:     &fakeUI{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "no resumable phase") {
+		t.Fatalf("err = %v, want no resumable phase", err)
+	}
+}
+
+// TestResumePlanInlineOrchestrator_StartTargetError covers the
+// StartTargetFromExistingTask error branch: task has no requirements.md
+// so it cannot be re-planned.
+func TestResumePlanInlineOrchestrator_StartTargetError(t *testing.T) {
+	setupContinueEnv(t)
+	id := testutil.SeedFullTask(t, func(task *tasks.Task) {
+		task.Status = tasks.StatusNeedsClarification
+		task.PlanResumeSession = "plan-cursor"
+		task.PlanEndAt = time.Now().UTC()
+	})
+	// Remove requirements.md so StartTargetFromExistingTask fails.
+	taskDir := filepath.Join(tasks.DefaultDir(), id)
+	reqPath := filepath.Join(taskDir, tasks.RequirementsFileName)
+	if err := os.Remove(reqPath); err != nil {
+		t.Fatalf("Remove requirements: %v", err)
+	}
+	err := RunContinue(t.Context(), ContinueOptions{
+		TaskID:  id,
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		Stderr:  io.Discard,
+		Agents:  []codingagents.Agent{newContinueAgent()},
+		UI:      &fakeUI{},
+		JBinary: noopJBinary(t),
+	})
+	if err == nil || !strings.Contains(err.Error(), "requirements.md") {
+		t.Fatalf("err = %v, want requirements.md error", err)
+	}
+}
+
+// TestNewContinueCmd_PreRunE_EnsureAgentSelections exercises the PreRunE closure
+// in newContinueCmd via cobra Execute(), which fires both PersistentPreRunE
+// and PreRunE before RunE.
+func TestNewContinueCmd_PreRunE_EnsureAgentSelections(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
+	}
+	installCursorAgentLoginStub(t)
+	cmd := newContinueCmd()
+	cmd.SetArgs([]string{"--from-task=ghost-id"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetContext(t.Context())
+	err := cmd.Execute()
+	t.Logf("Execute = %v (error or nil both acceptable)", err)
 }

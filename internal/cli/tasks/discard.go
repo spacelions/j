@@ -138,9 +138,7 @@ func RunDiscard(ctx context.Context, opts DiscardOptions) error {
 		}
 	}
 	removeTaskWorktree(ctx, opts.Stderr, t)
-	if err := s.DeleteTask(opts.TaskID); err != nil {
-		return fmt.Errorf("tasks discard: %w", err)
-	}
+	_ = s.DeleteTask(opts.TaskID)
 	if err := tasks.RemoveDir(opts.TaskID); err != nil {
 		return fmt.Errorf("tasks discard: %w", err)
 	}

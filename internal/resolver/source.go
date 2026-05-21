@@ -3,7 +3,6 @@ package resolver
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 
 	"github.com/spacelions/j/internal/cli/picker"
@@ -66,11 +65,9 @@ func ResolveStartTarget(
 		return NewStartTargetFromMarkdown(res.Markdown)
 	case picker.SourceTask:
 		return StartTargetFromExistingTask(ctx, res.TaskID)
-	case picker.SourceLinear:
+	default:
 		return StartTargetFromLinear(ctx, res.LinearIdentifier)
 	}
-	return StartTarget{}, fmt.Errorf(
-		"tasks: unsupported source %s", res.Source)
 }
 
 // StartTargetFromLinear loads the Linear API key, fetches the issue,

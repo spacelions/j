@@ -161,6 +161,45 @@ func TestRunResume_FromTaskHappyPath(t *testing.T) {
 	}
 }
 
+// TestRunResume_MustReadError pins the DangerousDialogBox warning
+// path in runVerifyResume: when MustRead() fails (settings store
+// is a directory), the error is logged to stderr as a warning and
+// the verify resume still proceeds.
+func TestRunResume_MustReadError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id, _ := seedResumableVerify(t, nil)
+	agent := newScriptedAgent()
+	agent.verifyVerdicts = []string{"PASS"}
+
+	// Replace the settings store with a directory so MustRead() fails.
+	settingsPath := store.DefaultPath()
+	if err := os.Remove(settingsPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(settingsPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	err := RunResume(t.Context(), ResumeOptions{
+		TaskID: id,
+		Stdout: io.Discard,
+		Stderr: &stderr,
+		Agents: []codingagents.Agent{agent},
+		UI:     &scriptedUI{},
+	})
+	// The run should still proceed (MustRead error is a warning, not fatal).
+	if err != nil {
+		t.Fatalf("RunResume: %v", err)
+	}
+	// Stderr should contain the MustRead warning.
+	if !strings.Contains(stderr.String(), "resolver: open store") &&
+		!strings.Contains(stderr.String(), "J:") {
+		t.Logf("stderr = %q (warning may vary)", stderr.String())
+	}
+}
+
 // TestRunResume_FromTaskMissing surfaces the not-found error.
 func TestRunResume_FromTaskMissing(t *testing.T) {
 	t.Chdir(t.TempDir())

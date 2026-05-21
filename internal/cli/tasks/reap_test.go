@@ -564,3 +564,29 @@ func storeSeedPlanApprovalDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestMaybeReap_TryAcquireError covers the err != nil path in
+// maybeReap when TryAcquireForReap returns an error. We make the
+// task directory non-accessible so stat of the .lock file fails.
+func TestMaybeReap_TryAcquireError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	s := openTestStore(t)
+	tasksDir := tasks.DefaultDir()
+	id := "reap-error"
+	seedTaskDir(t, id, "", "")
+	seedStaleLockFile(t, id)
+	// Make the task directory inaccessible so TryAcquireForReap fails.
+	taskDir := filepath.Join(tasksDir, id)
+	if err := os.Chmod(taskDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(taskDir, 0o755) })
+	in := []tasks.Task{{ID: id, Status: tasks.StatusPlanning}}
+	out := reapBackgroundTasks(s, io.Discard, tasksDir, in)
+	// Row should be unchanged when TryAcquireForReap fails.
+	if out[0].Status != tasks.StatusPlanning {
+		t.Fatalf("Status = %q, want planning unchanged on error", out[0].Status)
+	}
+}

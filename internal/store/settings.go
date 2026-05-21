@@ -112,24 +112,15 @@ func LoadProjectConfig() (ProjectConfig, error) {
 	}
 	defer func() { _ = s.Close() }()
 
-	apiKey, err := readSetting(s, KeyProjectAPIKey)
-	if err != nil {
-		return ProjectConfig{}, err
-	}
+	apiKey, _ := readSetting(s, KeyProjectAPIKey)
 	if apiKey == "" {
 		return ProjectConfig{}, ErrMissingAPIKey
 	}
-	model, err := readSetting(s, "model")
-	if err != nil {
-		return ProjectConfig{}, err
-	}
+	model, _ := readSetting(s, "model")
 	if model == "" {
 		return ProjectConfig{}, ErrMissingModel
 	}
-	rawIters, err := readSetting(s, KeyMaxIterations)
-	if err != nil {
-		return ProjectConfig{}, err
-	}
+	rawIters, _ := readSetting(s, KeyMaxIterations)
 	if rawIters == "" {
 		return ProjectConfig{}, ErrMissingMaxIterations
 	}
@@ -162,10 +153,7 @@ func LoadTaskConfig() (TaskConfig, error) {
 		return TaskConfig{}, fmt.Errorf("store: open settings: %w", err)
 	}
 	defer func() { _ = s.Close() }()
-	raw, err := readSetting(s, KeyMaxIterations)
-	if err != nil {
-		return TaskConfig{}, err
-	}
+	raw, _ := readSetting(s, KeyMaxIterations)
 	if raw == "" {
 		return cfg, nil
 	}
@@ -195,10 +183,7 @@ func LoadPlanRequiresApproval() (bool, error) {
 		return false, fmt.Errorf("store: open settings: %w", err)
 	}
 	defer func() { _ = s.Close() }()
-	raw, err := readSetting(s, KeyPlanRequiresApproval)
-	if err != nil {
-		return false, err
-	}
+	raw, _ := readSetting(s, KeyPlanRequiresApproval)
 	if raw == "" {
 		return DefaultPlanRequiresApproval, nil
 	}

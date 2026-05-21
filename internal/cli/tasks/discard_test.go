@@ -35,6 +35,8 @@ type fakeUI struct {
 	pickErr        error
 	pickCalls      int
 	lastPickedFrom []tasks.Task
+	// pickFn, when non-nil, overrides pickReturn/pickErr for PickTask.
+	pickFn func() (string, bool, error)
 
 	statusReturn bool
 	statusErr    error
@@ -61,6 +63,9 @@ func (u *fakeUI) ConfirmDiscard(_ context.Context, t tasks.Task) (bool, error) {
 func (u *fakeUI) PickTask(_ context.Context, rows []tasks.Task) (string, bool, error) {
 	u.pickCalls++
 	u.lastPickedFrom = rows
+	if u.pickFn != nil {
+		return u.pickFn()
+	}
 	if u.pickErr != nil {
 		return "", false, u.pickErr
 	}

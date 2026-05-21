@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -179,5 +180,72 @@ func TestRunResumePlan_TerminatorSuccessButLockStillHeld(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "still alive") {
 		t.Fatalf("err = %v, want 'still alive'", err)
+	}
+}
+
+// TestWaitLockReleased_ContextCancelled covers the ctx.Done() branch
+// in the polling loop.
+func TestWaitLockReleased_ContextCancelled(t *testing.T) {
+	setupContinueEnv(t)
+	id := testutil.SeedFullTask(t, nil)
+	// Hold the lock for the duration of the test.
+	held, err := tasks.AcquireLock(t.Context(), id)
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	defer func() { _ = held.Release() }()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	err = waitLockReleased(ctx, id, os.Getpid())
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+}
+
+// TestTakeoverIfHeld_NonLockedError covers the !errors.As path:
+// when AcquireLock returns a non-LockedError (e.g., EnsureDir fails
+// because the .j/tasks dir is gone), the error is propagated directly.
+func TestTakeoverIfHeld_NonLockedError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	setupContinueEnv(t)
+	// Make the tasks directory inaccessible so EnsureDir fails.
+	tasksDir := tasks.DefaultDir()
+	if err := os.Chmod(tasksDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(tasksDir, 0o755) })
+	var stderr bytes.Buffer
+	err := takeoverIfHeld(t.Context(), &stderr, "any-id")
+	if err == nil {
+		t.Fatal("expected error when tasks dir is inaccessible")
+	}
+}
+
+// TestWaitLockReleased_TryAcquireError covers the TryAcquireForReap error
+// path in waitLockReleased by making the task directory inaccessible so
+// TryAcquireForReap's stat call fails.
+func TestWaitLockReleased_TryAcquireError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	setupContinueEnv(t)
+	id := testutil.SeedFullTask(t, nil)
+	tasksDir := tasks.DefaultDir()
+	taskDir := filepath.Join(tasksDir, id)
+	// Create the lock file so TryAcquireForReap doesn't short-circuit on ErrNotExist.
+	lockPath := filepath.Join(taskDir, tasks.LockFileName)
+	if err := os.WriteFile(lockPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Make the task directory inaccessible.
+	if err := os.Chmod(taskDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(taskDir, 0o755) })
+	err := waitLockReleased(t.Context(), id, os.Getpid())
+	if err == nil {
+		t.Fatal("expected TryAcquireForReap error")
 	}
 }

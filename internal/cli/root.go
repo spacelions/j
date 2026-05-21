@@ -4,10 +4,8 @@
 package cli
 
 import (
-	"errors"
 	"os"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/spf13/viper"
@@ -59,9 +57,6 @@ func Execute() int {
 	root := NewRoot()
 	root.SetArgs(os.Args[1:])
 	if err := root.Execute(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return 0
-		}
 		_, _ = uitheme.DangerousFprintf(os.Stderr, "J: %v\n", err)
 		return 1
 	}

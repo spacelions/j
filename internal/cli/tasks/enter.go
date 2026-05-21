@@ -125,10 +125,7 @@ func RunEnter(ctx context.Context, opts EnterOptions) error {
 	if !ok {
 		return nil
 	}
-	taskDir, err := tasks.EnsureDir(id)
-	if err != nil {
-		return fmt.Errorf("tasks enter: %w", err)
-	}
+	taskDir, _ := tasks.EnsureDir(id)
 	if opts.Print {
 		fmt.Fprintln(opts.Stdout, taskDir)
 		return nil

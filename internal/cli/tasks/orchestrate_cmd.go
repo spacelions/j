@@ -26,10 +26,7 @@ func newOrchestrateCmd() *cobra.Command {
 }
 
 func runOrchestrateCmd(cmd *cobra.Command, _ []string) error {
-	approval, err := orchestratePlanRequiresApprovalOverride(cmd)
-	if err != nil {
-		return err
-	}
+	approval := orchestratePlanRequiresApprovalOverride(cmd)
 	phase, err := orchestrator.ParseRunPhase(
 		viper.GetString("tasks.orchestrate.phase"))
 	if err != nil {
@@ -86,8 +83,8 @@ func bindOrchestrateFlags(cmd *cobra.Command) {
 
 func orchestratePlanRequiresApprovalOverride(
 	cmd *cobra.Command,
-) (*bool, error) {
+) *bool {
 	return explicitBoolPtr(cmd, "plan-requires-approval",
 		"tasks.orchestrate.plan_requires_approval",
-		"TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL"), nil
+		"TASKS_ORCHESTRATE_PLAN_REQUIRES_APPROVAL")
 }

@@ -2,6 +2,8 @@ package initcmd
 
 import (
 	"bytes"
+	"io"
+	"strings"
 	"testing"
 )
 
@@ -40,5 +42,32 @@ func TestAccept(t *testing.T) {
 func TestNewHuhUI_NotNil(t *testing.T) {
 	if u := newHuhUI(&bytes.Buffer{}, &bytes.Buffer{}); u == nil {
 		t.Fatal("newHuhUI returned nil")
+	}
+}
+
+// TestConfirmReset_Yes exercises ConfirmReset in huh accessible mode
+// (TERM=dumb). Input "y\n" means yes.
+func TestConfirmReset_Yes(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	u := newHuhUI(strings.NewReader("y\n"), io.Discard)
+	got, err := u.ConfirmReset(t.Context())
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !got {
+		t.Fatal("expected true for y input")
+	}
+}
+
+// TestConfirmReset_No exercises ConfirmReset in accessible mode.
+func TestConfirmReset_No(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	u := newHuhUI(strings.NewReader("n\n"), io.Discard)
+	got, err := u.ConfirmReset(t.Context())
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got {
+		t.Fatal("expected false for n input")
 	}
 }

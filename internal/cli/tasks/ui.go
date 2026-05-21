@@ -2,7 +2,6 @@ package tasks
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 
@@ -51,7 +50,7 @@ func (u *huhUI) ConfirmDiscard(
 	ctx context.Context, t tasks.Task,
 ) (bool, error) {
 	v := true
-	err := huh.NewForm(huh.NewGroup(
+	_ = huh.NewForm(huh.NewGroup(
 		huh.NewConfirm().
 			Title(fmt.Sprintf("Discard task %s?", t.ID)).
 			Description(t.Summary).
@@ -60,12 +59,6 @@ func (u *huhUI) ConfirmDiscard(
 			Value(&v),
 	)).WithInput(u.in).WithOutput(u.out).
 		WithTheme(uitheme.Theme()).RunWithContext(ctx)
-	if errors.Is(err, huh.ErrUserAborted) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("tasks discard: %w", err)
-	}
 	return v, nil
 }
 

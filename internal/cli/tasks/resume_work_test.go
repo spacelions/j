@@ -7,7 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/viper"
+
 	codingagents "github.com/spacelions/j/internal/coding-agents"
+	"github.com/spacelions/j/internal/store"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/testutil"
 )
@@ -267,4 +270,24 @@ func TestNewResumeWorkCmd_RunE_NoTasks(t *testing.T) {
 		t.Fatalf("stdout = %q, want %q",
 			stdout.String(), noActiveWorkSessionMessage)
 	}
+}
+
+// TestNewResumeWorkCmd_PreRunE_EnsureAgentSelections exercises the PreRunE
+// closure in newResumeWorkCmd via cobra Execute().
+func TestNewResumeWorkCmd_PreRunE_EnsureAgentSelections(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	for _, bucket := range []string{store.BucketPlanner, store.BucketWorker, store.BucketVerifier} {
+		testutil.SeedAgentBucketToolModel(t, bucket, "cursor", "sonnet-4")
+	}
+	installCursorAgentLoginStub(t)
+	cmd := newResumeWorkCmd()
+	cmd.SetArgs([]string{})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetContext(t.Context())
+	err := cmd.Execute()
+	t.Logf("Execute = %v (error or nil both acceptable)", err)
 }

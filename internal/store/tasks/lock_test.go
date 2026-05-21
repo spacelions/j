@@ -310,6 +310,111 @@ func TestLockedError_Error(t *testing.T) {
 	}
 }
 
+// TestAcquireLockAt_OpenError covers the os.OpenFile error branch in
+// acquireLockAt by making the parent directory read-only.
+func TestAcquireLockAt_OpenError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, LockFileName)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	if _, err := acquireLockAt(context.Background(), lockPath); err == nil {
+		t.Fatal("expected error when lock dir is not writable")
+	}
+}
+
+// TestAcquireLock_WriteHolderError covers the writeHolder error path
+// in acquireLockAt: after OpenFile succeeds, make the lock file
+// itself read-only so the os.WriteFile inside writeHolder fails.
+func TestAcquireLock_WriteHolderError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, LockFileName)
+	// Create the lock file so OpenFile succeeds with O_RDWR.
+	if err := os.WriteFile(lockPath, nil, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	// File is read-only; os.WriteFile in writeHolder will fail.
+	if _, err := acquireLockAt(context.Background(), lockPath); err == nil {
+		_ = os.Chmod(lockPath, 0o644)
+		t.Fatal("expected writeHolder error")
+	}
+}
+
+// TestTryAcquireForReapAt_StatNonENOENT exercises the non-ErrNotExist
+// stat branch in tryAcquireForReapAt by making the parent directory
+// non-accessible so stat fails with EACCES rather than ENOENT.
+func TestTryAcquireForReapAt_StatNonENOENT(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, LockFileName)
+	// Create file so the path is not missing, but lock dir.
+	if err := os.WriteFile(lockPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	if _, err := tryAcquireForReapAt(lockPath); err == nil {
+		t.Fatal("expected stat error to propagate")
+	}
+}
+
+// TestTryAcquireForReapAt_OpenError covers the os.OpenFile error branch
+// in tryAcquireForReapAt. We create the lock file, then restrict the
+// parent so OpenFile fails.
+func TestTryAcquireForReapAt_OpenError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, LockFileName)
+	if err := os.WriteFile(lockPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Make file itself unreadable so OpenFile fails.
+	if err := os.Chmod(lockPath, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(lockPath, 0o644) })
+	if _, err := tryAcquireForReapAt(lockPath); err == nil {
+		t.Fatal("expected open error to propagate")
+	}
+}
+
+// TestTryAcquireForReap_StatNonENOENT covers the stat non-ErrNotExist
+// path in TryAcquireForReap by making the parent non-accessible.
+func TestTryAcquireForReap_StatNonENOENT(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	jDir := setupLockProject(t)
+	taskDir := filepath.Join(jDir, DirName, "T1")
+	if err := os.MkdirAll(taskDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(taskDir, LockFileName)
+	if err := os.WriteFile(lockPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(taskDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(taskDir, 0o755) })
+	if _, err := TryAcquireForReap("T1"); err == nil {
+		t.Fatal("expected stat error")
+	}
+}
+
 // TestWriteHolder_WriteError covers the os.WriteFile error branch by
 // making the target directory read-only before the write.
 func TestWriteHolder_WriteError(t *testing.T) {
@@ -323,5 +428,23 @@ func TestWriteHolder_WriteError(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
 	if err := writeHolder(filepath.Join(dir, "lock"), Holder{PID: 1}); err == nil {
 		t.Fatal("expected writeHolder to fail when dir is not writable")
+	}
+}
+
+// TestAcquireLock_EnsureDirError covers the EnsureDir error branch in
+// AcquireLock by pointing cwd at a dir without a .j/tasks layout.
+func TestAcquireLock_EnsureDirError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if _, err := AcquireLock(context.Background(), "T1"); err == nil {
+		t.Fatal("expected EnsureDir error when .j/tasks is missing")
+	}
+}
+
+// TestTryAcquireForReap_EnsureDirError covers the EnsureDir error branch in
+// TryAcquireForReap by pointing cwd at a dir without a .j/tasks layout.
+func TestTryAcquireForReap_EnsureDirError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if _, err := TryAcquireForReap("T1"); err == nil {
+		t.Fatal("expected EnsureDir error when .j/tasks is missing")
 	}
 }

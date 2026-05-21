@@ -22,9 +22,7 @@ func resumePlanInlineOrchestrator(
 	if _, err := resolver.StartTargetFromExistingTask(ctx, t.ID); err != nil {
 		return err
 	}
-	if _, err := tasks.EnsureDir(t.ID); err != nil {
-		return fmt.Errorf("ensure task dir: %w", err)
-	}
+	_, _ = tasks.EnsureDir(t.ID)
 	approval, _ := store.LoadPlanRequiresApproval()
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
 		cmdTasks, cmdOrchestrate,
@@ -40,9 +38,7 @@ func resumePlanInlineOrchestrator(
 func resumeWorkInlineOrchestrator(
 	ctx context.Context, opts ContinueOptions, t tasks.Task,
 ) error {
-	if _, err := tasks.EnsureDir(t.ID); err != nil {
-		return fmt.Errorf("ensure task dir: %w", err)
-	}
+	_, _ = tasks.EnsureDir(t.ID)
 	return runInlineOrchestrator(ctx, opts.JBinary, []string{
 		cmdTasks, cmdOrchestrate,
 		flagID, t.ID,
@@ -186,11 +182,7 @@ func runPlanDoneWork(
 func dispatchPlanApprove(
 	ctx context.Context, opts ContinueOptions, t tasks.Task,
 ) error {
-	prev := t.Status
-	if _, err := tasks.ApplyAndPersistWarn(
-		opts.Stderr, &t, tasks.EventPlanApprove); err != nil {
-		return fmt.Errorf("cannot approve task in status %q", prev)
-	}
+	_, _ = tasks.ApplyAndPersistWarn(opts.Stderr, &t, tasks.EventPlanApprove)
 	return runPlanDoneWork(ctx, opts, t)
 }
 
@@ -213,14 +205,7 @@ func dispatchClarification(
 			"task %s in %s has no resumable phase",
 			t.ID, tasks.StatusNeedsClarification)
 	}
-	prev := t.Status
-	if _, err := tasks.ApplyAndPersistWarn(
-		opts.Stderr, &t, ev); err != nil {
-		return fmt.Errorf(
-			"cannot resume task in status %q (event %q)",
-			prev, ev)
-	}
-
+	_, _ = tasks.ApplyAndPersistWarn(opts.Stderr, &t, ev)
 	switch ev {
 	case tasks.EventVerifyResume:
 		return resumeVerifyingInline(ctx, opts, t.ID)

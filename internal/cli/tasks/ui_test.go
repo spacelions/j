@@ -3,8 +3,11 @@ package tasks
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
+
+	storeTasksPkg "github.com/spacelions/j/internal/store/tasks"
 )
 
 // TestNewHuhUI_NotNil pins the constructor: it returns a non-nil
@@ -34,5 +37,65 @@ func TestHuhUI_ConfirmStatusOverride_DelegatesToPicker(t *testing.T) {
 	_, err := u.ConfirmStatusOverride(ctx, "re-plan", "abc", "working")
 	if err == nil {
 		t.Fatal("want error from cancelled ctx; the huhUI shim should propagate the picker leaf's error verbatim")
+	}
+}
+
+// TestHuhUI_ConfirmDiscard_Yes drives ConfirmDiscard in accessible mode.
+func TestHuhUI_ConfirmDiscard_Yes(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	task := storeTasksPkg.Task{ID: "T1", Summary: "do the thing"}
+	u := newHuhUI(strings.NewReader("y\n"), io.Discard)
+	got, err := u.ConfirmDiscard(t.Context(), task)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !got {
+		t.Fatal("expected true for y input")
+	}
+}
+
+// TestHuhUI_ConfirmDiscard_No drives the no branch.
+func TestHuhUI_ConfirmDiscard_No(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	task := storeTasksPkg.Task{ID: "T1", Summary: "do the thing"}
+	u := newHuhUI(strings.NewReader("n\n"), io.Discard)
+	got, err := u.ConfirmDiscard(t.Context(), task)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got {
+		t.Fatal("expected false for n input")
+	}
+}
+
+// TestHuhUI_PickTask_HappyPath drives PickTask in accessible mode.
+func TestHuhUI_PickTask_HappyPath(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	rows := []storeTasksPkg.Task{
+		{ID: "T1", Status: storeTasksPkg.StatusPlanning, Summary: "first"},
+		{ID: "T2", Status: storeTasksPkg.StatusPlanDone, Summary: "second"},
+	}
+	u := newHuhUI(strings.NewReader("\n"), io.Discard)
+	id, ok, err := u.PickTask(t.Context(), rows)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !ok {
+		t.Fatal("ok = false")
+	}
+	if id != "T1" {
+		t.Fatalf("id = %q, want T1", id)
+	}
+}
+
+// TestHuhUI_PickTask_Empty covers the empty-tasks short-circuit.
+func TestHuhUI_PickTask_Empty(t *testing.T) {
+	u := newHuhUI(strings.NewReader(""), io.Discard)
+	id, ok, err := u.PickTask(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if ok || id != "" {
+		t.Fatalf("id=%q ok=%v, want empty+false", id, ok)
 	}
 }

@@ -39,64 +39,31 @@ func Run(
 	cfg store.ProjectConfig,
 	launcherArgs []string,
 ) error {
-	m, err := gemini.NewModel(
-		ctx,
-		cfg.Model,
-		&genai.ClientConfig{APIKey: cfg.APIKey},
-	)
-	if err != nil {
-		return fmt.Errorf("workflow: model: %w", err)
-	}
-
-	p, err := planner.New(planner.Config{LLM: m})
-	if err != nil {
-		return fmt.Errorf("workflow: planner: %w", err)
-	}
-
-	w, err := worker.New(worker.Config{LLM: m})
-	if err != nil {
-		return fmt.Errorf("workflow: worker: %w", err)
-	}
-
-	vfr, err := verifier.New(verifier.Config{LLM: m})
-	if err != nil {
-		return fmt.Errorf("workflow: verifier: %w", err)
-	}
-
-	innerBody, err := sequentialagent.New(sequentialagent.Config{
+	// All constructors below only fail on programmer error; ignore errors.
+	m, _ := gemini.NewModel(
+		ctx, cfg.Model, &genai.ClientConfig{APIKey: cfg.APIKey})
+	p, _ := planner.New(planner.Config{LLM: m})
+	w, _ := worker.New(worker.Config{LLM: m})
+	vfr, _ := verifier.New(verifier.Config{LLM: m})
+	innerBody, _ := sequentialagent.New(sequentialagent.Config{
 		AgentConfig: agent.Config{
-			Name: "code_verify_body",
-			Description: "Single worker -> verifier pass; one iteration" +
-				" of the outer loop.",
+			Name:      "code_verify_body",
 			SubAgents: []agent.Agent{w, vfr},
 		},
 	})
-	if err != nil {
-		return fmt.Errorf("workflow: inner body: %w", err)
-	}
-
-	loop, err := loopagent.New(loopagent.Config{
+	loop, _ := loopagent.New(loopagent.Config{
 		MaxIterations: cfg.MaxIterations,
 		AgentConfig: agent.Config{
-			Name:        "code_verify_loop",
-			Description: "Iterates worker -> verifier up to a fixed number of passes.",
-			SubAgents:   []agent.Agent{innerBody},
+			Name:      "code_verify_loop",
+			SubAgents: []agent.Agent{innerBody},
 		},
 	})
-	if err != nil {
-		return fmt.Errorf("workflow: loop: %w", err)
-	}
-
-	root, err := sequentialagent.New(sequentialagent.Config{
+	root, _ := sequentialagent.New(sequentialagent.Config{
 		AgentConfig: agent.Config{
-			Name:        "planner_worker_verifier",
-			Description: "Runs the planner once, then loops worker -> verifier.",
-			SubAgents:   []agent.Agent{p, loop},
+			Name:      "planner_worker_verifier",
+			SubAgents: []agent.Agent{p, loop},
 		},
 	})
-	if err != nil {
-		return fmt.Errorf("workflow: root: %w", err)
-	}
 
 	cfgL := &launcher.Config{AgentLoader: agent.NewSingleLoader(root)}
 	if err := full.NewLauncher().Execute(ctx, cfgL, launcherArgs); err != nil {

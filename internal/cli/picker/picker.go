@@ -17,7 +17,6 @@ package picker
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -53,15 +52,11 @@ func (p *Picker) run(ctx context.Context, field huh.Field) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("ui: %w", err)
 	}
-	err := huh.NewForm(huh.NewGroup(field)).
+	if err := huh.NewForm(huh.NewGroup(field)).
 		WithInput(p.in).
 		WithOutput(p.out).
 		WithTheme(uitheme.Theme()).
-		RunWithContext(ctx)
-	if errors.Is(err, huh.ErrUserAborted) {
-		return huh.ErrUserAborted
-	}
-	if err != nil {
+		RunWithContext(ctx); err != nil {
 		return fmt.Errorf("ui: %w", err)
 	}
 	return nil

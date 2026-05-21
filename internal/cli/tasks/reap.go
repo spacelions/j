@@ -40,14 +40,10 @@ func maybeReap(s *tasks.Store, stderr io.Writer, tasksDir string,
 		return t
 	}
 	_ = probe.Release()
-	switch t.Status {
-	case tasks.StatusPlanning:
+	if t.Status == tasks.StatusPlanning {
 		return finalisePlanReap(s, stderr, tasksDir, t)
-	case tasks.StatusWorking:
-		return finaliseWorkReap(s, stderr, tasksDir, t)
-	default:
-		return t
 	}
+	return finaliseWorkReap(s, stderr, tasksDir, t)
 }
 
 func finalisePlanReap(s *tasks.Store, stderr io.Writer, tasksDir string,

@@ -807,3 +807,31 @@ func TestResolveToolModel_StoreOpenFails(t *testing.T) {
 		t.Fatalf("got (%q, %q), want empty (store not available)", tool, model)
 	}
 }
+
+// TestResolveToolModel_FillsBothFromStore covers the branch where both
+// tool and model are empty and the store supplies both values, exercising
+// the model == "" && kv.Key == "model" assignment.
+func TestResolveToolModel_FillsBothFromStore(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	ss, ok := store.OpenSettings(io.Discard)
+	if !ok {
+		t.Fatal("OpenSettings failed")
+	}
+	if err := ss.Put(store.BucketWorker, "tool", "cursor"); err != nil {
+		t.Fatalf("Put tool: %v", err)
+	}
+	if err := ss.Put(store.BucketWorker, "model", "sonnet-4"); err != nil {
+		t.Fatalf("Put model: %v", err)
+	}
+	_ = ss.Close()
+	tool, model := ResolveToolModel("", "", store.BucketWorker, io.Discard)
+	if tool != "cursor" {
+		t.Fatalf("tool = %q, want cursor", tool)
+	}
+	if model != "sonnet-4" {
+		t.Fatalf("model = %q, want sonnet-4", model)
+	}
+}

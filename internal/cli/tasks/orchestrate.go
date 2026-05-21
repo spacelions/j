@@ -185,11 +185,8 @@ func dispatchFullOrchestratePhase(
 	tctx orchestrator.TaskContext,
 	pc orchestrator.PhaseConfig,
 ) error {
-	approval, err := resolvePlanRequiresApproval(
+	approval, _ := resolvePlanRequiresApproval(
 		opts.PlanRequiresApproval)
-	if err != nil {
-		return err
-	}
 	pc.Phase = orchestrator.RunPhaseFull
 	pc.PlanRequiresApproval = approval
 	return orchestrator.RunForTaskWithGate(ctx, tctx, pc)

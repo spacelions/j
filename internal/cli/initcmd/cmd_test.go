@@ -208,6 +208,22 @@ func TestRun_UIError(t *testing.T) {
 	}
 }
 
+// TestSeedDefaults_OpenError pins the store.Open error branch in
+// seedDefaults: making the settings path a directory causes bolt.Open
+// to fail, so the error propagates.
+func TestSeedDefaults_OpenError(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	// Replace the settings file with a directory.
+	path := store.DefaultPath()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := seedDefaults(nil, nil); err == nil {
+		t.Fatal("expected error when settings is a directory")
+	}
+}
+
 func TestRun_NewSmoke(t *testing.T) {
 	viper.Reset()
 	t.Cleanup(viper.Reset)
@@ -517,5 +533,46 @@ func TestNew_PlanRequiresApprovalFlagWiring(t *testing.T) {
 	got, set := readProjectKey(t, store.KeyPlanRequiresApproval)
 	if !set || got != "false" {
 		t.Fatalf("project.plan_requires_approval = (%q, %v), want (\"false\", true)", got, set)
+	}
+}
+
+// TestRun_ProjectInitializedError covers the ProjectInitialized error branch:
+// a symlink loop at the .j path makes os.Stat return ELOOP (not ENOENT).
+func TestRun_ProjectInitializedError(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	jDir := store.DefaultDir()
+	if err := os.Symlink(jDir, jDir); err != nil {
+		t.Fatal(err)
+	}
+	err := Run(t.Context(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     &scriptedUI{},
+	})
+	if err == nil {
+		t.Fatal("expected error for symlink-loop .j path")
+	}
+}
+
+// TestRun_EnsureProjectError covers the EnsureProject error branch:
+// a read-only parent directory prevents MkdirAll from creating .j/.
+func TestRun_EnsureProjectError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	t.Chdir(dir)
+	err := Run(t.Context(), Options{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		UI:     &scriptedUI{},
+	})
+	if err == nil {
+		t.Fatal("expected error for read-only parent dir")
 	}
 }

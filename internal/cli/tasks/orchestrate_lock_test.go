@@ -3,6 +3,7 @@ package tasks
 import (
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -71,6 +72,41 @@ func TestContentionMessageNamesTakeoverCommand(t *testing.T) {
 			t.Fatalf("contentionMessage(%q) = %q, want %q",
 				tc.phase, got, tc.want)
 		}
+	}
+}
+
+// TestInstallOrchestrateSignalHandler_StopCleansUp covers the done
+// branch in the goroutine: calling the stop function closes done and
+// cancels the derived context.
+func TestInstallOrchestrateSignalHandler_StopCleansUp(t *testing.T) {
+	ctx, stop := installOrchestrateSignalHandler(t.Context())
+	if ctx.Err() != nil {
+		t.Fatal("context should not be cancelled before stop")
+	}
+	stop()
+	select {
+	case <-ctx.Done():
+		// Expected: stop() cancelled the derived context.
+	case <-t.Context().Done():
+		t.Fatal("test context expired before handler context was cancelled")
+	}
+}
+
+// TestInstallOrchestrateSignalHandler_SigTermCancels tests the signal
+// branch: sending SIGTERM to self cancels the derived context.
+func TestInstallOrchestrateSignalHandler_SigTermCancels(t *testing.T) {
+	ctx, stop := installOrchestrateSignalHandler(t.Context())
+	defer stop()
+	// Send SIGTERM to the current process to trigger the signal branch.
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+		stop()
+		t.Fatal(err)
+	}
+	select {
+	case <-ctx.Done():
+		// Expected: SIGTERM cancelled the context.
+	case <-t.Context().Done():
+		t.Fatal("test context expired before signal was received")
 	}
 }
 

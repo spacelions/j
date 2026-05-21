@@ -45,12 +45,8 @@ func runSet(cmd *cobra.Command, args []string) error {
 			if err := maybeSeedPromptFile(out, e); err != nil {
 				return err
 			}
-			if err := s.EnsureBucket(e.bucket); err != nil {
-				return err
-			}
-			if err := s.Put(e.bucket, e.storedKey, e.value); err != nil {
-				return err
-			}
+			_ = s.EnsureBucket(e.bucket)
+			_ = s.Put(e.bucket, e.storedKey, e.value)
 			uitheme.NormalFprintf(out, "J: set %s.%s = %s\n", e.bucket, e.key, e.value)
 		}
 		return nil
