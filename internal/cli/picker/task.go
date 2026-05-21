@@ -2,11 +2,8 @@ package picker
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/charmbracelet/huh"
 
 	"github.com/spacelions/j/internal/store/tasks"
 )
@@ -17,13 +14,12 @@ import (
 //
 // Contract:
 //   - empty tasks      → ("", false, nil)
-//   - huh.ErrUserAborted (Ctrl-C / Esc) → ("", false, nil)
 //   - chosen           → (id, true, nil)
-//   - other UI error   → ("", false, wrapped)
+//   - UI error         → ("", false, wrapped) — callers with a
+//     resolver.CleanAbort defer convert huh.ErrUserAborted to nil
 //
 // tasks is expected to be pre-sorted by the caller (orchestrators run
-// tasks.SortTasks first). ok=false collapses the abort and empty
-// branches so callers treat them uniformly as "no selection".
+// tasks.SortTasks first).
 func (p *Picker) PickTask(
 	ctx context.Context, title string, tasks []tasks.Task,
 ) (string, bool, error) {
@@ -32,17 +28,10 @@ func (p *Picker) PickTask(
 	}
 	labels, byLabel := FormatTaskLabels(tasks)
 	chosen, err := p.choose(ctx, title, labels)
-	if errors.Is(err, huh.ErrUserAborted) {
-		return "", false, nil
-	}
 	if err != nil {
 		return "", false, err
 	}
-	id, ok := byLabel[chosen]
-	if !ok {
-		return "", false, fmt.Errorf("picker: unknown selection %q", chosen)
-	}
-	return id, true, nil
+	return byLabel[chosen], true, nil
 }
 
 // FormatTaskLabels mirrors the label format the picker uses on the

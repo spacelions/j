@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -119,6 +121,114 @@ func stubAssignedIssuesServer(t *testing.T, issues ...linear.Issue) {
 				},
 			},
 		})
+	}))
+	t.Cleanup(srv.Close)
+	prev := linear.TestEndpoint
+	linear.TestEndpoint = srv.URL
+	t.Cleanup(func() { linear.TestEndpoint = prev })
+}
+
+// stubProjectsServer points linear.TestEndpoint at a server that
+// returns the supplied projects for a projects query and an empty
+// assigned-issues list for viewer queries. The handler reads the
+// request body to route by query type. Reset on t.Cleanup.
+func stubProjectsServer(t *testing.T, projects ...linear.Project) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), "projects") {
+			nodes := make([]map[string]any, 0, len(projects))
+			for _, p := range projects {
+				nodes = append(nodes, map[string]any{
+					"id": p.ID, "name": p.Name,
+				})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"projects": map[string]any{"nodes": nodes},
+				},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"viewer": map[string]any{
+					"assignedIssues": map[string]any{
+						"nodes": []map[string]any{},
+					},
+				},
+			},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	prev := linear.TestEndpoint
+	linear.TestEndpoint = srv.URL
+	t.Cleanup(func() { linear.TestEndpoint = prev })
+}
+
+// stubProjectsAndIssuesServer is a combined server for tests that need
+// both ListProjects and ListAssignedIssues. It dispatches on the query
+// keyword in the request body.
+func stubProjectsAndIssuesServer(
+	t *testing.T, projects []linear.Project, issues []linear.Issue,
+) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), "projects") {
+			nodes := make([]map[string]any, 0, len(projects))
+			for _, p := range projects {
+				nodes = append(nodes, map[string]any{
+					"id": p.ID, "name": p.Name,
+				})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"projects": map[string]any{"nodes": nodes},
+				},
+			})
+			return
+		}
+		iNodes := make([]map[string]any, 0, len(issues))
+		for _, iss := range issues {
+			iNodes = append(iNodes, map[string]any{
+				"identifier": iss.Identifier, "title": iss.Title,
+				"url": iss.URL, "state": map[string]string{"name": iss.State},
+			})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"viewer": map[string]any{
+					"assignedIssues": map[string]any{"nodes": iNodes},
+				},
+			},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	prev := linear.TestEndpoint
+	linear.TestEndpoint = srv.URL
+	t.Cleanup(func() { linear.TestEndpoint = prev })
+}
+
+// stubAssignedIssuesErrorServer points linear.TestEndpoint at a server
+// that always returns a non-200 response so ListAssignedIssues fails.
+func stubAssignedIssuesErrorServer(t *testing.T) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	prev := linear.TestEndpoint
+	linear.TestEndpoint = srv.URL
+	t.Cleanup(func() { linear.TestEndpoint = prev })
+}
+
+// stubProjectsServerError points linear.TestEndpoint at a server that
+// always returns a non-200 response so ListProjects fails.
+func stubProjectsServerError(t *testing.T) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "internal error", http.StatusInternalServerError)
 	}))
 	t.Cleanup(srv.Close)
 	prev := linear.TestEndpoint
@@ -331,6 +441,19 @@ func TestPickSource_Task_ListError(t *testing.T) {
 	}
 }
 
+// TestPickSource_Task_PickError covers the ui.PickTask error branch.
+func TestPickSource_Task_PickError(t *testing.T) {
+	want := errors.New("pick boom")
+	ui := &scriptedSourceUI{source: SourceTask, taskErr: want}
+	listTasks := func() ([]tasks.Task, error) {
+		return []tasks.Task{{ID: "01ABC"}}, nil
+	}
+	_, err := PickSource(t.Context(), ui, []Source{SourceTask}, listTasks, nil)
+	if !errors.Is(err, want) {
+		t.Fatalf("err = %v, want wrapped 'pick boom'", err)
+	}
+}
+
 func TestPickSource_SelectSourceError(t *testing.T) {
 	want := errors.New("source boom")
 	ui := &scriptedSourceUI{sourceErr: want}
@@ -346,5 +469,242 @@ func TestPickSource_MarkdownError(t *testing.T) {
 	_, err := PickSource(t.Context(), ui, []Source{SourceMarkdown}, nil, nil)
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v, want wrapped 'md boom'", err)
+	}
+}
+
+// TestPickSource_UnsupportedSource exercises the default branch in
+// PickSource's switch: a scripted UI that returns a Source value not
+// handled by any explicit case surfaces the "unsupported source" error.
+func TestPickSource_UnsupportedSource(t *testing.T) {
+	custom := Source("custom")
+	ui := &scriptedSourceUI{source: custom}
+	_, err := PickSource(t.Context(), ui, []Source{custom}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "unsupported source") {
+		t.Fatalf("err = %v, want unsupported source", err)
+	}
+}
+
+// TestResolveLinearToken_SaveError covers the SaveAPIKey error branch:
+// a read-only .j/ directory allows LoadAPIKey to return ("", nil) via
+// the ErrNotExist path (no settings file yet) but makes SaveAPIKey
+// fail when bolt tries to create the settings file.
+func TestResolveLinearToken_SaveError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	tmp := t.TempDir()
+	t.Chdir(tmp)
+	jDir := store.DefaultDir()
+	if err := os.MkdirAll(jDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(jDir, 0o755) })
+	ui := &scriptedSourceUI{
+		source:         SourceLinear,
+		linearAPIKey:   "tok",
+		linearAPIKeyOK: true,
+	}
+	_, err := PickSource(t.Context(), ui, []Source{SourceLinear}, nil, nil)
+	if err == nil {
+		t.Fatal("expected SaveAPIKey error when .j/ is not writable")
+	}
+}
+
+// TestResolveLinearToken_SaveSucceeds covers the return-t-true-nil
+// branch: with a fresh project and a user-supplied token that saves
+// cleanly, the token is returned with ok=true.
+func TestResolveLinearToken_SaveSucceeds(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	stubAssignedIssuesServer(t)
+	ui := &scriptedSourceUI{
+		source:         SourceLinear,
+		linearAPIKey:   "tok",
+		linearAPIKeyOK: true,
+	}
+	_, err := PickSource(t.Context(), ui, []Source{SourceLinear}, nil, nil)
+	if err == nil || err.Error() != "no Linear issues assigned to you" {
+		t.Fatalf("err = %v, want empty-issues error after token save", err)
+	}
+	got, _ := linear.LoadAPIKey()
+	if got != "tok" {
+		t.Fatalf("LoadAPIKey = %q, want tok after save", got)
+	}
+}
+
+// TestResolveLinearProject_EmptyProjects covers the len(projects)==0
+// branch: when ListProjects returns an empty slice, resolveLinearProject
+// returns ("", true, nil) so the caller uses no project filter.
+func TestResolveLinearProject_EmptyProjects(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveAPIKey("tok"); err != nil {
+		t.Fatal(err)
+	}
+	stubProjectsServer(t)
+	stubAssignedIssuesServer(t)
+	ui := &scriptedSourceUI{source: SourceLinear}
+	_, err := PickSource(t.Context(), ui, []Source{SourceLinear}, nil, nil)
+	if err == nil || err.Error() != "no Linear issues assigned to you" {
+		t.Fatalf("err = %v, want empty-issues error", err)
+	}
+}
+
+// TestResolveLinearProject_PickAndSave covers the happy path where
+// ListProjects returns projects, the user picks one, and it is saved.
+func TestResolveLinearProject_PickAndSave(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveAPIKey("tok"); err != nil {
+		t.Fatal(err)
+	}
+	stubProjectsAndIssuesServer(t,
+		[]linear.Project{{ID: "proj-1", Name: "Alpha"}},
+		[]linear.Issue{{Identifier: "ENG-1", Title: "do it", State: "Todo"}},
+	)
+	ui := &scriptedSourceUI{
+		source:          SourceLinear,
+		pickedProject:   linear.Project{ID: "proj-1", Name: "Alpha"},
+		pickedProjectOK: true,
+		pickedIssue: linear.Issue{
+			Identifier: "ENG-1", Title: "do it", State: "Todo",
+		},
+		pickedIssueOK: true,
+	}
+	res, err := PickSource(t.Context(), ui, []Source{SourceLinear}, nil, nil)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if res.LinearIdentifier != "ENG-1" {
+		t.Fatalf("identifier = %q, want ENG-1", res.LinearIdentifier)
+	}
+	got, _ := linear.LoadProject()
+	if got != "proj-1" {
+		t.Fatalf("LoadProject = %q, want proj-1 after save", got)
+	}
+}
+
+// TestResolveLinearProject_PickCancelled covers the ok=false path
+// when the user cancels the project picker.
+func TestResolveLinearProject_PickCancelled(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveAPIKey("tok"); err != nil {
+		t.Fatal(err)
+	}
+	stubProjectsServer(t, linear.Project{ID: "proj-1", Name: "Alpha"})
+	ui := &scriptedSourceUI{
+		source:          SourceLinear,
+		pickedProjectOK: false,
+	}
+	res, err := PickSource(t.Context(), ui, []Source{SourceLinear}, nil, nil)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !res.Cancelled {
+		t.Fatalf("res.Cancelled = false, want true")
+	}
+}
+
+// TestResolveLinearProject_SaveError covers the SaveProject error
+// branch: making the settings file read-only allows LoadProject to
+// succeed (bolt opens in read mode) but causes SaveProject to fail
+// when bolt tries to write.
+func TestResolveLinearProject_SaveError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveAPIKey("tok"); err != nil {
+		t.Fatal(err)
+	}
+	path := store.DefaultPath()
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+	stubProjectsServer(t, linear.Project{ID: "proj-1", Name: "Alpha"})
+	ui := &scriptedSourceUI{
+		source:          SourceLinear,
+		pickedProject:   linear.Project{ID: "proj-1", Name: "Alpha"},
+		pickedProjectOK: true,
+	}
+	_, err := PickSource(t.Context(), ui, []Source{SourceLinear}, nil, nil)
+	if err == nil {
+		t.Fatal("expected SaveProject error when settings is read-only")
+	}
+}
+
+// TestResolveLinearProject_ListProjectsError covers the error path
+// when the Linear server is unreachable.
+func TestResolveLinearProject_ListProjectsError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveAPIKey("tok"); err != nil {
+		t.Fatal(err)
+	}
+	stubProjectsServerError(t)
+	ui := &scriptedSourceUI{source: SourceLinear}
+	_, err := PickSource(t.Context(), ui, []Source{SourceLinear}, nil, nil)
+	if err == nil {
+		t.Fatal("expected error from ListProjects failure")
+	}
+}
+
+// TestPickLinearSource_AssignedIssuesError covers the
+// client.ListAssignedIssues error branch in pickLinearSource.
+func TestPickLinearSource_AssignedIssuesError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveAPIKey("tok"); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveProject("p"); err != nil {
+		t.Fatal(err)
+	}
+	stubAssignedIssuesErrorServer(t)
+	ui := &scriptedSourceUI{source: SourceLinear}
+	_, err := PickSource(t.Context(), ui, []Source{SourceLinear}, nil, nil)
+	if err == nil {
+		t.Fatal("expected error from ListAssignedIssues failure")
+	}
+}
+
+// TestPickLinearSource_IssuePickError covers the ui.PickLinearIssue
+// error branch in pickLinearSource.
+func TestPickLinearSource_IssuePickError(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := store.EnsureProject(); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveAPIKey("tok"); err != nil {
+		t.Fatal(err)
+	}
+	if err := linear.SaveProject("p"); err != nil {
+		t.Fatal(err)
+	}
+	stubAssignedIssuesServer(t,
+		linear.Issue{Identifier: "ENG-1", Title: "x", State: "y"},
+	)
+	want := errors.New("issue pick boom")
+	ui := &scriptedSourceUI{source: SourceLinear, pickedIssueErr: want}
+	_, err := PickSource(t.Context(), ui, []Source{SourceLinear}, nil, nil)
+	if !errors.Is(err, want) {
+		t.Fatalf("err = %v, want wrapped 'issue pick boom'", err)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/spacelions/j/internal/cli/uitheme"
+	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
@@ -114,7 +115,8 @@ func (o EnterOptions) withDefaults() EnterOptions {
 //     Spawner is invoked with the resolved dir; its error is
 //     wrapped with "tasks enter: " so cobra surfaces a deterministic
 //     prefix on a non-zero shell.
-func RunEnter(ctx context.Context, opts EnterOptions) error {
+func RunEnter(ctx context.Context, opts EnterOptions) (err error) {
+	defer func() { err = resolver.CleanAbort(err) }()
 	opts = opts.withDefaults()
 	s := tasks.OpenDefault()
 	id, ok, err := resolveEnterID(ctx, s, opts)
