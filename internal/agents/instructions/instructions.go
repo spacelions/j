@@ -153,3 +153,18 @@ var Clarification string
 //
 //go:embed code_review.md
 var CodeReview string
+
+// CodeReviewClarificationResume is the resume-from-clarification
+// variant of the code-review prompt. Used when ResolveOrAllocate
+// reuses an existing `code-reviews/round-N/` because its
+// `clarification.md` is still present — the planner must read the
+// open question, address it, and delete the file so a future round
+// allocates a fresh `round-N+1/` instead of looping on the stale
+// file. Carries eight %q placeholders: clarification.md (read),
+// review.toml (read), canonical requirements.md, canonical
+// plan.md, clarification.md (delete on resolved), clarification.md
+// (rewrite if still open), round plan.md output, and review.toml
+// (write).
+//
+//go:embed code_review_clarification_resume.md
+var CodeReviewClarificationResume string

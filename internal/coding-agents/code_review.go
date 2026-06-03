@@ -51,6 +51,19 @@ type CodeReviewRequest struct {
 	// backend redirects stdout/stderr to. Same contract as
 	// PlanRequest.AgentLogPath.
 	AgentLogPath string
+	// Resume, when true, tells the prompt builder to use the
+	// clarification-resume template instead of the fresh-run
+	// template. Set by the cli when codereview.ResolveOrAllocate
+	// returned an existing round whose clarification.md is still
+	// present; the resume prompt instructs the planner to read,
+	// address, and delete the clarification before exiting.
+	Resume bool
+	// MustRead is the project-wide list of files every agent must
+	// read before starting (sourced from the project.must_read
+	// setting). The prompt builder prepends them at the top of the
+	// rendered prompt; empty preserves the byte-identical
+	// pre-must-read output.
+	MustRead []string
 }
 
 // CodeReviewer is the optional Agent companion that backs

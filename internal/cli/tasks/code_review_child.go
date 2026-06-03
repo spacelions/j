@@ -120,7 +120,7 @@ func runCodeReviewPlanner(
 		return err
 	}
 	taskDir := filepath.Dir(filepath.Dir(round.Dir))
-	_ = resumed // wired in Phase C (clarification-resume prompt)
+	mustRead, _ := resolver.MustRead()
 	req := codingagents.CodeReviewRequest{
 		TaskDir:             taskDir,
 		Model:               model,
@@ -131,6 +131,8 @@ func runCodeReviewPlanner(
 		ClarificationPath:   round.ClarificationPath,
 		Interactive:         opts.Interactive,
 		AgentLogPath:        filepath.Join(taskDir, tasks.AgentLogFileName),
+		Resume:              resumed,
+		MustRead:            mustRead,
 	}
 	pid, err := codingagents.RunCodeReview(ctx, agent, req)
 	if err != nil {

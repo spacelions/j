@@ -74,3 +74,56 @@ func TestCodeReviewPrompt_NamesArtifactFilenames(t *testing.T) {
 	assert.Contains(t, got, "plan.md")
 	assert.Contains(t, got, "clarification.md")
 }
+
+// TestCodeReviewPrompt_DocumentsTOMLLifecycle pins P11: the prompt
+// must say that review.toml is pre-populated and that the planner
+// only appends decisions.
+func TestCodeReviewPrompt_DocumentsTOMLLifecycle(t *testing.T) {
+	got := CodeReviewPrompt(sampleCodeReviewRequest())
+	for _, phrase := range []string{
+		"pre-populated",
+		"APPEND",
+		"do not add or remove rows",
+	} {
+		assert.Contains(t, got, phrase,
+			"prompt missing TOML-lifecycle wording %q", phrase)
+	}
+}
+
+// TestCodeReviewPrompt_PrependsMustRead pins P10.
+func TestCodeReviewPrompt_PrependsMustRead(t *testing.T) {
+	req := sampleCodeReviewRequest()
+	req.MustRead = []string{"AGENTS.md", "docs/style.md"}
+	got := CodeReviewPrompt(req)
+	for _, path := range req.MustRead {
+		assert.Contains(t, got, path,
+			"prompt must include must-read entry %q", path)
+	}
+	headerIdx := strings.Index(got, "AGENTS.md")
+	bodyIdx := strings.Index(got, "You are the code-review planner")
+	assert.Less(t, headerIdx, bodyIdx,
+		"must-read header must come before the role body")
+}
+
+// TestCodeReviewPrompt_ResumeUsesClarificationTemplate pins P9.
+func TestCodeReviewPrompt_ResumeUsesClarificationTemplate(t *testing.T) {
+	req := sampleCodeReviewRequest()
+	req.Resume = true
+	got := CodeReviewPrompt(req)
+	assert.Contains(t, got,
+		"You are the code-review planner resuming",
+		"resume mode must use the clarification-resume template")
+	assert.Contains(t, got, "delete",
+		"resume prompt must tell the planner to delete clarification.md")
+	// And the regular template is NOT used: the fresh template's
+	// "produce a code-review round plan" sentence should not appear.
+	assert.NotContains(t, got,
+		"and produce a code-review round plan")
+}
+
+// TestCodeReviewPrompt_FreshNotResume pins that the resume body
+// does NOT leak into the fresh-run template when Resume=false.
+func TestCodeReviewPrompt_FreshNotResume(t *testing.T) {
+	got := CodeReviewPrompt(sampleCodeReviewRequest())
+	assert.NotContains(t, got, "resuming a previous round")
+}
