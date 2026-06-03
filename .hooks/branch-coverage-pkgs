@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Print the unique package directories touched by the current change.
+# Used by the branch-coverage Makefile target so gobco only runs for
+# production packages affected by the change.
+#
+# File-list resolution (first match wins):
+#   1. BRANCH_COVERAGE_FILES env var (whitespace/newline-separated).
+#      Used by tests and explicit overrides.
+#   2. CI event range derived from EVENT_NAME and the GitHub-Actions-
+#      provided SHAs (PR_BASE_SHA/PR_HEAD_SHA for PRs; BEFORE_SHA/
+#      GITHUB_SHA for pushes; GITHUB_SHA^..GITHUB_SHA for the first
+#      push of a new branch where BEFORE_SHA is the zero SHA).
+#   3. Local fallback: paths changed against HEAD plus untracked files.
+#
+# Path filter: production Go files under internal/, excluding *_test.go
+# and the internal/testutil package.
+set -euo pipefail
+
+zero_sha="0000000000000000000000000000000000000000"
+
+list_files() {
+	if [ -n "${BRANCH_COVERAGE_FILES:-}" ]; then
+		printf '%s\n' "$BRANCH_COVERAGE_FILES" \
+			| tr -s '[:space:]' '\n' \
+			| awk 'NF'
+		return
+	fi
+
+	case "${EVENT_NAME:-}" in
+	pull_request)
+		if [ -n "${PR_BASE_SHA:-}" ] && [ -n "${PR_HEAD_SHA:-}" ]; then
+			git diff --name-only \
+				"$PR_BASE_SHA..$PR_HEAD_SHA"
+			return
+		fi
+		;;
+	push)
+		if [ -n "${BEFORE_SHA:-}" ] \
+			&& [ "$BEFORE_SHA" != "$zero_sha" ] \
+			&& [ -n "${GITHUB_SHA:-}" ]; then
+			git diff --name-only \
+				"$BEFORE_SHA..$GITHUB_SHA"
+			return
+		fi
+		if [ -n "${GITHUB_SHA:-}" ]; then
+			git diff --name-only \
+				"$GITHUB_SHA^..$GITHUB_SHA"
+			return
+		fi
+		;;
+	esac
+
+	{
+		git diff --name-only HEAD
+		git ls-files --others --exclude-standard
+	} | sort -u
+}
+
+list_files | awk '
+	!/\.go$/ { next }
+	/(^|\/)[^\/]+_test\.go$/ { next }
+	!/^internal\// { next }
+	/^internal\/testutil(\/|$)/ { next }
+	{
+		sub(/\/[^\/]+$/, "")
+		print "./" $0
+	}
+' | sort -u
