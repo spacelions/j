@@ -1,11 +1,10 @@
-// Package codereview models the per-round review.toml file used by
-// `j tasks code-review`. The fetched-feedback portion is written
-// before the planner runs; the planner appends decisions and the
-// validator re-reads the file before the round is treated as
-// complete. The model and validator are kept inside the cli/tasks
-// tree (rather than internal/tools/github) so the github package
-// stays a pure GraphQL client and the validator can depend on the
-// store/tasks helpers without an import cycle.
+// Package codereview owns every code-review storage concern: the
+// `review.toml` data model + IO + post-planner validator, plus the
+// per-task `code-reviews/round-N/` directory allocator. Lives next
+// to internal/store/tasks so each package owns one slice of the
+// per-task on-disk layout; tasks owns the canonical
+// requirements.md / plan.md / agent.log / flock, codereview owns
+// the review round tree.
 package codereview
 
 import (

@@ -1,4 +1,4 @@
-package tasks
+package codereview
 
 import (
 	"errors"
@@ -12,33 +12,33 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
-// codeReviewsDirName is the per-task subdirectory that holds every
+// RoundsDirName is the per-task subdirectory that holds every
 // code-review round. Each round lives at
 // `<task-dir>/code-reviews/round-N/` where N starts at 1.
-const codeReviewsDirName = "code-reviews"
+const RoundsDirName = "code-reviews"
 
 // roundDirPrefix is the `round-` literal in `round-N/`. Centralised
 // so the allocator and the test helpers share the same string.
 const roundDirPrefix = "round-"
 
-// reviewTOMLFileName is the per-round review.toml file the github
+// ReviewFileName is the per-round review.toml file the github
 // fetcher writes and the planner rewrites.
-const reviewTOMLFileName = "review.toml"
+const ReviewFileName = "review.toml"
 
-// roundPlanFileName is the per-round plan.md the planner writes.
-// Matches the canonical plan.md name so future tooling can grep for
-// either filename interchangeably.
-const roundPlanFileName = "plan.md"
+// PlanFileName is the per-round plan.md the planner writes. Matches
+// the canonical plan.md name so future tooling can grep for either
+// filename interchangeably.
+const PlanFileName = "plan.md"
 
-// roundClarificationFileName is the per-round clarification.md the
+// ClarificationFileName is the per-round clarification.md the
 // planner writes when it cannot decide a round without a human
 // answer. Same filename as the canonical clarification.md so the
 // round-resume logic stays simple.
-const roundClarificationFileName = "clarification.md"
+const ClarificationFileName = "clarification.md"
 
-// codeReviewRound captures everything the cli needs to know about a
-// specific round directory.
-type codeReviewRound struct {
+// Round captures everything the cli needs to know about a specific
+// round directory.
+type Round struct {
 	N                 int
 	Dir               string
 	ReviewTOMLPath    string
@@ -46,51 +46,53 @@ type codeReviewRound struct {
 	ClarificationPath string
 }
 
-// resolveOrAllocateRound returns the round to operate on for taskID.
-// If the latest round has a `clarification.md`, the same round is
+// ResolveOrAllocate returns the round to operate on for taskID. If
+// the latest round has a `clarification.md`, the same round is
 // resumed in place (no new directory); otherwise the next integer
 // round is created with an empty layout. The caller must hold the
 // per-task flock before invoking this so two cli processes cannot
-// race a new round into existence.
-func resolveOrAllocateRound(taskID string) (codeReviewRound, error) {
-	root, err := codeReviewsDir(taskID)
+// race a new round into existence. Resumed reports whether the
+// returned round resumed an existing clarification round (true) or
+// allocated a fresh one (false).
+func ResolveOrAllocate(taskID string) (round Round, resumed bool, err error) {
+	root, err := roundsDir(taskID)
 	if err != nil {
-		return codeReviewRound{}, err
+		return Round{}, false, err
 	}
 	rounds, err := listRoundNumbers(root)
 	if err != nil {
-		return codeReviewRound{}, err
+		return Round{}, false, err
 	}
 	if len(rounds) > 0 {
 		latest := rounds[len(rounds)-1]
 		latestRound := newRoundAt(root, latest)
 		if hasClarification(latestRound.ClarificationPath) {
-			return latestRound, nil
+			return latestRound, true, nil
 		}
 	}
 	next := 1
 	if len(rounds) > 0 {
 		next = rounds[len(rounds)-1] + 1
 	}
-	round := newRoundAt(root, next)
-	if err := os.MkdirAll(round.Dir, 0o755); err != nil {
-		return codeReviewRound{}, fmt.Errorf(
-			"code-review: mkdir %q: %w", round.Dir, err)
+	allocated := newRoundAt(root, next)
+	if err := os.MkdirAll(allocated.Dir, 0o755); err != nil {
+		return Round{}, false, fmt.Errorf(
+			"codereview: mkdir %q: %w", allocated.Dir, err)
 	}
-	return round, nil
+	return allocated, false, nil
 }
 
-// codeReviewsDir returns `<task-dir>/code-reviews/`, ensuring the
-// parent task dir exists. A missing task dir surfaces as a wrapped
-// error so the cli can render the matching dangerous dialog.
-func codeReviewsDir(taskID string) (string, error) {
+// roundsDir returns `<task-dir>/code-reviews/`, ensuring the parent
+// task dir exists. A missing task dir surfaces as a wrapped error
+// so the cli can render the matching dangerous output.
+func roundsDir(taskID string) (string, error) {
 	taskDir, err := tasks.EnsureDir(taskID)
 	if err != nil {
 		return "", err
 	}
-	root := filepath.Join(taskDir, codeReviewsDirName)
+	root := filepath.Join(taskDir, RoundsDirName)
 	if err := os.MkdirAll(root, 0o755); err != nil {
-		return "", fmt.Errorf("code-review: mkdir %q: %w", root, err)
+		return "", fmt.Errorf("codereview: mkdir %q: %w", root, err)
 	}
 	return root, nil
 }
@@ -106,7 +108,7 @@ func listRoundNumbers(root string) ([]int, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("code-review: readdir %q: %w", root, err)
+		return nil, fmt.Errorf("codereview: readdir %q: %w", root, err)
 	}
 	var out []int
 	for _, e := range entries {
@@ -134,14 +136,14 @@ func parseRoundDir(name string) (int, bool) {
 	return n, true
 }
 
-func newRoundAt(root string, n int) codeReviewRound {
+func newRoundAt(root string, n int) Round {
 	dir := filepath.Join(root, fmt.Sprintf("%s%d", roundDirPrefix, n))
-	return codeReviewRound{
+	return Round{
 		N:                 n,
 		Dir:               dir,
-		ReviewTOMLPath:    filepath.Join(dir, reviewTOMLFileName),
-		PlanPath:          filepath.Join(dir, roundPlanFileName),
-		ClarificationPath: filepath.Join(dir, roundClarificationFileName),
+		ReviewTOMLPath:    filepath.Join(dir, ReviewFileName),
+		PlanPath:          filepath.Join(dir, PlanFileName),
+		ClarificationPath: filepath.Join(dir, ClarificationFileName),
 	}
 }
 

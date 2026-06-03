@@ -8,20 +8,19 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/spacelions/j/internal/cli/tasks/codereview"
 	"github.com/spacelions/j/internal/cli/uitheme"
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
-	"github.com/spacelions/j/internal/store"
+	"github.com/spacelions/j/internal/store/codereview"
 	"github.com/spacelions/j/internal/store/tasks"
 	"github.com/spacelions/j/internal/tools/github"
 	"github.com/spacelions/j/internal/util/agentlog"
 	"github.com/spacelions/j/internal/util/run"
 )
 
-// CodeReviewChildOptions configures RunCodeReviewChild. The exported
-// fields mirror the hidden child flags; cli tests inject scripted
-// fetchers via Fetcher.
+// CodeReviewChildOptions configures RunCodeReviewChild. The
+// exported fields mirror the hidden child flags; cli tests inject
+// scripted fetchers via Fetcher.
 type CodeReviewChildOptions struct {
 	TaskID      string
 	Interactive bool
@@ -29,20 +28,10 @@ type CodeReviewChildOptions struct {
 	Stdout      io.Writer
 	Stderr      io.Writer
 	Agents      []codingagents.Agent
-	// Fetcher, when non-nil, replaces the real github.Client. The cli
-	// wires the production fetcher via newGithubFetcher; tests inject
-	// a scripted one to avoid network IO.
-	Fetcher CodeReviewFetcher
-}
-
-// CodeReviewFetcher narrows the github.Client surface the child
-// process uses. The production cli wires github.NewClient + FetchPR;
-// tests inject a scripted fetcher that returns canned FetchResult
-// values without an httptest.Server.
-type CodeReviewFetcher interface {
-	FetchPR(
-		ctx context.Context, ref github.PRRef,
-	) (github.FetchResult, error)
+	// Fetcher, when non-nil, replaces the real github.Client. The
+	// cli wires the production fetcher via github.NewClient; tests
+	// inject a scripted fetcher to avoid network IO.
+	Fetcher resolver.CodeReviewFetcher
 }
 
 // RunCodeReviewChild is the body of the hidden
@@ -69,7 +58,7 @@ func RunCodeReviewChild(
 	if err != nil {
 		return err
 	}
-	if err := guardCodeReviewTask(opts.Stderr, row); err != nil {
+	if err := resolver.GuardCodeReviewTask(opts.Stderr, row); err != nil {
 		return err
 	}
 	return executeCodeReviewRound(ctx, opts, row)
@@ -84,7 +73,7 @@ func acquireCodeReviewLock(
 	}
 	var locked *tasks.LockedError
 	if errors.As(err, &locked) {
-		uitheme.DangerousDialogBox(opts.Stderr,
+		uitheme.DangerousOutput(opts.Stderr,
 			"J: %s", contentionMessage(opts.TaskID, locked.Holder))
 	}
 	return nil, err
@@ -98,96 +87,40 @@ func executeCodeReviewRound(
 ) error {
 	ref, err := github.ParseURL(row.PullRequestURL)
 	if err != nil {
-		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
+		uitheme.DangerousOutput(opts.Stderr, "J: %v", err)
 		return err
 	}
-	result, err := fetchPR(ctx, opts, ref)
-	if err != nil {
-		return err
-	}
-	round, err := resolveOrAllocateRound(opts.TaskID)
+	round, resumed, err := codereview.ResolveOrAllocate(opts.TaskID)
 	if err != nil {
 		return err
 	}
 	emitRoundMarker(opts.Stderr, opts.TaskID, round)
-	originalIDs, err := writeFetchedReview(round, result)
-	if err != nil {
-		return err
-	}
-	if err := runCodeReviewPlanner(ctx, opts, round); err != nil {
-		return err
-	}
-	return validateReviewRound(round, originalIDs, opts.Stderr)
-}
-
-func fetchPR(
-	ctx context.Context, opts CodeReviewChildOptions, ref github.PRRef,
-) (github.FetchResult, error) {
 	fetcher := opts.Fetcher
 	if fetcher == nil {
 		fetcher = github.NewClient(github.ResolveToken())
 	}
-	res, err := fetcher.FetchPR(ctx, ref)
+	originalIDs, err := resolver.FetchAndWriteReview(
+		ctx, fetcher, round, ref, opts.Stderr)
 	if err != nil {
-		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
-		return github.FetchResult{}, err
+		return err
 	}
-	return res, nil
-}
-
-// writeFetchedReview serialises the fetched feedback into the round
-// review.toml and returns the snapshot of source ids the validator
-// expects to find after the planner runs.
-func writeFetchedReview(
-	round codeReviewRound, res github.FetchResult,
-) (codereview.SourceIDSet, error) {
-	file := codereview.ReviewFile{
-		SchemaVersion: codereview.SchemaVersion,
-		Provider:      "github",
-		FetchedAt:     time.Now().UTC(),
-		PR: codereview.PR{
-			URL:    res.PR.URL,
-			Owner:  res.PR.Owner,
-			Repo:   res.PR.Repo,
-			Number: res.PR.Number,
-			State:  res.PR.State,
-			Draft:  res.PR.Draft,
-			Merged: res.PR.Merged,
-		},
-		Items: itemsFromFetch(res.Items),
+	if err := runCodeReviewPlanner(ctx, opts, round, resumed); err != nil {
+		return err
 	}
-	if err := codereview.Save(round.ReviewTOMLPath, file); err != nil {
-		return nil, err
-	}
-	return codereview.SnapshotSourceIDs(file), nil
-}
-
-func itemsFromFetch(in []github.Item) []codereview.Item {
-	out := make([]codereview.Item, 0, len(in))
-	for _, it := range in {
-		out = append(out, codereview.Item{
-			SourceID:   it.SourceID,
-			Kind:       string(it.Kind),
-			ThreadID:   it.ThreadID,
-			Author:     it.Author,
-			Body:       it.Body,
-			Path:       it.Path,
-			Line:       it.Line,
-			IsOutdated: it.IsOutdated,
-			HasJReply:  it.HasJReply,
-		})
-	}
-	return out
+	return resolver.ValidateReviewRound(round, originalIDs, opts.Stderr)
 }
 
 func runCodeReviewPlanner(
-	ctx context.Context, opts CodeReviewChildOptions, round codeReviewRound,
+	ctx context.Context, opts CodeReviewChildOptions,
+	round codereview.Round, resumed bool,
 ) error {
-	agent, model, err := resolvePlannerAgent(ctx, opts)
+	agent, model, err := resolver.ResolvePlannerAgent(
+		ctx, opts.Agents, opts.Stderr)
 	if err != nil {
 		return err
 	}
 	taskDir := filepath.Dir(filepath.Dir(round.Dir))
+	_ = resumed // wired in Phase C (clarification-resume prompt)
 	req := codingagents.CodeReviewRequest{
 		TaskDir:             taskDir,
 		Model:               model,
@@ -225,8 +158,6 @@ func waitOrTerminate(ctx context.Context, pid int) error {
 		!errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
-	// Use a fresh context so termination is not itself cancelled by
-	// the parent's cancellation that triggered this branch.
 	_, _ = run.Terminate(context.Background(), pid, codeReviewTerminateGrace)
 	return err
 }
@@ -236,37 +167,7 @@ func waitOrTerminate(ctx context.Context, pid int) error {
 // SIGKILL escalates.
 const codeReviewTerminateGrace = 2 * time.Second
 
-// resolvePlannerAgent opens the project settings store, reads the
-// planner bucket's tool/model pair, and returns the matching agent.
-// The store is closed before returning so the bbolt file lock is not
-// held across the long planner round-trip.
-func resolvePlannerAgent(
-	ctx context.Context, opts CodeReviewChildOptions,
-) (codingagents.Agent, string, error) {
-	s, ok := store.OpenSettings(opts.Stderr)
-	if !ok {
-		return nil, "", resolver.ErrNoStoredSelection
-	}
-	defer func() { _ = s.Close() }()
-	return resolver.AgentFromStore(ctx, s, store.BucketPlanner, opts.Agents)
-}
-
-func validateReviewRound(
-	round codeReviewRound, ids codereview.SourceIDSet, stderr io.Writer,
-) error {
-	file, err := codereview.Load(round.ReviewTOMLPath)
-	if err != nil {
-		uitheme.DangerousDialogBox(stderr, "J: %v", err)
-		return err
-	}
-	if err := codereview.ValidateRound(file, ids, round.PlanPath); err != nil {
-		uitheme.DangerousDialogBox(stderr, "J: %v", err)
-		return err
-	}
-	return nil
-}
-
-func emitRoundMarker(w io.Writer, taskID string, round codeReviewRound) {
+func emitRoundMarker(w io.Writer, taskID string, round codereview.Round) {
 	_ = agentlog.Emit(w, "code_review_round", map[string]any{
 		"task":  taskID,
 		"round": round.N,

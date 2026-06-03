@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spacelions/j/internal/cli/tasks/codereview"
+	"github.com/spacelions/j/internal/store/codereview"
 )
 
 // TestCodeReviewRequiresItemDecisions verifies the review artifact

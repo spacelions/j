@@ -91,6 +91,16 @@ func DangerousDialogBox(w io.Writer, format string, a ...any) {
 		dangerStyle.Render(fmt.Sprintf(format, a...))))
 }
 
+// DangerousOutput is the single-line dangerous variant: orange
+// terminal text followed by a newline. Prefer this over
+// DangerousDialogBox for transient errors (bad input, missing
+// PR, lock contention) where a heavy bordered box adds visual
+// noise without conveying extra meaning. The format string follows
+// fmt.Sprintf semantics; no leading "warning:" prefix is needed.
+func DangerousOutput(w io.Writer, format string, a ...any) {
+	fmt.Fprintln(w, DangerousText(fmt.Sprintf(format, a...)))
+}
+
 func renderText(style lipgloss.Style, s string) string {
 	if !strings.Contains(s, "\n") {
 		return style.Render(s)
