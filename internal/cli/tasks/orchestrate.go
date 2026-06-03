@@ -110,7 +110,7 @@ func acquireOrchestrateLock(
 	}
 	var locked *tasks.LockedError
 	if errors.As(err, &locked) {
-		uitheme.DangerousDialogBox(opts.Stderr,
+		uitheme.DangerousOutput(opts.Stderr,
 			"J: %s", contentionMessage(opts.TaskID, locked.Holder))
 	}
 	return nil, err

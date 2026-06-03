@@ -60,13 +60,13 @@ func stampSpawnOnRow(stderr io.Writer, taskID, agentLogPath string) {
 	defer func() { _ = s.Close() }()
 	row, err := s.GetTask(taskID)
 	if err != nil {
-		uitheme.DangerousDialogBox(
+		uitheme.DangerousOutput(
 			stderr, "J: tasks get %q: %v", taskID, err)
 		return
 	}
 	row.AgentLogPath = agentLogPath
 	if err := s.PutTask(row); err != nil {
-		uitheme.DangerousDialogBox(stderr, "J: tasks put: %v", err)
+		uitheme.DangerousOutput(stderr, "J: tasks put: %v", err)
 	}
 }
 

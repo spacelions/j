@@ -943,7 +943,7 @@ func TestRunOrchestrate_PlanApprovalLoadError(t *testing.T) {
 
 // TestRunOrchestrate_ContentionPath covers the acquireOrchestrateLock
 // contention branch: when another goroutine holds the lock, AcquireLock
-// returns a *LockedError, which triggers the DangerousDialogBox message.
+// returns a *LockedError, which triggers the DangerousOutput message.
 func TestRunOrchestrate_ContentionPath(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)

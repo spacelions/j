@@ -100,6 +100,6 @@ func readFindings(stderr io.Writer, id string) (string, bool) {
 // `linear verify push:` prefix so the three hooks' warnings are
 // distinguishable in agent logs.
 func warnLinearVerify(stderr io.Writer, format string, a ...any) {
-	uitheme.DangerousDialogBox(
+	uitheme.DangerousOutput(
 		stderr, "linear verify push: "+format, a...)
 }

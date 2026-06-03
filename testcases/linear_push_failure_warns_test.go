@@ -9,10 +9,10 @@ import (
 )
 
 // TestLinearPush_MissingAPIKey_WarnsAndContinues pins the
-// "best-effort: any failure emits a DangerousDialogBox warning on
+// "best-effort: any failure emits a DangerousOutput warning on
 // stderr and the planner phase still reports success" acceptance
 // criterion. With no Linear API key configured, the hook must:
-//   - emit a warning to stderr (DangerousDialogBox shape)
+//   - emit a warning to stderr (DangerousOutput shape)
 //   - never reach an HTTP call
 //   - return without panic so the FSM transition completes
 //

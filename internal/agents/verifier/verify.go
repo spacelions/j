@@ -137,7 +137,7 @@ func resolveVerifyAgents(
 	}
 	resumeID, err := verifierAgent.NewResumeID(ctx)
 	if err != nil {
-		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
+		uitheme.DangerousOutput(opts.Stderr, "J: %v", err)
 	}
 	if _, err := resolveFixAgent(opts.Agents, res.Task); err != nil {
 		return nil, codingagents.AgentSession{}, err

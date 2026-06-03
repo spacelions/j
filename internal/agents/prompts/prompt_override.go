@@ -96,12 +96,12 @@ func lookupPromptPath(bucket string) (string, bool) {
 }
 
 // warnPromptOverride surfaces a single orange warning box on stderr.
-// The framing matches uitheme.DangerousDialogBox so other warnings
+// The framing matches uitheme.DangerousOutput so other warnings
 // (failed persistence, missing artifacts) read uniformly. It is
 // intentionally best-effort: a write failure on stderr is silent,
 // since a workflow that cannot warn cannot do anything useful with
 // that fact either.
 func warnPromptOverride(format string, a ...any) {
 	msg := "J: prompt override: " + fmt.Sprintf(format, a...)
-	uitheme.DangerousDialogBox(os.Stderr, "%s", msg)
+	uitheme.DangerousOutput(os.Stderr, "%s", msg)
 }

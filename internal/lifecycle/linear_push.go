@@ -35,7 +35,7 @@ func isPlanSuccessEvent(e tasks.Event) bool {
 // linearPushHook reads `requirements.md` / `plan.md` from the per-
 // task directory and pushes them back to the source Linear issue:
 // description ← requirements.md, plus a new comment carrying
-// plan.md. All failures emit a DangerousDialogBox warning to
+// plan.md. All failures emit a DangerousOutput warning to
 // stderr and return — the hook never returns an error and never
 // blocks the FSM transition. A failure of issueUpdate does not
 // prevent commentCreate from being attempted; the two are
@@ -100,6 +100,6 @@ func readPlanArtefacts(id string) (req, plan string, ok bool) {
 // `j plan` already redirects stderr to the per-task agent.log;
 // foreground sees it on the terminal. No extra wiring needed.
 func warnLinear(format string, a ...any) {
-	uitheme.DangerousDialogBox(
+	uitheme.DangerousOutput(
 		os.Stderr, "linear push: "+format, a...)
 }

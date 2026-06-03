@@ -70,7 +70,7 @@ func runPlanner(
 	}
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		uitheme.DangerousDialogBox(stderr, "J: %v", mustReadErr)
+		uitheme.DangerousOutput(stderr, "J: %v", mustReadErr)
 	}
 	resume := session.ResumeID == res.Task.PlanResumeSession &&
 		session.ResumeID != ""
@@ -164,7 +164,7 @@ func beginPlanSession(
 	}
 	resumeID, resumeErr := opts.Agent.NewResumeID(ctx)
 	if resumeErr != nil {
-		uitheme.DangerousDialogBox(stderr, "J: %v", resumeErr)
+		uitheme.DangerousOutput(stderr, "J: %v", resumeErr)
 	}
 	return codingagents.AgentSession{
 		Tool:     opts.Agent.Name(),

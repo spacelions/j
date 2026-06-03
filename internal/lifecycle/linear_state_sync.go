@@ -56,7 +56,7 @@ func InitLinearStateSync() {
 // Linear inbox reminder for the API-key owner when the destination
 // warrants human attention. The verify-begin transition additionally
 // posts a comment carrying the PR URL and pings the owner. Most
-// failures emit a DangerousDialogBox warning to stderr and return —
+// failures emit a DangerousOutput warning to stderr and return —
 // the hook never returns an error and never blocks the FSM
 // transition. Failures of issueUpdate do not prevent the follow-up
 // comment / reminder from being attempted. The lone exception is
@@ -233,6 +233,6 @@ func postPullRequestComment(
 // `linear sync:` prefix so the two hooks' warnings are
 // distinguishable in agent logs.
 func warnLinearSync(format string, a ...any) {
-	uitheme.DangerousDialogBox(
+	uitheme.DangerousOutput(
 		os.Stderr, "linear sync: "+format, a...)
 }

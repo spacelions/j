@@ -31,5 +31,5 @@ func finaliseVerifyFailIfStuck(stderr io.Writer, taskID string) {
 	if errors.As(err, &illegal) {
 		return
 	}
-	uitheme.DangerousDialogBox(stderr, "J: tasks put: %v", err)
+	uitheme.DangerousOutput(stderr, "J: tasks put: %v", err)
 }
