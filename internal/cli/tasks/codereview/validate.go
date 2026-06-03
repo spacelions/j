@@ -61,6 +61,10 @@ func validateItem(it Item) error {
 			"codereview: item %q invalid decision %q",
 			it.SourceID, it.Decision)
 	}
+	if it.Decision == "" {
+		return fmt.Errorf(
+			"codereview: item %q missing decision", it.SourceID)
+	}
 	if it.Decision == "accepted" && it.PlanRef == "" {
 		return fmt.Errorf(
 			"codereview: accepted item %q missing plan_ref",

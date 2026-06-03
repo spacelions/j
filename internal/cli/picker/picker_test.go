@@ -298,20 +298,16 @@ func TestPickTask_ContextCancelled(t *testing.T) {
 	}
 }
 
-// errReader returns the supplied error from every Read call, letting
-// tests drive the RunWithContext failure branch of Picker.run without
-// a real TTY.
-type errReader struct{ err error }
-
-func (r errReader) Read(_ []byte) (int, error) { return 0, r.err }
-
-// TestRun_FormError covers the RunWithContext error branch in run():
-// an errReader causes huh to fail with a non-ErrUserAborted error.
+// TestRun_FormError covers Picker.run's error branch using a
+// cancelled context. huh v1 accessible mode ignores field read
+// errors, so reader-based form failure is not deterministic.
 func TestRun_FormError(t *testing.T) {
-	p := New(errReader{err: io.ErrUnexpectedEOF}, io.Discard)
-	_, err := p.choose(t.Context(), "Pick", []string{"a"})
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	p := New(strings.NewReader(""), io.Discard)
+	_, err := p.choose(ctx, "Pick", []string{"a"})
 	if err == nil {
-		t.Fatal("expected error from form failure")
+		t.Fatal("expected error")
 	}
 }
 
@@ -348,17 +344,19 @@ func TestPickMarkdownInCwd_ScanError(t *testing.T) {
 }
 
 // TestPickMarkdownInCwd_ChooseError covers the p.choose error branch
-// in PickMarkdownInCwd: an errReader causes the select form to fail.
+// in PickMarkdownInCwd with a cancelled context.
 func TestPickMarkdownInCwd_ChooseError(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	if err := os.WriteFile(filepath.Join(dir, "task.md"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	p := New(errReader{err: io.ErrUnexpectedEOF}, io.Discard)
-	_, err := p.PickMarkdownInCwd(t.Context())
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	p := New(strings.NewReader(""), io.Discard)
+	_, err := p.PickMarkdownInCwd(ctx)
 	if err == nil {
-		t.Fatal("expected error from form failure")
+		t.Fatal("expected error")
 	}
 }
 
@@ -397,12 +395,14 @@ func TestPromptLinearAPIKey_HappyPath(t *testing.T) {
 }
 
 // TestPromptLinearAPIKey_FormError covers the run() error path in
-// PromptLinearAPIKey: an errReader causes the form to fail.
+// PromptLinearAPIKey with a cancelled context.
 func TestPromptLinearAPIKey_FormError(t *testing.T) {
-	p := New(errReader{err: io.ErrUnexpectedEOF}, io.Discard)
-	_, _, err := p.PromptLinearAPIKey(t.Context(), "https://example.com")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	p := New(strings.NewReader(""), io.Discard)
+	_, _, err := p.PromptLinearAPIKey(ctx, "https://example.com")
 	if err == nil {
-		t.Fatal("expected error from form failure")
+		t.Fatal("expected error")
 	}
 }
 
@@ -426,11 +426,13 @@ func TestPickLinearProject_EmptyName(t *testing.T) {
 
 // TestPickLinearProject_FormError covers the p.choose error path.
 func TestPickLinearProject_FormError(t *testing.T) {
-	p := New(errReader{err: io.ErrUnexpectedEOF}, io.Discard)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	p := New(strings.NewReader(""), io.Discard)
 	projects := []linear.Project{{ID: "p1", Name: "Alpha"}}
-	_, _, err := p.PickLinearProject(t.Context(), projects)
+	_, _, err := p.PickLinearProject(ctx, projects)
 	if err == nil {
-		t.Fatal("expected error from form failure")
+		t.Fatal("expected error")
 	}
 }
 
@@ -456,10 +458,12 @@ func TestPickLinearIssue_EmptyTitleAndState(t *testing.T) {
 
 // TestPickLinearIssue_FormError covers the p.choose error path.
 func TestPickLinearIssue_FormError(t *testing.T) {
-	p := New(errReader{err: io.ErrUnexpectedEOF}, io.Discard)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	p := New(strings.NewReader(""), io.Discard)
 	issues := []linear.Issue{{Identifier: "ENG-1", Title: "x", State: "y"}}
-	_, _, err := p.PickLinearIssue(t.Context(), issues)
+	_, _, err := p.PickLinearIssue(ctx, issues)
 	if err == nil {
-		t.Fatal("expected error from form failure")
+		t.Fatal("expected error")
 	}
 }

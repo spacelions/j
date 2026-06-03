@@ -198,30 +198,6 @@ func (a *Agent) Verify(
 	})
 }
 
-// CodeReview drives a `j tasks code-review` round. Same flavour split
-// as Plan but the workspace is the per-task dir so the planner has
-// the canonical requirements.md / plan.md in scope. The session id
-// is intentionally left empty: a code-review round is always fresh
-// and the task's planner session belongs to the canonical chain.
-func (a *Agent) CodeReview(
-	ctx context.Context, req codingagents.CodeReviewRequest,
-) (int, error) {
-	workspace := req.TaskDir
-	prompt := prompts.CodeReviewPrompt(req)
-	env, err := prepareScopedEnv(req.TaskDir)
-	if err != nil {
-		return 0, fmt.Errorf("codex: %w", err)
-	}
-	return a.runPhase(ctx, phaseRun{
-		interactive:     req.Interactive,
-		workspace:       workspace,
-		env:             env,
-		agentLogPath:    req.AgentLogPath,
-		interactiveArgs: interactiveArgs("", req.Model, prompt),
-		headlessArgs:    headlessArgs("", req.Model, prompt),
-	})
-}
-
 type phaseRun struct {
 	interactive     bool
 	workspace       string
