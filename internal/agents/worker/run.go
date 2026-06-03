@@ -152,11 +152,20 @@ func runWorker(
 	beginAt := time.Now().UTC()
 	req := buildWorkRequest(res, session, opts.Interactive,
 		resumeFromClarification, mustReadFiles)
-	pid, workErr := agent.Work(ctx, req)
 	capture := codingagents.ResumeCapture{
 		TaskDir: res.TaskDir,
 		Since:   beginAt,
 		Stderr:  opts.Stderr,
+	}
+	stopForeground := func() string { return "" }
+	if opts.Interactive {
+		stopForeground = codingagents.StartAndSaveForegroundResumeID(
+			ctx, agent, lc, capture, session.ResumeID,
+		)
+	}
+	pid, workErr := agent.Work(ctx, req)
+	if id := stopForeground(); id != "" {
+		session.ResumeID = id
 	}
 	if workErr == nil {
 		resumeID, err := codingagents.CaptureAndSaveProcessResumeID(

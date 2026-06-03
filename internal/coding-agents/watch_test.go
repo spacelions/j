@@ -62,13 +62,13 @@ func TestMaybeAddDir_CreateFileIgnored(t *testing.T) {
 	assert.Empty(t, w.WatchList())
 }
 
-// TestWatchActiveResumeID_NewWatcherFails forces fsnotify.NewWatcher
+// TestWatchBackgroundResumeID_NewWatcherFails forces fsnotify.NewWatcher
 // to fail by squeezing RLIMIT_NOFILE down below the file-descriptor
 // budget the kernel needs to allocate the inotify/kqueue instance.
 // The watcher's fast-path return ("") is exercised; rlimit is
 // restored immediately after the call so subsequent test-framework
 // allocations succeed.
-func TestWatchActiveResumeID_NewWatcherFails(t *testing.T) {
+func TestWatchBackgroundResumeID_NewWatcherFails(t *testing.T) {
 	dir := t.TempDir()
 	var orig syscall.Rlimit
 	require.NoError(
@@ -82,7 +82,7 @@ func TestWatchActiveResumeID_NewWatcherFails(t *testing.T) {
 	t.Cleanup(func() {
 		_ = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &orig)
 	})
-	got := WatchActiveResumeID(
+	got := WatchBackgroundResumeID(
 		t.Context(),
 		capturingAgent{},
 		ResumeCapture{TaskDir: dir, Stderr: &bytes.Buffer{}},
@@ -92,8 +92,8 @@ func TestWatchActiveResumeID_NewWatcherFails(t *testing.T) {
 	assert.Empty(t, got)
 }
 
-func TestWatchActiveResumeID_TickerRescans(t *testing.T) {
-	got := WatchActiveResumeID(
+func TestWatchBackgroundResumeID_TickerRescans(t *testing.T) {
+	got := WatchBackgroundResumeID(
 		t.Context(),
 		capturingAgent{id: "tick"},
 		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},

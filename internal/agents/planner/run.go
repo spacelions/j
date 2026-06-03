@@ -79,11 +79,20 @@ func runPlanner(
 	beginAt := time.Now().UTC()
 	req := buildPlanRequest(res, session, opts.Interactive,
 		resume, resumeFromClarification, mustReadFiles)
-	pid, planErr := agent.Plan(ctx, req)
 	capture := codingagents.ResumeCapture{
 		TaskDir: res.TaskDir,
 		Since:   beginAt,
 		Stderr:  stderr,
+	}
+	stopForeground := func() string { return "" }
+	if opts.Interactive {
+		stopForeground = codingagents.StartAndSaveForegroundResumeID(
+			ctx, agent, lc, capture, session.ResumeID,
+		)
+	}
+	pid, planErr := agent.Plan(ctx, req)
+	if id := stopForeground(); id != "" {
+		session.ResumeID = id
 	}
 
 	if planErr == nil {

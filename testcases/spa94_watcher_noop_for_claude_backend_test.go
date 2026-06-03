@@ -13,7 +13,7 @@ import (
 // TestSPA94WatcherNoopForClaudeBackend pins acceptance criteria AC7:
 // claude (and cursor by extension) mint their resume id pre-run via
 // NewResumeID, so they intentionally do not implement
-// ResumeIDCapturer. WatchAndSaveActiveResumeID must short-circuit to
+// ResumeIDCapturer. WatchAndSaveBackgroundResumeID must short-circuit to
 // "" for these backends without invoking the recorder, so the post-
 // fsnotify watcher path does not erase the pre-run id or wedge the
 // orchestrator waiting on a watcher event that will never come.
@@ -24,12 +24,12 @@ func TestSPA94WatcherNoopForClaudeBackend(t *testing.T) {
 		Since:   time.Now(),
 		Stderr:  &bytes.Buffer{},
 	}
-	got := codingagents.WatchAndSaveActiveResumeID(
+	got := codingagents.WatchAndSaveBackgroundResumeID(
 		t.Context(), claude.New(), recorder, capture, os.Getpid(),
 	)
 	if got != "" {
 		t.Fatalf(
-			"WatchAndSaveActiveResumeID = %q, want \"\" "+
+			"WatchAndSaveBackgroundResumeID = %q, want \"\" "+
 				"(claude does not implement ResumeIDCapturer)", got,
 		)
 	}

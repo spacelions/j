@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/spacelions/j/internal/util/run"
@@ -93,12 +94,13 @@ func CaptureAndSaveResumeID(
 	return id
 }
 
-// WatchAndSaveActiveResumeID watches a running backend's task-scoped
-// session store and persists the resume id the moment it appears.
-// It returns when the id is captured, the worker pid disappears, or
-// ctx is cancelled. Backends that do not implement ResumeIDCapturer
-// (cursor / claude) short-circuit to "" without side effect.
-func WatchAndSaveActiveResumeID(
+// WatchAndSaveBackgroundResumeID watches a detached backend's
+// task-scoped session store and persists the resume id the moment it
+// appears. It returns when the id is captured, the worker pid
+// disappears, or ctx is cancelled. Backends that do not implement
+// ResumeIDCapturer (cursor / claude) short-circuit to "" without
+// side effect.
+func WatchAndSaveBackgroundResumeID(
 	ctx context.Context,
 	agent Agent,
 	recorder ResumeRecorder,
@@ -115,11 +117,83 @@ func WatchAndSaveActiveResumeID(
 		recorder.RecordResumeSession(id)
 		return id
 	}
-	id := WatchActiveResumeID(ctx, capturer, capture, pid)
+	id := WatchBackgroundResumeID(ctx, capturer, capture, pid)
 	if id != "" {
 		recorder.RecordResumeSession(id)
 	}
 	return id
+}
+
+// StartAndSaveForegroundResumeID spawns a background watcher for the
+// interactive/TUI code path and returns a stop function the caller
+// invokes after the TUI returns. The returned stop function cancels
+// the goroutine, blocks until it exits, and returns the resume id
+// captured during the foreground run (or "" if none appeared).
+//
+// When existingID is non-empty the task row already carries a
+// resume id (resume run) — no capture happens and the stop function
+// returns "". When the agent does not implement ResumeIDCapturer
+// (cursor/claude) the same no-op contract applies. An immediate
+// scan error is surfaced as a warning on capture.Stderr and the
+// watcher still starts so a later successful scan can record the id.
+func StartAndSaveForegroundResumeID(
+	ctx context.Context,
+	agent Agent,
+	recorder ResumeRecorder,
+	capture ResumeCapture,
+	existingID string,
+) func() string {
+	if existingID != "" {
+		return func() string { return "" }
+	}
+	capturer, ok := agent.(ResumeIDCapturer)
+	if !ok {
+		return func() string { return "" }
+	}
+	if id, err := capturer.CaptureResumeID(
+		ctx, capture.TaskDir, capture.Since,
+	); err != nil {
+		fmt.Fprintf(capture.Stderr, "J: %v\n", err)
+	} else if id != "" {
+		recorder.RecordResumeSession(id)
+		return func() string { return id }
+	}
+	return startForegroundWatcher(ctx, capturer, recorder, capture)
+}
+
+// startForegroundWatcher launches the foreground watch goroutine and
+// returns its stop closure. Split out of
+// StartAndSaveForegroundResumeID to keep that function's branch
+// hierarchy readable.
+func startForegroundWatcher(
+	ctx context.Context,
+	capturer ResumeIDCapturer,
+	recorder ResumeRecorder,
+	capture ResumeCapture,
+) func() string {
+	watchCtx, cancel := context.WithCancel(ctx)
+	var (
+		wg sync.WaitGroup
+		mu sync.Mutex
+		id string
+	)
+	wg.Go(func() {
+		got := WatchForegroundResumeID(watchCtx, capturer, capture)
+		if got == "" {
+			return
+		}
+		mu.Lock()
+		id = got
+		mu.Unlock()
+		recorder.RecordResumeSession(got)
+	})
+	return func() string {
+		cancel()
+		wg.Wait()
+		mu.Lock()
+		defer mu.Unlock()
+		return id
+	}
 }
 
 // CaptureAndSaveProcessResumeID drives the active capture for one run
@@ -137,7 +211,7 @@ func CaptureAndSaveProcessResumeID(
 ) (string, error) {
 	resumeID := proc.ResumeID
 	if proc.PID > 0 && resumeID == "" {
-		resumeID = WatchAndSaveActiveResumeID(
+		resumeID = WatchAndSaveBackgroundResumeID(
 			ctx, agent, recorder, capture, proc.PID,
 		)
 	}

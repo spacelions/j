@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1073,6 +1074,120 @@ func TestRun_NewResumeID_ErrorWarnsButContinues(t *testing.T) {
 	if agent.verifiedReqs[0].ResumeChatID != "" {
 		t.Fatalf("ResumeChatID should be empty after NewResumeID error: %q", agent.verifiedReqs[0].ResumeChatID)
 	}
+}
+
+// foregroundCaptureAgent embeds scriptedAgent and implements
+// ResumeIDCapturer plus a blocking Verify so SPA-103 foreground
+// tests can assert mid-run state.
+type foregroundCaptureAgent struct {
+	*scriptedAgent
+	captureID    atomic.Pointer[string]
+	captureCalls atomic.Int32
+	release      chan struct{}
+	started      chan struct{}
+}
+
+func (a *foregroundCaptureAgent) setCaptureID(id string) {
+	a.captureID.Store(&id)
+}
+
+func (a *foregroundCaptureAgent) CaptureResumeID(
+	context.Context, string, time.Time,
+) (string, error) {
+	a.captureCalls.Add(1)
+	if p := a.captureID.Load(); p != nil {
+		return *p, nil
+	}
+	return "", nil
+}
+
+func (a *foregroundCaptureAgent) Verify(
+	ctx context.Context, req codingagents.VerifyRequest,
+) (int, error) {
+	if a.started != nil {
+		close(a.started)
+	}
+	if a.release != nil {
+		<-a.release
+	}
+	return a.scriptedAgent.Verify(ctx, req)
+}
+
+// TestRun_ForegroundCapturesWhileVerifyBlocked pins SPA-103 on the
+// verifier phase: with Interactive=true and no pre-existing session,
+// the first iteration's foreground watcher records VerifyResumeSession
+// on the task row while the verifier TUI is still running. The
+// scripted Verify blocks until the test releases it.
+func TestRun_ForegroundCapturesWhileVerifyBlocked(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedWorkDoneTask(t, "x", "plan", "")
+	base := newScriptedAgent()
+	base.resumeID = ""
+	base.verifyVerdicts = []string{"PASS"}
+	agent := &foregroundCaptureAgent{
+		scriptedAgent: base,
+		release:       make(chan struct{}),
+		started:       make(chan struct{}),
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(t.Context(), Options{
+			TaskID:        id,
+			Interactive:   true,
+			MaxIterations: 1,
+			Stdout:        io.Discard,
+			Stderr:        io.Discard,
+			Agents:        []codingagents.Agent{agent},
+			UI:            &scriptedUI{},
+		})
+	}()
+	select {
+	case <-agent.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Verify never started")
+	}
+	agent.setCaptureID("captured-foreground-verify")
+
+	ok := waitForVerifyRow(t, id, "captured-foreground-verify")
+	close(agent.release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after release")
+	}
+	if !ok {
+		t.Fatal("VerifyResumeSession was not recorded while Verify blocked")
+	}
+	got := readTasks(t)[0]
+	if got.Status != tasks.StatusCompleted {
+		t.Fatalf("Status = %q, want completed", got.Status)
+	}
+	if got.VerifyResumeSession != "captured-foreground-verify" {
+		t.Fatalf(
+			"VerifyResumeSession = %q, want captured-foreground-verify",
+			got.VerifyResumeSession,
+		)
+	}
+}
+
+func waitForVerifyRow(t *testing.T, id, want string) bool {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		rows := readTasks(t)
+		for _, r := range rows {
+			if r.ID == id && r.VerifyResumeSession == want {
+				return true
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
 }
 
 func TestRun_CapturesActiveVerifierResumeSession(t *testing.T) {

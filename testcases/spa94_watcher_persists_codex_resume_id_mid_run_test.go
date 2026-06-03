@@ -21,7 +21,7 @@ import (
 // than 2s to write its session_meta; the fsnotify-driven watcher must
 // not.
 //
-// Black-box: drive WatchAndSaveActiveResumeID with the real codex
+// Black-box: drive WatchAndSaveBackgroundResumeID with the real codex
 // backend, start the watcher with the test process's own pid so it
 // observes a live pid, then write a rollout JSONL into the codex
 // per-task scoped home AFTER the watcher is already running. The
@@ -57,7 +57,7 @@ func TestSPA94WatcherPersistsCodexResumeIDMidRun(t *testing.T) {
 
 	done := make(chan string, 1)
 	go func() {
-		done <- codingagents.WatchAndSaveActiveResumeID(
+		done <- codingagents.WatchAndSaveBackgroundResumeID(
 			t.Context(), codex.New(), recorder, capture, os.Getpid(),
 		)
 	}()
@@ -72,14 +72,14 @@ func TestSPA94WatcherPersistsCodexResumeIDMidRun(t *testing.T) {
 	case got := <-done:
 		if got != wantID {
 			t.Fatalf(
-				"WatchAndSaveActiveResumeID = %q, want %q "+
+				"WatchAndSaveBackgroundResumeID = %q, want %q "+
 					"(watcher must capture id after a mid-run "+
 					"rollout write)", got, wantID,
 			)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal(
-			"WatchAndSaveActiveResumeID did not return within 5s " +
+			"WatchAndSaveBackgroundResumeID did not return within 5s " +
 				"after a mid-run rollout write — fsnotify watcher " +
 				"is not surfacing events to CaptureResumeID",
 		)

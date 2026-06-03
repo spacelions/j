@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -70,8 +71,16 @@ func (a *runTestAgent) Work(_ context.Context, req codingagents.WorkRequest) (in
 
 type capturingRunAgent struct {
 	*runTestAgent
-	captureID    string
-	captureCalls int
+	captureID    atomic.Pointer[string]
+	captureCalls atomic.Int32
+	// release, when non-nil, blocks Work until the channel is
+	// closed so foreground-capture tests can assert mid-run state.
+	release chan struct{}
+	started chan struct{}
+}
+
+func (a *capturingRunAgent) setCaptureID(id string) {
+	a.captureID.Store(&id)
 }
 
 func (a *capturingRunAgent) CaptureResumeID(
@@ -79,8 +88,23 @@ func (a *capturingRunAgent) CaptureResumeID(
 	_ string,
 	_ time.Time,
 ) (string, error) {
-	a.captureCalls++
-	return a.captureID, nil
+	a.captureCalls.Add(1)
+	if p := a.captureID.Load(); p != nil {
+		return *p, nil
+	}
+	return "", nil
+}
+
+func (a *capturingRunAgent) Work(
+	ctx context.Context, req codingagents.WorkRequest,
+) (int, error) {
+	if a.started != nil {
+		close(a.started)
+	}
+	if a.release != nil {
+		<-a.release
+	}
+	return a.runTestAgent.Work(ctx, req)
 }
 
 // fakeRunUI is a scripted UI fake for Execute tests.
@@ -267,8 +291,8 @@ func TestRun_RecordsActiveWorkerResumeSession(t *testing.T) {
 	base.workPid = os.Getpid()
 	agent := &capturingRunAgent{
 		runTestAgent: base,
-		captureID:    "captured-work-session",
 	}
+	agent.setCaptureID("captured-work-session")
 
 	err := Execute(t.Context(), Options{
 		TaskID: id,
@@ -284,7 +308,7 @@ func TestRun_RecordsActiveWorkerResumeSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if agent.captureCalls == 0 {
+	if agent.captureCalls.Load() == 0 {
 		t.Fatal("CaptureResumeID calls = 0, want active capture")
 	}
 	row := testutil.ReadTaskRow(t, id)
@@ -297,6 +321,84 @@ func TestRun_RecordsActiveWorkerResumeSession(t *testing.T) {
 	if row.Status != tasks.StatusWorking {
 		t.Fatalf("Status = %q, want working", row.Status)
 	}
+}
+
+// TestRun_ForegroundCapturesWhileWorkBlocked pins the SPA-103
+// behavior on the worker phase: with Interactive=true and no
+// pre-existing session, the foreground watcher records the resume
+// id on the task row while the worker TUI is still running. The
+// scripted Work blocks until the test releases it; the test sets
+// the capturer's id and asserts the row carries it before unblock.
+func TestRun_ForegroundCapturesWhileWorkBlocked(t *testing.T) {
+	setupRunEnv(t)
+	id := seedPlanDoneTask(t)
+	base := newRunTestAgent("cursor")
+	base.emptyResumeID = true
+	agent := &capturingRunAgent{
+		runTestAgent: base,
+		release:      make(chan struct{}),
+		started:      make(chan struct{}),
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Execute(t.Context(), Options{
+			TaskID:      id,
+			Yes:         true,
+			Interactive: true,
+			Stdin:       strings.NewReader(""),
+			Stdout:      io.Discard,
+			Stderr:      io.Discard,
+			Agents:      []codingagents.Agent{agent},
+			UI:          &fakeRunUI{},
+			Tool:        "cursor",
+			Model:       "m1",
+		})
+	}()
+	select {
+	case <-agent.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Work never started")
+	}
+	agent.setCaptureID("captured-foreground-work")
+
+	if !waitForRow(t, id, func(r tasks.Task) bool {
+		return r.WorkResumeSession == "captured-foreground-work"
+	}) {
+		close(agent.release)
+		<-done
+		t.Fatal("WorkResumeSession was not recorded while Work blocked")
+	}
+	close(agent.release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Execute did not return after release")
+	}
+	got := testutil.ReadTaskRow(t, id)
+	if got.WorkResumeSession != "captured-foreground-work" {
+		t.Fatalf(
+			"final WorkResumeSession = %q, want captured-foreground-work",
+			got.WorkResumeSession,
+		)
+	}
+}
+
+func waitForRow(
+	t *testing.T, id string, ok func(tasks.Task) bool,
+) bool {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if ok(testutil.ReadTaskRow(t, id)) {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
 }
 
 func TestRun_WaitForCompletion_Success(t *testing.T) {

@@ -23,12 +23,12 @@ func TestSPA94WatcherSilentWhenPIDInvalid(t *testing.T) {
 		Since:   time.Now(),
 		Stderr:  &stderr,
 	}
-	got := codingagents.WatchAndSaveActiveResumeID(
+	got := codingagents.WatchAndSaveBackgroundResumeID(
 		t.Context(), codex.New(), recorder, capture, 0,
 	)
 	if got != "" {
 		t.Fatalf(
-			"WatchAndSaveActiveResumeID = %q, want \"\" with pid=0",
+			"WatchAndSaveBackgroundResumeID = %q, want \"\" with pid=0",
 			got,
 		)
 	}

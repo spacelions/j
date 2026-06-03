@@ -64,14 +64,23 @@ func runVerifyIteration(
 	req := buildVerifyRequest(
 		res, *session, iter.index, iter.opts.Interactive, iter.mustReadFiles,
 	)
-	pid, err := startVerifyTurn(ctx, agent, req)
-	if err != nil {
-		return lifecycle.VerifyOutcomeNoRetries, err
-	}
 	capture := codingagents.ResumeCapture{
 		TaskDir: res.TaskDir,
 		Since:   iter.beginAt,
 		Stderr:  iter.opts.Stderr,
+	}
+	stopForeground := func() string { return "" }
+	if iter.index == 0 && iter.opts.Interactive {
+		stopForeground = codingagents.StartAndSaveForegroundResumeID(
+			ctx, agent, lc, capture, session.ResumeID,
+		)
+	}
+	pid, err := startVerifyTurn(ctx, agent, req)
+	if id := stopForeground(); id != "" {
+		session.ResumeID = id
+	}
+	if err != nil {
+		return lifecycle.VerifyOutcomeNoRetries, err
 	}
 	if iter.index == 0 {
 		resumeID, err := codingagents.CaptureAndSaveProcessResumeID(

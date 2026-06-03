@@ -13,7 +13,7 @@ import (
 
 // TestSPA94WatcherSilentWhenContextCancelled pins acceptance criteria
 // AC4 for the cancellation path. When the orchestrator's context is
-// cancelled (e.g. user hit ^C), WatchAndSaveActiveResumeID must
+// cancelled (e.g. user hit ^C), WatchAndSaveBackgroundResumeID must
 // unblock promptly, return "" without recording anything, and without
 // printing transient noise to stderr.
 func TestSPA94WatcherSilentWhenContextCancelled(t *testing.T) {
@@ -30,7 +30,7 @@ func TestSPA94WatcherSilentWhenContextCancelled(t *testing.T) {
 
 	done := make(chan string, 1)
 	go func() {
-		done <- codingagents.WatchAndSaveActiveResumeID(
+		done <- codingagents.WatchAndSaveBackgroundResumeID(
 			ctx, codex.New(), recorder, capture, os.Getpid(),
 		)
 	}()
@@ -39,7 +39,7 @@ func TestSPA94WatcherSilentWhenContextCancelled(t *testing.T) {
 	case got := <-done:
 		if got != "" {
 			t.Fatalf(
-				"WatchAndSaveActiveResumeID = %q, want \"\" on "+
+				"WatchAndSaveBackgroundResumeID = %q, want \"\" on "+
 					"cancelled context", got,
 			)
 		}
