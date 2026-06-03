@@ -186,33 +186,109 @@ func TestTask_JSON_RoundTripsBasicFields(t *testing.T) {
 	}
 }
 
-// TestTask_TOML_OmitsZeroFields verifies that optional fields with zero/empty
-// values are not emitted by toml.Marshal. Time fields are excluded from this
-// check because pelletier v2.3.0 does not honour omitempty on time.Time
-// (documented in wire_test.go).
-func TestTask_TOML_OmitsZeroFields(t *testing.T) {
-	task := Task{ID: "x", Status: StatusPlanning}
-	data, err := toml.Marshal(task)
+// TestMarshalTask_OmitsZeroFields verifies that optional string fields
+// with empty values are not emitted by marshalTask. Time fields are
+// excluded because pelletier v2.3.0 does not honour omitempty on
+// time.Time (documented in wire_test.go).
+func TestMarshalTask_OmitsZeroFields(t *testing.T) {
+	data, err := marshalTask(Task{ID: "x", Status: StatusPlanning})
 	if err != nil {
-		t.Fatalf("Marshal: %v", err)
+		t.Fatalf("marshalTask: %v", err)
 	}
 	s := string(data)
 	for _, key := range []string{
-		"plan_tool",
-		"plan_model",
-		"work_tool",
-		"work_model",
-		"verify_tool",
-		"verify_model",
-		"worktree",
-		"plan_resume_session",
-		"work_resume_session",
-		"verify_resume_session",
-		"agent_log_path",
-		"linear_issue",
+		"tool =",
+		"model =",
+		"resume_session =",
+		"worktree =",
+		"agent_log_path =",
+		"issue =",
+		"pull_request_url =",
 	} {
 		if strings.Contains(s, key) {
-			t.Errorf("TOML output contains %q but should be omitted:\n%s", key, s)
+			t.Errorf(
+				"sectioned TOML contains %q but should be omitted:\n%s",
+				key, s)
+		}
+	}
+}
+
+// TestMarshalTask_WritesNamedSections pins the user-visible promise
+// that every grouping headline appears in newly written task.toml
+// content even when no optional values are populated.
+func TestMarshalTask_WritesNamedSections(t *testing.T) {
+	data, err := marshalTask(Task{ID: "x", Status: StatusPlanning})
+	if err != nil {
+		t.Fatalf("marshalTask: %v", err)
+	}
+	s := string(data)
+	for _, header := range []string{
+		"[metadata]",
+		"[planner]",
+		"[worker]",
+		"[verifier]",
+		"[linear]",
+		"[github]",
+		"[logs]",
+	} {
+		if !strings.Contains(s, header) {
+			t.Errorf("missing %q in:\n%s", header, s)
+		}
+	}
+}
+
+// TestMarshalTask_GroupsPhaseFields confirms phase-scoped keys move
+// under the matching section so they are no longer flat at the file
+// root.
+func TestMarshalTask_GroupsPhaseFields(t *testing.T) {
+	in := Task{
+		ID:                  "x",
+		Status:              StatusPlanDone,
+		PlanTool:            "codex",
+		PlanModel:           "gpt-5.5",
+		PlanResumeSession:   "plan-sess",
+		WorkTool:            "claude",
+		WorkModel:           "opus",
+		WorkResumeSession:   "work-sess",
+		Worktree:            "wt-x",
+		VerifyTool:          "cursor",
+		VerifyModel:         "sonnet",
+		VerifyResumeSession: "verify-sess",
+		LinearIssue:         "ENG-1",
+		PullRequestURL:      "https://example/pr/1",
+		AgentLogPath:        "/tmp/agent.log",
+	}
+	data, err := marshalTask(in)
+	if err != nil {
+		t.Fatalf("marshalTask: %v", err)
+	}
+	s := string(data)
+	for _, want := range []string{
+		"[planner]\ntool = 'codex'",
+		"model = 'gpt-5.5'",
+		"resume_session = 'plan-sess'",
+		"[worker]\ntool = 'claude'",
+		"worktree = 'wt-x'",
+		"[verifier]\ntool = 'cursor'",
+		"[linear]\nissue = 'ENG-1'",
+		"[github]\npull_request_url = 'https://example/pr/1'",
+		"[logs]\nagent_log_path = '/tmp/agent.log'",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in:\n%s", want, s)
+		}
+	}
+	for _, leak := range []string{
+		"plan_tool",
+		"work_tool",
+		"verify_tool",
+		"linear_issue",
+		"pull_request_url =\n",
+	} {
+		if strings.Contains(s, leak+" =") {
+			t.Errorf(
+				"flat key %q leaked to sectioned output:\n%s",
+				leak, s)
 		}
 	}
 }
@@ -772,4 +848,210 @@ func TestDisplayToolModel(t *testing.T) {
 			t.Fatalf("DisplayToolModel() = %q/%q, want ptool/pmodel", tool, model)
 		}
 	})
+}
+
+// fullyPopulatedTask returns a Task with every persisted field set so
+// the round-trip tests can assert nothing is dropped by the new
+// sectioned layout.
+func fullyPopulatedTask() Task {
+	now := time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC)
+	return Task{
+		ID:                  "01ROUND",
+		Status:              StatusCompleted,
+		Summary:             "round trip",
+		PlanTool:            "codex",
+		PlanModel:           "gpt-5.5",
+		WorkTool:            "claude",
+		WorkModel:           "opus",
+		VerifyTool:          "cursor",
+		VerifyModel:         "sonnet",
+		Worktree:            "wt-rt",
+		PlanResumeSession:   "p-resume",
+		WorkResumeSession:   "w-resume",
+		VerifyResumeSession: "v-resume",
+		PlanBeginAt:         now,
+		PlanEndAt:           now.Add(1 * time.Minute),
+		WorkBeginAt:         now.Add(2 * time.Minute),
+		WorkEndAt:           now.Add(3 * time.Minute),
+		VerifyBeginAt:       now.Add(4 * time.Minute),
+		VerifyEndAt:         now.Add(5 * time.Minute),
+		DoneAt:              now.Add(6 * time.Minute),
+		AgentLogPath:        "/tmp/a.log",
+		LinearIssue:         "SPA-124",
+		PullRequestURL:      "https://example/pr/1",
+	}
+}
+
+// TestPutTask_SectionedRoundTrip asserts a fully-populated Task
+// survives marshalTask → unmarshalTask without loss.
+func TestPutTask_SectionedRoundTrip(t *testing.T) {
+	in := fullyPopulatedTask()
+	data, err := marshalTask(in)
+	if err != nil {
+		t.Fatalf("marshalTask: %v", err)
+	}
+	got, err := unmarshalTask(data, in.ID)
+	if err != nil {
+		t.Fatalf("unmarshalTask: %v", err)
+	}
+	if got != in {
+		t.Fatalf("round-trip mismatch:\n got=%+v\nwant=%+v", got, in)
+	}
+}
+
+// TestPutTask_WritesSectionedFile confirms the bytes persisted by
+// PutTask carry the new headline sections and per-section keys.
+func TestPutTask_WritesSectionedFile(t *testing.T) {
+	s := openTaskStore(t)
+	in := fullyPopulatedTask()
+	if err := s.PutTask(in); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	raw, err := os.ReadFile(
+		filepath.Join(s.tasksDir, in.ID, TaskFileName))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(raw)
+	for _, want := range []string{
+		"[metadata]", "[planner]", "[worker]", "[verifier]",
+		"[linear]", "[github]", "[logs]",
+		"id = '01ROUND'", "status = 'completed'",
+		"summary = 'round trip'",
+		"worktree = 'wt-rt'", "issue = 'SPA-124'",
+		"pull_request_url = 'https://example/pr/1'",
+		"agent_log_path = '/tmp/a.log'",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in:\n%s", want, body)
+		}
+	}
+}
+
+// TestGetTask_LegacyFlatStillDecodes plants a legacy flat task.toml
+// (no [metadata] section) and confirms GetTask resolves all the
+// existing flat keys via the legacy fallback in unmarshalTask.
+func TestGetTask_LegacyFlatStillDecodes(t *testing.T) {
+	s := openTaskStore(t)
+	taskDir := filepath.Join(s.tasksDir, "legacy")
+	if err := os.MkdirAll(taskDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `id = "legacy"
+status = "working"
+plan_tool = "codex"
+plan_model = "gpt-5.5"
+work_tool = "claude"
+work_model = "opus"
+worktree = "legacy-wt"
+summary = "old"
+plan_resume_session = "p-old"
+work_resume_session = "w-old"
+agent_log_path = "/var/log/old.log"
+linear_issue = "ENG-9"
+pull_request_url = "https://example/pr/9"
+plan_begin_at = 2026-05-01T00:00:00Z
+plan_end_at = 0001-01-01T00:00:00Z
+work_begin_at = 2026-05-01T00:01:00Z
+work_end_at = 0001-01-01T00:00:00Z
+verify_begin_at = 0001-01-01T00:00:00Z
+verify_end_at = 0001-01-01T00:00:00Z
+done_at = 0001-01-01T00:00:00Z
+`
+	if err := os.WriteFile(
+		filepath.Join(taskDir, TaskFileName),
+		[]byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetTask("legacy")
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.ID != "legacy" || got.Status != StatusWorking {
+		t.Fatalf("base fields: %+v", got)
+	}
+	if got.PlanTool != "codex" || got.WorkTool != "claude" {
+		t.Fatalf("phase tools: %+v", got)
+	}
+	if got.Worktree != "legacy-wt" || got.LinearIssue != "ENG-9" {
+		t.Fatalf("worktree/linear: %+v", got)
+	}
+	if got.PullRequestURL != "https://example/pr/9" {
+		t.Fatalf("PullRequestURL = %q", got.PullRequestURL)
+	}
+	if got.AgentLogPath != "/var/log/old.log" {
+		t.Fatalf("AgentLogPath = %q", got.AgentLogPath)
+	}
+	if got.PlanResumeSession != "p-old" ||
+		got.WorkResumeSession != "w-old" {
+		t.Fatalf("resume sessions: %+v", got)
+	}
+	if got.VerifyBeginAt.IsZero() != true ||
+		got.DoneAt.IsZero() != true {
+		t.Fatalf("zero sentinels: %+v", got)
+	}
+	if got.PlanBeginAt.IsZero() {
+		t.Fatalf("PlanBeginAt should be populated: %+v", got)
+	}
+}
+
+// TestListTasks_MixedLegacyAndSectioned seeds one legacy flat task
+// and one task written through PutTask (sectioned) and confirms
+// ListTasks returns both in sorted ID order with all fields preserved.
+func TestListTasks_MixedLegacyAndSectioned(t *testing.T) {
+	s := openTaskStore(t)
+	newTask := Task{
+		ID:       "02NEW",
+		Status:   StatusPlanDone,
+		Summary:  "new",
+		WorkTool: "claude",
+		Worktree: "wt-new",
+	}
+	if err := s.PutTask(newTask); err != nil {
+		t.Fatalf("PutTask: %v", err)
+	}
+	legacyDir := filepath.Join(s.tasksDir, "01OLD")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `id = "01OLD"
+status = "plan-done"
+summary = "old"
+plan_tool = "codex"
+worktree = "wt-old"
+linear_issue = "ENG-1"
+`
+	if err := os.WriteFile(
+		filepath.Join(legacyDir, TaskFileName),
+		[]byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("len(rows) = %d, want 2", len(rows))
+	}
+	if rows[0].ID != "01OLD" || rows[1].ID != "02NEW" {
+		t.Fatalf("sort order = %q/%q", rows[0].ID, rows[1].ID)
+	}
+	if rows[0].PlanTool != "codex" || rows[0].Worktree != "wt-old" ||
+		rows[0].LinearIssue != "ENG-1" {
+		t.Fatalf("legacy row fields: %+v", rows[0])
+	}
+	if rows[1].WorkTool != "claude" || rows[1].Worktree != "wt-new" {
+		t.Fatalf("new row fields: %+v", rows[1])
+	}
+}
+
+// TestUnmarshalTask_InvalidTOMLWraps confirms a corrupt task.toml
+// still produces the historical wrapped decode error so callers and
+// tests can detect it by substring.
+func TestUnmarshalTask_InvalidTOMLWraps(t *testing.T) {
+	_, err := unmarshalTask([]byte("not = valid = toml"), "bad")
+	if err == nil ||
+		!strings.Contains(err.Error(), `decode task "bad"`) {
+		t.Fatalf("err = %v, want wrapped decode error", err)
+	}
 }

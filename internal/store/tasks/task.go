@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"slices"
 	"time"
-
-	"github.com/pelletier/go-toml/v2"
 )
 
 // AgentLogFileName is the per-task file that captures stdout/stderr
@@ -135,7 +133,10 @@ func (s *Store) PutTask(t Task) error {
 	if err := os.MkdirAll(taskDir, 0o755); err != nil {
 		return fmt.Errorf("store: mkdir %q: %w", taskDir, err)
 	}
-	data, _ := toml.Marshal(t)
+	data, err := marshalTask(t)
+	if err != nil {
+		return fmt.Errorf("store: encode task %q: %w", t.ID, err)
+	}
 	return writeFileAtomic(filepath.Join(taskDir, TaskFileName), data, 0o644)
 }
 
@@ -154,9 +155,9 @@ func (s *Store) GetTask(id string) (Task, error) {
 		}
 		return Task{}, fmt.Errorf("store: read task %q: %w", id, err)
 	}
-	var t Task
-	if err := toml.Unmarshal(data, &t); err != nil {
-		return Task{}, fmt.Errorf("store: decode task %q: %w", id, err)
+	t, err := unmarshalTask(data, id)
+	if err != nil {
+		return Task{}, err
 	}
 	return t, nil
 }
@@ -216,9 +217,9 @@ func (s *Store) ListTasks() ([]Task, error) {
 			}
 			return nil, fmt.Errorf("store: read %q: %w", path, err)
 		}
-		var t Task
-		if err := toml.Unmarshal(data, &t); err != nil {
-			return nil, fmt.Errorf("store: decode task %q: %w", entry.Name(), err)
+		t, err := unmarshalTask(data, entry.Name())
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, t)
 	}

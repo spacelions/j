@@ -42,4 +42,20 @@ func TestTasksShow_RendersTaskToml(t *testing.T) {
 	if !strings.Contains(stdout, "id-show") {
 		t.Fatalf("stdout = %q, want substring `id-show`", stdout)
 	}
+	for _, want := range []string{
+		"[metadata]",
+		"[planner]",
+		"[worker]",
+		"[verifier]",
+		"[linear]",
+		"[github]",
+		"[logs]",
+		"tool = 'cursor'",
+		"model = 'sonnet-4'",
+		"summary = 'test show render'",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, stdout)
+		}
+	}
 }
