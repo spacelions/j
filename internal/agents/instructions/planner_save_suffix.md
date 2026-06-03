@@ -9,6 +9,9 @@ Before exiting:
    or implementation steps; those belong in plan.md.
 2. Save the plan to %q (overwrite if it exists).
    plan.md is the technical companion to requirements.md. Include
-   implementation steps, file boundaries, refactors, and architecture.
+   numbered implementation steps, likely file boundaries, methods,
+   functions, prompt fragments, or tests to modify, add, or delete when
+   known, refactors or architecture notes, verification commands, and
+   acceptance criteria.
 
 Then exit.

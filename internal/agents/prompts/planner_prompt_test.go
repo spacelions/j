@@ -26,6 +26,26 @@ func TestBuildPlanner(t *testing.T) {
 	if strings.Contains(got, "Before starting, read these project files") {
 		t.Fatalf("prompt should not include must-read block when nil: %q", got)
 	}
+	// The planner role body must ask for an implementation-ready
+	// technical plan (numbered steps, file/package boundaries,
+	// methods/functions, verification) rather than the old generic
+	// "short, concrete plan" wording.
+	for _, want := range []string{
+		"implementation-ready technical plan",
+		"numbered implementation steps",
+		"files",
+		"methods",
+		"verification",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("planner prompt missing technical-plan marker %q: %q",
+				want, got)
+		}
+	}
+	if strings.Contains(got, "short, concrete plan") {
+		t.Fatalf("planner prompt still carries the old short-plan wording: %q",
+			got)
+	}
 }
 
 // TestBuildPlanner_WithMustRead asserts the bulleted must-read block
@@ -137,6 +157,8 @@ func TestAppendPlannerSaveSuffix(t *testing.T) {
 		"PM/QA-style spec",
 		"acceptance criteria",
 		"plan.md is the technical companion",
+		"numbered implementation steps",
+		"verification commands",
 		"\"/tmp/clarification.md\"",
 		"Then exit.",
 	} {

@@ -91,11 +91,15 @@ func TestAllRolesOverridden_ContractsSurvive(t *testing.T) {
 			"one-line summary", "PM/QA-style spec",
 			"acceptance criteria",
 			"belong in plan.md",
+			"numbered implementation steps",
+			"verification commands",
 			"If you need clarification",
 		}},
 		{"planner-resume", plannerResume, []string{
 			req, plan, clarify,
 			"one-line summary", "PM/QA-style spec",
+			"numbered implementation steps",
+			"verification commands",
 		}},
 		{"worker-fresh", workerOut, []string{
 			plan, clarify, "If you need clarification",

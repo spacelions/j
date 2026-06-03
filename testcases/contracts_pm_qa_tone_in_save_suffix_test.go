@@ -27,6 +27,8 @@ func TestContracts_PMQAToneInSaveSuffix(t *testing.T) {
 		"implementation steps",
 		"belong in plan.md",
 		"plan.md is the technical companion",
+		"numbered implementation steps",
+		"verification commands",
 		"one-line summary",
 		"# Requirements",
 	} {
