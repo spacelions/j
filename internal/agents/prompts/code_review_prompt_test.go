@@ -156,8 +156,55 @@ func TestCodeReviewPrompt_SharesBodyAcrossModes(t *testing.T) {
 		"Save the round plan to",
 		"Rewrite review.toml at",
 		"write your question to",
+		"from: <author>",
+		"Reviewer comment",
+		"copied verbatim",
 	} {
 		assert.Contains(t, fresh, shared, "fresh missing shared %q", shared)
 		assert.Contains(t, resume, shared, "resume missing shared %q", shared)
+	}
+}
+
+// TestCodeReviewPrompt_RoundPlanRequiresReviewerContext pins SPA-123:
+// the round-local plan.md must label the original reviewer author
+// and quote the original review body alongside the stable source_id
+// and the planner's planned change. The contract must apply to every
+// decision section (Accepted / Rejected / Non-Actionable) and must
+// carry across both fresh and clarification-resume prompts.
+func TestCodeReviewPrompt_RoundPlanRequiresReviewerContext(t *testing.T) {
+	cases := []struct {
+		name   string
+		resume bool
+	}{
+		{name: "fresh", resume: false},
+		{name: "resume", resume: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := sampleCodeReviewRequest()
+			req.Resume = tc.resume
+			got := CodeReviewPrompt(req)
+			for _, want := range []string{
+				"source_id",
+				"from: <author>",
+				"original review `body`",
+				"Reviewer comment",
+				"## Accepted Feedback",
+				"## Rejected Feedback",
+				"## Non-Actionable Feedback",
+				"planned-change",
+				"UNTRUSTED",
+			} {
+				assert.Contains(t, got, want,
+					"round-plan contract missing %q", want)
+			}
+			planIdx := strings.Index(got,
+				"/ws/.j/tasks/01/code-reviews/round-1/plan.md")
+			ctxIdx := strings.Index(got, "Reviewer comment")
+			assert.Greater(t, planIdx, -1,
+				"round plan.md path must appear in prompt")
+			assert.Greater(t, ctxIdx, planIdx,
+				"reviewer-context wording must follow the plan path")
+		})
 	}
 }
