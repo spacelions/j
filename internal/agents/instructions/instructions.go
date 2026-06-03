@@ -143,28 +143,41 @@ var VerifierClarificationResume string
 //go:embed clarification.md
 var Clarification string
 
-// CodeReview is the code-review planner system prompt used by
-// `j tasks code-review`. It is intentionally independent of the
-// canonical planner.md body because the code-review round must NOT
-// rewrite canonical requirements.md / plan.md and must NOT post
-// external comments. Carries five %q placeholders: review.toml path,
-// canonical requirements.md path, canonical plan.md path, round
-// plan.md output path, and review.toml output path.
+// CodeReview is the code-review planner ROLE body. Mirrors the
+// planner / worker / verifier roles: it carries the untrusted-
+// feedback rule, the forbidden-action list, and the decision
+// rules — but no IO directive. The fresh / clarification-resume
+// directives and the save suffix are composed on top by
+// CodeReviewPrompt, matching how the planner composes
+// PlannerRequest / PlannerResume / PlannerSaveSuffix.
 //
 //go:embed code_review.md
 var CodeReview string
 
+// CodeReviewRequest is the fresh-run IO directive: "read
+// review.toml at %q; the canonical task spec lives at %q / %q;
+// review.toml is pre-populated and you only append decisions."
+// Carries three %q placeholders: review.toml, requirements, plan.
+//
+//go:embed code_review_request.md
+var CodeReviewRequest string
+
 // CodeReviewClarificationResume is the resume-from-clarification
-// variant of the code-review prompt. Used when ResolveOrAllocate
-// reuses an existing `code-reviews/round-N/` because its
-// `clarification.md` is still present — the planner must read the
-// open question, address it, and delete the file so a future round
-// allocates a fresh `round-N+1/` instead of looping on the stale
-// file. Carries eight %q placeholders: clarification.md (read),
-// review.toml (read), canonical requirements.md, canonical
-// plan.md, clarification.md (delete on resolved), clarification.md
-// (rewrite if still open), round plan.md output, and review.toml
-// (write).
+// IO directive. Used when codereview.ResolveOrAllocate reuses an
+// existing `code-reviews/round-N/` because its `clarification.md`
+// is still present. Carries five %q placeholders: clarification.md
+// (read), review.toml, requirements, plan, clarification.md
+// (delete-when-resolved).
 //
 //go:embed code_review_clarification_resume.md
 var CodeReviewClarificationResume string
+
+// CodeReviewSaveSuffix is the exit contract every code-review
+// prompt ends with: save the round plan, rewrite review.toml in
+// place, then exit. Carries two %q placeholders: round plan.md
+// output path, review.toml output path. Centralising it here
+// means a future tweak lands in exactly one file regardless of
+// which mode (fresh vs clarification-resume) the planner picked.
+//
+//go:embed code_review_save_suffix.md
+var CodeReviewSaveSuffix string
