@@ -20,6 +20,15 @@ var ErrUnauthorized = errors.New(
 	"github: unauthorized (configure `github.token`, GITHUB_TOKEN, " +
 		"or GH_TOKEN)")
 
+// ErrTokenNotConfigured is returned by RequireTokenConfigured when no
+// GitHub token is reachable through any supported source. The wording
+// lists `github.token`, GITHUB_TOKEN, and GH_TOKEN so the parent
+// code-review flow can surface a remediation line without printing
+// any stored value.
+var ErrTokenNotConfigured = errors.New(
+	"github: no token configured (set `github.token`, GITHUB_TOKEN, " +
+		"or GH_TOKEN)")
+
 // ErrNotFound is returned when the GraphQL response reports a null
 // pullRequest node. The cli wraps this with the original PR URL so
 // the user sees "PR not accessible" rather than a vague GraphQL

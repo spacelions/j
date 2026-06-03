@@ -232,6 +232,45 @@ func TestCodeReview_NoAgents(t *testing.T) {
 	assert.Contains(t, err.Error(), "no coding agents")
 }
 
+func TestCodeReview_MissingTokenStopsBeforeSpawn(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "")
+	setupCodeReviewTask(t, "01-t", "https://github.com/x/y/pull/1",
+		tasks.StatusWorkDone)
+	var stdout, stderr bytes.Buffer
+	err := RunCodeReview(t.Context(), CodeReviewOptions{
+		FromTask: "01-t",
+		Stdout:   &stdout, Stderr: &stderr,
+		UI:     &fakeUI{},
+		Agents: []codingagents.Agent{&stubReviewAgent{name: "stub"}},
+	})
+	require.ErrorIs(t, err, github.ErrTokenNotConfigured)
+	stderrText := stderr.String()
+	assert.Contains(t, stderrText, "github.token")
+	assert.Contains(t, stderrText, "GITHUB_TOKEN")
+	assert.Contains(t, stderrText, "GH_TOKEN")
+	assert.NotContains(t, stdout.String(), "running in background")
+}
+
+func TestCodeReview_ConfiguredTokenReachesSpawn(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-only-not-a-real-token")
+	t.Setenv("GH_TOKEN", "")
+	setupCodeReviewTask(t, "01-t", "https://github.com/x/y/pull/1",
+		tasks.StatusWorkDone)
+	var stdout, stderr bytes.Buffer
+	err := RunCodeReview(t.Context(), CodeReviewOptions{
+		FromTask: "01-t",
+		Stdout:   &stdout, Stderr: &stderr,
+		UI:      &fakeUI{},
+		Agents:  []codingagents.Agent{&stubReviewAgent{name: "stub"}},
+		JBinary: testutil.NoopJBinary(t),
+	})
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "running in background")
+	assert.NotContains(t, stdout.String(), "test-only-not-a-real-token")
+	assert.NotContains(t, stderr.String(), "test-only-not-a-real-token")
+}
+
 // --- child tests ---
 
 func TestRunCodeReviewChild_NoTaskID(t *testing.T) {
