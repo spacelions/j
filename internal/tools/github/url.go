@@ -80,10 +80,3 @@ func splitPRPath(path string) (owner, repo string, number int, err error) {
 	}
 	return parts[0], parts[1], n, nil
 }
-
-// Endpoint returns the GraphQL endpoint for github.com. The receiver
-// is preserved so tests and future enterprise support can swap to a
-// per-ref endpoint without churning every caller.
-func (r PRRef) Endpoint() string {
-	return publicEndpoint
-}

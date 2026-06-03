@@ -14,7 +14,6 @@ func TestParseURL_PublicGitHub(t *testing.T) {
 	assert.Equal(t, "acme", ref.Owner)
 	assert.Equal(t, "app", ref.Repo)
 	assert.Equal(t, 42, ref.Number)
-	assert.Equal(t, "https://api.github.com/graphql", ref.Endpoint())
 }
 
 func TestParseURL_PullsLiteral(t *testing.T) {

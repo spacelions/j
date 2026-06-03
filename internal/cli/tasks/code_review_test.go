@@ -410,51 +410,7 @@ func TestRunCodeReviewChild_PreservesCanonicalArtifacts(t *testing.T) {
 	assert.Equal(t, tasks.StatusWorkDone, row.Status)
 }
 
-func TestCodeReview_NonCodeReviewerAgentFailsCleanly(t *testing.T) {
-	type nonReviewer struct {
-		stubReviewAgent
-	}
-	a := &nonReviewer{stubReviewAgent: stubReviewAgent{name: "no-reviewer"}}
-	_, err := codingagents.RunCodeReview(t.Context(), a,
-		codingagents.CodeReviewRequest{})
-	// stubReviewAgent does implement CodeReviewer through embedding
-	// so we wrap a stub that explicitly does not; the easier check
-	// is to call RunCodeReview against a stub that does not satisfy.
-	_ = err
-	// Use a fresh stub that doesn't embed stubReviewAgent.
-	plain := &codeReviewPlainAgent{}
-	_, err = codingagents.RunCodeReview(t.Context(), plain,
-		codingagents.CodeReviewRequest{})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not support code-review")
-}
-
-type codeReviewPlainAgent struct{}
-
-func (codeReviewPlainAgent) Name() string { return "plain" }
-func (codeReviewPlainAgent) ListModels(context.Context) ([]string, error) {
-	return nil, nil
-}
-func (codeReviewPlainAgent) CheckLogin(context.Context) error { return nil }
-func (codeReviewPlainAgent) NewResumeID(context.Context) (string, error) {
-	return "", nil
-}
-
-func (codeReviewPlainAgent) Plan(
-	context.Context, codingagents.PlanRequest,
-) (int, error) {
-	return 0, nil
-}
-
-func (codeReviewPlainAgent) Work(
-	context.Context, codingagents.WorkRequest,
-) (int, error) {
-	return 0, nil
-}
-
-func (codeReviewPlainAgent) Verify(
-	context.Context, codingagents.VerifyRequest,
-) (int, error) {
-	return 0, nil
-}
-func (codeReviewPlainAgent) FormatLog(line []byte) []byte { return line }
+// The "non-CodeReviewer agent fails cleanly" path is covered by
+// TestRunCodeReview_NotImplemented in
+// internal/coding-agents/code_review_test.go; no need to duplicate
+// the stub at this layer.

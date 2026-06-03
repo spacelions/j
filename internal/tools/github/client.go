@@ -94,12 +94,8 @@ func (c *Client) Viewer(ctx context.Context) (string, error) {
 		return c.viewer, nil
 	}
 	var resp viewerResponse
-	req := graphQLRequest{Query: viewerQuery}
-	if err := c.do(ctx, publicEndpoint, req, &resp); err != nil {
+	if err := c.do(ctx, graphQLRequest{Query: viewerQuery}, &resp); err != nil {
 		return "", err
-	}
-	if msg := firstGraphQLError(resp.Errors); msg != "" {
-		return "", fmt.Errorf("github: %s", msg)
 	}
 	c.viewer = resp.Data.Viewer.Login
 	return c.viewer, nil
@@ -113,20 +109,35 @@ type viewerResponse struct {
 			Login string `json:"login"`
 		} `json:"viewer"`
 	} `json:"data"`
+}
+
+// graphQLErrorEnvelope is the minimal {errors: [...]} shape `do`
+// unmarshals into so every caller can drop the per-response
+// firstGraphQLError check. The Errors field still parses
+// independently of out's shape, so callers do not need to embed
+// the slice.
+type graphQLErrorEnvelope struct {
 	Errors []graphQLError `json:"errors"`
 }
 
 // do is the shared transport. Returns ErrUnauthorized on 401, an
-// HTTPError on any other non-2xx status, and a wrapped json decode
-// error on a 2xx body that does not match out's shape. Empty token
-// short-circuits to ErrUnauthorized before any outbound call so the
-// caller cannot mistake "no token" for "wrong token".
+// HTTPError on any other non-2xx status, a wrapped "github: <msg>"
+// error when the 2xx body carries a non-empty `errors[]` array,
+// and a wrapped json decode error on a body that does not match
+// out's shape. Empty token short-circuits to ErrUnauthorized
+// before any outbound call so the caller cannot mistake "no
+// token" for "wrong token".
+//
+// The endpoint is always publicEndpoint (overridable globally via
+// TestEndpoint); v1 only supports github.com so a per-call
+// endpoint parameter would be dead surface.
 func (c *Client) do(
-	ctx context.Context, endpoint string, req graphQLRequest, out any,
+	ctx context.Context, req graphQLRequest, out any,
 ) error {
 	if c.token == "" {
 		return ErrUnauthorized
 	}
+	endpoint := publicEndpoint
 	if TestEndpoint != "" {
 		endpoint = TestEndpoint
 	}
@@ -147,6 +158,12 @@ func (c *Client) do(
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return &HTTPError{Status: resp.StatusCode, Body: string(raw)}
+	}
+	var env graphQLErrorEnvelope
+	if err := json.Unmarshal(raw, &env); err == nil {
+		if msg := firstGraphQLError(env.Errors); msg != "" {
+			return fmt.Errorf("github: %s", msg)
+		}
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("github: decode: %w", err)

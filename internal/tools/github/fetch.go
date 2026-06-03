@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"fmt"
 	"strings"
 )
 
@@ -53,11 +52,8 @@ func (c *Client) fetchPRFirstPage(
 			"o": ref.Owner, "r": ref.Repo, "n": ref.Number,
 		},
 	}
-	if err := c.do(ctx, ref.Endpoint(), req, &resp); err != nil {
+	if err := c.do(ctx, req, &resp); err != nil {
 		return nil, err
-	}
-	if msg := firstGraphQLError(resp.Errors); msg != "" {
-		return nil, fmt.Errorf("github: %s", msg)
 	}
 	if resp.Data.Repository == nil || resp.Data.Repository.PullRequest == nil {
 		return nil, ErrNotFound
@@ -72,98 +68,70 @@ func (c *Client) fetchPRFirstPage(
 func (c *Client) fetchRemaining(
 	ctx context.Context, ref PRRef, first *prFirstPage,
 ) ([]prConversationComment, []prReviewThread, []prReview, error) {
-	conv, err := c.fetchAllComments(ctx, ref, first.Comments)
+	conv, err := fetchPaged(ctx, c, ref,
+		first.Comments.PageInfo, first.Comments.Nodes,
+		prCommentsPageQuery,
+		func(resp *prCommentsPageResponse) (prPageInfo, []prConversationComment) {
+			p := resp.Data.Repository.PullRequest.Comments
+			return p.PageInfo, p.Nodes
+		})
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	threads, err := c.fetchAllReviewThreads(ctx, ref, first.ReviewThreads)
+	threads, err := fetchPaged(ctx, c, ref,
+		first.ReviewThreads.PageInfo, first.ReviewThreads.Nodes,
+		prReviewThreadsPageQuery,
+		func(resp *prReviewThreadsPageResponse) (prPageInfo, []prReviewThread) {
+			p := resp.Data.Repository.PullRequest.ReviewThreads
+			return p.PageInfo, p.Nodes
+		})
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	reviews, err := c.fetchAllReviews(ctx, ref, first.Reviews)
+	reviews, err := fetchPaged(ctx, c, ref,
+		first.Reviews.PageInfo, first.Reviews.Nodes,
+		prReviewsPageQuery,
+		func(resp *prReviewsPageResponse) (prPageInfo, []prReview) {
+			p := resp.Data.Repository.PullRequest.Reviews
+			return p.PageInfo, p.Nodes
+		})
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	return conv, threads, reviews, nil
 }
 
-func (c *Client) fetchAllComments(
-	ctx context.Context, ref PRRef, page prConversationCommentsPage,
-) ([]prConversationComment, error) {
-	out := page.Nodes
-	info := page.PageInfo
+// fetchPaged drains a paginated PR connection. The caller passes
+// the first page's pageInfo + nodes (already unmarshalled from
+// the prFirstPage envelope), the per-list `*PageQuery` GraphQL
+// string, and an extractor that projects each follow-up response
+// onto the same `(pageInfo, nodes)` pair. The loop appends nodes
+// and advances the cursor until `hasNextPage` is false.
+func fetchPaged[N, R any](
+	ctx context.Context,
+	c *Client,
+	ref PRRef,
+	info prPageInfo,
+	first []N,
+	query string,
+	extract func(*R) (prPageInfo, []N),
+) ([]N, error) {
+	out := first
 	for info.HasNextPage {
-		var resp prCommentsPageResponse
+		var resp R
 		req := graphQLRequest{
-			Query: prCommentsPageQuery,
+			Query: query,
 			Variables: map[string]any{
 				"o": ref.Owner, "r": ref.Repo,
 				"n": ref.Number, "a": info.EndCursor,
 			},
 		}
-		if err := c.do(ctx, ref.Endpoint(), req, &resp); err != nil {
+		if err := c.do(ctx, req, &resp); err != nil {
 			return nil, err
 		}
-		if msg := firstGraphQLError(resp.Errors); msg != "" {
-			return nil, fmt.Errorf("github: %s", msg)
-		}
-		next := resp.Data.Repository.PullRequest.Comments
-		out = append(out, next.Nodes...)
-		info = next.PageInfo
-	}
-	return out, nil
-}
-
-func (c *Client) fetchAllReviewThreads(
-	ctx context.Context, ref PRRef, page prReviewThreadsPage,
-) ([]prReviewThread, error) {
-	out := page.Nodes
-	info := page.PageInfo
-	for info.HasNextPage {
-		var resp prReviewThreadsPageResponse
-		req := graphQLRequest{
-			Query: prReviewThreadsPageQuery,
-			Variables: map[string]any{
-				"o": ref.Owner, "r": ref.Repo,
-				"n": ref.Number, "a": info.EndCursor,
-			},
-		}
-		if err := c.do(ctx, ref.Endpoint(), req, &resp); err != nil {
-			return nil, err
-		}
-		if msg := firstGraphQLError(resp.Errors); msg != "" {
-			return nil, fmt.Errorf("github: %s", msg)
-		}
-		next := resp.Data.Repository.PullRequest.ReviewThreads
-		out = append(out, next.Nodes...)
-		info = next.PageInfo
-	}
-	return out, nil
-}
-
-func (c *Client) fetchAllReviews(
-	ctx context.Context, ref PRRef, page prReviewsPage,
-) ([]prReview, error) {
-	out := page.Nodes
-	info := page.PageInfo
-	for info.HasNextPage {
-		var resp prReviewsPageResponse
-		req := graphQLRequest{
-			Query: prReviewsPageQuery,
-			Variables: map[string]any{
-				"o": ref.Owner, "r": ref.Repo,
-				"n": ref.Number, "a": info.EndCursor,
-			},
-		}
-		if err := c.do(ctx, ref.Endpoint(), req, &resp); err != nil {
-			return nil, err
-		}
-		if msg := firstGraphQLError(resp.Errors); msg != "" {
-			return nil, fmt.Errorf("github: %s", msg)
-		}
-		next := resp.Data.Repository.PullRequest.Reviews
-		out = append(out, next.Nodes...)
-		info = next.PageInfo
+		nextInfo, nextNodes := extract(&resp)
+		out = append(out, nextNodes...)
+		info = nextInfo
 	}
 	return out, nil
 }

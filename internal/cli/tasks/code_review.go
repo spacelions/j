@@ -48,8 +48,9 @@ func (a codeReviewPickAdapter) PickTask(
 }
 
 // RunCodeReview is the parent body of `j tasks code-review`. It
-// validates the picked task and either runs the child loop in the
-// foreground (Interactive) or spawns the hidden child detached.
+// validates the picked task, resolves its task dir, and either
+// runs the hidden child loop in the foreground (--interactive) or
+// spawns it detached and prints the fork dialog.
 func RunCodeReview(
 	ctx context.Context, opts CodeReviewOptions,
 ) (err error) {
@@ -71,12 +72,6 @@ func RunCodeReview(
 	if err := resolver.GuardCodeReviewTask(opts.Stderr, row); err != nil {
 		return err
 	}
-	return launchCodeReviewChild(ctx, opts, taskID)
-}
-
-func launchCodeReviewChild(
-	ctx context.Context, opts CodeReviewOptions, taskID string,
-) error {
 	taskDir, err := tasks.EnsureDir(taskID)
 	if err != nil {
 		return err

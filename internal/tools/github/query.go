@@ -153,7 +153,6 @@ type prFirstPageResponse struct {
 			PullRequest *prFirstPage `json:"pullRequest"`
 		} `json:"repository"`
 	} `json:"data"`
-	Errors []graphQLError `json:"errors"`
 }
 
 type prCommentsPageResponse struct {
@@ -164,7 +163,6 @@ type prCommentsPageResponse struct {
 			} `json:"pullRequest"`
 		} `json:"repository"`
 	} `json:"data"`
-	Errors []graphQLError `json:"errors"`
 }
 
 type prReviewThreadsPageResponse struct {
@@ -175,7 +173,6 @@ type prReviewThreadsPageResponse struct {
 			} `json:"pullRequest"`
 		} `json:"repository"`
 	} `json:"data"`
-	Errors []graphQLError `json:"errors"`
 }
 
 type prReviewsPageResponse struct {
@@ -186,5 +183,4 @@ type prReviewsPageResponse struct {
 			} `json:"pullRequest"`
 		} `json:"repository"`
 	} `json:"data"`
-	Errors []graphQLError `json:"errors"`
 }
