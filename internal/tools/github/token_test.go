@@ -75,3 +75,47 @@ func TestResolveToken_EnvPrecedenceOverStore(t *testing.T) {
 	}
 	assert.Equal(t, "env-wins", ResolveToken())
 }
+
+func TestRequireTokenConfigured_MissingReturnsSentinel(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "")
+	t.Chdir(t.TempDir())
+	err := RequireTokenConfigured()
+	require.ErrorIs(t, err, ErrTokenNotConfigured)
+	msg := err.Error()
+	assert.Contains(t, msg, "github.token")
+	assert.Contains(t, msg, "GITHUB_TOKEN")
+	assert.Contains(t, msg, "GH_TOKEN")
+}
+
+func TestRequireTokenConfigured_WhitespaceOnlyMissing(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "   ")
+	t.Setenv("GH_TOKEN", "\t\n")
+	t.Chdir(t.TempDir())
+	assert.ErrorIs(t, RequireTokenConfigured(), ErrTokenNotConfigured)
+}
+
+func TestRequireTokenConfigured_GitHubTokenSatisfies(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "env-1")
+	t.Setenv("GH_TOKEN", "")
+	assert.NoError(t, RequireTokenConfigured())
+}
+
+func TestRequireTokenConfigured_GHTokenSatisfies(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "env-2")
+	assert.NoError(t, RequireTokenConfigured())
+}
+
+func TestRequireTokenConfigured_StoredSatisfies(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "")
+	t.Chdir(t.TempDir())
+	initProject(t)
+	s, err := store.Open(store.DefaultPath())
+	require.NoError(t, err)
+	require.NoError(t, s.Put(
+		store.BucketGithub, store.KeyGithubToken, "stored"))
+	require.NoError(t, s.Close())
+	assert.NoError(t, RequireTokenConfigured())
+}

@@ -33,6 +33,19 @@ func ResolveToken() string {
 	return readStoredToken()
 }
 
+// RequireTokenConfigured reports ErrTokenNotConfigured when
+// ResolveToken finds no usable value through any supported source.
+// It deliberately does not return the token; callers only need a
+// presence signal and must never leak the value into stdout, stderr,
+// or returned errors. Token validity and scope checks remain the
+// child's responsibility through the existing fetch path.
+func RequireTokenConfigured() error {
+	if ResolveToken() == "" {
+		return ErrTokenNotConfigured
+	}
+	return nil
+}
+
 func readStoredToken() string {
 	path := store.DefaultPath()
 	if _, err := os.Stat(path); err != nil {

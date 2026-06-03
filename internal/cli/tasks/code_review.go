@@ -11,6 +11,7 @@ import (
 	codingagents "github.com/spacelions/j/internal/coding-agents"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/tools/github"
 )
 
 // CodeReviewOptions configures RunCodeReview. The detached parent
@@ -84,6 +85,10 @@ func RunCodeReview(
 	if opts.Interactive {
 		args = append(args, flagInteractiveTrue)
 		return runInlineOrchestrator(ctx, opts.JBinary, args)
+	}
+	if err := github.RequireTokenConfigured(); err != nil {
+		uitheme.DangerousOutput(opts.Stderr, "J: %v", err)
+		return err
 	}
 	agentLogPath := filepath.Join(taskDir, tasks.AgentLogFileName)
 	pid, err := spawnDetachedOrchestrator(
