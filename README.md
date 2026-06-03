@@ -117,6 +117,21 @@ On task state changes, `j` syncs the Linear issue state and posts comments with 
 
 Use a **separate clone or directory** for dogfooding `j` so your experiments under `.j/` don't clutter the harness repo itself.
 
+### Agent skills
+
+This repository records the Golang best-practice skills in
+[`skills-lock.json`](skills-lock.json). Install them into the local
+project with the `skills` CLI via `pnpm`:
+
+```bash
+pnpm dlx skills add samber/cc-skills-golang --skill '*' --yes
+```
+
+Run this from the repository root. It installs the skills into the
+project-local skills folder under `.agents/skills/`; `.agents/` is
+gitignored. When adding or upgrading skills, commit the updated
+`skills-lock.json`.
+
 ### Everyday loop
 
 ```bash
