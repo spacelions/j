@@ -142,3 +142,14 @@ var VerifierClarificationResume string
 //
 //go:embed clarification.md
 var Clarification string
+
+// CodeReview is the code-review planner system prompt used by
+// `j tasks code-review`. It is intentionally independent of the
+// canonical planner.md body because the code-review round must NOT
+// rewrite canonical requirements.md / plan.md and must NOT post
+// external comments. Carries five %q placeholders: review.toml path,
+// canonical requirements.md path, canonical plan.md path, round
+// plan.md output path, and review.toml output path.
+//
+//go:embed code_review.md
+var CodeReview string

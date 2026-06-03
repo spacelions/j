@@ -19,6 +19,7 @@ func TestIsRoleBucket_Table(t *testing.T) {
 		{"verifier", BucketVerifier, true},
 		{"project", BucketProject, false},
 		{"linear", BucketLinear, false},
+		{"github", BucketGithub, false},
 		{"empty", "", false},
 		{"random", "ghost", false},
 	}

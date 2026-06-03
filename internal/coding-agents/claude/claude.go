@@ -43,7 +43,10 @@ var defaultModels = []string{"opus", "sonnet", "haiku"}
 // rather than an injected runner (see AGENTS.md "no test seams" rule).
 type Agent struct{}
 
-var _ codingagents.Agent = (*Agent)(nil)
+var (
+	_ codingagents.Agent        = (*Agent)(nil)
+	_ codingagents.CodeReviewer = (*Agent)(nil)
+)
 
 // New returns a Claude agent that shells out to the claude CLI.
 func New() *Agent { return &Agent{} }
@@ -222,6 +225,34 @@ func (a *Agent) Verify(
 		argModel, req.Model, prompt,
 	)
 	hargs := headlessPhaseArgs(req.ResumeChatID, req.Resume, req.Model, prompt)
+	return a.runPhase(ctx, phaseRun{
+		interactive:     req.Interactive,
+		workspace:       workspace,
+		agentLogPath:    req.AgentLogPath,
+		interactiveArgs: iargs,
+		headlessArgs:    hargs,
+	})
+}
+
+// CodeReview drives a `j tasks code-review` round. Mirrors Plan's
+// flavour split (interactive TUI vs headless fire-and-forget) but
+// uses the code-review prompt — which forbids canonical artifact
+// writes and external posting — and treats the per-task dir as the
+// workspace so the planner has the canonical requirements.md /
+// plan.md in scope. `--permission-mode plan` is intentionally absent
+// for the interactive flavour because the round must write
+// `review.toml`, the round `plan.md`, and (optionally)
+// `clarification.md`; plan-mode would forbid every write.
+func (a *Agent) CodeReview(
+	ctx context.Context, req codingagents.CodeReviewRequest,
+) (int, error) {
+	workspace := req.TaskDir
+	prompt := prompts.CodeReviewPrompt(req)
+
+	iargs := phaseArgs(
+		"", false, argModel, req.Model, prompt,
+	)
+	hargs := headlessPhaseArgs("", false, req.Model, prompt)
 	return a.runPhase(ctx, phaseRun{
 		interactive:     req.Interactive,
 		workspace:       workspace,

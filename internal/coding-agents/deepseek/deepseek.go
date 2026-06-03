@@ -52,6 +52,7 @@ type Agent struct{}
 var (
 	_ codingagents.Agent            = (*Agent)(nil)
 	_ codingagents.ResumeIDCapturer = (*Agent)(nil)
+	_ codingagents.CodeReviewer     = (*Agent)(nil)
 )
 
 // New returns a deepseek agent that shells out to the deepseek-tui CLI.
@@ -189,6 +190,25 @@ func (a *Agent) Verify(
 	}
 	return a.runPhase(
 		ctx, req.Interactive, workspace, env, req.ResumeChatID,
+		req.Model, prompt, req.AgentLogPath,
+	)
+}
+
+// CodeReview drives a `j tasks code-review` round. The workspace is
+// the per-task dir so the planner has the canonical requirements.md
+// / plan.md in scope. No resume id is threaded because each
+// code-review round is a fresh planner turn.
+func (a *Agent) CodeReview(
+	ctx context.Context, req codingagents.CodeReviewRequest,
+) (int, error) {
+	workspace := req.TaskDir
+	prompt := prompts.CodeReviewPrompt(req)
+	env, err := prepareScopedEnv(req.TaskDir)
+	if err != nil {
+		return 0, fmt.Errorf("deepseek-tui: %w", err)
+	}
+	return a.runPhase(
+		ctx, req.Interactive, workspace, env, "",
 		req.Model, prompt, req.AgentLogPath,
 	)
 }

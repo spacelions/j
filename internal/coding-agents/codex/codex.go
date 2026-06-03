@@ -76,6 +76,7 @@ type Agent struct{}
 var (
 	_ codingagents.Agent            = (*Agent)(nil)
 	_ codingagents.ResumeIDCapturer = (*Agent)(nil)
+	_ codingagents.CodeReviewer     = (*Agent)(nil)
 )
 
 // New returns a codex agent that shells out to the codex CLI.
@@ -194,6 +195,30 @@ func (a *Agent) Verify(
 		agentLogPath:    req.AgentLogPath,
 		interactiveArgs: interactiveArgs(req.ResumeChatID, req.Model, prompt),
 		headlessArgs:    headlessArgs(req.ResumeChatID, req.Model, prompt),
+	})
+}
+
+// CodeReview drives a `j tasks code-review` round. Same flavour split
+// as Plan but the workspace is the per-task dir so the planner has
+// the canonical requirements.md / plan.md in scope. The session id
+// is intentionally left empty: a code-review round is always fresh
+// and the task's planner session belongs to the canonical chain.
+func (a *Agent) CodeReview(
+	ctx context.Context, req codingagents.CodeReviewRequest,
+) (int, error) {
+	workspace := req.TaskDir
+	prompt := prompts.CodeReviewPrompt(req)
+	env, err := prepareScopedEnv(req.TaskDir)
+	if err != nil {
+		return 0, fmt.Errorf("codex: %w", err)
+	}
+	return a.runPhase(ctx, phaseRun{
+		interactive:     req.Interactive,
+		workspace:       workspace,
+		env:             env,
+		agentLogPath:    req.AgentLogPath,
+		interactiveArgs: interactiveArgs("", req.Model, prompt),
+		headlessArgs:    headlessArgs("", req.Model, prompt),
 	})
 }
 

@@ -43,13 +43,16 @@ type keyMap struct {
 
 // isSecretKey reports whether the (bucket, storedKey) pair carries a
 // user-secret that should be masked in `j settings` output. The
-// project's Gemini API key and the Linear personal token both qualify.
+// project's Gemini API key, the Linear personal token, and the GitHub
+// personal token all qualify.
 func isSecretKey(bucket, storedKey string) bool {
 	switch bucket {
 	case store.BucketProject:
 		return storedKey == store.KeyProjectAPIKey
 	case store.BucketLinear:
 		return storedKey == store.KeyLinearAPIKey
+	case store.BucketGithub:
+		return storedKey == store.KeyGithubToken
 	}
 	return false
 }
