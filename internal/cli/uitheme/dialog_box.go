@@ -30,10 +30,6 @@ var (
 			Border(lipgloss.NormalBorder()).
 			BorderForeground(borderColor).
 			Padding(0, 1)
-	dangerBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(dangerColor).
-			Padding(0, 1)
 )
 
 // NormalText renders s as plain grey terminal text.
@@ -78,17 +74,17 @@ func DangerousFprintln(w io.Writer, a ...any) (int, error) {
 	return fmt.Fprint(w, DangerousText(fmt.Sprintln(a...)))
 }
 
-// DangerousDialogBox writes the formatted message inside a bordered orange
-// box — the heavier sibling of DangerousFprintf used for warnings
-// (failed persistence, lock contention) where the
-// line should visibly separate from surrounding output.
+// DangerousOutput is the canonical dangerous-text emitter: orange
+// terminal text followed by a newline. The format string follows
+// fmt.Sprintf semantics; no leading "warning:" prefix is needed
+// because the orange render already conveys that semantic.
 //
-// The format string should NOT include a leading "warning:" prefix —
-// the orange frame already conveys that semantic, so saying it twice
-// is noise.
-func DangerousDialogBox(w io.Writer, format string, a ...any) {
-	fmt.Fprintln(w, dangerBoxStyle.Render(
-		dangerStyle.Render(fmt.Sprintf(format, a...))))
+// The earlier DangerousDialogBox bordered-frame variant was
+// removed in the SPA-0 code-review sweep — the heavy frame added
+// visual noise on transient errors (bad input, missing PR, lock
+// contention) without conveying extra meaning.
+func DangerousOutput(w io.Writer, format string, a ...any) {
+	fmt.Fprintln(w, DangerousText(fmt.Sprintf(format, a...)))
 }
 
 func renderText(style lipgloss.Style, s string) string {

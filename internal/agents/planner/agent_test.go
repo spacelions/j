@@ -506,7 +506,7 @@ func TestExecute_WaitForCompletionError(t *testing.T) {
 	}
 }
 
-// TestExecute_NewResumeIDError covers the DangerousDialogBox warning
+// TestExecute_NewResumeIDError covers the DangerousOutput warning
 // path in beginPlanSession when NewResumeID returns an error.
 // The plan run continues with an empty resume ID.
 func TestExecute_NewResumeIDError(t *testing.T) {

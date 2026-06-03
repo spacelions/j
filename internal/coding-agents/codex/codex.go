@@ -76,6 +76,7 @@ type Agent struct{}
 var (
 	_ codingagents.Agent            = (*Agent)(nil)
 	_ codingagents.ResumeIDCapturer = (*Agent)(nil)
+	_ codingagents.CodeReviewer     = (*Agent)(nil)
 )
 
 // New returns a codex agent that shells out to the codex CLI.

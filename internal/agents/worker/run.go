@@ -116,7 +116,7 @@ func resolveWorker(
 	}
 	fresh, err := a.NewResumeID(ctx)
 	if err != nil {
-		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", err)
+		uitheme.DangerousOutput(opts.Stderr, "J: %v", err)
 	}
 	return a, codingagents.AgentSession{
 		Tool:     a.Name(),
@@ -144,7 +144,7 @@ func runWorker(
 ) error {
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
+		uitheme.DangerousOutput(opts.Stderr, "J: %v", mustReadErr)
 	}
 	resume := res.Task.WorkResumeSession != ""
 	resumeFromClarification := resume &&

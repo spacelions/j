@@ -105,6 +105,6 @@ func applyAndWarn(s *tasks.Store, stderr io.Writer, t *tasks.Task,
 	ev tasks.Event,
 ) {
 	if _, err := tasks.ApplyAndPersist(s, t, ev); err != nil {
-		uitheme.DangerousDialogBox(stderr, "J: tasks put: %v", err)
+		uitheme.DangerousOutput(stderr, "J: tasks put: %v", err)
 	}
 }

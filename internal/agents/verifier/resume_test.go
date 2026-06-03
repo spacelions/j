@@ -161,7 +161,7 @@ func TestRunResume_FromTaskHappyPath(t *testing.T) {
 	}
 }
 
-// TestRunResume_MustReadError pins the DangerousDialogBox warning
+// TestRunResume_MustReadError pins the DangerousOutput warning
 // path in runVerifyResume: when MustRead() fails (settings store
 // is a directory), the error is logged to stderr as a warning and
 // the verify resume still proceeds.

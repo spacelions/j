@@ -136,7 +136,7 @@ func runVerifyResume(
 	lc := lifecycle.BeginVerifyResume(t, opts.Stderr)
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
+		uitheme.DangerousOutput(opts.Stderr, "J: %v", mustReadErr)
 	}
 	req := buildVerifyResumeRequest(res, true, mustReadFiles)
 	pid, runErr := agent.Verify(ctx, req)

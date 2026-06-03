@@ -34,7 +34,10 @@ const (
 // rather than an injected runner (see AGENTS.md "no test seams" rule).
 type Agent struct{}
 
-var _ codingagents.Agent = (*Agent)(nil)
+var (
+	_ codingagents.Agent        = (*Agent)(nil)
+	_ codingagents.CodeReviewer = (*Agent)(nil)
+)
 
 // New returns a Cursor agent that shells out to the cursor-agent CLI.
 func New() *Agent { return &Agent{} }
@@ -202,6 +205,29 @@ func (a *Agent) Verify(
 		argWorkspace, workspace, prompt,
 	)
 	hargs := phaseArgs(req.ResumeChatID,
+		argPrint,
+		argOutputFormat, argOutputFormatStreamJSON,
+		argForce, argTrust, argModel, req.Model,
+		argWorkspace, workspace, prompt,
+	)
+	return a.runPhase(ctx, req.Interactive, req.AgentLogPath, iargs, hargs)
+}
+
+// CodeReview drives a `j tasks code-review` round. The workspace is
+// the per-task dir so the planner has the canonical requirements.md
+// / plan.md in scope. The session id is intentionally left empty:
+// code-review rounds are always fresh and never thread the canonical
+// planner session.
+func (a *Agent) CodeReview(
+	ctx context.Context, req codingagents.CodeReviewRequest,
+) (int, error) {
+	workspace := req.TaskDir
+	prompt := prompts.CodeReviewPrompt(req)
+	iargs := phaseArgs("",
+		argModel, req.Model,
+		argWorkspace, workspace, prompt,
+	)
+	hargs := phaseArgs("",
 		argPrint,
 		argOutputFormat, argOutputFormatStreamJSON,
 		argForce, argTrust, argModel, req.Model,

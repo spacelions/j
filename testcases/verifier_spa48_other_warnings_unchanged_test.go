@@ -11,7 +11,7 @@ import (
 // TestVerifierSPA48_OtherWarnings_StillStderr pins acceptance
 // criterion D: SPA-48 only re-routes the issueReminder failure
 // log — every other warnLinearSync(...) branch keeps its existing
-// stderr DangerousDialogBox behaviour. We exercise the
+// stderr DangerousOutput behaviour. We exercise the
 // issueUpdate failure branch and assert the `linear sync:` prefix
 // still surfaces on the redirected stderr pipe.
 func TestVerifierSPA48_OtherWarnings_StillStderr(t *testing.T) {

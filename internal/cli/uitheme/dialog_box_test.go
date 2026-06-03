@@ -56,17 +56,20 @@ func TestDangerousFprintln(t *testing.T) {
 	}
 }
 
-func TestDangerousDialogBox(t *testing.T) {
+func TestDangerousOutput(t *testing.T) {
 	var buf bytes.Buffer
-	DangerousDialogBox(&buf, "J: tasks db: %v", errors.New("boom"))
+	DangerousOutput(&buf, "J: tasks db: %v", errors.New("boom"))
 	stripped := ansi.Strip(buf.String())
 	if !strings.Contains(stripped, "J: tasks db: boom") {
 		t.Fatalf("output missing the formatted body: %q", stripped)
 	}
 	for _, glyph := range []string{"┌", "┐", "└", "┘"} {
-		if !strings.Contains(stripped, glyph) {
-			t.Fatalf("output missing border glyph %q: %q", glyph, stripped)
+		if strings.Contains(stripped, glyph) {
+			t.Fatalf("DangerousOutput must not render border glyphs: %q", stripped)
 		}
+	}
+	if !strings.HasSuffix(buf.String(), "\n") {
+		t.Fatalf("DangerousOutput must end with newline: %q", buf.String())
 	}
 }
 

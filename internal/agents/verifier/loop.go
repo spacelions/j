@@ -26,7 +26,7 @@ func runVerifyLoop(
 ) (lifecycle.VerifyOutcome, error) {
 	mustReadFiles, mustReadErr := resolver.MustRead()
 	if mustReadErr != nil {
-		uitheme.DangerousDialogBox(opts.Stderr, "J: %v", mustReadErr)
+		uitheme.DangerousOutput(opts.Stderr, "J: %v", mustReadErr)
 	}
 	beginAt := time.Now().UTC()
 	for i := range opts.MaxIterations {

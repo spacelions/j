@@ -15,7 +15,7 @@ import (
 // TestOrchestrateFailFastOnContention verifies AC4: when RunOrchestrate
 // finds the per-task flock already held, it exits non-zero and the
 // returned error carries the holder's pid, host, phase, and start time.
-// The DangerousDialogBox call must also produce non-empty stderr.
+// The DangerousOutput call must also produce non-empty stderr.
 func TestOrchestrateFailFastOnContention(t *testing.T) {
 	recoverySetupEnv(t)
 	id := recoverySeedTask(t, nil)
@@ -64,7 +64,7 @@ func TestOrchestrateFailFastOnContention(t *testing.T) {
 	if locked.Holder.StartedAt.IsZero() {
 		t.Error("AC4: holder started_at is zero")
 	}
-	// DangerousDialogBox must have been called with the message.
+	// DangerousOutput must have been called with the message.
 	if stderr.Len() == 0 {
 		t.Error("AC4: stderr empty; contention message not written")
 	}

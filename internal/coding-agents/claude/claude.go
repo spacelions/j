@@ -43,7 +43,10 @@ var defaultModels = []string{"opus", "sonnet", "haiku"}
 // rather than an injected runner (see AGENTS.md "no test seams" rule).
 type Agent struct{}
 
-var _ codingagents.Agent = (*Agent)(nil)
+var (
+	_ codingagents.Agent        = (*Agent)(nil)
+	_ codingagents.CodeReviewer = (*Agent)(nil)
+)
 
 // New returns a Claude agent that shells out to the claude CLI.
 func New() *Agent { return &Agent{} }

@@ -5,6 +5,7 @@ const (
 	cmdOrchestrate = "orchestrate"
 	cmdTasks       = "tasks"
 	cmdPlan        = "plan"
+	cmdCodeReview  = "code-review"
 )
 
 // Flag names / values used when building orchestrate argv.
@@ -24,4 +25,14 @@ const (
 	flagKeyInteractive = "interactive"
 	flagKeyModel       = "model"
 	flagKeyTool        = "tool"
+	flagKeyRunRound    = "run-round"
+	flagKeyRound       = "round"
+)
+
+// Code-review argv flags assembled when re-execing the hidden child
+// process. The literal strings match the flag keys above; pinning
+// them here means a future flag rename only has to touch one file.
+const (
+	flagRunRound           = "--run-round"
+	flagCodeReviewFromTask = "--from-task"
 )
