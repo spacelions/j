@@ -29,6 +29,12 @@ const (
 	// KindReviewComment is an inline review comment posted against a
 	// specific file/line as part of a review thread.
 	KindReviewComment ItemKind = "review_comment"
+	// KindReviewSummary is the body of a pull-request review
+	// (Approve / Request changes / Comment) when the reviewer left
+	// text in the summary box rather than only inline. These items
+	// have no file path or line; their Body and Author still drive
+	// the planner.
+	KindReviewSummary ItemKind = "review_summary"
 )
 
 // Item is a single feedback row the planner must decide on. SourceID

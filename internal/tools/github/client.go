@@ -16,21 +16,29 @@ import (
 // so a failing test does not leak the override into the next case.
 var TestEndpoint string
 
-// JReplyMarker is the HTML comment embedded in every reply J posts to
-// a review thread or conversation comment. The fetcher detects it
-// when scanning prior replies so the planner can skip items J already
-// answered. The marker is conservative: it lives inside an HTML
-// comment so it never renders on github.com, and it is unique enough
-// that human reviewers will not collide with it by accident.
-const JReplyMarker = "<!-- j-code-review-reply -->"
+// replyMarker is the HTML comment embedded in every reply j posts
+// to a review thread or conversation comment. The fetcher detects
+// it when scanning prior replies so the planner can skip items the
+// reply already answered. The marker is conservative: it lives
+// inside an HTML comment so it never renders on github.com, and it
+// is unique enough that human reviewers will not collide with it by
+// accident.
+//
+// The marker alone is insufficient: a reviewer who quotes the
+// literal HTML comment would otherwise have their feedback skipped.
+// isReply requires the comment author to also match the token
+// owner's login (resolved via Client.Viewer) before trusting the
+// marker. See reply.go.
+const replyMarker = "<!-- j-code-review-reply -->"
 
 // Client is the GitHub GraphQL client. Construct via NewClient; zero
-// values are not usable. The client is stateless: every call rebuilds
-// its HTTP request, threads PRRef.Endpoint() (or TestEndpoint), and
-// returns parsed responses to the caller.
+// values are not usable. The HTTP transport is stateless; the
+// viewer login is memoised on the client so repeated fetches reuse
+// a single `query { viewer { login } }` round-trip.
 type Client struct {
-	token string
-	http  *http.Client
+	token  string
+	http   *http.Client
+	viewer string
 }
 
 // Option configures a *Client at construction time. Currently only
@@ -74,6 +82,38 @@ func firstGraphQLError(errs []graphQLError) string {
 		return ""
 	}
 	return errs[0].Message
+}
+
+// Viewer returns the authenticated user's login. The result is
+// memoised on the client so repeated FetchPR calls share one
+// `viewer { login }` round-trip. The viewer login is paired with
+// replyMarker to decide whether a comment is a j reply; an empty
+// login means the marker check cannot trust the body alone.
+func (c *Client) Viewer(ctx context.Context) (string, error) {
+	if c.viewer != "" {
+		return c.viewer, nil
+	}
+	var resp viewerResponse
+	req := graphQLRequest{Query: viewerQuery}
+	if err := c.do(ctx, publicEndpoint, req, &resp); err != nil {
+		return "", err
+	}
+	if msg := firstGraphQLError(resp.Errors); msg != "" {
+		return "", fmt.Errorf("github: %s", msg)
+	}
+	c.viewer = resp.Data.Viewer.Login
+	return c.viewer, nil
+}
+
+const viewerQuery = `query{viewer{login}}`
+
+type viewerResponse struct {
+	Data struct {
+		Viewer struct {
+			Login string `json:"login"`
+		} `json:"viewer"`
+	} `json:"data"`
+	Errors []graphQLError `json:"errors"`
 }
 
 // do is the shared transport. Returns ErrUnauthorized on 401, an

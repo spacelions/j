@@ -117,7 +117,7 @@ func executeCodeReviewRound(
 	if err := runCodeReviewPlanner(ctx, opts, round); err != nil {
 		return err
 	}
-	return validateReviewFile(round.ReviewTOMLPath, originalIDs, opts.Stderr)
+	return validateReviewRound(round, originalIDs, opts.Stderr)
 }
 
 func fetchPR(
@@ -203,11 +203,38 @@ func runCodeReviewPlanner(
 	if err != nil {
 		return err
 	}
+	return waitOrTerminate(ctx, pid)
+}
+
+// waitOrTerminate waits for pid to exit. If ctx is cancelled while
+// the planner is still running, the planner is signalled (SIGTERM
+// then SIGKILL after the grace) before this function returns. That
+// matters because the per-task flock is released as soon as
+// RunCodeReviewChild unwinds — without an explicit terminate, a
+// later code-review invocation could acquire the lock and race the
+// orphaned planner still writing review.toml or plan.md.
+func waitOrTerminate(ctx context.Context, pid int) error {
 	if pid == 0 {
 		return nil
 	}
-	return run.WaitForExit(ctx, pid)
+	err := run.WaitForExit(ctx, pid)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, context.Canceled) &&
+		!errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	// Use a fresh context so termination is not itself cancelled by
+	// the parent's cancellation that triggered this branch.
+	_, _ = run.Terminate(context.Background(), pid, codeReviewTerminateGrace)
+	return err
 }
+
+// codeReviewTerminateGrace mirrors the resume-* takeover grace so a
+// cancelled planner has the same window to react to SIGTERM before
+// SIGKILL escalates.
+const codeReviewTerminateGrace = 2 * time.Second
 
 // resolvePlannerAgent opens the project settings store, reads the
 // planner bucket's tool/model pair, and returns the matching agent.
@@ -224,15 +251,15 @@ func resolvePlannerAgent(
 	return resolver.AgentFromStore(ctx, s, store.BucketPlanner, opts.Agents)
 }
 
-func validateReviewFile(
-	path string, ids codereview.SourceIDSet, stderr io.Writer,
+func validateReviewRound(
+	round codeReviewRound, ids codereview.SourceIDSet, stderr io.Writer,
 ) error {
-	file, err := codereview.Load(path)
+	file, err := codereview.Load(round.ReviewTOMLPath)
 	if err != nil {
 		uitheme.DangerousDialogBox(stderr, "J: %v", err)
 		return err
 	}
-	if err := codereview.ValidatePost(file, ids); err != nil {
+	if err := codereview.ValidateRound(file, ids, round.PlanPath); err != nil {
 		uitheme.DangerousDialogBox(stderr, "J: %v", err)
 		return err
 	}

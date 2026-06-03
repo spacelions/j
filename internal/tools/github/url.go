@@ -7,38 +7,44 @@ import (
 	"strings"
 )
 
-// PRRef identifies a single pull request on a single GitHub host. It
-// is the parsed form of a stored PR URL and the input every other
-// client method takes. Host is the bare hostname (no scheme, no
-// trailing slash); IsEnterprise marks GitHub Enterprise hosts so the
-// endpoint resolver can pick the per-host `/api/graphql` path. Number
-// is the integer PR number (1+).
+// publicHost is the only PR host accepted in v1. GitHub Enterprise
+// support was intentionally dropped: forwarding a personal access
+// token to an arbitrary `github.<anything>` hostname would let a
+// malicious PR URL steal credentials. Re-add enterprise support
+// behind an explicit user-configured allowlist when the schema is
+// settled.
+const publicHost = "github.com"
+
+// publicEndpoint is the GraphQL endpoint paired with publicHost.
+const publicEndpoint = "https://api.github.com/graphql"
+
+// PRRef identifies a single pull request on github.com. It is the
+// parsed form of a stored PR URL and the input every other client
+// method takes. Number is the integer PR number (1+).
 type PRRef struct {
-	Host         string
-	Owner        string
-	Repo         string
-	Number       int
-	IsEnterprise bool
+	Host   string
+	Owner  string
+	Repo   string
+	Number int
 }
 
 // ParseURL turns a stored PR URL into a PRRef. The PR URL shape is
 // the canonical GitHub form:
 //
-//	https://<host>/<owner>/<repo>/pull/<number>
-//	https://<host>/<owner>/<repo>/pulls/<number>
+//	https://github.com/<owner>/<repo>/pull/<number>
+//	https://github.com/<owner>/<repo>/pulls/<number>
 //
 // Both `pull` and `pulls` are accepted so a URL captured from the
-// web UI (`/pull/`) or from a CLI (`/pulls/`) round-trips. Hosts that
-// are not `github.com` are treated as GitHub Enterprise when the
-// hostname begins with `github.` (e.g. `github.acme.com`); anything
-// else is rejected as ErrUnsupportedHost so unrelated forge URLs do
-// not silently get GraphQL traffic.
+// web UI (`/pull/`) or from a CLI (`/pulls/`) round-trips. Any host
+// other than github.com is rejected as ErrUnsupportedHost so a
+// stored URL cannot redirect the user's token to an attacker-
+// controlled hostname.
 func ParseURL(raw string) (PRRef, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return PRRef{}, fmt.Errorf("%w: %q", ErrInvalidURL, raw)
 	}
-	if !isGitHubHost(u.Host) {
+	if u.Host != publicHost {
 		return PRRef{}, fmt.Errorf("%w: %q", ErrUnsupportedHost, raw)
 	}
 	owner, repo, num, err := splitPRPath(u.Path)
@@ -46,23 +52,11 @@ func ParseURL(raw string) (PRRef, error) {
 		return PRRef{}, fmt.Errorf("%w: %q", ErrInvalidURL, raw)
 	}
 	return PRRef{
-		Host:         u.Host,
-		Owner:        owner,
-		Repo:         repo,
-		Number:       num,
-		IsEnterprise: u.Host != "github.com",
+		Host:   u.Host,
+		Owner:  owner,
+		Repo:   repo,
+		Number: num,
 	}, nil
-}
-
-// isGitHubHost is the host-allowlist used by ParseURL. github.com is
-// the public host; any other host whose name begins with `github.` is
-// treated as GitHub Enterprise so the GraphQL endpoint resolves to
-// `https://<host>/api/graphql` instead of the public api subdomain.
-func isGitHubHost(host string) bool {
-	if host == "github.com" {
-		return true
-	}
-	return strings.HasPrefix(host, "github.")
 }
 
 // splitPRPath validates that path matches the
@@ -87,13 +81,9 @@ func splitPRPath(path string) (owner, repo string, number int, err error) {
 	return parts[0], parts[1], n, nil
 }
 
-// Endpoint returns the GraphQL endpoint URL for this PR's host. For
-// github.com the public api subdomain is used; for GitHub Enterprise
-// hosts the per-host `/api/graphql` path is used so the same
-// installation hosts both REST and GraphQL.
+// Endpoint returns the GraphQL endpoint for github.com. The receiver
+// is preserved so tests and future enterprise support can swap to a
+// per-ref endpoint without churning every caller.
 func (r PRRef) Endpoint() string {
-	if r.Host == "github.com" {
-		return "https://api.github.com/graphql"
-	}
-	return "https://" + r.Host + "/api/graphql"
+	return publicEndpoint
 }

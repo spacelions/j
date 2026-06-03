@@ -14,7 +14,6 @@ func TestParseURL_PublicGitHub(t *testing.T) {
 	assert.Equal(t, "acme", ref.Owner)
 	assert.Equal(t, "app", ref.Repo)
 	assert.Equal(t, 42, ref.Number)
-	assert.False(t, ref.IsEnterprise)
 	assert.Equal(t, "https://api.github.com/graphql", ref.Endpoint())
 }
 
@@ -24,11 +23,20 @@ func TestParseURL_PullsLiteral(t *testing.T) {
 	assert.Equal(t, 7, ref.Number)
 }
 
-func TestParseURL_Enterprise(t *testing.T) {
-	ref, err := ParseURL("https://github.acme.com/team/repo/pull/9")
-	require.NoError(t, err)
-	assert.True(t, ref.IsEnterprise)
-	assert.Equal(t, "https://github.acme.com/api/graphql", ref.Endpoint())
+// TestParseURL_RejectsEnterpriseHost pins the v1 security contract:
+// even hostnames that look like GitHub Enterprise (github.acme.com)
+// are rejected so a stored PR URL cannot redirect the user's token
+// to an attacker-controlled host.
+func TestParseURL_RejectsEnterpriseHost(t *testing.T) {
+	_, err := ParseURL("https://github.acme.com/team/repo/pull/9")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrUnsupportedHost)
+}
+
+func TestParseURL_RejectsAttackerHost(t *testing.T) {
+	_, err := ParseURL("https://github.attacker.tld/o/r/pull/1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrUnsupportedHost)
 }
 
 func TestParseURL_UnsupportedHost(t *testing.T) {

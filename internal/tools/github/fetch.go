@@ -6,59 +6,172 @@ import (
 	"strings"
 )
 
-// FetchPR runs the single GraphQL round-trip that powers a code-review
-// round. It returns a FetchResult carrying the PR header (URL, state,
-// draft/merged flags) and the flattened feedback items the planner
-// must decide on. The state guard is intentionally strict: closed,
-// merged, and draft PRs each surface their own sentinel so the cli
-// can render the matching dangerous dialog without re-deriving the
-// reason from a wrapped string.
-//
-// A nil pullRequest node maps to ErrNotFound; a non-empty
-// GraphQL-level `errors[]` array surfaces as a wrapped error carrying
-// the first message so authentication / scope failures land with a
-// useful hint.
+// FetchPR runs the GraphQL conversation needed for a code-review
+// round. It paginates conversation comments, review threads, and
+// pull-request reviews until every connection is drained, then
+// flattens the result into FetchResult. The state guard is strict:
+// closed, merged, and draft PRs each surface their own sentinel so
+// the cli can render the matching dangerous output without re-
+// deriving the reason from a wrapped string.
 func (c *Client) FetchPR(ctx context.Context, ref PRRef) (FetchResult, error) {
-	var resp prResponse
-	req := graphQLRequest{
-		Query: prQuery,
-		Variables: map[string]any{
-			"owner":  ref.Owner,
-			"repo":   ref.Repo,
-			"number": ref.Number,
-		},
-	}
-	if err := c.do(ctx, ref.Endpoint(), req, &resp); err != nil {
+	viewer, err := c.Viewer(ctx)
+	if err != nil {
 		return FetchResult{}, err
 	}
-	if msg := firstGraphQLError(resp.Errors); msg != "" {
-		return FetchResult{}, fmt.Errorf("github: %s", msg)
+	first, err := c.fetchPRFirstPage(ctx, ref)
+	if err != nil {
+		return FetchResult{}, err
 	}
-	if resp.Data.Repository == nil || resp.Data.Repository.PullRequest == nil {
-		return FetchResult{}, ErrNotFound
+	if err := guardState(first.State, first.Merged, first.IsDraft); err != nil {
+		return FetchResult{}, err
 	}
-	pr := resp.Data.Repository.PullRequest
-	if err := guardState(pr.State, pr.Merged, pr.IsDraft); err != nil {
+	conv, threads, reviews, err := c.fetchRemaining(ctx, ref, first)
+	if err != nil {
 		return FetchResult{}, err
 	}
 	return FetchResult{
 		PR: PR{
-			URL:    pr.URL,
+			URL:    first.URL,
 			Owner:  ref.Owner,
 			Repo:   ref.Repo,
 			Number: ref.Number,
-			State:  strings.ToLower(pr.State),
-			Draft:  pr.IsDraft,
-			Merged: pr.Merged,
+			State:  strings.ToLower(first.State),
+			Draft:  first.IsDraft,
+			Merged: first.Merged,
 		},
-		Items: collectItems(pr.Comments.Nodes, pr.ReviewThreads.Nodes),
+		Items: collectItems(viewer, conv, threads, reviews),
 	}, nil
 }
 
-// guardState rejects PR states that have no review-round semantics in
-// v1. MERGED wins over CLOSED because a merged PR is also reported as
-// closed by GitHub; draft wins over open because a draft PR is
-// reported as OPEN.
+func (c *Client) fetchPRFirstPage(
+	ctx context.Context, ref PRRef,
+) (*prFirstPage, error) {
+	var resp prFirstPageResponse
+	req := graphQLRequest{
+		Query: prFirstPageQuery,
+		Variables: map[string]any{
+			"o": ref.Owner, "r": ref.Repo, "n": ref.Number,
+		},
+	}
+	if err := c.do(ctx, ref.Endpoint(), req, &resp); err != nil {
+		return nil, err
+	}
+	if msg := firstGraphQLError(resp.Errors); msg != "" {
+		return nil, fmt.Errorf("github: %s", msg)
+	}
+	if resp.Data.Repository == nil || resp.Data.Repository.PullRequest == nil {
+		return nil, ErrNotFound
+	}
+	return resp.Data.Repository.PullRequest, nil
+}
+
+// fetchRemaining drains every connection past the first page. Each
+// list is paginated independently; the rare >100-comment review
+// thread keeps its first page only (documented limit, see
+// prReviewThreadsPageQuery).
+func (c *Client) fetchRemaining(
+	ctx context.Context, ref PRRef, first *prFirstPage,
+) ([]prConversationComment, []prReviewThread, []prReview, error) {
+	conv, err := c.fetchAllComments(ctx, ref, first.Comments)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	threads, err := c.fetchAllReviewThreads(ctx, ref, first.ReviewThreads)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	reviews, err := c.fetchAllReviews(ctx, ref, first.Reviews)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return conv, threads, reviews, nil
+}
+
+func (c *Client) fetchAllComments(
+	ctx context.Context, ref PRRef, page prConversationCommentsPage,
+) ([]prConversationComment, error) {
+	out := page.Nodes
+	info := page.PageInfo
+	for info.HasNextPage {
+		var resp prCommentsPageResponse
+		req := graphQLRequest{
+			Query: prCommentsPageQuery,
+			Variables: map[string]any{
+				"o": ref.Owner, "r": ref.Repo,
+				"n": ref.Number, "a": info.EndCursor,
+			},
+		}
+		if err := c.do(ctx, ref.Endpoint(), req, &resp); err != nil {
+			return nil, err
+		}
+		if msg := firstGraphQLError(resp.Errors); msg != "" {
+			return nil, fmt.Errorf("github: %s", msg)
+		}
+		next := resp.Data.Repository.PullRequest.Comments
+		out = append(out, next.Nodes...)
+		info = next.PageInfo
+	}
+	return out, nil
+}
+
+func (c *Client) fetchAllReviewThreads(
+	ctx context.Context, ref PRRef, page prReviewThreadsPage,
+) ([]prReviewThread, error) {
+	out := page.Nodes
+	info := page.PageInfo
+	for info.HasNextPage {
+		var resp prReviewThreadsPageResponse
+		req := graphQLRequest{
+			Query: prReviewThreadsPageQuery,
+			Variables: map[string]any{
+				"o": ref.Owner, "r": ref.Repo,
+				"n": ref.Number, "a": info.EndCursor,
+			},
+		}
+		if err := c.do(ctx, ref.Endpoint(), req, &resp); err != nil {
+			return nil, err
+		}
+		if msg := firstGraphQLError(resp.Errors); msg != "" {
+			return nil, fmt.Errorf("github: %s", msg)
+		}
+		next := resp.Data.Repository.PullRequest.ReviewThreads
+		out = append(out, next.Nodes...)
+		info = next.PageInfo
+	}
+	return out, nil
+}
+
+func (c *Client) fetchAllReviews(
+	ctx context.Context, ref PRRef, page prReviewsPage,
+) ([]prReview, error) {
+	out := page.Nodes
+	info := page.PageInfo
+	for info.HasNextPage {
+		var resp prReviewsPageResponse
+		req := graphQLRequest{
+			Query: prReviewsPageQuery,
+			Variables: map[string]any{
+				"o": ref.Owner, "r": ref.Repo,
+				"n": ref.Number, "a": info.EndCursor,
+			},
+		}
+		if err := c.do(ctx, ref.Endpoint(), req, &resp); err != nil {
+			return nil, err
+		}
+		if msg := firstGraphQLError(resp.Errors); msg != "" {
+			return nil, fmt.Errorf("github: %s", msg)
+		}
+		next := resp.Data.Repository.PullRequest.Reviews
+		out = append(out, next.Nodes...)
+		info = next.PageInfo
+	}
+	return out, nil
+}
+
+// guardState rejects PR states that have no review-round semantics
+// in v1. MERGED wins over CLOSED because a merged PR is also
+// reported as closed by GitHub; draft wins over open because a
+// draft PR is reported as OPEN.
 func guardState(state string, merged, isDraft bool) error {
 	if merged {
 		return ErrMerged
@@ -70,60 +183,4 @@ func guardState(state string, merged, isDraft bool) error {
 		return ErrDraft
 	}
 	return nil
-}
-
-// collectItems flattens the conversation comments and review-thread
-// comments into the order they appear in the GraphQL response. J's
-// own replies are detected via JReplyMarker so the planner can skip
-// items it already answered in a previous round.
-func collectItems(
-	conv []prConversationComment, threads []prReviewThread,
-) []Item {
-	items := make([]Item, 0)
-	jAuthors := collectJReplyAuthors(conv, threads)
-	for _, c := range conv {
-		if isJReply(c.Body) {
-			continue
-		}
-		items = append(items, Item{
-			SourceID:  fmt.Sprintf("issue-comment:%d", c.DatabaseID),
-			Kind:      KindConversationComment,
-			Author:    c.Author.Login,
-			Body:      c.Body,
-			HasJReply: jAuthors.hasConvReply(c.DatabaseID),
-		})
-	}
-	for _, th := range threads {
-		items = append(items, collectThreadItems(th, jAuthors)...)
-	}
-	return items
-}
-
-func collectThreadItems(th prReviewThread, jAuthors jReplyIndex) []Item {
-	out := make([]Item, 0, len(th.Comments.Nodes))
-	for i, c := range th.Comments.Nodes {
-		if isJReply(c.Body) {
-			continue
-		}
-		out = append(out, Item{
-			SourceID:   fmt.Sprintf("review-comment:%d", c.DatabaseID),
-			Kind:       KindReviewComment,
-			ThreadID:   th.ID,
-			Author:     c.Author.Login,
-			Body:       c.Body,
-			Path:       c.Path,
-			Line:       c.Line,
-			IsOutdated: th.IsOutdated,
-			HasJReply:  jAuthors.hasThreadReply(th.ID, i),
-		})
-	}
-	return out
-}
-
-// isJReply reports whether a comment body was authored by j (detected
-// via the embedded marker comment). The marker is a stable HTML
-// comment so human reviewers and the cli share a single detection
-// rule.
-func isJReply(body string) bool {
-	return strings.Contains(body, JReplyMarker)
 }

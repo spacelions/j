@@ -58,25 +58,42 @@ type Item struct {
 	PlanRef    string `toml:"plan_ref,omitempty"`
 }
 
+// Per-item decision strings. Exported so callers and tests share a
+// single source of truth instead of typing the literal everywhere.
+const (
+	ItemDecisionAccepted      = "accepted"
+	ItemDecisionRejected      = "rejected"
+	ItemDecisionClarification = "clarification"
+	ItemDecisionNonActionable = "non_actionable"
+)
+
+// Top-level decision strings. The planner picks exactly one after
+// reading every item.
+const (
+	TopDecisionChangesNeeded       = "changes_needed"
+	TopDecisionNoChangesNeeded     = "no_changes_needed"
+	TopDecisionClarificationNeeded = "clarification_needed"
+)
+
 // AllowedItemDecisions enumerates the per-item decisions the planner
 // may set. Validation rejects anything else so a typo or invented
 // state never reaches future posting code.
 var AllowedItemDecisions = map[string]bool{
-	"":               true, // not yet decided is allowed pre-planner
-	"accepted":       true,
-	"rejected":       true,
-	"clarification":  true,
-	"non_actionable": true,
+	"":                        true, // not yet decided is allowed pre-planner
+	ItemDecisionAccepted:      true,
+	ItemDecisionRejected:      true,
+	ItemDecisionClarification: true,
+	ItemDecisionNonActionable: true,
 }
 
 // AllowedTopDecisions enumerates the top-level `decision` values the
 // planner may set. Empty is allowed pre-planner; the validator
 // requires non-empty when called as ValidatePost.
 var AllowedTopDecisions = map[string]bool{
-	"":                     true,
-	"changes_needed":       true,
-	"no_changes_needed":    true,
-	"clarification_needed": true,
+	"":                             true,
+	TopDecisionChangesNeeded:       true,
+	TopDecisionNoChangesNeeded:     true,
+	TopDecisionClarificationNeeded: true,
 }
 
 // ReplyMaxRunes caps the planner's draft reply length so the future

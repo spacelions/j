@@ -33,7 +33,10 @@ func newCodeReviewCmd() *cobra.Command {
 			if viper.GetBool("tasks.code_review.run_round") {
 				return nil
 			}
-			return preflight.EnsureAgentSelections(
+			// Code-review only invokes the planner bucket; an expired
+			// or unconfigured worker/verifier should not block a
+			// reviewer who has a usable planner.
+			return preflight.EnsurePlannerSelection(
 				cmd.Context(),
 				preflight.AgentCheckOptions{
 					Stdin:  cmd.InOrStdin(),

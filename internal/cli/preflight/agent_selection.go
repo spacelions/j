@@ -41,15 +41,29 @@ type AgentSelector = picker.Selector
 // caller (tasks.RunStart / tasks.RunContinue) can treat a Ctrl-C as a
 // clean cancel via its existing deferred guard.
 func EnsureAgentSelections(ctx context.Context, opts AgentCheckOptions) error {
+	return ensureBucketsSelected(ctx, opts, []string{
+		store.BucketPlanner,
+		store.BucketWorker,
+		store.BucketVerifier,
+	})
+}
+
+// EnsurePlannerSelection is the narrow variant used by
+// `j tasks code-review`: the round only ever invokes the planner
+// bucket, so demanding worker/verifier credentials at preflight
+// would block users whose code-review setup is otherwise complete.
+func EnsurePlannerSelection(ctx context.Context, opts AgentCheckOptions) error {
+	return ensureBucketsSelected(ctx, opts, []string{store.BucketPlanner})
+}
+
+func ensureBucketsSelected(
+	ctx context.Context, opts AgentCheckOptions, buckets []string,
+) error {
 	opts = opts.withDefaults()
 	if len(opts.Agents) == 0 {
 		return errors.New("preflight: no coding agents configured")
 	}
-	for _, bucket := range []string{
-		store.BucketPlanner,
-		store.BucketWorker,
-		store.BucketVerifier,
-	} {
+	for _, bucket := range buckets {
 		if err := ensureBucketSelection(ctx, opts, bucket); err != nil {
 			return err
 		}
