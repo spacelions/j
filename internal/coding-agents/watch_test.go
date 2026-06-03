@@ -91,3 +91,13 @@ func TestWatchActiveResumeID_NewWatcherFails(t *testing.T) {
 	_ = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &orig)
 	assert.Empty(t, got)
 }
+
+func TestWatchActiveResumeID_TickerRescans(t *testing.T) {
+	got := WatchActiveResumeID(
+		t.Context(),
+		capturingAgent{id: "tick"},
+		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
+		os.Getpid(),
+	)
+	assert.Equal(t, "tick", got)
+}
