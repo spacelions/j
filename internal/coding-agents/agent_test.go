@@ -61,21 +61,24 @@ func (c capturingAgent) CaptureResumeID(
 	return c.id, c.err
 }
 
-// delayedCapturingAgent returns "" on the first call (so the
-// immediate pre-watch scan misses) and "delayed" on every subsequent
-// call (so the first watcher-driven scan after a filesystem event
-// succeeds). The call counter is atomic so the watcher goroutine and
-// the test driver can both observe it safely.
+// delayedCapturingAgent returns "" until rollout.jsonl exists. The
+// call counter is atomic so the watcher goroutine and the test driver
+// can both observe it safely.
 type delayedCapturingAgent struct {
 	stubAgent
 	calls atomic.Int32
 }
 
 func (d *delayedCapturingAgent) CaptureResumeID(
-	_ context.Context, _ string, _ time.Time,
+	_ context.Context, taskDir string, _ time.Time,
 ) (string, error) {
-	if d.calls.Add(1) == 1 {
+	d.calls.Add(1)
+	_, err := os.Stat(filepath.Join(taskDir, "rollout.jsonl"))
+	if os.IsNotExist(err) {
 		return "", nil
+	}
+	if err != nil {
+		return "", err
 	}
 	return "delayed", nil
 }
@@ -208,7 +211,7 @@ func TestWatchAndSaveActiveResumeID_DelayedCapture(t *testing.T) {
 		)
 	}()
 	require.Eventually(t, func() bool {
-		return agent.calls.Load() >= 1
+		return agent.calls.Load() >= 2
 	}, time.Second, 10*time.Millisecond)
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "rollout.jsonl"), []byte("x"), 0o600,

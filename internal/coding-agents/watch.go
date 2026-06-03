@@ -22,9 +22,9 @@ const watcherLivenessInterval = 200 * time.Millisecond
 // WatchActiveResumeID blocks until capturer resolves a non-empty
 // resume id under capture.TaskDir, the worker pid disappears, or ctx
 // is cancelled. Filesystem events drive scans through capturer; a
-// liveness ticker covers backends that exit without writing the
-// session_meta the scan looks for. Returns the captured id, or "" if
-// the loop ended without one.
+// liveness ticker covers missed filesystem events and backends that
+// exit without writing the session_meta the scan looks for. Returns
+// the captured id, or "" if the loop ended without one.
 func WatchActiveResumeID(
 	ctx context.Context,
 	capturer ResumeIDCapturer,
@@ -44,6 +44,12 @@ func WatchActiveResumeID(
 		case <-ctx.Done():
 			return ""
 		case <-ticker.C:
+			id, _ := capturer.CaptureResumeID(
+				ctx, capture.TaskDir, capture.Since,
+			)
+			if id != "" {
+				return id
+			}
 			if !run.IsAlive(pid) {
 				return ""
 			}
