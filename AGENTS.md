@@ -71,7 +71,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   - use `bat` to replace `cat`
   - use `sd` to replace `sed`
 
-- Constraints on file/method/line
+- Constraints on coding files/methods/lines, not markdown files
   - Every non-test file must be ≤ 300 lines.
   - Each method must be <= 80 lines.
   - Each method must be <=6 parameters.
