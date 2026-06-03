@@ -79,28 +79,18 @@ func acquireCodeReviewLock(
 	return nil, err
 }
 
-// executeCodeReviewRound runs the post-lock sequence: parse PR URL,
-// fetch feedback, allocate round, write review.toml, run planner,
-// wait for the agent grandchild (when headless), and validate.
+// executeCodeReviewRound runs the post-lock sequence: allocate or
+// resume the round, prepare review.toml, run the planner, wait for
+// the agent grandchild (when headless), and validate.
 func executeCodeReviewRound(
 	ctx context.Context, opts CodeReviewChildOptions, row tasks.Task,
 ) error {
-	ref, err := github.ParseURL(row.PullRequestURL)
-	if err != nil {
-		uitheme.DangerousOutput(opts.Stderr, "J: %v", err)
-		return err
-	}
 	round, resumed, err := codereview.ResolveOrAllocate(opts.TaskID)
 	if err != nil {
 		return err
 	}
 	emitRoundMarker(opts.Stderr, opts.TaskID, round)
-	fetcher := opts.Fetcher
-	if fetcher == nil {
-		fetcher = github.NewClient(github.ResolveToken())
-	}
-	originalIDs, err := resolver.FetchAndWriteReview(
-		ctx, fetcher, round, ref, opts.Stderr)
+	originalIDs, err := prepareRoundReview(ctx, opts, row, round, resumed)
 	if err != nil {
 		return err
 	}
@@ -108,6 +98,38 @@ func executeCodeReviewRound(
 		return err
 	}
 	return resolver.ValidateReviewRound(round, originalIDs, opts.Stderr)
+}
+
+// prepareRoundReview returns the source-id snapshot the validator
+// will compare against after the planner runs. On a fresh round
+// it fetches GitHub feedback and writes review.toml; on a
+// resumed clarification round it loads the previous round's
+// review.toml as-is — the resume prompt explicitly tells the
+// planner it will find prior decisions, replies, and summary in
+// place, and a refetch would overwrite them.
+func prepareRoundReview(
+	ctx context.Context, opts CodeReviewChildOptions,
+	row tasks.Task, round codereview.Round, resumed bool,
+) (codereview.SourceIDSet, error) {
+	if resumed {
+		file, err := codereview.Load(round.ReviewTOMLPath)
+		if err != nil {
+			uitheme.DangerousOutput(opts.Stderr, "J: %v", err)
+			return nil, err
+		}
+		return codereview.SnapshotSourceIDs(file), nil
+	}
+	ref, err := github.ParseURL(row.PullRequestURL)
+	if err != nil {
+		uitheme.DangerousOutput(opts.Stderr, "J: %v", err)
+		return nil, err
+	}
+	fetcher := opts.Fetcher
+	if fetcher == nil {
+		fetcher = github.NewClient(github.ResolveToken())
+	}
+	return resolver.FetchAndWriteReview(
+		ctx, fetcher, round, ref, opts.Stderr)
 }
 
 func runCodeReviewPlanner(

@@ -19,7 +19,7 @@ const prFirstPageQuery = `query($o:String!,$r:String!,$n:Int!){
           id isOutdated
           comments(first:100){
             pageInfo{endCursor hasNextPage}
-            nodes{id author{login} body path line}
+            nodes{id author{login} body path line originalLine}
           }
         }
       }
@@ -59,7 +59,7 @@ const prReviewThreadsPageQuery = `query(
           id isOutdated
           comments(first:100){
             pageInfo{endCursor hasNextPage}
-            nodes{id author{login} body path line}
+            nodes{id author{login} body path line originalLine}
           }
         }
       }
@@ -106,7 +106,12 @@ type prReviewComment struct {
 	Author prAuthor `json:"author"`
 	Body   string   `json:"body"`
 	Path   string   `json:"path"`
-	Line   int      `json:"line"`
+	// Line is the current diff line. GitHub returns null (which
+	// json decodes as 0) when the comment is on an outdated
+	// review thread; OriginalLine carries the pre-rebase value
+	// in that case. items.go picks the first non-zero value.
+	Line         int `json:"line"`
+	OriginalLine int `json:"originalLine"`
 }
 
 type prReviewCommentsPage struct {

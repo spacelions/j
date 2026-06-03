@@ -256,6 +256,64 @@ func TestFetchPR_Happy(t *testing.T) {
 	assert.Equal(t, 7, res.Items[1].Line)
 }
 
+// TestFetchPR_OutdatedCommentFallsBackToOriginalLine pins the
+// stale-thread location fallback: GitHub returns line=null (which
+// json decodes as 0) for review comments on outdated threads;
+// the fetcher must surface originalLine instead so the planner
+// still sees a useful source line.
+func TestFetchPR_OutdatedCommentFallsBackToOriginalLine(t *testing.T) {
+	threads := []map[string]any{{
+		"id": "RT_OUT", "isOutdated": true,
+		"comments": map[string]any{
+			"pageInfo": pageInfo("", false),
+			"nodes": []map[string]any{{
+				"id":     "PRRC_OUT",
+				"author": map[string]any{"login": "bob"},
+				"body":   "stale", "path": "x.go",
+				// line omitted (null on the wire → 0 in Go);
+				// originalLine carries the pre-rebase value.
+				"originalLine": 42,
+			}},
+		},
+	}}
+	startRouter(t, newRouter(t, "j-bot",
+		firstPageBody(nil, threads, nil)))
+	c := NewClient("tok")
+	res, err := c.FetchPR(t.Context(), testRef())
+	require.NoError(t, err)
+	require.Len(t, res.Items, 1)
+	assert.Equal(t, 42, res.Items[0].Line,
+		"outdated comment must surface originalLine when line is null")
+	assert.True(t, res.Items[0].IsOutdated)
+}
+
+// TestFetchPR_CurrentLinePreferredOverOriginal pins the priority:
+// when both line and originalLine are set, the current diff line
+// wins so up-to-date comments keep pointing at the current
+// position.
+func TestFetchPR_CurrentLinePreferredOverOriginal(t *testing.T) {
+	threads := []map[string]any{{
+		"id": "RT_C", "isOutdated": false,
+		"comments": map[string]any{
+			"pageInfo": pageInfo("", false),
+			"nodes": []map[string]any{{
+				"id":     "PRRC_C",
+				"author": map[string]any{"login": "bob"},
+				"body":   "fresh", "path": "x.go",
+				"line":         11,
+				"originalLine": 22,
+			}},
+		},
+	}}
+	startRouter(t, newRouter(t, "j-bot",
+		firstPageBody(nil, threads, nil)))
+	c := NewClient("tok")
+	res, err := c.FetchPR(t.Context(), testRef())
+	require.NoError(t, err)
+	require.Len(t, res.Items, 1)
+	assert.Equal(t, 11, res.Items[0].Line)
+}
+
 func TestFetchPR_NotFound(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {

@@ -8,13 +8,16 @@ import (
 )
 
 // SourceIDSet is the snapshot of fetched `source_id` values the
-// validator compares against the planner-updated file. The cli takes
-// the snapshot before the planner runs.
+// validator compares against the planner-updated file. The cli
+// takes the snapshot before the planner runs; every fetched id
+// appears exactly once in the snapshot, so the post-planner
+// equivalent (which would otherwise allow duplicates) is built
+// as a per-id count in ValidatePost.
 type SourceIDSet map[string]bool
 
-// SnapshotSourceIDs returns the set of source_id values currently in
-// f.Items. The cli uses it to pin the fetched-feedback ids before
-// passing the file to the planner.
+// SnapshotSourceIDs returns the set of source_id values currently
+// in f.Items. The cli uses it to pin the fetched-feedback ids
+// before passing the file to the planner.
 func SnapshotSourceIDs(f ReviewFile) SourceIDSet {
 	out := make(SourceIDSet, len(f.Items))
 	for _, it := range f.Items {
@@ -24,12 +27,16 @@ func SnapshotSourceIDs(f ReviewFile) SourceIDSet {
 }
 
 // ValidatePost is the post-planner validator. It enforces the
-// contract documented in plan.md: every original source_id is still
-// present; no invented ids are tolerated; decisions are restricted
-// to the allowed enums; accepted items that need work carry a
-// plan_ref; the draft reply text is non-trivial. When the planner
-// reports `changes_needed`, ValidateRound additionally checks the
-// round plan.md exists.
+// contract documented in plan.md: every original source_id is
+// still present exactly once; no invented ids are tolerated;
+// decisions are restricted to the allowed enums; accepted items
+// carry a plan_ref; reply text fits inside ReplyMaxRunes.
+//
+// Duplicate detection (rather than set membership) catches a
+// planner that copies an existing source_id into a new row: the
+// SourceIDSet check alone would pass because every original id
+// is present and no invented id appears, but the round would
+// carry the same fetched feedback twice.
 func ValidatePost(f ReviewFile, original SourceIDSet) error {
 	if !AllowedTopDecisions[f.Decision] {
 		return fmt.Errorf(
@@ -39,13 +46,21 @@ func ValidatePost(f ReviewFile, original SourceIDSet) error {
 		return errors.New(
 			"codereview: top-level decision is required after planner")
 	}
-	got := SnapshotSourceIDs(f)
+	counts := make(map[string]int, len(f.Items))
+	for _, it := range f.Items {
+		counts[it.SourceID]++
+	}
 	for id := range original {
-		if !got[id] {
+		n, ok := counts[id]
+		if !ok {
 			return fmt.Errorf("codereview: missing source_id %q", id)
 		}
+		if n > 1 {
+			return fmt.Errorf(
+				"codereview: duplicate source_id %q (count %d)", id, n)
+		}
 	}
-	for id := range got {
+	for id := range counts {
 		if !original[id] {
 			return fmt.Errorf("codereview: invented source_id %q", id)
 		}
@@ -58,22 +73,39 @@ func ValidatePost(f ReviewFile, original SourceIDSet) error {
 	return nil
 }
 
-// ValidateRound runs ValidatePost and, when the planner reported
-// `changes_needed` with at least one accepted item, additionally
-// requires the round plan.md to exist and be non-empty. Catches
-// planners that record decisions but exit before writing the
-// follow-up plan a later worker turn would execute.
+// ValidateRound runs ValidatePost and additionally enforces the
+// per-top-decision artifact contract:
+//
+//   - changes_needed must point at concrete work: at least one
+//     accepted item AND a non-empty round plan.md.
+//   - clarification_needed must come paired with a non-empty
+//     round clarification.md so the next code-review invocation
+//     resumes this round instead of allocating a fresh one.
+//   - no_changes_needed has no artifact requirement.
+//
+// Round carries the per-round paths so the caller does not have
+// to thread them individually.
 func ValidateRound(
-	f ReviewFile, original SourceIDSet, planPath string,
+	f ReviewFile, original SourceIDSet, round Round,
 ) error {
 	if err := ValidatePost(f, original); err != nil {
 		return err
 	}
-	if f.Decision != TopDecisionChangesNeeded {
-		return nil
+	switch f.Decision {
+	case TopDecisionChangesNeeded:
+		return validateChangesNeeded(f, round.PlanPath)
+	case TopDecisionClarificationNeeded:
+		return validateClarificationNeeded(round.ClarificationPath)
 	}
+	return nil
+}
+
+func validateChangesNeeded(f ReviewFile, planPath string) error {
 	if !anyAccepted(f) {
-		return nil
+		return errors.New(
+			"codereview: changes_needed must mark at least one item " +
+				"accepted; no accepted item means no work for the next " +
+				"worker turn")
 	}
 	info, err := os.Stat(planPath)
 	if err != nil {
@@ -83,6 +115,21 @@ func ValidateRound(
 	if info.Size() == 0 {
 		return fmt.Errorf(
 			"codereview: round plan %q is empty", planPath)
+	}
+	return nil
+}
+
+func validateClarificationNeeded(clarificationPath string) error {
+	info, err := os.Stat(clarificationPath)
+	if err != nil {
+		return fmt.Errorf(
+			"codereview: clarification_needed but %q missing: %w",
+			clarificationPath, err)
+	}
+	if info.Size() == 0 {
+		return fmt.Errorf(
+			"codereview: clarification_needed but %q is empty",
+			clarificationPath)
 	}
 	return nil
 }

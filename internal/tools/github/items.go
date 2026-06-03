@@ -63,12 +63,26 @@ func collectThreadItems(
 			Author:     c.Author.Login,
 			Body:       c.Body,
 			Path:       c.Path,
-			Line:       c.Line,
+			Line:       commentLine(c),
 			IsOutdated: th.IsOutdated,
 			HasJReply:  replies.hasThreadReply(th.ID, i),
 		})
 	}
 	return out
+}
+
+// commentLine picks the most useful diff line for a review
+// comment. GitHub returns null `line` (which json decodes as 0)
+// on outdated review threads because the comment no longer
+// applies to the current diff; in that case `originalLine` carries
+// the pre-rebase value. Returning the first non-zero of the two
+// keeps stale-thread items pointing at a real source position
+// instead of collapsing to `line: 0`.
+func commentLine(c prReviewComment) int {
+	if c.Line != 0 {
+		return c.Line
+	}
+	return c.OriginalLine
 }
 
 // appendReviewSummaryItems projects PR-level review summaries with

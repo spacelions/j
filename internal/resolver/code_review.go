@@ -171,7 +171,7 @@ func ValidateReviewRound(
 		uitheme.DangerousOutput(stderr, "J: %v", err)
 		return err
 	}
-	if err := codereview.ValidateRound(file, ids, round.PlanPath); err != nil {
+	if err := codereview.ValidateRound(file, ids, round); err != nil {
 		uitheme.DangerousOutput(stderr, "J: %v", err)
 		return err
 	}

@@ -410,6 +410,156 @@ func TestRunCodeReviewChild_PreservesCanonicalArtifacts(t *testing.T) {
 	assert.Equal(t, tasks.StatusWorkDone, row.Status)
 }
 
+// TestRunCodeReviewChild_ResumePreservesReviewTOML pins the
+// resume-round contract: when ResolveOrAllocate hands back a
+// resumed round (clarification.md present), the child must NOT
+// refetch GitHub feedback — doing so would erase the prior
+// round's decisions/replies that the resume prompt expects to
+// read in place.
+func TestRunCodeReviewChild_ResumePreservesReviewTOML(t *testing.T) {
+	setupCodeReviewTask(t, "01-t", "https://github.com/x/y/pull/1",
+		tasks.StatusWorkDone)
+	require.NoError(t, seedPlannerBucket(t, "stub", "opus"))
+	// Pre-seed an existing round-1 carrying a prior decision plus
+	// a clarification.md so ResolveOrAllocate resumes it.
+	taskDir := filepath.Join(tasks.DefaultDir(), "01-t")
+	roundDir := filepath.Join(taskDir, "code-reviews", "round-1")
+	require.NoError(t, os.MkdirAll(roundDir, 0o755))
+	priorReply := "ack from previous round"
+	prior := codereview.ReviewFile{
+		SchemaVersion: codereview.SchemaVersion,
+		Provider:      "github",
+		Decision:      "clarification_needed",
+		Summary:       "needs human input",
+		PR: codereview.PR{
+			URL: "https://github.com/x/y/pull/1", Owner: "x",
+			Repo: "y", Number: 1, State: "open",
+		},
+		Items: []codereview.Item{{
+			SourceID: "review-comment:KEEP",
+			Kind:     "review_comment", Author: "alice",
+			Body: "do X?", Decision: "clarification",
+			Reply: priorReply,
+		}},
+	}
+	reviewPath := filepath.Join(roundDir, "review.toml")
+	require.NoError(t, codereview.Save(reviewPath, prior))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(roundDir, "clarification.md"),
+		[]byte("Q?"), 0o644))
+
+	// Fetcher that, if reached, would replace everything — its
+	// items deliberately omit the KEEP source_id so an accidental
+	// refetch would fail validation. Use a planner that resolves
+	// the question by editing the existing item, satisfying
+	// ValidateRound for the changes_needed branch.
+	fetcher := &stubReviewFetcher{res: github.FetchResult{
+		PR: github.PR{
+			URL: "https://github.com/x/y/pull/1", Owner: "x",
+			Repo: "y", Number: 1, State: "open",
+		},
+		Items: []github.Item{{
+			SourceID: "review-comment:WOULD_REPLACE",
+			Kind:     github.KindReviewComment,
+			Body:     "fresh fetch leaked through",
+		}},
+	}}
+	stub := &stubReviewAgent{
+		name: "stub",
+		writeFile: func(req codingagents.CodeReviewRequest) error {
+			f, err := codereview.Load(req.ReviewTOMLPath)
+			if err != nil {
+				return err
+			}
+			f.Decision = "changes_needed"
+			for i := range f.Items {
+				f.Items[i].Decision = "accepted"
+				f.Items[i].PlanRef = "P1"
+			}
+			if err := codereview.Save(req.ReviewTOMLPath, f); err != nil {
+				return err
+			}
+			return os.WriteFile(
+				req.RoundPlanOutputPath, []byte("P1"), 0o644)
+		},
+	}
+	require.NoError(t, RunCodeReviewChild(t.Context(), CodeReviewChildOptions{
+		TaskID:  "01-t",
+		Stderr:  &bytes.Buffer{},
+		Agents:  []codingagents.Agent{stub},
+		Fetcher: fetcher,
+	}))
+	// Same round dir was reused, not round-2.
+	matches, _ := filepath.Glob(filepath.Join(
+		taskDir, "code-reviews", "round-*"))
+	assert.Len(t, matches, 1)
+	assert.Contains(t, matches[0], "round-1")
+	// The pre-seeded source_id is still present — proves the
+	// fetcher was not invoked to overwrite it.
+	final, err := codereview.Load(reviewPath)
+	require.NoError(t, err)
+	require.Len(t, final.Items, 1)
+	assert.Equal(t, "review-comment:KEEP", final.Items[0].SourceID)
+}
+
+// TestRunCodeReviewChild_ResumeSkipsFetcher pins the same
+// resume-round contract from the other side: the fetcher's
+// FetchPR is never called on a resumed round.
+func TestRunCodeReviewChild_ResumeSkipsFetcher(t *testing.T) {
+	setupCodeReviewTask(t, "01-t", "https://github.com/x/y/pull/1",
+		tasks.StatusWorkDone)
+	require.NoError(t, seedPlannerBucket(t, "stub", "opus"))
+	taskDir := filepath.Join(tasks.DefaultDir(), "01-t")
+	roundDir := filepath.Join(taskDir, "code-reviews", "round-1")
+	require.NoError(t, os.MkdirAll(roundDir, 0o755))
+	require.NoError(t, codereview.Save(
+		filepath.Join(roundDir, "review.toml"),
+		codereview.ReviewFile{
+			SchemaVersion: codereview.SchemaVersion,
+			Provider:      "github",
+			PR: codereview.PR{
+				URL: "u", Owner: "x", Repo: "y", Number: 1, State: "open",
+			},
+			Items: []codereview.Item{{
+				SourceID: "review-comment:X",
+				Kind:     "review_comment", Body: "old",
+			}},
+		}))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(roundDir, "clarification.md"),
+		[]byte("Q?"), 0o644))
+
+	fetcher := &countingFetcher{}
+	stub := &stubReviewAgent{
+		name: "stub",
+		writeFile: func(req codingagents.CodeReviewRequest) error {
+			f, _ := codereview.Load(req.ReviewTOMLPath)
+			f.Decision = "no_changes_needed"
+			f.Items[0].Decision = "non_actionable"
+			return codereview.Save(req.ReviewTOMLPath, f)
+		},
+	}
+	require.NoError(t, RunCodeReviewChild(t.Context(), CodeReviewChildOptions{
+		TaskID:  "01-t",
+		Stderr:  &bytes.Buffer{},
+		Agents:  []codingagents.Agent{stub},
+		Fetcher: fetcher,
+	}))
+	assert.Equal(t, 0, fetcher.calls,
+		"resumed round must not invoke the fetcher")
+}
+
+// countingFetcher records the number of FetchPR calls. Used to
+// pin the resume-skip-fetcher contract.
+type countingFetcher struct{ calls int }
+
+func (f *countingFetcher) FetchPR(
+	_ context.Context, _ github.PRRef,
+) (github.FetchResult, error) {
+	f.calls++
+	return github.FetchResult{}, nil
+}
+
 // The "non-CodeReviewer agent fails cleanly" path is covered by
 // TestRunCodeReview_NotImplemented in
 // internal/coding-agents/code_review_test.go; no need to duplicate

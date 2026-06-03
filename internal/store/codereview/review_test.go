@@ -176,3 +176,131 @@ func TestSave_WriteError(t *testing.T) {
 func writeRaw(path, body string) error {
 	return writeFile(path, []byte(body))
 }
+
+// TestValidatePost_RejectsDuplicateSourceID pins the duplicate-row
+// guard: a planner that copies an existing source_id into a new
+// row should fail even though every original id is "present" by
+// set membership.
+func TestValidatePost_RejectsDuplicateSourceID(t *testing.T) {
+	original := SnapshotSourceIDs(sampleFile())
+	f := sampleFile()
+	f.Decision = "changes_needed"
+	f.Items[0].Decision = "accepted"
+	f.Items[0].PlanRef = "P1"
+	f.Items[1].Decision = "rejected"
+	// Duplicate the first item under its own source_id.
+	f.Items = append(f.Items, f.Items[0])
+	err := ValidatePost(f, original)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate source_id")
+}
+
+// roundAt returns a Round whose paths live under dir but without
+// creating the files. Tests write the artifacts they need.
+func roundAt(t *testing.T, dir string) Round {
+	t.Helper()
+	return Round{
+		N:                 1,
+		Dir:               dir,
+		ReviewTOMLPath:    filepath.Join(dir, "review.toml"),
+		PlanPath:          filepath.Join(dir, "plan.md"),
+		ClarificationPath: filepath.Join(dir, "clarification.md"),
+	}
+}
+
+func acceptedSample(t *testing.T) (ReviewFile, SourceIDSet) {
+	t.Helper()
+	f := sampleFile()
+	f.Decision = "changes_needed"
+	f.Items[0].Decision = "accepted"
+	f.Items[0].PlanRef = "P1"
+	f.Items[1].Decision = "rejected"
+	return f, SnapshotSourceIDs(sampleFile())
+}
+
+// TestValidateRound_ChangesNeededRequiresAcceptedItem pins #4:
+// the top-level decision changes_needed must have at least one
+// accepted item — every-item-rejected is contradictory.
+func TestValidateRound_ChangesNeededRequiresAcceptedItem(t *testing.T) {
+	f := sampleFile()
+	f.Decision = "changes_needed"
+	f.Items[0].Decision = "rejected"
+	f.Items[1].Decision = "non_actionable"
+	err := ValidateRound(f, SnapshotSourceIDs(f), roundAt(t, t.TempDir()))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at least one item")
+}
+
+// TestValidateRound_ChangesNeededRequiresPlanMD pins the existing
+// plan.md check under the new ValidateRound(Round) signature.
+func TestValidateRound_ChangesNeededRequiresPlanMD(t *testing.T) {
+	f, ids := acceptedSample(t)
+	err := ValidateRound(f, ids, roundAt(t, t.TempDir()))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "plan")
+}
+
+// TestValidateRound_ChangesNeededHappy pins the success path with
+// a non-empty plan.md on disk.
+func TestValidateRound_ChangesNeededHappy(t *testing.T) {
+	dir := t.TempDir()
+	round := roundAt(t, dir)
+	require.NoError(t, writeFile(round.PlanPath, []byte("P1: fix")))
+	f, ids := acceptedSample(t)
+	require.NoError(t, ValidateRound(f, ids, round))
+}
+
+// TestValidateRound_ClarificationNeededRequiresFile pins #3: the
+// planner cannot report clarification_needed without writing a
+// clarification.md (otherwise ResolveOrAllocate has nothing to
+// resume on next invocation and the question is lost).
+func TestValidateRound_ClarificationNeededRequiresFile(t *testing.T) {
+	f := sampleFile()
+	f.Decision = "clarification_needed"
+	f.Items[0].Decision = "clarification"
+	f.Items[1].Decision = "non_actionable"
+	err := ValidateRound(
+		f, SnapshotSourceIDs(f), roundAt(t, t.TempDir()))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "clarification_needed")
+}
+
+func TestValidateRound_ClarificationNeededHappy(t *testing.T) {
+	dir := t.TempDir()
+	round := roundAt(t, dir)
+	require.NoError(t, writeFile(
+		round.ClarificationPath, []byte("Q?")))
+	f := sampleFile()
+	f.Decision = "clarification_needed"
+	f.Items[0].Decision = "clarification"
+	f.Items[1].Decision = "non_actionable"
+	require.NoError(t, ValidateRound(f, SnapshotSourceIDs(f), round))
+}
+
+// TestValidateRound_NoChangesNeededHasNoArtifactRequirement pins
+// that the no_changes_needed path keeps its zero-artifact
+// contract — neither plan.md nor clarification.md is required.
+func TestValidateRound_NoChangesNeededHasNoArtifactRequirement(t *testing.T) {
+	f := sampleFile()
+	f.Decision = "no_changes_needed"
+	f.Items[0].Decision = "rejected"
+	f.Items[1].Decision = "rejected"
+	require.NoError(t, ValidateRound(
+		f, SnapshotSourceIDs(f), roundAt(t, t.TempDir())))
+}
+
+// TestValidateRound_ClarificationNeededRejectsEmptyFile pins the
+// non-empty constraint on the clarification artifact: a 0-byte
+// clarification.md is treated as missing.
+func TestValidateRound_ClarificationNeededRejectsEmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	round := roundAt(t, dir)
+	require.NoError(t, writeFile(round.ClarificationPath, nil))
+	f := sampleFile()
+	f.Decision = "clarification_needed"
+	f.Items[0].Decision = "clarification"
+	f.Items[1].Decision = "non_actionable"
+	err := ValidateRound(f, SnapshotSourceIDs(f), round)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty")
+}
