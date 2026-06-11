@@ -37,6 +37,20 @@ const RequirementsFileName = "requirements.md"
 // `internal/agents/instructions/planner.md`.
 const ClarificationFileName = "clarification.md"
 
+// WorktreeDirName is the directory name of the per-task git worktree
+// checkout inside `<cwd>/.j/tasks/<id>/`. The worktree *branch* keeps
+// the `Task.Worktree` slug; only the checkout path lives here.
+const WorktreeDirName = "worktree"
+
+// WorktreeDirFor returns the deterministic per-task git worktree
+// checkout path `<taskDir>/worktree`. Taking the task directory (not
+// the id) avoids coupling to the process cwd: request-build sites
+// hold the resolved TaskDir and discard joins DefaultDir()+id itself.
+// The value is derived on demand and never persisted in task.toml.
+func WorktreeDirFor(taskDir string) string {
+	return filepath.Join(taskDir, WorktreeDirName)
+}
+
 // ClarificationFileExists reports whether the previous turn left a
 // clarification.md inside taskDir. A missing file or any other stat
 // error counts as "absent" so callers default to the

@@ -1,1 +1,1 @@
-Use the git worktree named %q for this task; create it via `git worktree add` if it does not yet exist.
+Do all code work inside the git worktree at %q on branch %q. If that directory already exists, use it as-is. If it does not exist: run `git worktree add <path> <branch>` when the branch already exists, otherwise `git worktree add -b <branch> <path>`. If git refuses because the branch is checked out in another worktree, work in that existing worktree instead.

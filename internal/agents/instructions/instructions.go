@@ -64,7 +64,8 @@ var WorkerResume string
 
 // WorkerWorktree is the worker's `git worktree add` direction line
 // appended by appendWorktreeLine on a non-empty worktree. Carries
-// one %q placeholder for the worktree name.
+// two %q placeholders: the absolute checkout path, then the branch
+// name.
 //
 //go:embed worker_worktree.md
 var WorkerWorktree string
@@ -90,9 +91,10 @@ var VerifierResume string
 //go:embed verifier_fix.md
 var VerifierFix string
 
-// VerifierWorktree is the verifier's `git worktree list` direction
-// line appended by appendVerifierWorktreeLine on a non-empty
-// worktree. Carries one %q placeholder for the worktree name.
+// VerifierWorktree is the verifier's target-worktree direction line
+// appended by appendVerifierWorktreeLine on a non-empty worktree.
+// Carries two %q placeholders: the absolute checkout path, then the
+// branch name.
 //
 //go:embed verifier_worktree.md
 var VerifierWorktree string

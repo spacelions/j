@@ -177,8 +177,9 @@ func (a *Agent) Work(
 }
 
 // Verify runs deepseek-tui against the requirements + plan pair. Like
-// cursor / claude, the verifier uses the project root workspace so it
-// can `git worktree list` the target worktree.
+// cursor / claude, the verifier uses the project root workspace so
+// relative repo paths resolve; the prompt carries the worktree's
+// absolute path.
 func (a *Agent) Verify(
 	ctx context.Context, req codingagents.VerifyRequest,
 ) (int, error) {

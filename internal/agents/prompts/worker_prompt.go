@@ -15,9 +15,10 @@ import (
 // disk so the prompt stays small and there is no risk of drift
 // between the rendered prompt and the on-disk plan.
 //
-// A non-empty worktree appends a single trailing line telling the
-// worker which git worktree to use for this task; an empty worktree
-// leaves the prompt unchanged so the worker behaves as before.
+// A WorktreeRef with a non-empty Branch appends a single trailing
+// line telling the worker which git worktree (absolute path +
+// branch) to use for this task; a zero ref leaves the prompt
+// unchanged so the worker behaves as before.
 //
 // mustRead, when non-empty, is rendered as a bulleted "Before
 // starting, read these project files…" block at the very top of the
@@ -32,7 +33,7 @@ import (
 // silently drop the escape hatch.
 func BuildWorkerPrompt(
 	paths tasks.TaskPaths,
-	worktree string,
+	wt WorktreeRef,
 	mustRead []string,
 ) string {
 	base := fmt.Sprintf(
@@ -41,7 +42,7 @@ func BuildWorkerPrompt(
 		paths.Plan,
 	)
 	withMustRead := prependMustRead(base, mustRead)
-	withWorktree := appendWorktreeLine(withMustRead, worktree)
+	withWorktree := appendWorktreeLine(withMustRead, wt)
 	return appendClarification(withWorktree, paths.Clarification)
 }
 
@@ -58,8 +59,9 @@ func BuildWorkerPrompt(
 // BuildWorker did. The instruction text itself opens with
 // "You are the worker in a planner/worker/verifier workflow.",
 // so this builder relies on that opening as the role preamble
-// rather than emitting a duplicate sentence. A non-empty worktree
-// appends the same worktree-direction line as BuildWorker.
+// rather than emitting a duplicate sentence. A WorktreeRef with a
+// non-empty Branch appends the same worktree-direction line as
+// BuildWorker.
 //
 // mustRead, when non-empty, is rendered as a bulleted "Before
 // starting, read these project files…" block at the very top of
@@ -67,7 +69,7 @@ func BuildWorkerPrompt(
 // leaves the prompt byte-identical to the pre-must-read output.
 func BuildWorkerResumePrompt(
 	paths tasks.TaskPaths,
-	worktree string,
+	wt WorktreeRef,
 	mustRead []string,
 ) string {
 	base := fmt.Sprintf(
@@ -76,7 +78,7 @@ func BuildWorkerResumePrompt(
 		paths.Plan,
 	)
 	withMustRead := prependMustRead(base, mustRead)
-	withWorktree := appendWorktreeLine(withMustRead, worktree)
+	withWorktree := appendWorktreeLine(withMustRead, wt)
 	return appendClarification(withWorktree, paths.Clarification)
 }
 
@@ -93,7 +95,7 @@ func BuildWorkerResumePrompt(
 // reroute branch.
 func BuildWorkerClarificationResumePrompt(
 	paths tasks.TaskPaths,
-	worktree string,
+	wt WorktreeRef,
 	mustRead []string,
 ) string {
 	base := fmt.Sprintf(
@@ -106,22 +108,22 @@ func BuildWorkerClarificationResumePrompt(
 		paths.Plan,
 	)
 	withMustRead := prependMustRead(base, mustRead)
-	withWorktree := appendWorktreeLine(withMustRead, worktree)
+	withWorktree := appendWorktreeLine(withMustRead, wt)
 	return appendClarification(withWorktree, paths.Clarification)
 }
 
-// appendWorktreeLine returns prompt unchanged when worktree is empty
-// and otherwise appends a single trailing line telling the worker /
-// verifier which git worktree to operate against. Centralising the
-// phrasing in one helper keeps BuildWorker / BuildWorkerResume /
-// BuildVerifierFix byte-identical on the suffix so prompt tests can
-// assert the same substring uniformly.
-func appendWorktreeLine(prompt, worktree string) string {
-	if worktree == "" {
+// appendWorktreeLine returns prompt unchanged when wt.Branch is
+// empty and otherwise appends a single trailing line telling the
+// worker which git worktree (absolute path + branch) to operate
+// against. Centralising the phrasing in one helper keeps BuildWorker
+// / BuildWorkerResume / BuildVerifierFix byte-identical on the
+// suffix so prompt tests can assert the same substring uniformly.
+func appendWorktreeLine(prompt string, wt WorktreeRef) string {
+	if wt.Branch == "" {
 		return prompt
 	}
 	return fmt.Sprintf(
 		"%s\n\n"+strings.TrimSpace(instructions.WorkerWorktree),
-		prompt, worktree,
+		prompt, wt.Path, wt.Branch,
 	)
 }

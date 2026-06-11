@@ -197,13 +197,15 @@ type WorkRequest struct {
 	// fix-loop prompt cites the absolute path (not the bare
 	// filename literal) on every backend.
 	VerifierFindingsOutputPath string
-	// Worktree, when non-empty, is the bare git-worktree name the
-	// worker should operate against. The backend threads it into the
-	// prompt builders so the worker knows which worktree to `cd`
-	// into (creating it via `git worktree add` if it does not yet
-	// exist). Empty preserves the pre-R2 behaviour: the worker
-	// operates against the main checkout. The value is NOT a path.
+	// Worktree, when non-empty, is the git *branch* name of the
+	// task's worktree (persisted on the task row; also the value
+	// `gh pr list --head <branch>` matches). NOT a path. Empty
+	// means the worker operates against the main checkout.
 	Worktree string
+	// WorktreePath is the absolute checkout location of the task
+	// worktree (`<task-dir>/worktree`). Derived at request-build
+	// time, never persisted. Empty whenever Worktree is empty.
+	WorktreePath string
 	// AgentLogPath is the absolute path the headless backend MUST
 	// redirect stdout/stderr to when it spawns a fire-and-forget
 	// background child. Same contract as PlanRequest.AgentLogPath.
@@ -245,13 +247,15 @@ type VerifyRequest struct {
 	// ResumeFromClarification — see PlanRequest.ResumeFromClarification.
 	ResumeFromClarification bool
 	ResumeChatID            string
-	// Worktree, when non-empty, is the bare git-worktree name the
-	// verifier should target. The backend threads it into the
-	// verifier prompt so the agent can `git worktree list` the name
-	// from the repository root and verify the code inside that
-	// worktree. Empty preserves the pre-R3 behaviour: the verifier
-	// inspects the main checkout. The value is NOT a path.
+	// Worktree, when non-empty, is the git *branch* name of the
+	// task's worktree (see WorkRequest.Worktree). NOT a path.
+	// Empty means the verifier inspects the main checkout.
 	Worktree string
+	// WorktreePath is the absolute checkout location of the task
+	// worktree (see WorkRequest.WorktreePath). The verifier prompt
+	// carries it directly, so no `git worktree list` lookup is
+	// needed. Empty whenever Worktree is empty.
+	WorktreePath string
 	// AgentLogPath is the absolute path the headless backend MUST
 	// redirect stdout/stderr to when it spawns a fire-and-forget
 	// background child. Same contract as PlanRequest.AgentLogPath.

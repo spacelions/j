@@ -191,9 +191,9 @@ func (a *Agent) Work(
 // exiting; the orchestrator reads them after. Interactive launches
 // the TUI without --mode plan (the verifier needs writes); headless
 // uses Work's flag set (stream-json via run.SpawnFormattedIn).
-// Verify runs with `--workspace <project-root>` so the verifier can
-// `git worktree list` the target worktree — Plan and Work use
-// DefaultWorkspace for their self-contained per-task dir.
+// Verify runs with `--workspace <project-root>` so relative repo
+// paths resolve (the prompt carries the worktree's absolute path) —
+// Plan and Work use DefaultWorkspace for their per-task dir.
 func (a *Agent) Verify(
 	ctx context.Context, req codingagents.VerifyRequest,
 ) (int, error) {

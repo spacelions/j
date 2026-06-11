@@ -178,7 +178,8 @@ func (a *Agent) Work(
 
 // Verify runs codex against the requirements + plan pair. Like the
 // other backends the verifier targets the project root workspace so
-// it can `git worktree list` the target worktree from there.
+// relative repo paths resolve; the prompt carries the worktree's
+// absolute path.
 func (a *Agent) Verify(
 	ctx context.Context, req codingagents.VerifyRequest,
 ) (int, error) {

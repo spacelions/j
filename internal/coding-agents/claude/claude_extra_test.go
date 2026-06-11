@@ -914,6 +914,7 @@ func TestVerify_Interactive(t *testing.T) {
 		Model:                      "sonnet",
 		Interactive:                true,
 		Worktree:                   "j-verify-task",
+		WorktreePath:               "/tmp/.j/tasks/abc/worktree",
 	})
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
@@ -942,7 +943,7 @@ func TestVerify_Interactive(t *testing.T) {
 	if !strings.Contains(prompt, strings.TrimSpace(instructions.Verifier)) {
 		t.Fatalf("prompt missing instructions.Verifier: %q", prompt)
 	}
-	for _, want := range []string{reqPath, planPath, findingsPath, "VERDICT: PASS", "VERDICT: FAIL", "j-verify-task", "git worktree list", "Read the requirements at"} {
+	for _, want := range []string{reqPath, planPath, findingsPath, "VERDICT: PASS", "VERDICT: FAIL", "j-verify-task", "/tmp/.j/tasks/abc/worktree", "Read the requirements at"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q: %q", want, prompt)
 		}

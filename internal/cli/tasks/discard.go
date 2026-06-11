@@ -14,6 +14,7 @@ import (
 	"github.com/spacelions/j/internal/cli/uitheme"
 	"github.com/spacelions/j/internal/resolver"
 	"github.com/spacelions/j/internal/store/tasks"
+	"github.com/spacelions/j/internal/util/run"
 )
 
 // noTaskMessage is the single line printed to stdout when the named
@@ -88,9 +89,11 @@ func (o DiscardOptions) withDefaults() DiscardOptions {
 //     indistinguishable from an explicit decline.
 //  4. On confirm, removeTaskWorktree removes the task's recorded git
 //     worktree via `git worktree remove --force`, matching
-//     `git worktree list --porcelain` by directory basename or by
-//     refs/heads/<name>. When t.Worktree is empty (legacy rows or
-//     rows that never went through `j work`) the lookup falls back to
+//     `git worktree list --porcelain` by directory basename, by
+//     refs/heads/<name>, or by the per-task checkout path
+//     `<tasks-dir>/<id>/worktree` (symlink-normalised on both
+//     sides). When t.Worktree is empty (legacy rows or rows that
+//     never went through `j work`) the lookup falls back to
 //     tasks.WorktreeNameFor(project, task) so the deterministic slug
 //     used by the worker prompt is still tried. Failures print a
 //     single stderr warning and do not abort the discard.
@@ -99,7 +102,12 @@ func (o DiscardOptions) withDefaults() DiscardOptions {
 //     bbolt file lives at <tasksDir>/list.db, a sibling of the
 //     per-task directory, so RemoveTaskDir can run while the
 //     store handle is still open.
-//  7. On success, print "J: discarded <id>" and return nil.
+//  7. `git worktree prune` runs best-effort: the worktree nests
+//     inside the directory step 6 just removed, so a failed step-4
+//     removal would otherwise leave stale `.git/worktrees/<name>`
+//     metadata that blocks a future add at the same path. A prune
+//     failure prints a stderr warning without failing the discard.
+//  8. On success, print "J: discarded <id>" and return nil.
 //
 // The store is closed via defer so every return path releases the
 // bbolt file lock before the next `j tasks` invocation tries to
@@ -144,6 +152,11 @@ func RunDiscard(ctx context.Context, opts DiscardOptions) (err error) {
 	if err := tasks.RemoveDir(opts.TaskID); err != nil {
 		return fmt.Errorf("tasks discard: %w", err)
 	}
+	if _, err := run.Output(ctx, "git", "worktree", "prune"); err != nil {
+		uitheme.DangerousOutput(
+			opts.Stderr, "J: worktree prune: %v", err,
+		)
+	}
 	uitheme.DangerousFprintf(opts.Stdout, "J: discarded %s\n", opts.TaskID)
 	return nil
 }
@@ -162,12 +175,17 @@ func newDiscardCmd() *cobra.Command {
 		Long: "Removes a single task from <cwd>/.j/tasks/list.db, deletes the " +
 			"matching on-disk directory <cwd>/.j/tasks/<id>/, and removes the " +
 			"git worktree named on the task row with `git worktree remove " +
-			"--force` after locating it via `git worktree list --porcelain`. " +
+			"--force` after locating it via `git worktree list --porcelain` " +
+			"(matched by directory basename, branch, or the per-task " +
+			"checkout path <cwd>/.j/tasks/<id>/worktree). " +
 			"Rows that never recorded a worktree name (legacy rows from before " +
 			"the persisted-worktree feature, or rows that never reached `j " +
 			"work`) fall back to the deterministic slug derived from the " +
 			"project basename and task summary, so the on-disk worktree is " +
 			"still cleaned up when the agent followed the standard naming. " +
+			"After the task directory is deleted, `git worktree prune` runs " +
+			"best-effort so a worktree nested inside it cannot leave stale " +
+			".git/worktrees metadata behind. " +
 			"Worktree removal failures print a warning to stderr but still " +
 			"discard the database row and task directory. The --id flag is " +
 			"optional; when omitted a huh selector lets you pick from the " +

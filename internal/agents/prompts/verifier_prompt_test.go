@@ -90,18 +90,21 @@ func TestBuildVerifier_TrimsLeadingWhitespace(t *testing.T) {
 }
 
 // TestBuildVerifier_WithWorktree pins the worktree-direction suffix
-// on the first-run verifier prompt: the trailing line names the
-// worktree verbatim and mentions `git worktree list` so the verifier
-// knows how to resolve the absolute path.
+// on the first-run verifier prompt: the trailing line carries the
+// absolute checkout path and the branch verbatim, with no
+// `git worktree list` lookup hint (the path makes it unnecessary).
 func TestBuildVerifier_WithWorktree(t *testing.T) {
 	got := BuildVerifier(
 		"r.md", "p.md", "vp.md", "vf.md", "j-my-task", nil, "c.md",
 	)
 	if !strings.Contains(got, "j-my-task") {
-		t.Fatalf("worktree prompt missing worktree name: %q", got)
+		t.Fatalf("worktree prompt missing worktree branch: %q", got)
 	}
-	if !strings.Contains(got, "git worktree list") {
-		t.Fatalf("worktree prompt missing `git worktree list` hint: %q", got)
+	if !strings.Contains(got, testWorktreePath) {
+		t.Fatalf("worktree prompt missing absolute path: %q", got)
+	}
+	if strings.Contains(got, "git worktree list") {
+		t.Fatalf("worktree prompt should not need `git worktree list`: %q", got)
 	}
 }
 
@@ -168,10 +171,13 @@ func TestBuildVerifierResume_WithWorktree(t *testing.T) {
 		"r.md", "p.md", "j-my-task", nil, "c.md",
 	)
 	if !strings.Contains(got, "j-my-task") {
-		t.Fatalf("resume worktree prompt missing worktree name: %q", got)
+		t.Fatalf("resume worktree prompt missing worktree branch: %q", got)
 	}
-	if !strings.Contains(got, "git worktree list") {
-		t.Fatalf("resume worktree prompt missing `git worktree list` hint: %q", got)
+	if !strings.Contains(got, testWorktreePath) {
+		t.Fatalf("resume worktree prompt missing absolute path: %q", got)
+	}
+	if strings.Contains(got, "git worktree list") {
+		t.Fatalf("resume prompt should not need `git worktree list`: %q", got)
 	}
 }
 

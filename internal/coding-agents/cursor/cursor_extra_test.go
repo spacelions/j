@@ -948,10 +948,11 @@ func TestWork_FixFindings_BeatsResume(t *testing.T) {
 // edit verifier_*.md and (on FAIL) project files.
 //
 // Unlike Plan/Work, Verify runs with `--workspace <project-root>` so
-// the verifier can `git worktree list` from the repo root; the test
-// chdirs into dir before the call and asserts the workspace lands on
-// the canonicalised cwd (which equals dir on most systems, modulo
-// symlink resolution on macOS where /var -> /private/var).
+// relative repo paths resolve from the root (the prompt carries the
+// worktree's absolute path); the test chdirs into dir before the
+// call and asserts the workspace lands on the canonicalised cwd
+// (which equals dir on most systems, modulo symlink resolution on
+// macOS where /var -> /private/var).
 func TestVerify_Interactive(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -979,6 +980,7 @@ func TestVerify_Interactive(t *testing.T) {
 		Model:                      "composer-2-fast",
 		Interactive:                true,
 		Worktree:                   "j-verify-task",
+		WorktreePath:               "/tmp/.j/tasks/abc/worktree",
 	})
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
@@ -1007,7 +1009,7 @@ func TestVerify_Interactive(t *testing.T) {
 	if !strings.Contains(prompt, strings.TrimSpace(instructions.Verifier)) {
 		t.Fatalf("prompt missing instructions.Verifier: %q", prompt)
 	}
-	for _, want := range []string{reqPath, planPath, findingsPath, "VERDICT: PASS", "VERDICT: FAIL", "j-verify-task", "git worktree list", "Read the requirements at"} {
+	for _, want := range []string{reqPath, planPath, findingsPath, "VERDICT: PASS", "VERDICT: FAIL", "j-verify-task", "/tmp/.j/tasks/abc/worktree", "Read the requirements at"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q: %q", want, prompt)
 		}

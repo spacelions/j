@@ -37,16 +37,17 @@ func WorkPrompt(req codingagents.WorkRequest) string {
 		Findings:      req.VerifierFindingsOutputPath,
 		Clarification: req.ClarificationPath,
 	}
+	wt := WorktreeRef{Branch: req.Worktree, Path: req.WorktreePath}
 	switch {
 	case req.FixFindings:
-		return BuildVerifierFixPrompt(paths, req.Worktree)
+		return BuildVerifierFixPrompt(paths, wt)
 	case req.ResumeFromClarification:
 		return BuildWorkerClarificationResumePrompt(
-			paths, req.Worktree, req.MustRead)
+			paths, wt, req.MustRead)
 	case req.Resume:
-		return BuildWorkerResumePrompt(paths, req.Worktree, req.MustRead)
+		return BuildWorkerResumePrompt(paths, wt, req.MustRead)
 	}
-	return BuildWorkerPrompt(paths, req.Worktree, req.MustRead)
+	return BuildWorkerPrompt(paths, wt, req.MustRead)
 }
 
 // VerifyPrompt picks the right verifier template for req. Precedence:
@@ -59,12 +60,13 @@ func VerifyPrompt(req codingagents.VerifyRequest) string {
 		Findings:      req.VerifierFindingsOutputPath,
 		Clarification: req.ClarificationPath,
 	}
+	wt := WorktreeRef{Branch: req.Worktree, Path: req.WorktreePath}
 	switch {
 	case req.ResumeFromClarification:
 		return BuildVerifierClarificationResumePrompt(
-			paths, req.Worktree, req.MustRead)
+			paths, wt, req.MustRead)
 	case req.Resume:
-		return BuildVerifierResumePrompt(paths, req.Worktree, req.MustRead)
+		return BuildVerifierResumePrompt(paths, wt, req.MustRead)
 	}
-	return BuildVerifierPrompt(paths, req.Worktree, req.MustRead)
+	return BuildVerifierPrompt(paths, wt, req.MustRead)
 }
