@@ -578,6 +578,45 @@ func TestRun_ResumeFromClarificationFlag(t *testing.T) {
 	}
 }
 
+// TestRun_FreshRunThreadsMintedWorktree pins the fresh-run worktree
+// threading: a plan-done row with no Worktree gets its branch slug
+// minted by the lifecycle (fillWorktree on BeginWorkRestart's private
+// copy), and the WorkRequest must carry that minted branch plus the
+// derived `<task-dir>/worktree` path — not the empty pre-lifecycle
+// value from the resolved row.
+func TestRun_FreshRunThreadsMintedWorktree(t *testing.T) {
+	setupRunEnv(t)
+	id := seedPlanDoneTask(t)
+
+	agent := newRunTestAgent("cursor")
+	if err := Execute(t.Context(), Options{
+		TaskID: id,
+		Yes:    true,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		Agents: []codingagents.Agent{agent},
+		UI:     &fakeRunUI{},
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	persisted := testutil.ReadTaskRow(t, id)
+	if persisted.Worktree == "" {
+		t.Fatal("lifecycle should persist a minted Worktree slug")
+	}
+	if agent.lastWorkReq.Worktree != persisted.Worktree {
+		t.Fatalf("req.Worktree = %q, want minted slug %q",
+			agent.lastWorkReq.Worktree, persisted.Worktree)
+	}
+	wantPath := tasks.WorktreeDirFor(
+		filepath.Join(tasks.DefaultDir(), id),
+	)
+	if agent.lastWorkReq.WorktreePath != wantPath {
+		t.Fatalf("req.WorktreePath = %q, want %q",
+			agent.lastWorkReq.WorktreePath, wantPath)
+	}
+}
+
 // TestRun_ResumeWithoutClarificationFile pins the no-file branch:
 // resume run without a clarification.md leaves
 // ResumeFromClarification=false (regular resume template).

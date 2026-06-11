@@ -150,8 +150,12 @@ func runWorker(
 	resumeFromClarification := resume &&
 		tasks.ClarificationFileExists(res.TaskDir)
 	beginAt := time.Now().UTC()
-	req := buildWorkRequest(res, session, opts.Interactive,
-		resumeFromClarification, mustReadFiles)
+	// The worktree branch comes from the lifecycle's task copy, not
+	// res.Task: on a fresh run BeginWorkRestart mints Task.Worktree
+	// via fillWorktree on its private copy only, and the resolved row
+	// still carries the empty pre-lifecycle value.
+	req := buildWorkRequest(res, session, lc.Task().Worktree,
+		opts.Interactive, resumeFromClarification, mustReadFiles)
 	pid, workErr := agent.Work(ctx, req)
 	capture := codingagents.ResumeCapture{
 		TaskDir: res.TaskDir,
@@ -225,6 +229,7 @@ func selectWorker(
 func buildWorkRequest(
 	res resolver.WorkPlan,
 	session codingagents.AgentSession,
+	worktree string,
 	interactive bool,
 	resumeFromClarification bool,
 	mustRead []string,
@@ -232,7 +237,7 @@ func buildWorkRequest(
 	resume := session.ResumeID != "" &&
 		session.ResumeID == res.Task.WorkResumeSession
 	var worktreePath string
-	if res.Task.Worktree != "" {
+	if worktree != "" {
 		worktreePath = tasks.WorktreeDirFor(res.TaskDir)
 	}
 	return codingagents.WorkRequest{
@@ -244,7 +249,7 @@ func buildWorkRequest(
 		ResumeChatID:            session.ResumeID,
 		Resume:                  resume,
 		ResumeFromClarification: resumeFromClarification,
-		Worktree:                res.Task.Worktree,
+		Worktree:                worktree,
 		WorktreePath:            worktreePath,
 		AgentLogPath: filepath.Join(
 			res.TaskDir,
