@@ -35,7 +35,7 @@ import (
 // verifier.md cannot drop it.
 func BuildVerifierPrompt(
 	paths tasks.TaskPaths,
-	worktree string,
+	wt WorktreeRef,
 	mustRead []string,
 ) string {
 	base := fmt.Sprintf(
@@ -44,7 +44,7 @@ func BuildVerifierPrompt(
 		paths.Requirements, paths.Plan, paths.Findings,
 	)
 	withMustRead := prependMustRead(base, mustRead)
-	withWorktree := appendVerifierWorktreeLine(withMustRead, worktree)
+	withWorktree := appendVerifierWorktreeLine(withMustRead, wt)
 	return appendClarification(withWorktree, paths.Clarification)
 }
 
@@ -70,7 +70,7 @@ func BuildVerifierPrompt(
 // the prompt byte-identical to the pre-must-read output.
 func BuildVerifierResumePrompt(
 	paths tasks.TaskPaths,
-	worktree string,
+	wt WorktreeRef,
 	mustRead []string,
 ) string {
 	base := fmt.Sprintf(
@@ -79,7 +79,7 @@ func BuildVerifierResumePrompt(
 		paths.Requirements, paths.Plan,
 	)
 	withMustRead := prependMustRead(base, mustRead)
-	withWorktree := appendVerifierWorktreeLine(withMustRead, worktree)
+	withWorktree := appendVerifierWorktreeLine(withMustRead, wt)
 	return appendClarification(withWorktree, paths.Clarification)
 }
 
@@ -97,7 +97,7 @@ func BuildVerifierResumePrompt(
 // BuildVerifierResume).
 func BuildVerifierClarificationResumePrompt(
 	paths tasks.TaskPaths,
-	worktree string,
+	wt WorktreeRef,
 	mustRead []string,
 ) string {
 	base := fmt.Sprintf(
@@ -109,7 +109,7 @@ func BuildVerifierClarificationResumePrompt(
 		paths.Requirements, paths.Plan,
 	)
 	withMustRead := prependMustRead(base, mustRead)
-	withWorktree := appendVerifierWorktreeLine(withMustRead, worktree)
+	withWorktree := appendVerifierWorktreeLine(withMustRead, wt)
 	return appendClarification(withWorktree, paths.Clarification)
 }
 
@@ -128,28 +128,31 @@ func BuildVerifierClarificationResumePrompt(
 // opens with "You are the worker in a planner/worker/verifier
 // workflow.", so this builder relies on that opening as the role
 // preamble rather than emitting a duplicate sentence.
-func BuildVerifierFixPrompt(paths tasks.TaskPaths, worktree string) string {
+func BuildVerifierFixPrompt(
+	paths tasks.TaskPaths, wt WorktreeRef,
+) string {
 	base := fmt.Sprintf(
 		"%s\n\n"+strings.TrimSpace(instructions.VerifierFix),
 		strings.TrimSpace(Resolve(store.BucketWorker)),
 		paths.Plan, paths.Findings,
 	)
-	withWorktree := appendWorktreeLine(base, worktree)
+	withWorktree := appendWorktreeLine(base, wt)
 	return appendClarification(withWorktree, paths.Clarification)
 }
 
-// appendVerifierWorktreeLine returns prompt unchanged when worktree
+// appendVerifierWorktreeLine returns prompt unchanged when wt.Branch
 // is empty and otherwise appends a single trailing line telling the
-// verifier which git worktree to inspect. The phrasing is intentionally
-// different from appendWorktreeLine in worker_prompt.go: the verifier
-// does not create worktrees, it only resolves them via
-// `git worktree list` from the repository root.
-func appendVerifierWorktreeLine(prompt, worktree string) string {
-	if worktree == "" {
+// verifier which git worktree to inspect. The phrasing is
+// intentionally different from appendWorktreeLine in
+// worker_prompt.go: the verifier never creates worktrees, and the
+// prompt carries the absolute checkout path directly so no
+// `git worktree list` lookup is needed.
+func appendVerifierWorktreeLine(prompt string, wt WorktreeRef) string {
+	if wt.Branch == "" {
 		return prompt
 	}
 	return fmt.Sprintf(
 		"%s\n\n"+strings.TrimSpace(instructions.VerifierWorktree),
-		prompt, worktree,
+		prompt, wt.Path, wt.Branch,
 	)
 }

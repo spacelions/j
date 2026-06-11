@@ -186,6 +186,14 @@ if [ "$1" = "worktree" ] && [ "$2" = "remove" ] && [ "$3" = "--force" ]; then
   fi
   exit 0
 fi
+if [ "$1" = "worktree" ] && [ "$2" = "prune" ]; then
+  _ex="${GIT_STUB_PRUNE_EXIT:-0}"
+  if [ "$_ex" != "0" ]; then
+    echo "git: worktree prune failed" >&2
+    exit "$_ex"
+  fi
+  exit 0
+fi
 echo "git stub: unexpected argv" >&2
 exit 1
 `
@@ -746,8 +754,11 @@ func TestRunDiscard_RemovesWorktreeOnConfirm(t *testing.T) {
 		t.Fatalf("RunDiscard: %v", err)
 	}
 	lines := readGitStubLogLines(t, logFile)
-	if len(lines) != 2 {
-		t.Fatalf("git stub invocations = %d (%v), want 2", len(lines), lines)
+	if len(lines) != 3 {
+		t.Fatalf("git stub invocations = %d (%v), want 3", len(lines), lines)
+	}
+	if want := "worktree|prune"; lines[2] != want {
+		t.Fatalf("third git argv = %q, want %q", lines[2], want)
 	}
 	if want := "worktree|list|--porcelain"; lines[0] != want {
 		t.Fatalf("first git argv = %q, want %q", lines[0], want)
@@ -805,8 +816,11 @@ func TestRunDiscard_EmptyWorktree_FallsBackToComputedName(t *testing.T) {
 		t.Fatalf("RunDiscard: %v", err)
 	}
 	lines := readGitStubLogLines(t, logFile)
-	if len(lines) != 2 {
-		t.Fatalf("git stub invocations = %d (%v), want 2", len(lines), lines)
+	if len(lines) != 3 {
+		t.Fatalf("git stub invocations = %d (%v), want 3", len(lines), lines)
+	}
+	if want := "worktree|prune"; lines[2] != want {
+		t.Fatalf("third git argv = %q, want %q", lines[2], want)
 	}
 	if want := "worktree|list|--porcelain"; lines[0] != want {
 		t.Fatalf("first git argv = %q, want %q", lines[0], want)
@@ -859,8 +873,9 @@ func TestRunDiscard_EmptyWorktree_NoComputedMatch_NoRemove(t *testing.T) {
 		t.Fatalf("RunDiscard: %v", err)
 	}
 	lines := readGitStubLogLines(t, logFile)
-	if len(lines) != 1 || lines[0] != "worktree|list|--porcelain" {
-		t.Fatalf("git log = %v, want single list invocation", lines)
+	if len(lines) != 2 || lines[0] != "worktree|list|--porcelain" ||
+		lines[1] != "worktree|prune" {
+		t.Fatalf("git log = %v, want list then prune", lines)
 	}
 	if taskExists(t, "id-no-match") {
 		t.Fatal("task row should be gone")
@@ -896,8 +911,9 @@ func TestRunDiscard_WorktreeNotListed_NoRemove(t *testing.T) {
 		t.Fatalf("RunDiscard: %v", err)
 	}
 	lines := readGitStubLogLines(t, logFile)
-	if len(lines) != 1 || lines[0] != "worktree|list|--porcelain" {
-		t.Fatalf("git log = %v, want single list invocation", lines)
+	if len(lines) != 2 || lines[0] != "worktree|list|--porcelain" ||
+		lines[1] != "worktree|prune" {
+		t.Fatalf("git log = %v, want list then prune", lines)
 	}
 	if taskExists(t, "id-missing-wt") {
 		t.Fatal("task row should be gone")
@@ -935,8 +951,11 @@ func TestRunDiscard_MultipleMatches_PicksFirstAndWarns(t *testing.T) {
 		t.Fatalf("RunDiscard: %v", err)
 	}
 	lines := readGitStubLogLines(t, logFile)
-	if len(lines) != 2 {
-		t.Fatalf("git stub invocations = %d (%v), want 2", len(lines), lines)
+	if len(lines) != 3 {
+		t.Fatalf("git stub invocations = %d (%v), want 3", len(lines), lines)
+	}
+	if want := "worktree|prune"; lines[2] != want {
+		t.Fatalf("third git argv = %q, want %q", lines[2], want)
 	}
 	if want := "worktree|remove|--force|/alpha/dup-wt"; lines[1] != want {
 		t.Fatalf("remove argv = %q, want %q", lines[1], want)
@@ -979,8 +998,9 @@ func TestRunDiscard_ListFails_WarnsAndContinues(t *testing.T) {
 		t.Fatalf("RunDiscard: %v", err)
 	}
 	lines := readGitStubLogLines(t, logFile)
-	if len(lines) != 1 || lines[0] != "worktree|list|--porcelain" {
-		t.Fatalf("git log = %v, want single list", lines)
+	if len(lines) != 2 || lines[0] != "worktree|list|--porcelain" ||
+		lines[1] != "worktree|prune" {
+		t.Fatalf("git log = %v, want list then prune", lines)
 	}
 	if !strings.Contains(stderr.String(), "worktree remove:") {
 		t.Fatalf("stderr = %q, want warning prefix", stderr.String())
@@ -997,20 +1017,44 @@ func TestRunDiscard_ListFails_WarnsAndContinues(t *testing.T) {
 }
 
 func TestRunDiscard_RemoveFails_WarnsAndContinues(t *testing.T) {
+	runDiscardGitFailureScenario(t, gitFailureScenario{
+		failEnv:  "GIT_STUB_REMOVE_EXIT",
+		id:       "id-rm-git",
+		summary:  "remove fail",
+		branch:   "wt-rm-fail",
+		wantWarn: "worktree remove:",
+	})
+}
+
+// gitFailureScenario parameterises the warn-and-continue contract
+// shared by every best-effort git step in RunDiscard: force one git
+// subcommand to fail via its stub env knob, then assert the discard
+// still removes the row + dir and only warns on stderr.
+type gitFailureScenario struct {
+	failEnv  string
+	id       string
+	summary  string
+	branch   string
+	wantWarn string
+}
+
+func runDiscardGitFailureScenario(t *testing.T, sc gitFailureScenario) {
+	t.Helper()
 	t.Chdir(t.TempDir())
 	logFile := filepath.Join(t.TempDir(), "git-stub.log")
 	installGitTestStub(t, logFile)
 	listFile := filepath.Join(t.TempDir(), "porcelain.txt")
-	porcelain := "worktree /z/wt-rm-fail\nHEAD abc\nbranch refs/heads/main\n"
+	porcelain := "worktree /z/" + sc.branch +
+		"\nHEAD abc\nbranch refs/heads/main\n"
 	if err := os.WriteFile(listFile, []byte(porcelain), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("GIT_STUB_LIST_FILE", listFile)
-	t.Setenv("GIT_STUB_REMOVE_EXIT", "1")
-	taskDir := seedTaskWithWorktree(t, "id-rm-git", "remove fail", "wt-rm-fail")
+	t.Setenv(sc.failEnv, "1")
+	taskDir := seedTaskWithWorktree(t, sc.id, sc.summary, sc.branch)
 	var stdout, stderr bytes.Buffer
 	err := RunDiscard(t.Context(), DiscardOptions{
-		TaskID: "id-rm-git",
+		TaskID: sc.id,
 		Yes:    true,
 		Stdout: &stdout,
 		Stderr: &stderr,
@@ -1019,16 +1063,16 @@ func TestRunDiscard_RemoveFails_WarnsAndContinues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunDiscard: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "worktree remove:") {
-		t.Fatalf("stderr = %q, want warning prefix", stderr.String())
+	if !strings.Contains(stderr.String(), sc.wantWarn) {
+		t.Fatalf("stderr = %q, want %q", stderr.String(), sc.wantWarn)
 	}
-	if taskExists(t, "id-rm-git") {
+	if taskExists(t, sc.id) {
 		t.Fatal("task row should be gone")
 	}
 	if _, err := os.Stat(taskDir); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("task dir should be gone: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "J: discarded id-rm-git") {
+	if !strings.Contains(stdout.String(), "J: discarded "+sc.id) {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
@@ -1089,8 +1133,11 @@ func TestRunDiscard_BranchMatchFallback(t *testing.T) {
 		t.Fatalf("RunDiscard: %v", err)
 	}
 	lines := readGitStubLogLines(t, logFile)
-	if len(lines) != 2 {
-		t.Fatalf("git stub invocations = %d (%v), want 2", len(lines), lines)
+	if len(lines) != 3 {
+		t.Fatalf("git stub invocations = %d (%v), want 3", len(lines), lines)
+	}
+	if want := "worktree|prune"; lines[2] != want {
+		t.Fatalf("third git argv = %q, want %q", lines[2], want)
 	}
 	if want := "worktree|remove|--force|/weird/path/not-the-slug"; lines[1] != want {
 		t.Fatalf("remove argv = %q, want %q", lines[1], want)
@@ -1165,4 +1212,76 @@ func TestRemoveTaskWorktree_EmptyFallbackNameIsNoop(t *testing.T) {
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
+}
+
+// TestRunDiscard_PathCriterionMatch covers the current worktree
+// layout: every checkout lives at `<tasks-dir>/<id>/worktree`, so
+// its basename ("worktree") never equals the recorded branch slug
+// and the porcelain branch is deliberately unrelated — only the
+// per-task path criterion can identify the record. The porcelain
+// path is the symlink-resolved form (git prints resolved paths;
+// darwin temp dirs alias /var to /private/var) while the criterion
+// derives the unresolved form from the cwd, pinning the
+// EvalSymlinks normalisation on both sides.
+func TestRunDiscard_PathCriterionMatch(t *testing.T) {
+	t.Chdir(t.TempDir())
+	logFile := filepath.Join(t.TempDir(), "git-stub.log")
+	installGitTestStub(t, logFile)
+	taskDir := seedTaskWithWorktree(t, "id-path", "path match", "task-branch")
+	wtDir := tasks.WorktreeDirFor(taskDir)
+	if err := os.MkdirAll(wtDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(wtDir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	listFile := filepath.Join(t.TempDir(), "porcelain.txt")
+	porcelain := "worktree " + resolved +
+		"\nHEAD abc\nbranch refs/heads/unrelated\n\n"
+	if err := os.WriteFile(listFile, []byte(porcelain), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_STUB_LIST_FILE", listFile)
+	var stdout, stderr bytes.Buffer
+	err = RunDiscard(t.Context(), DiscardOptions{
+		TaskID: "id-path",
+		Yes:    true,
+		Stdout: &stdout,
+		Stderr: &stderr,
+		UI:     &fakeUI{},
+	})
+	if err != nil {
+		t.Fatalf("RunDiscard: %v", err)
+	}
+	lines := readGitStubLogLines(t, logFile)
+	if len(lines) != 3 {
+		t.Fatalf("git stub invocations = %d (%v), want 3", len(lines), lines)
+	}
+	if want := "worktree|remove|--force|" + resolved; lines[1] != want {
+		t.Fatalf("remove argv = %q, want %q", lines[1], want)
+	}
+	if want := "worktree|prune"; lines[2] != want {
+		t.Fatalf("third git argv = %q, want %q", lines[2], want)
+	}
+	if taskExists(t, "id-path") {
+		t.Fatal("task row should be gone")
+	}
+	if strings.Contains(stderr.String(), "worktree remove:") {
+		t.Fatalf("unexpected stderr warning: %q", stderr.String())
+	}
+}
+
+// TestRunDiscard_PruneFails_WarnsAndSucceeds pins the best-effort
+// contract of the post-RemoveDir `git worktree prune`: a prune
+// failure prints a single stderr warning but the discard still
+// removes the row + dir and reports success.
+func TestRunDiscard_PruneFails_WarnsAndSucceeds(t *testing.T) {
+	runDiscardGitFailureScenario(t, gitFailureScenario{
+		failEnv:  "GIT_STUB_PRUNE_EXIT",
+		id:       "id-prune-f",
+		summary:  "prune fail",
+		branch:   "j-wt-pf",
+		wantWarn: "worktree prune:",
+	})
 }

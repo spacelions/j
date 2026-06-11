@@ -5,6 +5,20 @@ import (
 	"github.com/spacelions/j/internal/store/tasks"
 )
 
+// worktreeRef adapts the single-string worktree argument the helper
+// signatures kept to the prompts.WorktreeRef builders now take:
+// empty stays the zero ref; non-empty pairs the branch with a
+// deterministic stand-in for the `<task-dir>/worktree` path.
+func worktreeRef(branch string) prompts.WorktreeRef {
+	if branch == "" {
+		return prompts.WorktreeRef{}
+	}
+	return prompts.WorktreeRef{
+		Branch: branch,
+		Path:   "/tmp/.j/tasks/abc/worktree",
+	}
+}
+
 func plannerSavePrompt(base, req, plan, clarify string) string {
 	return prompts.AppendPlannerSaveSuffix(base, tasks.TaskPaths{
 		Requirements:  req,
@@ -18,7 +32,7 @@ func verifierFixPrompt(plan, findings, worktree, clarify string) string {
 		Plan:          plan,
 		Findings:      findings,
 		Clarification: clarify,
-	}, worktree)
+	}, worktreeRef(worktree))
 }
 
 func buildPlannerPrompt(target string, mustRead []string) string {
@@ -37,7 +51,7 @@ func buildWorkerPrompt(
 	return prompts.BuildWorkerPrompt(tasks.TaskPaths{
 		Plan:          plan,
 		Clarification: clarify,
-	}, worktree, mustRead)
+	}, worktreeRef(worktree), mustRead)
 }
 
 func buildWorkerResumePrompt(
@@ -48,7 +62,7 @@ func buildWorkerResumePrompt(
 	return prompts.BuildWorkerResumePrompt(tasks.TaskPaths{
 		Plan:          plan,
 		Clarification: clarify,
-	}, worktree, mustRead)
+	}, worktreeRef(worktree), mustRead)
 }
 
 func buildVerifierPrompt(
@@ -62,7 +76,7 @@ func buildVerifierPrompt(
 		Plan:          plan,
 		Findings:      findings,
 		Clarification: clarify,
-	}, worktree, mustRead)
+	}, worktreeRef(worktree), mustRead)
 }
 
 func buildVerifierResumePrompt(
@@ -74,7 +88,7 @@ func buildVerifierResumePrompt(
 		Requirements:  req,
 		Plan:          plan,
 		Clarification: clarify,
-	}, worktree, mustRead)
+	}, worktreeRef(worktree), mustRead)
 }
 
 func buildVerifierFixPrompt(

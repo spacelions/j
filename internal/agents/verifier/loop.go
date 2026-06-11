@@ -134,6 +134,7 @@ func buildVerifyRequest(
 		Resume:                     iter > 0,
 		ResumeChatID:               session.ResumeID,
 		Worktree:                   res.Task.Worktree,
+		WorktreePath:               worktreePathFor(res),
 		AgentLogPath: filepath.Join(
 			res.TaskDir,
 			tasks.AgentLogFileName,
@@ -179,9 +180,20 @@ func buildFixRequest(
 		FixFindings:                true,
 		VerifierFindingsOutputPath: res.Paths.Findings,
 		Worktree:                   res.Task.Worktree,
+		WorktreePath:               worktreePathFor(res),
 		AgentLogPath: filepath.Join(
 			res.TaskDir,
 			tasks.AgentLogFileName,
 		),
 	}
+}
+
+// worktreePathFor derives the absolute checkout path of the task's
+// worktree (`<task-dir>/worktree`), or "" when the row never recorded
+// a worktree branch so the empty-worktree prompt stays unchanged.
+func worktreePathFor(res resolver.VerifyTask) string {
+	if res.Task.Worktree == "" {
+		return ""
+	}
+	return tasks.WorktreeDirFor(res.TaskDir)
 }

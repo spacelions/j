@@ -16,11 +16,11 @@ func DefaultWorkspace(targetPath string) string {
 
 // ProjectRootWorkspace returns the current working directory. `j
 // verify` uses it so cursor-agent is invoked with
-// `--workspace <project-root>` (not inside .j/tasks/<id>/): the
-// verifier then resolves the target worktree itself via
-// `git worktree list` rather than having the orchestrator chdir
-// around. Plan / Work still use DefaultWorkspace because those
-// flows want the self-contained per-task folder.
+// `--workspace <project-root>` (not inside .j/tasks/<id>/):
+// relative repo paths resolve from the root, while the prompt
+// carries the worktree's absolute path so no lookup is needed.
+// Plan / Work still use DefaultWorkspace because those flows want
+// the self-contained per-task folder.
 //
 // The helper intentionally does not return an error: the only
 // failure mode is os.Getwd (e.g. the cwd was removed while the

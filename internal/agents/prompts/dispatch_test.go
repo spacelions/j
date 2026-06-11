@@ -78,6 +78,7 @@ func TestWorkPromptDispatch(t *testing.T) {
 	base := codingagents.WorkRequest{
 		PlanPath:          "plan.md",
 		Worktree:          "j-task",
+		WorktreePath:      testWorktreePath,
 		ClarificationPath: "clarification.md",
 		MustRead:          []string{"AGENTS.md"},
 	}
@@ -147,6 +148,7 @@ func TestVerifyPromptDispatch(t *testing.T) {
 		VerifierPlanOutputPath:     "verifier_plan.md",
 		VerifierFindingsOutputPath: "verifier_findings.md",
 		Worktree:                   "j-task",
+		WorktreePath:               testWorktreePath,
 		ClarificationPath:          "clarification.md",
 		MustRead:                   []string{"AGENTS.md"},
 	}

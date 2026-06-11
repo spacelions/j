@@ -209,8 +209,8 @@ func (a *Agent) Work(
 }
 
 // Verify runs claude against the requirements + plan pair. Mirrors
-// cursor's Verify: cmd.Dir is the project root (so the verifier can
-// `git worktree list` from there) rather than the per-task dir, and
+// cursor's Verify: cmd.Dir is the project root (relative repo paths
+// resolve; the prompt carries the worktree's absolute path), and
 // `--permission-mode plan` is intentionally absent because the
 // verifier needs to write verifier_plan.md / verifier_findings.md
 // (and edit project files on FAIL).

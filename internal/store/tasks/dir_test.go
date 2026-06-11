@@ -31,6 +31,14 @@ func TestStore_Dir_ReturnsTasksDir(t *testing.T) {
 	}
 }
 
+func TestWorktreeDirFor_JoinsWorktreeDirName(t *testing.T) {
+	got := WorktreeDirFor(filepath.Join("/repo", ".j", "tasks", "01X"))
+	want := filepath.Join("/repo", ".j", "tasks", "01X", WorktreeDirName)
+	if got != want {
+		t.Fatalf("WorktreeDirFor = %q, want %q", got, want)
+	}
+}
+
 func TestEnsureDir_HappyPath(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := store.EnsureProject(); err != nil {

@@ -426,8 +426,9 @@ func TestRun_FailThenPass(t *testing.T) {
 }
 
 // TestRun_ThreadsWorktreeIntoRequests pins R2/R3: a task seeded with
-// a non-empty Worktree pushes that value into every VerifyRequest
-// and into the worker fix WorkRequest, so both prompts can carry the
+// a non-empty Worktree pushes that branch — plus the derived
+// `<task-dir>/worktree` checkout path — into every VerifyRequest and
+// into the worker fix WorkRequest, so both prompts can carry the
 // worktree-direction line.
 func TestRun_ThreadsWorktreeIntoRequests(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -460,9 +461,15 @@ func TestRun_ThreadsWorktreeIntoRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
+	wantPath := tasks.WorktreeDirFor(
+		filepath.Join(tasks.DefaultDir(), id),
+	)
 	for i, req := range agent.verifiedReqs {
 		if req.Worktree != "j-my-task" {
 			t.Fatalf("verifiedReqs[%d].Worktree = %q, want %q", i, req.Worktree, "j-my-task")
+		}
+		if req.WorktreePath != wantPath {
+			t.Fatalf("verifiedReqs[%d].WorktreePath = %q, want %q", i, req.WorktreePath, wantPath)
 		}
 	}
 	if len(agent.workedReqs) != 1 {
@@ -470,6 +477,9 @@ func TestRun_ThreadsWorktreeIntoRequests(t *testing.T) {
 	}
 	if agent.workedReqs[0].Worktree != "j-my-task" {
 		t.Fatalf("workedReqs[0].Worktree = %q, want %q", agent.workedReqs[0].Worktree, "j-my-task")
+	}
+	if agent.workedReqs[0].WorktreePath != wantPath {
+		t.Fatalf("workedReqs[0].WorktreePath = %q, want %q", agent.workedReqs[0].WorktreePath, wantPath)
 	}
 }
 

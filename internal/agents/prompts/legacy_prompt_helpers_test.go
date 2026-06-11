@@ -2,6 +2,23 @@ package prompts
 
 import "github.com/spacelions/j/internal/store/tasks"
 
+// testWorktreePath is the deterministic checkout location the legacy
+// helpers pair with any non-empty worktree branch, standing in for
+// the `<task-dir>/worktree` path the orchestrator derives at
+// request-build time. Worktree-pinning tests assert it verbatim.
+const testWorktreePath = "/tmp/.j/tasks/abc/worktree"
+
+// testWorktreeRef adapts the legacy single-string worktree argument
+// to the WorktreeRef the builders take: empty stays the zero ref so
+// empty-worktree prompts are unchanged; non-empty pairs the branch
+// with testWorktreePath.
+func testWorktreeRef(branch string) WorktreeRef {
+	if branch == "" {
+		return WorktreeRef{}
+	}
+	return WorktreeRef{Branch: branch, Path: testWorktreePath}
+}
+
 func BuildPlanner(targetPath string, mustRead []string) string {
 	return BuildPlannerPrompt(targetPath, mustRead)
 }
@@ -29,7 +46,7 @@ func BuildWorker(
 	return BuildWorkerPrompt(tasks.TaskPaths{
 		Plan:          planPath,
 		Clarification: clarificationPath,
-	}, worktree, mustRead)
+	}, testWorktreeRef(worktree), mustRead)
 }
 
 func BuildWorkerResume(
@@ -40,7 +57,7 @@ func BuildWorkerResume(
 	return BuildWorkerResumePrompt(tasks.TaskPaths{
 		Plan:          planPath,
 		Clarification: clarificationPath,
-	}, worktree, mustRead)
+	}, testWorktreeRef(worktree), mustRead)
 }
 
 func BuildWorkerClarificationResume(
@@ -51,7 +68,7 @@ func BuildWorkerClarificationResume(
 	return BuildWorkerClarificationResumePrompt(tasks.TaskPaths{
 		Plan:          planPath,
 		Clarification: clarificationPath,
-	}, worktree, mustRead)
+	}, testWorktreeRef(worktree), mustRead)
 }
 
 func BuildVerifier(
@@ -65,7 +82,7 @@ func BuildVerifier(
 		Plan:          planPath,
 		Findings:      findingsPath,
 		Clarification: clarificationPath,
-	}, worktree, mustRead)
+	}, testWorktreeRef(worktree), mustRead)
 }
 
 func BuildVerifierResume(
@@ -77,7 +94,7 @@ func BuildVerifierResume(
 		Requirements:  reqPath,
 		Plan:          planPath,
 		Clarification: clarificationPath,
-	}, worktree, mustRead)
+	}, testWorktreeRef(worktree), mustRead)
 }
 
 func BuildVerifierClarificationResume(
@@ -89,7 +106,7 @@ func BuildVerifierClarificationResume(
 		Requirements:  reqPath,
 		Plan:          planPath,
 		Clarification: clarificationPath,
-	}, worktree, mustRead)
+	}, testWorktreeRef(worktree), mustRead)
 }
 
 func BuildVerifierFix(
@@ -99,5 +116,5 @@ func BuildVerifierFix(
 		Plan:          planPath,
 		Findings:      findingsPath,
 		Clarification: clarificationPath,
-	}, worktree)
+	}, testWorktreeRef(worktree))
 }

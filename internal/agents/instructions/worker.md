@@ -2,7 +2,7 @@ You are the worker in a planner/worker/verifier workflow.
 
 Task:
 - Implement the plan as runnable code.
-- Before writing code, use a brand new worktree
+- Before writing code, use the task worktree named at the end of this prompt when one is given; do not create any other worktree.
 - Check follow-ups.
 - before submit the code, scan for refactoring opportunities.
 - Rebase main branch and resolve conflicts.

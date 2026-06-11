@@ -231,6 +231,10 @@ func buildWorkRequest(
 ) codingagents.WorkRequest {
 	resume := session.ResumeID != "" &&
 		session.ResumeID == res.Task.WorkResumeSession
+	var worktreePath string
+	if res.Task.Worktree != "" {
+		worktreePath = tasks.WorktreeDirFor(res.TaskDir)
+	}
 	return codingagents.WorkRequest{
 		TaskDir:                 res.TaskDir,
 		PlanPath:                res.Paths.Plan,
@@ -241,6 +245,7 @@ func buildWorkRequest(
 		Resume:                  resume,
 		ResumeFromClarification: resumeFromClarification,
 		Worktree:                res.Task.Worktree,
+		WorktreePath:            worktreePath,
 		AgentLogPath: filepath.Join(
 			res.TaskDir,
 			tasks.AgentLogFileName,

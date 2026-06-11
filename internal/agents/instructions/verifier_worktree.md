@@ -1,1 +1,1 @@
-Verify the code in the git worktree named %q (run `git worktree list` from the repository root to find its absolute path).
+Verify the code in the git worktree at %q (branch %q).
