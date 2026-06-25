@@ -1075,6 +1075,83 @@ func TestRun_NewResumeID_ErrorWarnsButContinues(t *testing.T) {
 	}
 }
 
+// foregroundCaptureAgent embeds scriptedAgent and implements
+// ResumeIDCapturer (via testutil.ForegroundCapture) plus a blocking
+// Verify so SPA-103 foreground tests can assert mid-run state.
+type foregroundCaptureAgent struct {
+	*scriptedAgent
+	testutil.ForegroundCapture
+}
+
+func (a *foregroundCaptureAgent) Verify(
+	ctx context.Context, req codingagents.VerifyRequest,
+) (int, error) {
+	a.Block()
+	return a.scriptedAgent.Verify(ctx, req)
+}
+
+// TestRun_ForegroundCapturesWhileVerifyBlocked pins SPA-103 on the
+// verifier phase: with Interactive=true and no pre-existing session,
+// the first iteration's foreground watcher records VerifyResumeSession
+// on the task row while the verifier TUI is still running. The
+// scripted Verify blocks until the test releases it.
+func TestRun_ForegroundCapturesWhileVerifyBlocked(t *testing.T) {
+	t.Chdir(t.TempDir())
+	mustInit(t)
+	id := seedWorkDoneTask(t, "x", "plan", "")
+	base := newScriptedAgent()
+	base.resumeID = ""
+	base.verifyVerdicts = []string{"PASS"}
+	agent := &foregroundCaptureAgent{scriptedAgent: base}
+	agent.Release = make(chan struct{})
+	agent.Started = make(chan struct{})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(t.Context(), Options{
+			TaskID:        id,
+			Interactive:   true,
+			MaxIterations: 1,
+			Stdout:        io.Discard,
+			Stderr:        io.Discard,
+			Agents:        []codingagents.Agent{agent},
+			UI:            &scriptedUI{},
+		})
+	}()
+	select {
+	case <-agent.Started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Verify never started")
+	}
+	agent.SetCaptureID("captured-foreground-verify")
+
+	ok := testutil.WaitForRow(t, id, func(r tasks.Task) bool {
+		return r.VerifyResumeSession == "captured-foreground-verify"
+	})
+	close(agent.Release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after release")
+	}
+	if !ok {
+		t.Fatal("VerifyResumeSession was not recorded while Verify blocked")
+	}
+	got := readTasks(t)[0]
+	if got.Status != tasks.StatusCompleted {
+		t.Fatalf("Status = %q, want completed", got.Status)
+	}
+	if got.VerifyResumeSession != "captured-foreground-verify" {
+		t.Fatalf(
+			"VerifyResumeSession = %q, want captured-foreground-verify",
+			got.VerifyResumeSession,
+		)
+	}
+}
+
 func TestRun_CapturesActiveVerifierResumeSession(t *testing.T) {
 	t.Chdir(t.TempDir())
 	mustInit(t)

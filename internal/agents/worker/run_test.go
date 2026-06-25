@@ -70,17 +70,14 @@ func (a *runTestAgent) Work(_ context.Context, req codingagents.WorkRequest) (in
 
 type capturingRunAgent struct {
 	*runTestAgent
-	captureID    string
-	captureCalls int
+	testutil.ForegroundCapture
 }
 
-func (a *capturingRunAgent) CaptureResumeID(
-	_ context.Context,
-	_ string,
-	_ time.Time,
-) (string, error) {
-	a.captureCalls++
-	return a.captureID, nil
+func (a *capturingRunAgent) Work(
+	ctx context.Context, req codingagents.WorkRequest,
+) (int, error) {
+	a.Block()
+	return a.runTestAgent.Work(ctx, req)
 }
 
 // fakeRunUI is a scripted UI fake for Execute tests.
@@ -265,10 +262,8 @@ func TestRun_RecordsActiveWorkerResumeSession(t *testing.T) {
 	base := newRunTestAgent("cursor")
 	base.emptyResumeID = true
 	base.workPid = os.Getpid()
-	agent := &capturingRunAgent{
-		runTestAgent: base,
-		captureID:    "captured-work-session",
-	}
+	agent := &capturingRunAgent{runTestAgent: base}
+	agent.SetCaptureID("captured-work-session")
 
 	err := Execute(t.Context(), Options{
 		TaskID: id,
@@ -284,7 +279,7 @@ func TestRun_RecordsActiveWorkerResumeSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if agent.captureCalls == 0 {
+	if agent.Calls.Load() == 0 {
 		t.Fatal("CaptureResumeID calls = 0, want active capture")
 	}
 	row := testutil.ReadTaskRow(t, id)
@@ -296,6 +291,68 @@ func TestRun_RecordsActiveWorkerResumeSession(t *testing.T) {
 	}
 	if row.Status != tasks.StatusWorking {
 		t.Fatalf("Status = %q, want working", row.Status)
+	}
+}
+
+// TestRun_ForegroundCapturesWhileWorkBlocked pins the SPA-103
+// behavior on the worker phase: with Interactive=true and no
+// pre-existing session, the foreground watcher records the resume
+// id on the task row while the worker TUI is still running. The
+// scripted Work blocks until the test releases it; the test sets
+// the capturer's id and asserts the row carries it before unblock.
+func TestRun_ForegroundCapturesWhileWorkBlocked(t *testing.T) {
+	setupRunEnv(t)
+	id := seedPlanDoneTask(t)
+	base := newRunTestAgent("cursor")
+	base.emptyResumeID = true
+	agent := &capturingRunAgent{runTestAgent: base}
+	agent.Release = make(chan struct{})
+	agent.Started = make(chan struct{})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Execute(t.Context(), Options{
+			TaskID:      id,
+			Yes:         true,
+			Interactive: true,
+			Stdin:       strings.NewReader(""),
+			Stdout:      io.Discard,
+			Stderr:      io.Discard,
+			Agents:      []codingagents.Agent{agent},
+			UI:          &fakeRunUI{},
+			Tool:        "cursor",
+			Model:       "m1",
+		})
+	}()
+	select {
+	case <-agent.Started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Work never started")
+	}
+	agent.SetCaptureID("captured-foreground-work")
+
+	if !testutil.WaitForRow(t, id, func(r tasks.Task) bool {
+		return r.WorkResumeSession == "captured-foreground-work"
+	}) {
+		close(agent.Release)
+		<-done
+		t.Fatal("WorkResumeSession was not recorded while Work blocked")
+	}
+	close(agent.Release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Execute did not return after release")
+	}
+	got := testutil.ReadTaskRow(t, id)
+	if got.WorkResumeSession != "captured-foreground-work" {
+		t.Fatalf(
+			"final WorkResumeSession = %q, want captured-foreground-work",
+			got.WorkResumeSession,
+		)
 	}
 }
 

@@ -12,24 +12,35 @@ import (
 	"github.com/spacelions/j/internal/util/run"
 )
 
-// watcherLivenessInterval is the cadence at which WatchActiveResumeID
-// re-checks the worker pid while idle. It bounds the loop's worst-case
-// latency to react to a process exit that produced no relevant
-// filesystem events (e.g. the backend crashed before writing its
-// session_meta record).
+// watcherLivenessInterval is the cadence at which the shared watch
+// loop re-scans capture.TaskDir while idle. It bounds the loop's
+// worst-case latency to react to events the filesystem watcher
+// missed — including backends that exit without ever writing the
+// session_meta record the scan looks for.
 const watcherLivenessInterval = 200 * time.Millisecond
 
-// WatchActiveResumeID blocks until capturer resolves a non-empty
-// resume id under capture.TaskDir, the worker pid disappears, or ctx
-// is cancelled. Filesystem events drive scans through capturer; a
-// liveness ticker covers missed filesystem events and backends that
-// exit without writing the session_meta the scan looks for. Returns
-// the captured id, or "" if the loop ended without one.
-func WatchActiveResumeID(
+// watchResumeID is the shared core both the foreground and
+// background watchers drive. It creates the fsnotify watcher,
+// registers directory watches under capture.TaskDir, scans via
+// capturer on every event and on every liveness tick, and returns
+// when capturer resolves a non-empty id, when shouldStop returns
+// true, or when ctx is cancelled. shouldStop is consulted only on
+// the liveness tick so foreground callers can pass a nil-equivalent
+// "never stop" predicate without paying for per-event work.
+//
+// When scanOnCancel is set the loop performs one final scan on ctx
+// cancellation instead of returning "" outright. Foreground callers
+// rely on this: the stop closure cancels ctx right after the TUI
+// returns, by which point the backend's session metadata is already
+// on disk, so a last scan avoids dropping an id that landed between
+// the previous tick and the cancel. Background callers leave it off
+// to preserve the "silent on cancel" contract (SPA-94 AC4).
+func watchResumeID(
 	ctx context.Context,
 	capturer ResumeIDCapturer,
 	capture ResumeCapture,
-	pid int,
+	shouldStop func() bool,
+	scanOnCancel bool,
 ) string {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -39,30 +50,63 @@ func WatchActiveResumeID(
 	addDirWatches(w, capture.TaskDir)
 	ticker := time.NewTicker(watcherLivenessInterval)
 	defer ticker.Stop()
+	scan := func() string {
+		id, _ := capturer.CaptureResumeID(
+			ctx, capture.TaskDir, capture.Since,
+		)
+		return id
+	}
 	for {
 		select {
 		case <-ctx.Done():
+			if scanOnCancel {
+				return scan()
+			}
 			return ""
 		case <-ticker.C:
-			id, _ := capturer.CaptureResumeID(
-				ctx, capture.TaskDir, capture.Since,
-			)
-			if id != "" {
+			if id := scan(); id != "" {
 				return id
 			}
-			if !run.IsAlive(pid) {
+			if shouldStop != nil && shouldStop() {
 				return ""
 			}
 		case ev := <-w.Events:
 			maybeAddDir(w, ev)
-			id, _ := capturer.CaptureResumeID(
-				ctx, capture.TaskDir, capture.Since,
-			)
-			if id != "" {
+			if id := scan(); id != "" {
 				return id
 			}
 		}
 	}
+}
+
+// WatchBackgroundResumeID blocks until capturer resolves a non-empty
+// resume id under capture.TaskDir, the worker pid disappears, or ctx
+// is cancelled. Used by the detached/headless code path where the
+// watcher must release its goroutine when the spawned backend exits
+// without producing session metadata.
+func WatchBackgroundResumeID(
+	ctx context.Context,
+	capturer ResumeIDCapturer,
+	capture ResumeCapture,
+	pid int,
+) string {
+	return watchResumeID(ctx, capturer, capture, func() bool {
+		return !run.IsAlive(pid)
+	}, false)
+}
+
+// WatchForegroundResumeID blocks until capturer resolves a non-empty
+// resume id or ctx is cancelled. Used by the interactive/TUI code
+// path: the foreground TUI keeps the backend in this process tree so
+// there is no pid to poll, and the caller cancels ctx after the TUI
+// returns. On cancellation it performs one final scan so an id that
+// landed just before the TUI exited is not dropped.
+func WatchForegroundResumeID(
+	ctx context.Context,
+	capturer ResumeIDCapturer,
+	capture ResumeCapture,
+) string {
+	return watchResumeID(ctx, capturer, capture, nil, true)
 }
 
 // addDirWatches walks root and registers a watch on every directory.

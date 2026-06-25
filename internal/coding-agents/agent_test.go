@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -116,11 +117,20 @@ func TestCaptureResumeID_ImplementedError(t *testing.T) {
 }
 
 type recordingResume struct {
+	mu sync.Mutex
 	id string
 }
 
 func (r *recordingResume) RecordResumeSession(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.id = id
+}
+
+func (r *recordingResume) snapshot() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.id
 }
 
 func TestCaptureAndSaveResumeID_RecordsCapturedID(t *testing.T) {
@@ -157,9 +167,9 @@ func TestCaptureAndSaveResumeID_WarnsOnCaptureError(t *testing.T) {
 	assert.Contains(t, stderr.String(), "J: scan failed")
 }
 
-func TestWatchAndSaveActiveResumeID_NotCapturer(t *testing.T) {
+func TestWatchAndSaveBackgroundResumeID_NotCapturer(t *testing.T) {
 	recorder := &recordingResume{}
-	got := WatchAndSaveActiveResumeID(
+	got := WatchAndSaveBackgroundResumeID(
 		t.Context(),
 		stubAgent{},
 		recorder,
@@ -170,9 +180,9 @@ func TestWatchAndSaveActiveResumeID_NotCapturer(t *testing.T) {
 	assert.Empty(t, recorder.id)
 }
 
-func TestWatchAndSaveActiveResumeID_InvalidPID(t *testing.T) {
+func TestWatchAndSaveBackgroundResumeID_InvalidPID(t *testing.T) {
 	recorder := &recordingResume{}
-	got := WatchAndSaveActiveResumeID(
+	got := WatchAndSaveBackgroundResumeID(
 		t.Context(),
 		capturingAgent{id: "ignored"},
 		recorder,
@@ -183,9 +193,9 @@ func TestWatchAndSaveActiveResumeID_InvalidPID(t *testing.T) {
 	assert.Empty(t, recorder.id)
 }
 
-func TestWatchAndSaveActiveResumeID_ImmediateCapture(t *testing.T) {
+func TestWatchAndSaveBackgroundResumeID_ImmediateCapture(t *testing.T) {
 	recorder := &recordingResume{}
-	got := WatchAndSaveActiveResumeID(
+	got := WatchAndSaveBackgroundResumeID(
 		t.Context(),
 		capturingAgent{id: "active"},
 		recorder,
@@ -196,13 +206,13 @@ func TestWatchAndSaveActiveResumeID_ImmediateCapture(t *testing.T) {
 	assert.Equal(t, "active", recorder.id)
 }
 
-func TestWatchAndSaveActiveResumeID_DelayedCapture(t *testing.T) {
+func TestWatchAndSaveBackgroundResumeID_DelayedCapture(t *testing.T) {
 	recorder := &recordingResume{}
 	dir := t.TempDir()
 	agent := &delayedCapturingAgent{}
 	done := make(chan string, 1)
 	go func() {
-		done <- WatchAndSaveActiveResumeID(
+		done <- WatchAndSaveBackgroundResumeID(
 			t.Context(),
 			agent,
 			recorder,
@@ -225,9 +235,9 @@ func TestWatchAndSaveActiveResumeID_DelayedCapture(t *testing.T) {
 	assert.Equal(t, "delayed", recorder.id)
 }
 
-func TestWatchAndSaveActiveResumeID_PIDExited(t *testing.T) {
+func TestWatchAndSaveBackgroundResumeID_PIDExited(t *testing.T) {
 	recorder := &recordingResume{}
-	got := WatchAndSaveActiveResumeID(
+	got := WatchAndSaveBackgroundResumeID(
 		t.Context(),
 		capturingAgent{},
 		recorder,
@@ -238,11 +248,11 @@ func TestWatchAndSaveActiveResumeID_PIDExited(t *testing.T) {
 	assert.Empty(t, recorder.id)
 }
 
-func TestWatchAndSaveActiveResumeID_ContextCancelled(t *testing.T) {
+func TestWatchAndSaveBackgroundResumeID_ContextCancelled(t *testing.T) {
 	recorder := &recordingResume{}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	got := WatchAndSaveActiveResumeID(
+	got := WatchAndSaveBackgroundResumeID(
 		ctx,
 		capturingAgent{},
 		recorder,
@@ -303,4 +313,135 @@ func TestCaptureAndSaveProcessResumeID_WaitError(t *testing.T) {
 
 func TestWaitForResumeProcess(t *testing.T) {
 	require.NoError(t, WaitForResumeProcess(t.Context(), 0))
+}
+
+// TestStartAndSaveForegroundResumeID_ExistingID pins the no-op
+// contract: a non-empty existingID short-circuits — no capturer
+// methods run and the stop function returns "".
+func TestStartAndSaveForegroundResumeID_ExistingID(t *testing.T) {
+	recorder := &recordingResume{}
+	agent := &delayedCapturingAgent{}
+	stop := StartAndSaveForegroundResumeID(
+		t.Context(), agent, recorder,
+		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
+		"prior", true,
+	)
+	assert.Empty(t, stop())
+	assert.Empty(t, recorder.id)
+	assert.Equal(t, int32(0), agent.calls.Load())
+}
+
+// TestStartAndSaveForegroundResumeID_NotInteractive pins the
+// headless no-op branch: a non-interactive run never starts a
+// watcher (the pid-driven background watcher handles capture there),
+// so no capturer methods run and the stop function returns "".
+func TestStartAndSaveForegroundResumeID_NotInteractive(t *testing.T) {
+	recorder := &recordingResume{}
+	agent := &delayedCapturingAgent{}
+	stop := StartAndSaveForegroundResumeID(
+		t.Context(), agent, recorder,
+		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
+		"", false,
+	)
+	assert.Empty(t, stop())
+	assert.Empty(t, recorder.id)
+	assert.Equal(t, int32(0), agent.calls.Load())
+}
+
+// TestStartAndSaveForegroundResumeID_NotCapturer pins the second
+// no-op branch: cursor/claude-style backends without
+// ResumeIDCapturer return a stop that yields "".
+func TestStartAndSaveForegroundResumeID_NotCapturer(t *testing.T) {
+	recorder := &recordingResume{}
+	stop := StartAndSaveForegroundResumeID(
+		t.Context(), stubAgent{}, recorder,
+		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
+		"", true,
+	)
+	assert.Empty(t, stop())
+	assert.Empty(t, recorder.id)
+}
+
+// TestStartAndSaveForegroundResumeID_ImmediateCapture pins the
+// fast path where the session metadata already exists before the
+// TUI starts — the recorder is stamped synchronously and stop
+// returns the captured id without ever launching the goroutine.
+func TestStartAndSaveForegroundResumeID_ImmediateCapture(t *testing.T) {
+	recorder := &recordingResume{}
+	stop := StartAndSaveForegroundResumeID(
+		t.Context(),
+		capturingAgent{id: "ready"},
+		recorder,
+		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
+		"", true,
+	)
+	assert.Equal(t, "ready", recorder.id)
+	assert.Equal(t, "ready", stop())
+}
+
+// TestStartAndSaveForegroundResumeID_LiveCapture pins the
+// requirements-driven scenario: metadata appears while the TUI is
+// still running. The recorder must see the captured id before the
+// caller invokes stop, and stop must return it.
+func TestStartAndSaveForegroundResumeID_LiveCapture(t *testing.T) {
+	recorder := &recordingResume{}
+	dir := t.TempDir()
+	agent := &delayedCapturingAgent{}
+	stop := StartAndSaveForegroundResumeID(
+		t.Context(), agent, recorder,
+		ResumeCapture{TaskDir: dir, Stderr: &bytes.Buffer{}},
+		"", true,
+	)
+	require.Eventually(t, func() bool {
+		return agent.calls.Load() >= 2
+	}, time.Second, 10*time.Millisecond)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "rollout.jsonl"), []byte("x"), 0o600,
+	))
+	require.Eventually(t, func() bool {
+		return recorder.snapshot() == "delayed"
+	}, 2*time.Second, 10*time.Millisecond)
+	assert.Equal(t, "delayed", stop())
+}
+
+// TestStartAndSaveForegroundResumeID_StopWithoutCapture pins the
+// timeout-equivalent path: when no metadata appears, stop cancels
+// the goroutine and returns "" without hanging the caller.
+func TestStartAndSaveForegroundResumeID_StopWithoutCapture(t *testing.T) {
+	recorder := &recordingResume{}
+	agent := &delayedCapturingAgent{}
+	stop := StartAndSaveForegroundResumeID(
+		t.Context(), agent, recorder,
+		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
+		"", true,
+	)
+	done := make(chan string, 1)
+	go func() { done <- stop() }()
+	select {
+	case got := <-done:
+		assert.Empty(t, got)
+	case <-time.After(2 * time.Second):
+		t.Fatal("stop() blocked when no metadata was written")
+	}
+	assert.Empty(t, recorder.id)
+}
+
+// TestStartAndSaveForegroundResumeID_ImmediateCaptureError pins
+// the warning-and-continue contract: an immediate scan error is
+// written to stderr and the goroutine still runs so a later
+// successful scan can record the id.
+func TestStartAndSaveForegroundResumeID_ImmediateCaptureError(
+	t *testing.T,
+) {
+	recorder := &recordingResume{}
+	var stderr bytes.Buffer
+	stop := StartAndSaveForegroundResumeID(
+		t.Context(),
+		capturingAgent{err: errors.New("scan blew up")},
+		recorder,
+		ResumeCapture{TaskDir: t.TempDir(), Stderr: &stderr},
+		"", true,
+	)
+	assert.Empty(t, stop())
+	assert.Contains(t, stderr.String(), "J: scan blew up")
 }

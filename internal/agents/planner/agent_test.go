@@ -388,6 +388,80 @@ func TestExecute_FreshFromEmptySession(t *testing.T) {
 	}
 }
 
+// TestExecute_ForegroundCapturesWhilePlanBlocked pins the SPA-103
+// behavior: with Interactive=true and no pre-existing session, the
+// foreground watcher records the captured resume id on the task row
+// while the planner TUI is still running. The scripted Plan blocks
+// on a channel until the test releases it; the test sets the
+// capturer's id and asserts the row carries it before unblocking.
+func TestExecute_ForegroundCapturesWhilePlanBlocked(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testutil.Init(t)
+
+	taskID := tasks.NewTaskID()
+	taskDir, err := tasks.EnsureDir(taskID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := testutil.WriteFile(
+		taskDir+"/requirements.md", "x",
+	); err != nil {
+		t.Fatalf("write requirements: %v", err)
+	}
+	testutil.SeedTaskRow(t, tasks.Task{
+		ID:      taskID,
+		Status:  tasks.StatusPlanning,
+		Summary: "task",
+	})
+	seedPlanApproval(t, false)
+
+	stub := newScriptedPlanAgent("scripted")
+	stub.mintedID = ""
+	stub.Release = make(chan struct{})
+	stub.Started = make(chan struct{})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- Execute(t.Context(), Options{
+			TaskID:      taskID,
+			Agent:       stub,
+			Model:       "m1",
+			Interactive: true,
+			Stderr:      io.Discard,
+		})
+	}()
+	select {
+	case <-stub.Started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Plan never started")
+	}
+	stub.SetCaptureID("captured-foreground-plan")
+
+	if !testutil.WaitForRow(t, taskID, func(r tasks.Task) bool {
+		return r.PlanResumeSession == "captured-foreground-plan"
+	}) {
+		close(stub.Release)
+		<-done
+		t.Fatal("PlanResumeSession was not recorded while Plan blocked")
+	}
+	close(stub.Release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Execute did not return after release")
+	}
+	got := testutil.ReadTaskRow(t, taskID)
+	if got.PlanResumeSession != "captured-foreground-plan" {
+		t.Fatalf(
+			"final PlanResumeSession = %q, want captured-foreground-plan",
+			got.PlanResumeSession,
+		)
+	}
+}
+
 func TestExecute_NoWaitSkipsPostRunCapture(t *testing.T) {
 	t.Chdir(t.TempDir())
 	testutil.Init(t)
@@ -408,7 +482,7 @@ func TestExecute_NoWaitSkipsPostRunCapture(t *testing.T) {
 
 	stub := newScriptedPlanAgent("scripted")
 	stub.mintedID = ""
-	stub.captureID = "captured-after-run"
+	stub.SetCaptureID("captured-after-run")
 	if err := Execute(t.Context(), Options{
 		TaskID:            taskID,
 		Agent:             stub,
@@ -418,8 +492,8 @@ func TestExecute_NoWaitSkipsPostRunCapture(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if stub.captureCalls != 0 {
-		t.Fatalf("CaptureResumeID calls = %d, want 0", stub.captureCalls)
+	if got := stub.Calls.Load(); got != 0 {
+		t.Fatalf("CaptureResumeID calls = %d, want 0", got)
 	}
 	got := testutil.ReadTaskRow(t, taskID)
 	if got.PlanResumeSession != "" {
@@ -449,7 +523,7 @@ func TestExecute_NoWaitCapturesActiveResumeSession(t *testing.T) {
 
 	stub := newScriptedPlanAgent("scripted")
 	stub.mintedID = ""
-	stub.captureID = "captured-active-plan"
+	stub.SetCaptureID("captured-active-plan")
 	stub.planPID = os.Getpid()
 	if err := Execute(t.Context(), Options{
 		TaskID:            taskID,
@@ -460,7 +534,7 @@ func TestExecute_NoWaitCapturesActiveResumeSession(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if stub.captureCalls == 0 {
+	if stub.Calls.Load() == 0 {
 		t.Fatal("CaptureResumeID calls = 0, want active capture")
 	}
 	got := testutil.ReadTaskRow(t, taskID)
@@ -697,11 +771,10 @@ func TestReadPlanArtifacts_NonMissingReadErrorUsesDangerousText(t *testing.T) {
 // writes the per-task requirements.md / plan.md inline so plan.Run's
 // finishPlan promotes the row to plan-done synchronously.
 type scriptedPlanAgent struct {
+	testutil.ForegroundCapture
 	name               string
 	models             []string
 	mintedID           string
-	captureID          string
-	captureCalls       int
 	planCalls          int
 	planPID            int
 	planErr            error
@@ -731,16 +804,10 @@ func (a *scriptedPlanAgent) NewResumeID(context.Context) (string, error) {
 	return a.mintedID, nil
 }
 
-func (a *scriptedPlanAgent) CaptureResumeID(
-	context.Context, string, time.Time,
-) (string, error) {
-	a.captureCalls++
-	return a.captureID, nil
-}
-
 func (a *scriptedPlanAgent) Plan(_ context.Context, req codingagents.PlanRequest) (int, error) {
 	a.planCalls++
 	a.lastReq = req
+	a.Block()
 	if a.planErr != nil {
 		return 0, a.planErr
 	}

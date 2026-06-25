@@ -138,6 +138,24 @@ func ReadTaskRow(t *testing.T, id string) tasks.Task {
 	return got
 }
 
+// WaitForRow polls the task row for id until ok reports true or three
+// seconds elapse, returning whether the predicate was satisfied. It
+// backs the SPA-103 foreground tests that assert a resume id lands on
+// the row while the phase is still running.
+func WaitForRow(
+	t *testing.T, id string, ok func(tasks.Task) bool,
+) bool {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if ok(ReadTaskRow(t, id)) {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
+}
+
 // WriteFile is a tiny convenience wrapper around os.WriteFile with
 // the 0o644 mode shared by every per-task artifact (requirements.md,
 // plan.md, verifier_findings.md). It exists so the per-package

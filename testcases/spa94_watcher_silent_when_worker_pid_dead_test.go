@@ -30,7 +30,7 @@ func TestSPA94WatcherSilentWhenWorkerPIDDead(t *testing.T) {
 
 	done := make(chan string, 1)
 	go func() {
-		done <- codingagents.WatchAndSaveActiveResumeID(
+		done <- codingagents.WatchAndSaveBackgroundResumeID(
 			t.Context(), codex.New(), recorder, capture, 999999,
 		)
 	}()
@@ -39,7 +39,7 @@ func TestSPA94WatcherSilentWhenWorkerPIDDead(t *testing.T) {
 	case got := <-done:
 		if got != "" {
 			t.Fatalf(
-				"WatchAndSaveActiveResumeID = %q, want \"\" when "+
+				"WatchAndSaveBackgroundResumeID = %q, want \"\" when "+
 					"the worker pid is gone", got,
 			)
 		}
