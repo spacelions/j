@@ -157,12 +157,9 @@ func runWorker(
 		Since:   beginAt,
 		Stderr:  opts.Stderr,
 	}
-	stopForeground := func() string { return "" }
-	if opts.Interactive {
-		stopForeground = codingagents.StartAndSaveForegroundResumeID(
-			ctx, agent, lc, capture, session.ResumeID,
-		)
-	}
+	stopForeground := codingagents.StartAndSaveForegroundResumeID(
+		ctx, agent, lc, capture, session.ResumeID, opts.Interactive,
+	)
 	pid, workErr := agent.Work(ctx, req)
 	if id := stopForeground(); id != "" {
 		session.ResumeID = id

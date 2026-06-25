@@ -84,12 +84,9 @@ func runPlanner(
 		Since:   beginAt,
 		Stderr:  stderr,
 	}
-	stopForeground := func() string { return "" }
-	if opts.Interactive {
-		stopForeground = codingagents.StartAndSaveForegroundResumeID(
-			ctx, agent, lc, capture, session.ResumeID,
-		)
-	}
+	stopForeground := codingagents.StartAndSaveForegroundResumeID(
+		ctx, agent, lc, capture, session.ResumeID, opts.Interactive,
+	)
 	pid, planErr := agent.Plan(ctx, req)
 	if id := stopForeground(); id != "" {
 		session.ResumeID = id

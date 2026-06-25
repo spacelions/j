@@ -69,12 +69,10 @@ func runVerifyIteration(
 		Since:   iter.beginAt,
 		Stderr:  iter.opts.Stderr,
 	}
-	stopForeground := func() string { return "" }
-	if iter.index == 0 && iter.opts.Interactive {
-		stopForeground = codingagents.StartAndSaveForegroundResumeID(
-			ctx, agent, lc, capture, session.ResumeID,
-		)
-	}
+	stopForeground := codingagents.StartAndSaveForegroundResumeID(
+		ctx, agent, lc, capture, session.ResumeID,
+		iter.index == 0 && iter.opts.Interactive,
+	)
 	pid, err := startVerifyTurn(ctx, agent, req)
 	if id := stopForeground(); id != "" {
 		session.ResumeID = id

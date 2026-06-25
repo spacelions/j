@@ -124,31 +124,38 @@ func WatchAndSaveBackgroundResumeID(
 	return id
 }
 
+// noopResumeStopper is the stop closure returned whenever no
+// foreground watcher is started; invoking it yields "" (no id).
+func noopResumeStopper() string { return "" }
+
 // StartAndSaveForegroundResumeID spawns a background watcher for the
 // interactive/TUI code path and returns a stop function the caller
 // invokes after the TUI returns. The returned stop function cancels
 // the goroutine, blocks until it exits, and returns the resume id
 // captured during the foreground run (or "" if none appeared).
 //
-// When existingID is non-empty the task row already carries a
-// resume id (resume run) — no capture happens and the stop function
-// returns "". When the agent does not implement ResumeIDCapturer
-// (cursor/claude) the same no-op contract applies. An immediate
-// scan error is surfaced as a warning on capture.Stderr and the
-// watcher still starts so a later successful scan can record the id.
+// It returns the no-op stopper (noopResumeStopper) without starting a
+// watcher in three cases, so every call site can unconditionally start
+// it and stop it: interactive is false (headless/background runs, where
+// the pid-driven background watcher handles capture), existingID is
+// non-empty (a resume run whose row already carries an id), or the
+// agent does not implement ResumeIDCapturer (cursor/claude). An
+// immediate scan error is surfaced as a warning on capture.Stderr and
+// the watcher still starts so a later successful scan can record the id.
 func StartAndSaveForegroundResumeID(
 	ctx context.Context,
 	agent Agent,
 	recorder ResumeRecorder,
 	capture ResumeCapture,
 	existingID string,
+	interactive bool,
 ) func() string {
-	if existingID != "" {
-		return func() string { return "" }
+	if !interactive || existingID != "" {
+		return noopResumeStopper
 	}
 	capturer, ok := agent.(ResumeIDCapturer)
 	if !ok {
-		return func() string { return "" }
+		return noopResumeStopper
 	}
 	if id, err := capturer.CaptureResumeID(
 		ctx, capture.TaskDir, capture.Since,

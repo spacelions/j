@@ -324,7 +324,24 @@ func TestStartAndSaveForegroundResumeID_ExistingID(t *testing.T) {
 	stop := StartAndSaveForegroundResumeID(
 		t.Context(), agent, recorder,
 		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
-		"prior",
+		"prior", true,
+	)
+	assert.Empty(t, stop())
+	assert.Empty(t, recorder.id)
+	assert.Equal(t, int32(0), agent.calls.Load())
+}
+
+// TestStartAndSaveForegroundResumeID_NotInteractive pins the
+// headless no-op branch: a non-interactive run never starts a
+// watcher (the pid-driven background watcher handles capture there),
+// so no capturer methods run and the stop function returns "".
+func TestStartAndSaveForegroundResumeID_NotInteractive(t *testing.T) {
+	recorder := &recordingResume{}
+	agent := &delayedCapturingAgent{}
+	stop := StartAndSaveForegroundResumeID(
+		t.Context(), agent, recorder,
+		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
+		"", false,
 	)
 	assert.Empty(t, stop())
 	assert.Empty(t, recorder.id)
@@ -339,7 +356,7 @@ func TestStartAndSaveForegroundResumeID_NotCapturer(t *testing.T) {
 	stop := StartAndSaveForegroundResumeID(
 		t.Context(), stubAgent{}, recorder,
 		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
-		"",
+		"", true,
 	)
 	assert.Empty(t, stop())
 	assert.Empty(t, recorder.id)
@@ -356,7 +373,7 @@ func TestStartAndSaveForegroundResumeID_ImmediateCapture(t *testing.T) {
 		capturingAgent{id: "ready"},
 		recorder,
 		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
-		"",
+		"", true,
 	)
 	assert.Equal(t, "ready", recorder.id)
 	assert.Equal(t, "ready", stop())
@@ -373,7 +390,7 @@ func TestStartAndSaveForegroundResumeID_LiveCapture(t *testing.T) {
 	stop := StartAndSaveForegroundResumeID(
 		t.Context(), agent, recorder,
 		ResumeCapture{TaskDir: dir, Stderr: &bytes.Buffer{}},
-		"",
+		"", true,
 	)
 	require.Eventually(t, func() bool {
 		return agent.calls.Load() >= 2
@@ -396,7 +413,7 @@ func TestStartAndSaveForegroundResumeID_StopWithoutCapture(t *testing.T) {
 	stop := StartAndSaveForegroundResumeID(
 		t.Context(), agent, recorder,
 		ResumeCapture{TaskDir: t.TempDir(), Stderr: &bytes.Buffer{}},
-		"",
+		"", true,
 	)
 	done := make(chan string, 1)
 	go func() { done <- stop() }()
@@ -423,7 +440,7 @@ func TestStartAndSaveForegroundResumeID_ImmediateCaptureError(
 		capturingAgent{err: errors.New("scan blew up")},
 		recorder,
 		ResumeCapture{TaskDir: t.TempDir(), Stderr: &stderr},
-		"",
+		"", true,
 	)
 	assert.Empty(t, stop())
 	assert.Contains(t, stderr.String(), "J: scan blew up")
