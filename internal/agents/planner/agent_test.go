@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -418,8 +417,8 @@ func TestExecute_ForegroundCapturesWhilePlanBlocked(t *testing.T) {
 
 	stub := newScriptedPlanAgent("scripted")
 	stub.mintedID = ""
-	stub.release = make(chan struct{})
-	stub.started = make(chan struct{})
+	stub.Release = make(chan struct{})
+	stub.Started = make(chan struct{})
 
 	done := make(chan error, 1)
 	go func() {
@@ -432,20 +431,20 @@ func TestExecute_ForegroundCapturesWhilePlanBlocked(t *testing.T) {
 		})
 	}()
 	select {
-	case <-stub.started:
+	case <-stub.Started:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Plan never started")
 	}
-	stub.setCaptureID("captured-foreground-plan")
+	stub.SetCaptureID("captured-foreground-plan")
 
-	if !waitForRow(t, taskID, func(r tasks.Task) bool {
+	if !testutil.WaitForRow(t, taskID, func(r tasks.Task) bool {
 		return r.PlanResumeSession == "captured-foreground-plan"
 	}) {
-		close(stub.release)
+		close(stub.Release)
 		<-done
 		t.Fatal("PlanResumeSession was not recorded while Plan blocked")
 	}
-	close(stub.release)
+	close(stub.Release)
 	select {
 	case err := <-done:
 		if err != nil {
@@ -461,20 +460,6 @@ func TestExecute_ForegroundCapturesWhilePlanBlocked(t *testing.T) {
 			got.PlanResumeSession,
 		)
 	}
-}
-
-func waitForRow(
-	t *testing.T, id string, ok func(tasks.Task) bool,
-) bool {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if ok(testutil.ReadTaskRow(t, id)) {
-			return true
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return false
 }
 
 func TestExecute_NoWaitSkipsPostRunCapture(t *testing.T) {
@@ -497,7 +482,7 @@ func TestExecute_NoWaitSkipsPostRunCapture(t *testing.T) {
 
 	stub := newScriptedPlanAgent("scripted")
 	stub.mintedID = ""
-	stub.setCaptureID("captured-after-run")
+	stub.SetCaptureID("captured-after-run")
 	if err := Execute(t.Context(), Options{
 		TaskID:            taskID,
 		Agent:             stub,
@@ -507,7 +492,7 @@ func TestExecute_NoWaitSkipsPostRunCapture(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if got := stub.captureCalls.Load(); got != 0 {
+	if got := stub.Calls.Load(); got != 0 {
 		t.Fatalf("CaptureResumeID calls = %d, want 0", got)
 	}
 	got := testutil.ReadTaskRow(t, taskID)
@@ -538,7 +523,7 @@ func TestExecute_NoWaitCapturesActiveResumeSession(t *testing.T) {
 
 	stub := newScriptedPlanAgent("scripted")
 	stub.mintedID = ""
-	stub.setCaptureID("captured-active-plan")
+	stub.SetCaptureID("captured-active-plan")
 	stub.planPID = os.Getpid()
 	if err := Execute(t.Context(), Options{
 		TaskID:            taskID,
@@ -549,7 +534,7 @@ func TestExecute_NoWaitCapturesActiveResumeSession(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if stub.captureCalls.Load() == 0 {
+	if stub.Calls.Load() == 0 {
 		t.Fatal("CaptureResumeID calls = 0, want active capture")
 	}
 	got := testutil.ReadTaskRow(t, taskID)
@@ -786,22 +771,16 @@ func TestReadPlanArtifacts_NonMissingReadErrorUsesDangerousText(t *testing.T) {
 // writes the per-task requirements.md / plan.md inline so plan.Run's
 // finishPlan promotes the row to plan-done synchronously.
 type scriptedPlanAgent struct {
+	testutil.ForegroundCapture
 	name               string
 	models             []string
 	mintedID           string
-	captureID          atomic.Pointer[string]
-	captureCalls       atomic.Int32
 	planCalls          int
 	planPID            int
 	planErr            error
 	lastReq            codingagents.PlanRequest
 	panicOnNewResumeID bool
 	newResumeIDErr     error
-	// release, when non-nil, makes Plan block until the channel is
-	// closed. Lets foreground-capture tests assert the row has the
-	// captured id while Plan is still executing.
-	release chan struct{}
-	started chan struct{}
 }
 
 func newScriptedPlanAgent(name string) *scriptedPlanAgent {
@@ -825,29 +804,10 @@ func (a *scriptedPlanAgent) NewResumeID(context.Context) (string, error) {
 	return a.mintedID, nil
 }
 
-func (a *scriptedPlanAgent) CaptureResumeID(
-	context.Context, string, time.Time,
-) (string, error) {
-	a.captureCalls.Add(1)
-	if p := a.captureID.Load(); p != nil {
-		return *p, nil
-	}
-	return "", nil
-}
-
-func (a *scriptedPlanAgent) setCaptureID(id string) {
-	a.captureID.Store(&id)
-}
-
 func (a *scriptedPlanAgent) Plan(_ context.Context, req codingagents.PlanRequest) (int, error) {
 	a.planCalls++
 	a.lastReq = req
-	if a.started != nil {
-		close(a.started)
-	}
-	if a.release != nil {
-		<-a.release
-	}
+	a.Block()
 	if a.planErr != nil {
 		return 0, a.planErr
 	}

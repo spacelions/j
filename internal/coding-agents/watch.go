@@ -27,11 +27,20 @@ const watcherLivenessInterval = 200 * time.Millisecond
 // true, or when ctx is cancelled. shouldStop is consulted only on
 // the liveness tick so foreground callers can pass a nil-equivalent
 // "never stop" predicate without paying for per-event work.
+//
+// When scanOnCancel is set the loop performs one final scan on ctx
+// cancellation instead of returning "" outright. Foreground callers
+// rely on this: the stop closure cancels ctx right after the TUI
+// returns, by which point the backend's session metadata is already
+// on disk, so a last scan avoids dropping an id that landed between
+// the previous tick and the cancel. Background callers leave it off
+// to preserve the "silent on cancel" contract (SPA-94 AC4).
 func watchResumeID(
 	ctx context.Context,
 	capturer ResumeIDCapturer,
 	capture ResumeCapture,
 	shouldStop func() bool,
+	scanOnCancel bool,
 ) string {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -41,15 +50,21 @@ func watchResumeID(
 	addDirWatches(w, capture.TaskDir)
 	ticker := time.NewTicker(watcherLivenessInterval)
 	defer ticker.Stop()
+	scan := func() string {
+		id, _ := capturer.CaptureResumeID(
+			ctx, capture.TaskDir, capture.Since,
+		)
+		return id
+	}
 	for {
 		select {
 		case <-ctx.Done():
+			if scanOnCancel {
+				return scan()
+			}
 			return ""
 		case <-ticker.C:
-			id, _ := capturer.CaptureResumeID(
-				ctx, capture.TaskDir, capture.Since,
-			)
-			if id != "" {
+			if id := scan(); id != "" {
 				return id
 			}
 			if shouldStop != nil && shouldStop() {
@@ -57,10 +72,7 @@ func watchResumeID(
 			}
 		case ev := <-w.Events:
 			maybeAddDir(w, ev)
-			id, _ := capturer.CaptureResumeID(
-				ctx, capture.TaskDir, capture.Since,
-			)
-			if id != "" {
+			if id := scan(); id != "" {
 				return id
 			}
 		}
@@ -80,20 +92,21 @@ func WatchBackgroundResumeID(
 ) string {
 	return watchResumeID(ctx, capturer, capture, func() bool {
 		return !run.IsAlive(pid)
-	})
+	}, false)
 }
 
 // WatchForegroundResumeID blocks until capturer resolves a non-empty
 // resume id or ctx is cancelled. Used by the interactive/TUI code
 // path: the foreground TUI keeps the backend in this process tree so
 // there is no pid to poll, and the caller cancels ctx after the TUI
-// returns.
+// returns. On cancellation it performs one final scan so an id that
+// landed just before the TUI exited is not dropped.
 func WatchForegroundResumeID(
 	ctx context.Context,
 	capturer ResumeIDCapturer,
 	capture ResumeCapture,
 ) string {
-	return watchResumeID(ctx, capturer, capture, nil)
+	return watchResumeID(ctx, capturer, capture, nil, true)
 }
 
 // addDirWatches walks root and registers a watch on every directory.

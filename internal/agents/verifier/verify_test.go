@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1077,39 +1076,17 @@ func TestRun_NewResumeID_ErrorWarnsButContinues(t *testing.T) {
 }
 
 // foregroundCaptureAgent embeds scriptedAgent and implements
-// ResumeIDCapturer plus a blocking Verify so SPA-103 foreground
-// tests can assert mid-run state.
+// ResumeIDCapturer (via testutil.ForegroundCapture) plus a blocking
+// Verify so SPA-103 foreground tests can assert mid-run state.
 type foregroundCaptureAgent struct {
 	*scriptedAgent
-	captureID    atomic.Pointer[string]
-	captureCalls atomic.Int32
-	release      chan struct{}
-	started      chan struct{}
-}
-
-func (a *foregroundCaptureAgent) setCaptureID(id string) {
-	a.captureID.Store(&id)
-}
-
-func (a *foregroundCaptureAgent) CaptureResumeID(
-	context.Context, string, time.Time,
-) (string, error) {
-	a.captureCalls.Add(1)
-	if p := a.captureID.Load(); p != nil {
-		return *p, nil
-	}
-	return "", nil
+	testutil.ForegroundCapture
 }
 
 func (a *foregroundCaptureAgent) Verify(
 	ctx context.Context, req codingagents.VerifyRequest,
 ) (int, error) {
-	if a.started != nil {
-		close(a.started)
-	}
-	if a.release != nil {
-		<-a.release
-	}
+	a.Block()
 	return a.scriptedAgent.Verify(ctx, req)
 }
 
@@ -1125,11 +1102,9 @@ func TestRun_ForegroundCapturesWhileVerifyBlocked(t *testing.T) {
 	base := newScriptedAgent()
 	base.resumeID = ""
 	base.verifyVerdicts = []string{"PASS"}
-	agent := &foregroundCaptureAgent{
-		scriptedAgent: base,
-		release:       make(chan struct{}),
-		started:       make(chan struct{}),
-	}
+	agent := &foregroundCaptureAgent{scriptedAgent: base}
+	agent.Release = make(chan struct{})
+	agent.Started = make(chan struct{})
 
 	done := make(chan error, 1)
 	go func() {
@@ -1144,14 +1119,16 @@ func TestRun_ForegroundCapturesWhileVerifyBlocked(t *testing.T) {
 		})
 	}()
 	select {
-	case <-agent.started:
+	case <-agent.Started:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Verify never started")
 	}
-	agent.setCaptureID("captured-foreground-verify")
+	agent.SetCaptureID("captured-foreground-verify")
 
-	ok := waitForVerifyRow(t, id, "captured-foreground-verify")
-	close(agent.release)
+	ok := testutil.WaitForRow(t, id, func(r tasks.Task) bool {
+		return r.VerifyResumeSession == "captured-foreground-verify"
+	})
+	close(agent.Release)
 	select {
 	case err := <-done:
 		if err != nil {
@@ -1173,21 +1150,6 @@ func TestRun_ForegroundCapturesWhileVerifyBlocked(t *testing.T) {
 			got.VerifyResumeSession,
 		)
 	}
-}
-
-func waitForVerifyRow(t *testing.T, id, want string) bool {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		rows := readTasks(t)
-		for _, r := range rows {
-			if r.ID == id && r.VerifyResumeSession == want {
-				return true
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return false
 }
 
 func TestRun_CapturesActiveVerifierResumeSession(t *testing.T) {

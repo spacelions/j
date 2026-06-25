@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -71,39 +70,13 @@ func (a *runTestAgent) Work(_ context.Context, req codingagents.WorkRequest) (in
 
 type capturingRunAgent struct {
 	*runTestAgent
-	captureID    atomic.Pointer[string]
-	captureCalls atomic.Int32
-	// release, when non-nil, blocks Work until the channel is
-	// closed so foreground-capture tests can assert mid-run state.
-	release chan struct{}
-	started chan struct{}
-}
-
-func (a *capturingRunAgent) setCaptureID(id string) {
-	a.captureID.Store(&id)
-}
-
-func (a *capturingRunAgent) CaptureResumeID(
-	_ context.Context,
-	_ string,
-	_ time.Time,
-) (string, error) {
-	a.captureCalls.Add(1)
-	if p := a.captureID.Load(); p != nil {
-		return *p, nil
-	}
-	return "", nil
+	testutil.ForegroundCapture
 }
 
 func (a *capturingRunAgent) Work(
 	ctx context.Context, req codingagents.WorkRequest,
 ) (int, error) {
-	if a.started != nil {
-		close(a.started)
-	}
-	if a.release != nil {
-		<-a.release
-	}
+	a.Block()
 	return a.runTestAgent.Work(ctx, req)
 }
 
@@ -289,10 +262,8 @@ func TestRun_RecordsActiveWorkerResumeSession(t *testing.T) {
 	base := newRunTestAgent("cursor")
 	base.emptyResumeID = true
 	base.workPid = os.Getpid()
-	agent := &capturingRunAgent{
-		runTestAgent: base,
-	}
-	agent.setCaptureID("captured-work-session")
+	agent := &capturingRunAgent{runTestAgent: base}
+	agent.SetCaptureID("captured-work-session")
 
 	err := Execute(t.Context(), Options{
 		TaskID: id,
@@ -308,7 +279,7 @@ func TestRun_RecordsActiveWorkerResumeSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if agent.captureCalls.Load() == 0 {
+	if agent.Calls.Load() == 0 {
 		t.Fatal("CaptureResumeID calls = 0, want active capture")
 	}
 	row := testutil.ReadTaskRow(t, id)
@@ -334,11 +305,9 @@ func TestRun_ForegroundCapturesWhileWorkBlocked(t *testing.T) {
 	id := seedPlanDoneTask(t)
 	base := newRunTestAgent("cursor")
 	base.emptyResumeID = true
-	agent := &capturingRunAgent{
-		runTestAgent: base,
-		release:      make(chan struct{}),
-		started:      make(chan struct{}),
-	}
+	agent := &capturingRunAgent{runTestAgent: base}
+	agent.Release = make(chan struct{})
+	agent.Started = make(chan struct{})
 
 	done := make(chan error, 1)
 	go func() {
@@ -356,20 +325,20 @@ func TestRun_ForegroundCapturesWhileWorkBlocked(t *testing.T) {
 		})
 	}()
 	select {
-	case <-agent.started:
+	case <-agent.Started:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Work never started")
 	}
-	agent.setCaptureID("captured-foreground-work")
+	agent.SetCaptureID("captured-foreground-work")
 
-	if !waitForRow(t, id, func(r tasks.Task) bool {
+	if !testutil.WaitForRow(t, id, func(r tasks.Task) bool {
 		return r.WorkResumeSession == "captured-foreground-work"
 	}) {
-		close(agent.release)
+		close(agent.Release)
 		<-done
 		t.Fatal("WorkResumeSession was not recorded while Work blocked")
 	}
-	close(agent.release)
+	close(agent.Release)
 	select {
 	case err := <-done:
 		if err != nil {
@@ -385,20 +354,6 @@ func TestRun_ForegroundCapturesWhileWorkBlocked(t *testing.T) {
 			got.WorkResumeSession,
 		)
 	}
-}
-
-func waitForRow(
-	t *testing.T, id string, ok func(tasks.Task) bool,
-) bool {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if ok(testutil.ReadTaskRow(t, id)) {
-			return true
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return false
 }
 
 func TestRun_WaitForCompletion_Success(t *testing.T) {
